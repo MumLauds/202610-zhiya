@@ -1,0 +1,56 @@
+[
+  {
+    "version_id": 1,
+    "page_no": 1,
+    "body_text": "从前有一只小兔子，他很想要离家出走。有一天，他对妈妈说：\"我要跑走啦！\"",
+    "image_ref": "小兔子站在屋子中间，看着妈妈。",
+    "audio_ref": null,
+    "image_license_note": null,
+    "default_next_page_number": 2
+  },
+  {
+    "version_id": 1,
+    "page_no": 2,
+    "body_text": "\"如果你跑走了，\"妈妈说，\"我就要去追你，因为你是我的小宝贝呀！\"",
+    "image_ref": "兔妈妈弯腰看着小兔子，微笑着。",
+    "audio_ref": null,
+    "image_license_note": null,
+    "default_next_page_number": 3
+  },
+  {
+    "version_id": 1,
+    "page_no": 3,
+    "body_text": "\"如果你来追我，\"小兔子说，\"我就要变成溪里的小鳟鱼，游得远远的。\"",
+    "image_ref": "小兔子想象自己变成了一条红色的鱼在水里游。",
+    "audio_ref": null,
+    "image_license_note": null,
+    "default_next_page_number": 4
+  },
+  {
+    "version_id": 1,
+    "page_no": 4,
+    "body_text": "\"如果你变成溪里的小鳟鱼，\"妈妈说，\"我就变成捕鱼的人去抓你。\"",
+    "image_ref": "兔妈妈拿着钓鱼竿，鱼钩上挂着一根胡萝卜。",
+    "audio_ref": null,
+    "image_license_note": null,
+    "default_next_page_number": 5
+  },
+  {
+    "version_id": 1,
+    "page_no": 5,
+    "body_text": "\"如果你变成捕鱼的人，\"小兔子说，\"我就要变成高山上的大石头，让你抓不到我。\"",
+    "image_ref": "小兔子想象自己变成了一块高高的石头。",
+    "audio_ref": null,
+    "image_license_note": null,
+    "default_next_page_number": 6
+  },
+  {
+    "version_id": 1,
+    "page_no": 6,
+    "body_text": "\"如果你变成高山上的大石头，\"妈妈说，\"我就变成爬山的人，爬到高山上去找你。\"",
+    "image_ref": "兔妈妈背着背包，拿着登山杖在爬山。",
+    "audio_ref": null,
+    "image_license_note": null,
+    "default_next_page_number": null
+  }
+]
