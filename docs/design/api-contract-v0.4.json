@@ -1,0 +1,1536 @@
+{
+  "document": "知芽系统接口契约",
+  "status": "待团队评审",
+  "note": "所有示例为格式数据，不是真实模型输出、凭证或测试结果。",
+  "common": {
+    "authentication": "服务端Cookie使用Secure/HttpOnly/SameSite=Lax，写入验证CSRF。进入儿童模式时同事务吊销当前设备家长auth_sessions、签发child_grants及版本范围并绑定会话。退出须重新验证账号密码，撤销儿童授权并签发全新家长凭证；旧家长凭证不恢复。",
+    "ownership": "私有资源每次执行归属校验；非本人统一404。",
+    "pagination": {
+      "defaultPageSize": 20,
+      "maxPageSize": 50
+    },
+    "errors": {
+      "401": "未认证或凭证错误",
+      "403": "角色或儿童模式拒绝",
+      "404": "资源不存在或非本人",
+      "409": "状态、版本或幂等冲突",
+      "422": "参数、识别或内容校验失败",
+      "413": "上传过大",
+      "415": "格式不支持",
+      "429": "限流",
+      "503": "依赖不可用",
+      "504": "超时"
+    },
+    "errorExample": {
+      "error": {
+        "code": "SESSION_CONFLICT",
+        "message": "阅读进度已变化，请刷新后重试",
+        "retryable": false
+      },
+      "requestId": "req-demo"
+    },
+    "fieldRules": {
+      "resourceId": "JSON整数1～9007199254740991，对应数据库INTEGER主键；每次校验归属。clientEventId、clientRequestId、requestId是字符串键，媒体resource_key是受控资源键。",
+      "clientEventId": "字符串1～64字符；会话内唯一；保存请求摘要及原响应",
+      "text/inputText": "UTF-8字符串；去除空白后1～200字符；儿童另校验允许范围",
+      "pageNumber": "正整数，须属于固定内容版本及当前允许路径",
+      "expectedRevision": "非负整数，与服务端revision条件比较",
+      "timeLimitSeconds": "整数60～1800；服务端计算expiresAt",
+      "feedback": "INITIAL、UNDERSTOOD、NOT_UNDERSTOOD、SKIPPED。INITIAL无需既有反馈；其他值要求当前页已有问题，否则409 PROMPT_REQUIRED。",
+      "sourceReadingSessionId": "正整数；仅已认证家长访问本人同档案的IN_PROGRESS亲子会话。",
+      "resumePageNumber": "服务端生成并随内容审核冻结；客户端不得在创建会话时指定或覆盖。",
+      "clientRequestId": "字符串1～64字符；原创生成和续写切换必填，同一操作保持同键和同请求体。",
+      "storyVersionId": "具体版本主键；会话、页面、分支与授权固定到此版本；storybookId仅表示稳定本体。",
+      "time": "库内UTC毫秒INTEGER，经序列化转换为ISO 8601 UTC文本。"
+    },
+    "interfaceGroups": {
+      "IF-01": "页面与业务后端",
+      "IF-02": "Agent与模型供应商",
+      "IF-03": "语音适配与供应商",
+      "IF-04": "服务与数据资源",
+      "IF-05": "可选设备边界"
+    },
+    "requestExecution": {
+      "key": "(scopeType, scopeId, clientRequestId) 唯一；SESSION_EVENT以会话为scopeId，clientRequestId取clientEventId；STORY_GENERATION和SESSION_CREATE以家长为scopeId。",
+      "digest": "规范化方法、完整路径和业务请求体，含页码、expectedRevision及输入内容；不含追踪requestId。摘要不同返回409 IDEMPOTENCY_CONFLICT。",
+      "claim": "先验身份与归属，再用短事务查旧记录或插入RUNNING，提交后才允许获胜执行者进入Agent；新键再验当前状态和revision。同键跨questions/guidance/events/branches/completions共用SESSION_EVENT范围。",
+      "states": {
+        "RUNNING": "409 REQUEST_IN_PROGRESS，retryable=true，Retry-After: 1；只能原键查询式重发，不创建新任务",
+        "SUCCEEDED": "200重放原data，不调用模型；requestId可更新",
+        "FAILED": "重放已记录错误，原键不再执行；确认需要新尝试后用新键",
+        "UNKNOWN": "504 REQUEST_OUTCOME_UNKNOWN，retryable=false；不自动抢占、不自动重发外部请求"
+      },
+      "finish": "短事务复核授权、状态与revision，原子保存事件、进度及SUCCEEDED响应。纯事件及分支在同一短事务占位并完成。",
+      "failure": "已收到模型结果而保存失败，只在内存中重试保存一次，不再次调用模型；明确失败记录FAILED。模型超时后如已保存最终安全回退则完成SUCCEEDED；进程退出、无法确定或保存最终响应时，原RUNNING超过deadlineAt后条件转UNKNOWN；晚到执行者不能再提交。",
+      "deadline": "文本请求占位有效期25秒，外部调用预算20秒；原创生成占位65秒，外部调用预算60秒；到期不转交执行权。事务提交必须同时满足RUNNING及executionToken匹配。",
+      "billing": "每个键最多一次应用层模型调用尝试，关闭模型适配器和供应商软件开发工具包的自动重试。供应商支持幂等键时透传稳定键；网络超时不证明未计费，新键重试可能产生另一笔费用。",
+      "retention": "与所属会话或家长数据同权限管理；会话有效及可重放期间不删除幂等记录，删除会话时同步清理。"
+    },
+    "eventTypes": {
+      "STARTED": "开始阅读",
+      "PAGE_CHANGED": "普通翻页",
+      "QUESTION": "系统情境提问；INITIAL产生",
+      "ANSWER": "孩子作答",
+      "ASK": "孩子主动提问及回答",
+      "FEEDBACK": "理解反馈或SKIPPED",
+      "BRANCH_CHOSEN": "选择审核分支"
+    },
+    "resultMapping": {
+      "AgentResult.GENERATED": "interaction_events.SUCCESS",
+      "AgentResult.FALLBACK": "interaction_events.FALLBACK",
+      "AgentResult.BLOCKED": "interaction_events.FAILED"
+    },
+    "reportLifecycle": {
+      "states": [
+        "PENDING",
+        "READY",
+        "FAILED"
+      ],
+      "completion": "首次结束阅读在同一事务保存会话终态、事实记录和PENDING小结；事务外生成成功后置READY，确定失败置FAILED并保留事实摘要。",
+      "read": "API-013读取当前小结；READY返回已生成内容，FAILED只返回事实摘要及空活动数组。FALLBACK仅用于模型/互动结果，不是ReadingReport.status。",
+      "repeat": "同键重放原结束响应，可能仍含PENDING；新键重复结束只返回既有终态及当前小结，不再次调用模型。本阶段不提供失败小结重新生成入口。"
+    },
+    "versionAccess": {
+      "current": "默认书架及推荐仅选择有权访问的当前PUBLISHED或APPROVED_PRIVATE版本。每个storybookId至多一个当前生效版本，不限制本人可复读的已审核私有历史版本数。",
+      "privateHistory": "RETIRED退出当前默认列表；只有storybooks.source_type=ORIGINAL、owner_guardian_id等于当前家长账号且story_versions.reviewed_by_id和reviewed_at均非空的本人私有历史版本，才允许从scope=mine读取并创建新会话。",
+      "libraryHistory": "LIBRARY的RETIRED版本不允许新建会话；仍有权访问的既有有效会话可以继续读取。",
+      "child": "儿童访问另要求有效且未到期的授权、同家庭归属和allowedStoryVersionIds包含确切版本ID；不能借历史入口扩大授权。",
+      "withdrawn": "WITHDRAWN立即拒绝新建会话、既有会话内容、正文和媒体访问；scope=mine和历史记录不能绕过。所有内容入口与媒体入口使用同一版本权限规则。"
+    },
+    "knowledgeVersioning": {
+      "identity": "knowledgeItemId对应具体knowledge_items行；同一itemKey由versionNumber区分版本。所有PATCH均插入新行、新ID，版本号由服务端原子分配递增；包含草稿内容修改和仅审核状态变更。旧行内容、来源及历史event_evidence引用不变。",
+      "approval": "提交status=APPROVED须由有权内容管理员完成新内容与来源审核，服务端校验并记录reviewed_at，不将客户端状态值本身视为已批准。激活新APPROVED行与退休同itemKey旧APPROVED行在一个事务内完成；新DRAFT行不退休当前APPROVED版本。",
+      "example": "API-030创建806/v1(APPROVED)，API-031以806为来源修订得到807/v2(APPROVED)，同itemKey=guided-observation；806转RETIRED，已有event_evidence.knowledge_item_id仍为806，新检索使用807。"
+    },
+    "deliveryScope": {
+      "requirement": "FR-17有限续写",
+      "priority": "P1",
+      "stage": "本期纳入验收",
+      "confirmedAt": "2026-11-04",
+      "decision": "用户确认本期纳入有限续写；范围限亲子模式、固定源快照、审核新版本和原子切换，整本及各阅读路径仍为4～6页。",
+      "designRevisionOwner": "林鑫（102401115）",
+      "implementationRoles": "M05：业务后端与领域Agent沿用现有角色分工；不据此指定具体实现成员。",
+      "acceptanceCases": [
+        "TC-FR17-04",
+        "TC-FR17-05"
+      ],
+      "approval": "用户范围确认已记录；组长确认及设计PR审核、合并仍待实际完成，不以本文代替正式审批。",
+      "baseFlow": "普通主链路无需触发续写即可完成档案、选书、阅读、互动和结束记录；续写为本期有明确边界的P1流程。"
+    }
+  },
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/registrations",
+      "permission": "匿名",
+      "ownerRole": "业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "account": "demo",
+        "password": "示例密码"
+      },
+      "successStatus": 201,
+      "responseExample": {
+        "data": {
+          "accountId": 1
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "账号重复409；密码仅保存安全哈希。",
+      "interfaceId": "API-001",
+      "uniqueKey": "POST /api/v1/auth/registrations"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/sessions",
+      "permission": "匿名",
+      "ownerRole": "业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "account": "demo",
+        "password": "示例密码"
+      },
+      "successStatus": 201,
+      "responseExample": {
+        "data": {
+          "accountId": 1
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "成功设置服务端会话Cookie；错误凭证401，重复失败限流。",
+      "interfaceId": "API-002",
+      "uniqueKey": "POST /api/v1/auth/sessions"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/auth/sessions/current",
+      "permission": "家长或当前受限儿童",
+      "ownerRole": "业务后端",
+      "requestContentType": null,
+      "queryExample": null,
+      "requestExample": null,
+      "successStatus": 204,
+      "responseExample": null,
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "吊销当前登录和儿童授权。",
+      "interfaceId": "API-003",
+      "uniqueKey": "DELETE /api/v1/auth/sessions/current"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/child-profiles",
+      "permission": "已认证家长且归本人",
+      "ownerRole": "业务后端",
+      "requestContentType": null,
+      "queryExample": null,
+      "requestExample": null,
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "items": [
+            {
+              "childProfileId": 101,
+              "ageBand": "AGE_4_5",
+              "interests": [
+                "动物"
+              ],
+              "preferredMinutes": 10
+            }
+          ]
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "",
+      "interfaceId": "API-004",
+      "uniqueKey": "GET /api/v1/child-profiles"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/child-profiles",
+      "permission": "已认证家长",
+      "ownerRole": "业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "ageBand": "AGE_4_5",
+        "interests": [
+          "动物"
+        ],
+        "preferredMinutes": 10
+      },
+      "successStatus": 201,
+      "responseExample": {
+        "data": {
+          "childProfileId": 101,
+          "ageBand": "AGE_4_5",
+          "interests": [
+            "动物"
+          ],
+          "preferredMinutes": 10
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "",
+      "interfaceId": "API-005",
+      "uniqueKey": "POST /api/v1/child-profiles"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/child-profiles/{profile_id}",
+      "permission": "已认证家长且归本人",
+      "ownerRole": "业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "interests": [
+          "自然"
+        ],
+        "preferredMinutes": 10
+      },
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "childProfileId": 101,
+          "ageBand": "AGE_4_5",
+          "interests": [
+            "动物"
+          ],
+          "preferredMinutes": 10
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "",
+      "interfaceId": "API-006",
+      "uniqueKey": "PATCH /api/v1/child-profiles/{profile_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/child-profiles/{profile_id}",
+      "permission": "已认证家长且归本人",
+      "ownerRole": "业务后端",
+      "requestContentType": null,
+      "queryExample": null,
+      "requestExample": null,
+      "successStatus": 204,
+      "responseExample": null,
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "终止关联活动并按数据库删除策略清理会话、事件、小结与派生资源。",
+      "interfaceId": "API-007",
+      "uniqueKey": "DELETE /api/v1/child-profiles/{profile_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/storybooks",
+      "permission": "家长或绑定故事范围内儿童",
+      "ownerRole": "业务后端",
+      "requestContentType": null,
+      "queryExample": {
+        "ageBand": "AGE_4_5",
+        "topic": "动物",
+        "page": 1,
+        "pageSize": 20,
+        "scope": "mine"
+      },
+      "requestExample": null,
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "items": [
+            {
+              "storyVersionId": 301,
+              "versionNumber": 1,
+              "title": "示例绘本",
+              "status": "APPROVED_PRIVATE",
+              "pages": [
+                {
+                  "pageNumber": 1,
+                  "text": "示例文字",
+                  "imageRef": "asset-approved-01",
+                  "defaultNextPageNumber": null
+                }
+              ],
+              "branches": [],
+              "storybookId": 201
+            }
+          ],
+          "page": 1,
+          "pageSize": 20
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "默认返回有权访问的当前PUBLISHED/APPROVED_PRIVATE版本。scope=mine仅限已认证家长，另包含本人已审核私有RETIRED历史版本；各项以storyVersionId区分，遵守common.versionAccess，不返回WITHDRAWN内容。",
+      "interfaceId": "API-008",
+      "uniqueKey": "GET /api/v1/storybooks",
+      "additionalExamples": [
+        {
+          "name": "保存301后审核302，重新登录查本人历史书架",
+          "query": {
+            "scope": "mine",
+            "page": 1,
+            "pageSize": 20
+          },
+          "status": 200,
+          "data": {
+            "items": [
+              {
+                "storyVersionId": 302,
+                "versionNumber": 2,
+                "title": "示例绘本",
+                "status": "APPROVED_PRIVATE",
+                "pages": [
+                  {
+                    "pageNumber": 1,
+                    "text": "示例文字",
+                    "imageRef": "asset-approved-01",
+                    "defaultNextPageNumber": null
+                  }
+                ],
+                "branches": [],
+                "storybookId": 201
+              },
+              {
+                "storyVersionId": 301,
+                "versionNumber": 1,
+                "title": "示例绘本",
+                "status": "RETIRED",
+                "pages": [
+                  {
+                    "pageNumber": 1,
+                    "text": "示例文字",
+                    "imageRef": "asset-approved-01",
+                    "defaultNextPageNumber": null
+                  }
+                ],
+                "branches": [],
+                "storybookId": 201
+              }
+            ],
+            "page": 1,
+            "pageSize": 20
+          }
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/story-versions/{version_id}",
+      "permission": "家长或绑定故事范围内儿童",
+      "ownerRole": "业务后端",
+      "requestContentType": null,
+      "queryExample": null,
+      "requestExample": null,
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "storyVersionId": 301,
+          "versionNumber": 1,
+          "title": "示例绘本",
+          "status": "APPROVED_PRIVATE",
+          "pages": [
+            {
+              "pageNumber": 1,
+              "text": "示例文字",
+              "imageRef": "asset-approved-01",
+              "defaultNextPageNumber": null
+            }
+          ],
+          "branches": [],
+          "storybookId": 201
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "儿童不接收未审核草稿或管理字段。正文和媒体均遵守common.versionAccess；本人已审核私有RETIRED版本可从历史入口复读，LIBRARY退休版本仅限既有有效会话；WITHDRAWN立即拒绝。",
+      "interfaceId": "API-009",
+      "uniqueKey": "GET /api/v1/story-versions/{version_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/recommendations",
+      "permission": "已认证家长",
+      "ownerRole": "业务后端与领域智能体",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "childProfileId": 101,
+        "topic": "动物",
+        "minutes": 10
+      },
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "items": [
+            {
+              "storyVersionId": 301,
+              "reason": "示例推荐理由",
+              "sources": []
+            }
+          ]
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "候选仅来自有权访问的当前PUBLISHED/APPROVED_PRIVATE版本；不推荐RETIRED或WITHDRAWN。无匹配返回items空数组；不编造来源。",
+      "interfaceId": "API-010",
+      "uniqueKey": "POST /api/v1/recommendations"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/reading-sessions",
+      "permission": "已认证家长且档案归本人",
+      "ownerRole": "业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "childProfileId": 101,
+        "storyVersionId": 301,
+        "mode": "PARENT_CHILD"
+      },
+      "successStatus": 201,
+      "responseExample": {
+        "data": {
+          "readingSessionId": 401,
+          "storyVersionId": 301,
+          "currentPage": 1,
+          "visitedPageNumbers": [],
+          "mode": "PARENT_CHILD",
+          "status": "CREATED",
+          "revision": 0,
+          "expiresAt": null
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "普通创建仅PARENT_CHILD/CREATED；storyVersionId固定到按common.versionAccess可新建会话的版本。本人已审核私有RETIRED版本可复读；LIBRARY退休版本和任何WITHDRAWN版本均禁止新建。儿童模式在STARTED前由mode-settings原子签发授权及绑定。有限续写按flows.continuationSwitch原子切换，属于本期FR-17 P1，验收TC-FR17-04/05；普通主链无需续写即可完成，范围及审批状态见common.deliveryScope。",
+      "interfaceId": "API-011",
+      "uniqueKey": "POST /api/v1/reading-sessions",
+      "additionalExamples": [
+        {
+          "name": "原子切换到已审核续写继续点",
+          "request": {
+            "childProfileId": 101,
+            "storyVersionId": 302,
+            "mode": "PARENT_CHILD",
+            "sourceReadingSessionId": 401,
+            "expectedRevision": 12,
+            "clientRequestId": "switch-001"
+          },
+          "status": 201,
+          "data": {
+            "readingSessionId": 402,
+            "storyVersionId": 302,
+            "sourceReadingSessionId": 401,
+            "startPageNumber": 3,
+            "carriedPrefixPageCount": 2,
+            "currentPage": 3,
+            "visitedPageNumbers": [
+              1,
+              2,
+              3
+            ],
+            "mode": "PARENT_CHILD",
+            "status": "IN_PROGRESS",
+            "revision": 1,
+            "expiresAt": null
+          },
+          "deliveryScope": "本期FR-17 P1；TC-FR17-04/05"
+        },
+        {
+          "name": "301退休后重新登录复读本人已审核私有历史版本",
+          "precondition": "绘本201为本人ORIGINAL；301的reviewed_by_id及reviewed_at非空、状态RETIRED；当前版本302已APPROVED_PRIVATE。",
+          "request": {
+            "childProfileId": 101,
+            "storyVersionId": 301,
+            "mode": "PARENT_CHILD"
+          },
+          "status": 201,
+          "data": {
+            "readingSessionId": 403,
+            "storyVersionId": 301,
+            "currentPage": 1,
+            "visitedPageNumbers": [],
+            "mode": "PARENT_CHILD",
+            "status": "CREATED",
+            "revision": 0,
+            "expiresAt": null
+          }
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reading-sessions",
+      "permission": "已认证家长且归本人",
+      "ownerRole": "业务后端",
+      "requestContentType": null,
+      "queryExample": {
+        "page": 1,
+        "pageSize": 20
+      },
+      "requestExample": null,
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "items": [
+            {
+              "readingSessionId": 401,
+              "storyVersionId": 301,
+              "currentPage": 1,
+              "visitedPageNumbers": [],
+              "mode": "PARENT_CHILD",
+              "status": "CREATED",
+              "revision": 0,
+              "expiresAt": null
+            }
+          ],
+          "page": 1,
+          "pageSize": 20
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "",
+      "interfaceId": "API-012",
+      "uniqueKey": "GET /api/v1/reading-sessions"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reading-sessions/{session_id}",
+      "permission": "本人家长或绑定会话儿童",
+      "ownerRole": "业务后端",
+      "requestContentType": null,
+      "queryExample": null,
+      "requestExample": null,
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "session": {
+            "readingSessionId": 401,
+            "storyVersionId": 301,
+            "currentPage": 1,
+            "visitedPageNumbers": [],
+            "mode": "PARENT_CHILD",
+            "status": "CREATED",
+            "revision": 0,
+            "expiresAt": null
+          },
+          "events": [],
+          "report": null
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "儿童只返回当前进度、可读页面与必要交互，不返回完整历史、管理或个人资料。内容读取遵守common.versionAccess。本人家长可读取当前小结，状态仅PENDING/READY/FAILED；生成中及失败时保留事实摘要，失败不提供模型生成活动。",
+      "interfaceId": "API-013",
+      "uniqueKey": "GET /api/v1/reading-sessions/{session_id}",
+      "additionalExamples": [
+        {
+          "name": "小结处理中",
+          "status": 200,
+          "data": {
+            "session": {
+              "readingSessionId": 401,
+              "storyVersionId": 301,
+              "mode": "PARENT_CHILD",
+              "status": "FINISHED"
+            },
+            "events": [],
+            "report": {
+              "readingSessionId": 401,
+              "summary": "本次阅读事实摘要示例",
+              "activities": [],
+              "status": "PENDING"
+            }
+          }
+        },
+        {
+          "name": "小结生成成功",
+          "status": 200,
+          "data": {
+            "session": {
+              "readingSessionId": 401,
+              "storyVersionId": 301,
+              "mode": "PARENT_CHILD",
+              "status": "FINISHED"
+            },
+            "events": [],
+            "report": {
+              "readingSessionId": 401,
+              "summary": "本次共同阅读了互助主题故事。",
+              "activities": [
+                {
+                  "name": "画出帮助朋友的一幕",
+                  "materials": [
+                    "纸",
+                    "画笔"
+                  ],
+                  "steps": [
+                    "家长和孩子回顾故事角色。",
+                    "一起画出帮助朋友的场景。"
+                  ]
+                }
+              ],
+              "status": "READY"
+            }
+          }
+        },
+        {
+          "name": "小结生成失败",
+          "status": 200,
+          "data": {
+            "session": {
+              "readingSessionId": 401,
+              "storyVersionId": 301,
+              "mode": "PARENT_CHILD",
+              "status": "FINISHED"
+            },
+            "events": [],
+            "report": {
+              "readingSessionId": 401,
+              "summary": "本次阅读事实摘要示例",
+              "activities": [],
+              "status": "FAILED"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/reading-sessions/{session_id}",
+      "permission": "已认证家长且归本人",
+      "ownerRole": "业务后端",
+      "requestContentType": null,
+      "queryExample": null,
+      "requestExample": null,
+      "successStatus": 204,
+      "responseExample": null,
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "清理关联事件、小结与派生资源并撤销活动授权。",
+      "interfaceId": "API-014",
+      "uniqueKey": "DELETE /api/v1/reading-sessions/{session_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/reading-sessions/{session_id}/events",
+      "permission": "本人家长或绑定会话儿童",
+      "ownerRole": "业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "eventType": "PAGE_CHANGED",
+        "pageNumber": 2,
+        "expectedRevision": 1,
+        "clientEventId": "event-002"
+      },
+      "successStatus": 201,
+      "responseExample": {
+        "data": {
+          "interactionEventId": 803,
+          "revision": 2
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "类型STARTED/PAGE_CHANGED/ANSWER/FEEDBACK；SKIPPED是feedback取值，不是eventType。QUESTION、ASK、BRANCH_CHOSEN由对应服务写入；同键先重放，新键检查revision。",
+      "interfaceId": "API-015",
+      "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/events"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/reading-sessions/{session_id}/questions",
+      "permission": "本人家长或绑定会话儿童",
+      "ownerRole": "领域智能体与业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "pageNumber": 2,
+        "expectedRevision": 2,
+        "clientEventId": "event-003",
+        "inputText": "小兔子帮助了谁？"
+      },
+      "successStatus": 201,
+      "responseExample": {
+        "data": {
+          "interactionEventId": 601,
+          "revision": 3,
+          "outputText": "先看看谁需要帮助。",
+          "strategyType": "CONCRETE_RECALL",
+          "status": "FALLBACK",
+          "sources": []
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "共读用确认文本；儿童只接收受限短问题。处理前后核验revision与到时状态。 执行前后遵循common.requestExecution；相同键并发最多一次应用层模型调用尝试。",
+      "interfaceId": "API-016",
+      "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/questions"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/reading-sessions/{session_id}/guidance",
+      "permission": "本人家长或绑定会话儿童",
+      "ownerRole": "领域智能体与业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "pageNumber": 1,
+        "feedback": "INITIAL",
+        "expectedRevision": 1,
+        "clientEventId": "prompt-001"
+      },
+      "successStatus": 201,
+      "responseExample": {
+        "data": {
+          "interactionEventId": 602,
+          "revision": 2,
+          "outputText": "图中的小兔子正在做什么？",
+          "strategyType": "CONTEXT_QUESTION",
+          "status": "FALLBACK",
+          "sources": []
+        },
+        "requestId": "req-initial"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "STARTED成功或翻页/分支/续写切换进入当前页后，前端在需要情境提问且无可恢复问题时发送INITIAL；不由GET或STARTED响应隐式调用模型。首次不要求既往问题或反馈。服务端构造年龄及页面上下文，一次返回一个问题。UNDERSTOOD/NOT_UNDERSTOOD针对当前页最后一个已保存问题，缺失时409 PROMPT_REQUIRED；SKIPPED只写事件，不调用Agent/模型，outputText为空、strategyType=SKIP、status=FALLBACK。执行前按common.requestExecution占位；翻页后晚到结果不得保存或播放。",
+      "interfaceId": "API-017",
+      "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/guidance",
+      "additionalExamples": [
+        {
+          "name": "未理解后的具体回顾",
+          "request": {
+            "pageNumber": 1,
+            "feedback": "NOT_UNDERSTOOD",
+            "expectedRevision": 2,
+            "clientEventId": "prompt-002"
+          },
+          "status": 201,
+          "data": {
+            "interactionEventId": 603,
+            "revision": 3,
+            "outputText": "先看看谁需要帮助。",
+            "strategyType": "CONCRETE_RECALL",
+            "status": "FALLBACK",
+            "sources": []
+          }
+        },
+        {
+          "name": "跳过当前问题",
+          "request": {
+            "pageNumber": 1,
+            "feedback": "SKIPPED",
+            "expectedRevision": 2,
+            "clientEventId": "skip-001"
+          },
+          "status": 201,
+          "data": {
+            "interactionEventId": 804,
+            "revision": 3,
+            "outputText": "",
+            "strategyType": "SKIP",
+            "status": "FALLBACK",
+            "sources": []
+          }
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/reading-sessions/{session_id}/branches",
+      "permission": "本人家长或绑定会话儿童",
+      "ownerRole": "业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "branchId": 501,
+        "expectedRevision": 3,
+        "clientEventId": "event-004"
+      },
+      "successStatus": 201,
+      "responseExample": {
+        "data": {
+          "readingSessionId": 401,
+          "branchId": 501,
+          "currentPage": 4,
+          "revision": 4,
+          "interactionEventId": 604,
+          "nextPage": {
+            "pageNumber": 4,
+            "text": "示例后续文字",
+            "imageRef": "asset-approved-04",
+            "defaultNextPageNumber": 5
+          },
+          "visitedPageNumbers": [
+            1,
+            2,
+            4
+          ]
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "分支属于当前故事和当前节点且已审核；原子提交进度及事件。重复相同请求200；标识复用且内容不同409。",
+      "interfaceId": "API-018",
+      "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/branches"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/reading-sessions/{session_id}/completions",
+      "permission": "本人家长或绑定会话儿童",
+      "ownerRole": "业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "reason": "USER_FINISH",
+        "clientEventId": "event-end"
+      },
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "session": {
+            "readingSessionId": 401,
+            "storyVersionId": 301,
+            "currentPage": 1,
+            "visitedPageNumbers": [
+              1
+            ],
+            "mode": "PARENT_CHILD",
+            "status": "FINISHED",
+            "revision": 2,
+            "expiresAt": null
+          },
+          "report": {
+            "readingSessionId": 401,
+            "summary": "本次阅读事实摘要示例",
+            "activities": [],
+            "status": "PENDING"
+          }
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "首次结束同事务保存终态、事实记录及PENDING小结，随后事务外生成至READY/FAILED；用API-013读取最新状态。同键重放原响应，新键重复结束返回既有终态与当前小结，均不重复生成。本阶段不提供失败小结重试入口。TIME_LIMIT由服务端触发；CONTINUED仅由续写切换事务设置，客户端不得提交该reason。",
+      "interfaceId": "API-019",
+      "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/completions",
+      "examplePrecondition": "本例承接API-011创建的会话401（CREATED、revision=0、路径[]）。通过API-015提交STARTED后为IN_PROGRESS、currentPage=1、visitedPageNumbers=[1]、revision=1；此时立即主动结束，没有发生其他互动或翻页。"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/reading-sessions/{session_id}/mode-settings",
+      "permission": "已认证家长且归本人",
+      "ownerRole": "业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "mode": "CHILD_SOLO",
+        "allowedStoryVersionIds": [
+          301
+        ],
+        "timeLimitSeconds": 600
+      },
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "mode": "CHILD_SOLO",
+          "childGrantId": 701,
+          "allowedStoryVersionIds": [
+            301
+          ],
+          "expiresAt": "2026-11-04T15:10:00Z"
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "CREATED阶段由已认证家长设置CHILD_SOLO，范围须包含会话固定版本；同事务创建授权与范围、吊销当前设备家长凭证并绑定。运行中仅其他有效家长凭证可缩短expires_at，不可延长或修改范围。授权内每个版本均按common.versionAccess核验；本人已审核私有RETIRED版本可授权，LIBRARY退休版本及WITHDRAWN版本不得新增授权；儿童始终校验确切版本ID。",
+      "interfaceId": "API-020",
+      "uniqueKey": "PUT /api/v1/reading-sessions/{session_id}/mode-settings"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/parent-unlocks",
+      "permission": "重新认证的家长",
+      "ownerRole": "业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "account": "demo",
+        "password": "家长重新输入"
+      },
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "accountId": 1
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "验证账号密码及儿童授权归属；原子撤销儿童授权，结束未终态会话，创建新家长auth_sessions并设置Cookie。旧家长凭证不恢复；失败401且不提权。",
+      "interfaceId": "API-021",
+      "uniqueKey": "POST /api/v1/auth/parent-unlocks"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/voice/transcriptions",
+      "permission": "本人家长或绑定会话儿童",
+      "ownerRole": "模型与语音接入",
+      "requestContentType": "multipart/form-data",
+      "queryExample": null,
+      "requestExample": {
+        "file": "<binary audio>",
+        "readingSessionId": 401,
+        "pageNumber": 2,
+        "revision": 2
+      },
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "text": "示例识别文本",
+          "status": "RECOGNIZED",
+          "reliable": true
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "上传前及返回前校验会话；识别失败422；不得伪造置信度；临时录音在成功失败取消时均销毁。",
+      "interfaceId": "API-022",
+      "uniqueKey": "POST /api/v1/voice/transcriptions"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/voice/syntheses",
+      "permission": "本人家长或绑定会话儿童",
+      "ownerRole": "模型与语音接入",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "interactionEventId": 601
+      },
+      "successStatus": 201,
+      "responseExample": {
+        "data": {
+          "audioUrl": "/api/v1/media/audio-demo",
+          "expiresAt": "2026-11-03T15:10:00Z"
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "只读取有权访问的已核验答案；固定故事朗读使用readingSessionId、pageNumber、revision替代interactionEventId；两种输入互斥。",
+      "interfaceId": "API-023",
+      "uniqueKey": "POST /api/v1/voice/syntheses"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/media/{resource_key}",
+      "permission": "有效会话且拥有资源访问权",
+      "ownerRole": "业务后端与语音接入",
+      "requestContentType": null,
+      "queryExample": null,
+      "requestExample": null,
+      "successStatus": 200,
+      "responseExample": {
+        "binary": "音频或图片字节",
+        "contentType": "按资源实际类型"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "资源二进制响应不使用JSON包；逐次校验有效会话、资源所属版本、common.versionAccess及短期授权，不长期公开私有地址。WITHDRAWN正文与媒体立即阻断，不能凭历史会话或旧资源地址访问。",
+      "interfaceId": "API-024",
+      "uniqueKey": "GET /api/v1/media/{resource_key}"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/story-generations",
+      "permission": "已认证家长",
+      "ownerRole": "领域智能体",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "ageBand": "AGE_4_5",
+        "topic": "互助",
+        "characters": [
+          "小兔子"
+        ],
+        "scene": "森林",
+        "branching": true,
+        "clientRequestId": "gen-001"
+      },
+      "successStatus": 201,
+      "responseExample": {
+        "data": {
+          "storyVersionId": 301,
+          "versionNumber": 1,
+          "title": "示例绘本",
+          "status": "PENDING_REVIEW",
+          "pages": [
+            {
+              "pageNumber": 1,
+              "text": "第1页示例文字",
+              "imageRef": "licensed-asset-01",
+              "defaultNextPageNumber": 2
+            },
+            {
+              "pageNumber": 2,
+              "text": "第2页示例文字",
+              "imageRef": "licensed-asset-02",
+              "defaultNextPageNumber": null
+            },
+            {
+              "pageNumber": 3,
+              "text": "第3页示例文字",
+              "imageRef": "licensed-asset-03",
+              "defaultNextPageNumber": 5
+            },
+            {
+              "pageNumber": 4,
+              "text": "第4页示例文字",
+              "imageRef": "licensed-asset-04",
+              "defaultNextPageNumber": 5
+            },
+            {
+              "pageNumber": 5,
+              "text": "第5页示例文字",
+              "imageRef": "licensed-asset-05",
+              "defaultNextPageNumber": 6
+            },
+            {
+              "pageNumber": 6,
+              "text": "第6页示例文字",
+              "imageRef": "licensed-asset-06",
+              "defaultNextPageNumber": null
+            }
+          ],
+          "branches": [
+            {
+              "branchId": 501,
+              "fromPageNumber": 2,
+              "nextPageNumber": 4,
+              "choiceLabel": "找朋友帮忙",
+              "reviewStatus": "PENDING"
+            },
+            {
+              "branchId": 805,
+              "fromPageNumber": 2,
+              "nextPageNumber": 3,
+              "choiceLabel": "先寻找线索",
+              "reviewStatus": "PENDING"
+            }
+          ],
+          "checkResults": {
+            "structurePassed": true,
+            "safetyPassed": true,
+            "licensePassed": true
+          },
+          "storybookId": 201
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "4～6个页面节点；branching=true时1～2决策节点，每节点至少两选项；branching=false时无决策节点且branches为空；所有路径4～6页且无环；响应含checkResults。续写另带sourceReadingSessionId，固定前文。 续写请求同时提交expectedRevision，年龄由源会话档案确定而无需传ageBand；服务端短事务固定源版本、当前路径和revision，已读前缀按阅读顺序映射为新版本1..k页且保留文字与配图，resumePageNumber=k+1。整本仍为4～6个节点，不能满足范围时422 CONTINUATION_LIMIT。返回不可由客户端改写的continuation对象，家长同时预览继续点。生成及批准不结束旧会话。调用前按STORY_GENERATION范围占位。有限续写属于本期FR-17 P1验收范围；经API-026审核后由API-011原子切换，覆盖TC-FR17-04/05，审批状态见common.deliveryScope。普通原创及阅读主链路无需触发续写。",
+      "interfaceId": "API-025",
+      "uniqueKey": "POST /api/v1/story-generations",
+      "additionalExamples": [
+        {
+          "name": "从当前亲子会话续写",
+          "request": {
+            "sourceReadingSessionId": 401,
+            "expectedRevision": 12,
+            "topic": "互助",
+            "characters": [
+              "小兔子"
+            ],
+            "scene": "森林",
+            "branching": false,
+            "clientRequestId": "gen-continue-001"
+          },
+          "status": 201,
+          "data": {
+            "storyVersionId": 302,
+            "versionNumber": 2,
+            "status": "PENDING_REVIEW",
+            "sourceStoryVersionId": 301,
+            "continuation": {
+              "sourceReadingSessionId": 401,
+              "sourceStoryVersionId": 301,
+              "sourceRevision": 12,
+              "sourcePageNumber": 2,
+              "sourceVisitedPageNumbers": [
+                1,
+                2
+              ],
+              "resumePageNumber": 3
+            },
+            "pages": [
+              {
+                "pageNumber": 1,
+                "text": "原第1页文字保持不变",
+                "imageRef": "original-asset-1",
+                "defaultNextPageNumber": 2
+              },
+              {
+                "pageNumber": 2,
+                "text": "原第2页文字保持不变",
+                "imageRef": "original-asset-2",
+                "defaultNextPageNumber": 3
+              },
+              {
+                "pageNumber": 3,
+                "text": "续写第3页示例",
+                "imageRef": "licensed-asset-3",
+                "defaultNextPageNumber": 4
+              },
+              {
+                "pageNumber": 4,
+                "text": "续写第4页示例",
+                "imageRef": "licensed-asset-4",
+                "defaultNextPageNumber": 5
+              },
+              {
+                "pageNumber": 5,
+                "text": "续写第5页示例",
+                "imageRef": "licensed-asset-5",
+                "defaultNextPageNumber": null
+              }
+            ],
+            "branches": [],
+            "checkResults": {
+              "structurePassed": true,
+              "safetyPassed": true,
+              "licensePassed": true
+            },
+            "storybookId": 201
+          },
+          "deliveryScope": "本期FR-17 P1；TC-FR17-04/05"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/story-versions/{version_id}/approvals",
+      "permission": "已认证家长且草稿归本人",
+      "ownerRole": "业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "versionNumber": 1,
+        "reviewedAllBranches": true
+      },
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "storyVersionId": 301,
+          "versionNumber": 1,
+          "title": "示例绘本",
+          "status": "APPROVED_PRIVATE",
+          "pages": [
+            {
+              "pageNumber": 1,
+              "text": "示例文字",
+              "imageRef": "asset-approved-01",
+              "defaultNextPageNumber": null
+            }
+          ],
+          "branches": [],
+          "storybookId": 201
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "再次核验所有检查和版本；不以客户端布尔值代替后端安全检查；成功后私有可读，不能自动公开。 续写草稿的continuation随页面、全部分支和插画一起审核冻结；批准不结束源会话，也不自动创建新会话。新版生效与旧当前版本转RETIRED在同一事务完成；保留旧版审核人和审核时间，本人已审核私有旧版仍按common.versionAccess复读；不得将WITHDRAWN恢复为可读。",
+      "interfaceId": "API-026",
+      "uniqueKey": "POST /api/v1/story-versions/{version_id}/approvals",
+      "additionalExamples": [
+        {
+          "name": "审核续写版本",
+          "path": "/api/v1/story-versions/302/approvals",
+          "request": {
+            "versionNumber": 2,
+            "reviewedAllBranches": true
+          },
+          "status": 200,
+          "data": {
+            "storyVersionId": 302,
+            "versionNumber": 2,
+            "status": "APPROVED_PRIVATE",
+            "continuation": {
+              "sourceReadingSessionId": 401,
+              "sourceStoryVersionId": 301,
+              "sourceRevision": 12,
+              "sourcePageNumber": 2,
+              "sourceVisitedPageNumbers": [
+                1,
+                2
+              ],
+              "resumePageNumber": 3
+            },
+            "storybookId": 201
+          },
+          "deliveryScope": "本期FR-17 P1；TC-FR17-04/05"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/storybooks",
+      "permission": "内容管理员",
+      "ownerRole": "业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "title": "示例绘本",
+        "ageBand": "AGE_4_5",
+        "topics": [
+          "互助"
+        ],
+        "pages": [
+          {
+            "pageNumber": 1,
+            "text": "示例文字",
+            "imageRef": "licensed-asset-01"
+          }
+        ],
+        "licenseNote": "自制或明确授权依据"
+      },
+      "successStatus": 201,
+      "responseExample": {
+        "data": {
+          "storyVersionId": 301,
+          "versionNumber": 1,
+          "title": "示例绘本",
+          "status": "DRAFT",
+          "pages": [
+            {
+              "pageNumber": 1,
+              "text": "示例文字",
+              "imageRef": "asset-approved-01",
+              "defaultNextPageNumber": null
+            }
+          ],
+          "branches": [],
+          "storybookId": 201
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "内容只创建草稿；正式内容为完整页面集合。",
+      "interfaceId": "API-027",
+      "uniqueKey": "POST /api/v1/admin/storybooks"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/story-versions/{version_id}",
+      "permission": "内容管理员",
+      "ownerRole": "业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "status": "PUBLISHED"
+      },
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "storyVersionId": 301,
+          "versionNumber": 1,
+          "title": "示例绘本",
+          "status": "PUBLISHED",
+          "pages": [
+            {
+              "pageNumber": 1,
+              "text": "示例文字",
+              "imageRef": "asset-approved-01",
+              "defaultNextPageNumber": null
+            }
+          ],
+          "branches": [],
+          "storybookId": 201
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "可提交WITHDRAWN撤回；发布前检查完整性、许可、内容和全部分支；修改已发布文本须建立新版本。发布新版时原子退休旧当前版本；LIBRARY退休版本禁止新会话，既有有效会话可续读。WITHDRAWN立即阻断所有内容和媒体入口。",
+      "interfaceId": "API-028",
+      "uniqueKey": "PATCH /api/v1/admin/story-versions/{version_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/knowledge-items",
+      "permission": "内容管理员",
+      "ownerRole": "知识工程与业务后端",
+      "requestContentType": null,
+      "queryExample": {
+        "page": 1,
+        "pageSize": 20
+      },
+      "requestExample": null,
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "items": [
+            {
+              "knowledgeItemId": 806,
+              "title": "知识条目示例",
+              "sourceTitle": "来源名称示例",
+              "sourceReference": "来源文献定位示例",
+              "ageBand": "AGE_4_5",
+              "topicTags": [
+                "动物"
+              ],
+              "taskTypes": [
+                "GUIDANCE"
+              ],
+              "content": "已审核知识示例",
+              "status": "DRAFT",
+              "versionNumber": 1,
+              "itemKey": "guided-observation"
+            }
+          ]
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "按知识版本逐项返回，knowledgeItemId标识具体行，itemKey关联同一知识条目的各版本；遵守common.knowledgeVersioning。",
+      "interfaceId": "API-029",
+      "uniqueKey": "GET /api/v1/admin/knowledge-items"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/knowledge-items",
+      "permission": "内容管理员",
+      "ownerRole": "知识工程与业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "title": "知识条目示例",
+        "sourceTitle": "来源名称示例",
+        "sourceReference": "来源文献定位示例",
+        "ageBand": "AGE_4_5",
+        "topicTags": [
+          "动物"
+        ],
+        "taskTypes": [
+          "GUIDANCE"
+        ],
+        "content": "已审核知识示例",
+        "versionNumber": 1,
+        "status": "APPROVED",
+        "itemKey": "guided-observation",
+        "locator": "第2节"
+      },
+      "successStatus": 201,
+      "responseExample": {
+        "data": {
+          "knowledgeItemId": 806,
+          "title": "知识条目示例",
+          "sourceTitle": "来源名称示例",
+          "sourceReference": "来源文献定位示例",
+          "ageBand": "AGE_4_5",
+          "topicTags": [
+            "动物"
+          ],
+          "taskTypes": [
+            "GUIDANCE"
+          ],
+          "content": "已审核知识示例",
+          "status": "APPROVED",
+          "versionNumber": 1,
+          "itemKey": "guided-observation",
+          "locator": "第2节"
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "来源和年龄段必填；示例为有权管理员审核内容与来源后创建806/v1，服务端审核校验通过并记录reviewed_at才可保存APPROVED。仅APPROVED版本可检索；DRAFT创建不进入检索。知识版本规则见common.knowledgeVersioning。",
+      "interfaceId": "API-030",
+      "uniqueKey": "POST /api/v1/admin/knowledge-items"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/knowledge-items/{knowledge_id}",
+      "permission": "内容管理员",
+      "ownerRole": "知识工程与业务后端",
+      "requestContentType": "application/json",
+      "queryExample": null,
+      "requestExample": {
+        "content": "修订后的知识示例",
+        "status": "APPROVED"
+      },
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "knowledgeItemId": 807,
+          "title": "知识条目示例",
+          "sourceTitle": "来源名称示例",
+          "sourceReference": "来源文献定位示例",
+          "ageBand": "AGE_4_5",
+          "topicTags": [
+            "动物"
+          ],
+          "taskTypes": [
+            "GUIDANCE"
+          ],
+          "content": "修订后的知识示例",
+          "status": "APPROVED",
+          "versionNumber": 2,
+          "itemKey": "guided-observation",
+          "locator": "第2节"
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "示例路径knowledge_id=806；审核修订后插入807/v2，同itemKey。所有PATCH均新行，包括草稿与仅状态修改；版本号由服务端原子递增。新APPROVED须完成服务端审核校验，并与退休旧APPROVED在同一事务提交；新DRAFT不退休当前批准版本。旧806内容及来源不覆盖，历史event_evidence仍引用806；规则见common.knowledgeVersioning。",
+      "interfaceId": "API-031",
+      "uniqueKey": "PATCH /api/v1/admin/knowledge-items/{knowledge_id}",
+      "additionalExamples": [
+        {
+          "name": "同一知识条目新旧版本与历史引用",
+          "requestPath": "/api/v1/admin/knowledge-items/806",
+          "request": {
+            "content": "修订后的知识示例",
+            "status": "APPROVED"
+          },
+          "status": 200,
+          "data": {
+            "knowledgeItemId": 807,
+            "title": "知识条目示例",
+            "sourceTitle": "来源名称示例",
+            "sourceReference": "来源文献定位示例",
+            "ageBand": "AGE_4_5",
+            "topicTags": [
+              "动物"
+            ],
+            "taskTypes": [
+              "GUIDANCE"
+            ],
+            "content": "修订后的知识示例",
+            "status": "APPROVED",
+            "versionNumber": 2,
+            "itemKey": "guided-observation",
+            "locator": "第2节"
+          },
+          "postconditions": {
+            "oldVersion": {
+              "knowledgeItemId": 806,
+              "itemKey": "guided-observation",
+              "versionNumber": 1,
+              "status": "RETIRED"
+            },
+            "newVersion": {
+              "knowledgeItemId": 807,
+              "itemKey": "guided-observation",
+              "versionNumber": 2,
+              "status": "APPROVED"
+            },
+            "existingEventEvidence": {
+              "knowledgeItemId": 806
+            }
+          }
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/health",
+      "permission": "匿名",
+      "ownerRole": "部署",
+      "requestContentType": null,
+      "queryExample": null,
+      "requestExample": null,
+      "successStatus": 200,
+      "responseExample": {
+        "data": {
+          "status": "ok"
+        },
+        "requestId": "req-demo"
+      },
+      "errors": "见 common.errors；只应用与本端点有关的错误类别",
+      "constraints": "不暴露配置、模型密钥或数据库连接详情。",
+      "interfaceId": "API-032",
+      "uniqueKey": "GET /api/v1/health"
+    }
+  ],
+  "systemDesignVersion": "v1.1",
+  "flows": {
+    "firstContextQuestion": [
+      "API-011创建CREATED/revision=0会话",
+      "API-015提交STARTED，得到IN_PROGRESS/revision=1",
+      "API-017发送INITIAL，不含既往反馈，保存问题后revision=2",
+      "断网原clientEventId重放；刷新API-013恢复当前页问题"
+    ],
+    "continuationSwitch": [
+      "本期FR-17 P1验收流程，覆盖TC-FR17-04/05；范围及审批状态见common.deliveryScope。",
+      "API-025固定源会话revision=12及路径[1,2]，生成版本302和继续点3",
+      "API-026批准version=2，源会话仍IN_PROGRESS/revision=12",
+      "API-011提交sourceReadingSessionId和switch-001，在同一事务关闭旧会话并启动会话402第3页",
+      "源快照过期409且旧会话不变；数据库提交失败503且全部回滚；提交后丢响应以同键重放既有会话402，不创建第二个后继"
+    ]
+  },
+  "version": "v0.4",
+  "databaseDesignVersion": "v1.1",
+  "modifiedBy": "林鑫（102401115）"
+}

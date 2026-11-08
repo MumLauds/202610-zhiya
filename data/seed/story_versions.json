@@ -4,11 +4,314 @@
     "storybook_id": 1,
     "version_no": 1,
     "title": "逃家小兔",
-    "topics_json": ["亲子依恋", "安全感", "想象力"],
+    "topics_json": [
+      "亲子依恋",
+      "安全感",
+      "想象力"
+    ],
     "age_min": 3,
     "age_max": 5,
     "source_ref": "[美] 玛格丽特·怀兹·布朗 经典绘本",
     "license_note": "公开出版物，截取部分情节用于系统功能联调测试",
+    "status": "DRAFT"
+  },
+  {
+    "id": 2,
+    "storybook_id": 2,
+    "version_no": 1,
+    "title": "小狐狸的雨伞",
+    "topics_json": [
+      "勇气",
+      "亲子依恋"
+    ],
+    "age_min": 3,
+    "age_max": 4,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 3,
+    "storybook_id": 3,
+    "version_no": 1,
+    "title": "青蛙的音乐会",
+    "topics_json": [
+      "友谊",
+      "自然观察"
+    ],
+    "age_min": 4,
+    "age_max": 5,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 4,
+    "storybook_id": 4,
+    "version_no": 1,
+    "title": "晚安小熊",
+    "topics_json": [
+      "情绪安抚",
+      "亲子依恋"
+    ],
+    "age_min": 3,
+    "age_max": 4,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 5,
+    "storybook_id": 5,
+    "version_no": 1,
+    "title": "蜗牛的旅行",
+    "topics_json": [
+      "生命成长",
+      "勇气"
+    ],
+    "age_min": 4,
+    "age_max": 5,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 6,
+    "storybook_id": 6,
+    "version_no": 1,
+    "title": "胡萝卜的种子",
+    "topics_json": [
+      "生命成长",
+      "自然观察"
+    ],
+    "age_min": 5,
+    "age_max": 6,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 7,
+    "storybook_id": 7,
+    "version_no": 1,
+    "title": "猫咪和蝴蝶",
+    "topics_json": [
+      "自然观察",
+      "友谊"
+    ],
+    "age_min": 3,
+    "age_max": 4,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 8,
+    "storybook_id": 8,
+    "version_no": 1,
+    "title": "月亮的小被子",
+    "topics_json": [
+      "情绪安抚",
+      "想象"
+    ],
+    "age_min": 3,
+    "age_max": 4,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 9,
+    "storybook_id": 9,
+    "version_no": 1,
+    "title": "小熊的面包店",
+    "topics_json": [
+      "分享",
+      "友谊"
+    ],
+    "age_min": 3,
+    "age_max": 4,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 10,
+    "storybook_id": 10,
+    "version_no": 1,
+    "title": "小鸭子学游泳",
+    "topics_json": [
+      "勇气",
+      "生命成长"
+    ],
+    "age_min": 3,
+    "age_max": 4,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 11,
+    "storybook_id": 11,
+    "version_no": 1,
+    "title": "云朵棉花糖",
+    "topics_json": [
+      "想象"
+    ],
+    "age_min": 3,
+    "age_max": 4,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 12,
+    "storybook_id": 12,
+    "version_no": 1,
+    "title": "蚂蚁搬家",
+    "topics_json": [
+      "合作",
+      "自然观察"
+    ],
+    "age_min": 4,
+    "age_max": 5,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 13,
+    "storybook_id": 13,
+    "version_no": 1,
+    "title": "小刺猬的礼物",
+    "topics_json": [
+      "分享",
+      "友谊"
+    ],
+    "age_min": 4,
+    "age_max": 5,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 14,
+    "storybook_id": 14,
+    "version_no": 1,
+    "title": "会唱歌的树",
+    "topics_json": [
+      "自然观察",
+      "想象"
+    ],
+    "age_min": 4,
+    "age_max": 5,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 15,
+    "storybook_id": 15,
+    "version_no": 1,
+    "title": "萤火虫找朋友",
+    "topics_json": [
+      "友谊",
+      "勇气"
+    ],
+    "age_min": 4,
+    "age_max": 5,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 16,
+    "storybook_id": 16,
+    "version_no": 1,
+    "title": "小松鼠的冬天",
+    "topics_json": [
+      "生命成长",
+      "习惯"
+    ],
+    "age_min": 4,
+    "age_max": 5,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 17,
+    "storybook_id": 17,
+    "version_no": 1,
+    "title": "种子去旅行",
+    "topics_json": [
+      "自然观察",
+      "生命成长"
+    ],
+    "age_min": 5,
+    "age_max": 6,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 18,
+    "storybook_id": 18,
+    "version_no": 1,
+    "title": "钟表小镇的一天",
+    "topics_json": [
+      "习惯",
+      "时间认知"
+    ],
+    "age_min": 5,
+    "age_max": 6,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 19,
+    "storybook_id": 19,
+    "version_no": 1,
+    "title": "小鲸鱼的大海",
+    "topics_json": [
+      "勇气",
+      "自然观察"
+    ],
+    "age_min": 5,
+    "age_max": 6,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 20,
+    "storybook_id": 20,
+    "version_no": 1,
+    "title": "彩虹桥那边",
+    "topics_json": [
+      "想象",
+      "友谊"
+    ],
+    "age_min": 5,
+    "age_max": 6,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
+    "status": "PUBLISHED"
+  },
+  {
+    "id": 21,
+    "storybook_id": 21,
+    "version_no": 1,
+    "title": "图书馆的小老鼠",
+    "topics_json": [
+      "阅读",
+      "友谊"
+    ],
+    "age_min": 5,
+    "age_max": 6,
+    "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
+    "license_note": "团队原创，仅限课程学习与演示，禁止商用",
     "status": "PUBLISHED"
   }
 ]

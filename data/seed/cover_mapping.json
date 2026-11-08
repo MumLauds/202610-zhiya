@@ -1,0 +1,102 @@
+[
+  {
+    "book_no": "B-002",
+    "storybook_id": 2,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B01_小狐狸的雨伞.png"
+  },
+  {
+    "book_no": "B-003",
+    "storybook_id": 3,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B02_青蛙的音乐会.png"
+  },
+  {
+    "book_no": "B-004",
+    "storybook_id": 4,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B03_晚安小熊.png"
+  },
+  {
+    "book_no": "B-005",
+    "storybook_id": 5,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B04_蜗牛的旅行.png"
+  },
+  {
+    "book_no": "B-006",
+    "storybook_id": 6,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B05_胡萝卜的种子.png"
+  },
+  {
+    "book_no": "B-007",
+    "storybook_id": 7,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B06_猫咪和蝴蝶.png"
+  },
+  {
+    "book_no": "B-008",
+    "storybook_id": 8,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B07_月亮的小被子.png"
+  },
+  {
+    "book_no": "B-009",
+    "storybook_id": 9,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B08_小熊的面包店.png"
+  },
+  {
+    "book_no": "B-010",
+    "storybook_id": 10,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B09_小鸭子学游泳.png"
+  },
+  {
+    "book_no": "B-011",
+    "storybook_id": 11,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B10_云朵棉花糖.png"
+  },
+  {
+    "book_no": "B-012",
+    "storybook_id": 12,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B11_蚂蚁搬家.png"
+  },
+  {
+    "book_no": "B-013",
+    "storybook_id": 13,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B12_小刺猬的礼物.png"
+  },
+  {
+    "book_no": "B-014",
+    "storybook_id": 14,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B13_会唱歌的树.png"
+  },
+  {
+    "book_no": "B-015",
+    "storybook_id": 15,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B14_萤火虫找朋友.png"
+  },
+  {
+    "book_no": "B-016",
+    "storybook_id": 16,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B15_小松鼠的冬天.png"
+  },
+  {
+    "book_no": "B-017",
+    "storybook_id": 17,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B16_种子去旅行.png"
+  },
+  {
+    "book_no": "B-018",
+    "storybook_id": 18,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B17_钟表小镇的一天.png"
+  },
+  {
+    "book_no": "B-019",
+    "storybook_id": 19,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B18_小鲸鱼的大海.png"
+  },
+  {
+    "book_no": "B-020",
+    "storybook_id": 20,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B19_彩虹桥那边.png"
+  },
+  {
+    "book_no": "B-021",
+    "storybook_id": 21,
+    "cover_path": "knowledge-base_v2.0/图片/PIC-B20_图书馆的小老鼠.png"
+  }
+]
