@@ -1,0 +1,15 @@
+{
+  "name": "知芽后台管理原型生成器",
+  "id": "1652847301968423722",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": [
+    "figma"
+  ],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": [
+      "none"
+    ]
+  }
+}
