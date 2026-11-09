@@ -39,3 +39,9 @@ uploads/
 Thumbs.db
 ~$*
 *.tmp
+
+# Local visual QA artifacts
+.edge-*/
+preview-*.png
+verify-*.png
+figma-export/*.zip
