@@ -23,3 +23,8 @@
 - [HTML 后台源码](./admin-html/index.html)
 - [Figma 后台插件](./admin-html/figma-plugin/)
 - [Figma 插件 manifest](./admin-html/figma-plugin/manifest.json)
+
+## 桌面端个人中心原型
+
+- [桌面端个人中心 Figma 原型与设计说明](./figma/personal-center-desktop/README.md)
+- [Figma 原型总入口](./figma/README.md)
