@@ -28,6 +28,10 @@ class DatabaseTests(unittest.TestCase):
             counts = [db.execute(f"SELECT count(*) FROM {table}").fetchone()[0] for table in SEED_TABLES]
             self.assertEqual(counts, [21, 21, 110, 20])
             self.assertEqual(db.execute("SELECT DISTINCT status FROM story_versions").fetchall(), [("DRAFT",)])
+            self.assertEqual(
+                db.execute("SELECT DISTINCT source_visited_pages_json FROM story_versions").fetchall(),
+                [(None,)],
+            )
             self.assertEqual(db.execute("SELECT DISTINCT status FROM knowledge_items").fetchall(), [("DRAFT",)])
             self.assertEqual(
                 db.execute("SELECT count(*) FROM story_pages WHERE image_ref = ?", ("/assets/placeholder.png",))

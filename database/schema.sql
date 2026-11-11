@@ -57,7 +57,9 @@ CREATE TABLE IF NOT EXISTS story_versions (
     source_page_no INTEGER CHECK (source_page_no > 0),
     resume_page_no INTEGER CHECK (resume_page_no > 0),
     source_visited_pages_json TEXT CHECK (
-        json_valid(source_visited_pages_json) AND json_type(source_visited_pages_json) = 'array'
+        source_visited_pages_json IS NULL OR (
+            json_valid(source_visited_pages_json) AND json_type(source_visited_pages_json) = 'array'
+        )
     ),
     branching INTEGER NOT NULL CHECK (branching IN (0, 1)),
     UNIQUE (storybook_id, version_no),
