@@ -35,6 +35,37 @@
 - 模型与语音：通过云端API调用大语言模型、ASR和TTS，供应商尚待确认。
 - 部署：拟采用Linux云服务器、Docker Compose与HTTPS，尚未部署。
 
+## 本地启动
+
+使用 Python 3.11+（SQLite 3.38+）和 Node.js 20.19+（20.x）或 22.12+。在仓库根目录启动后端：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r backend/requirements-dev.txt
+.\.venv\Scripts\python.exe database/init_db.py
+.\.venv\Scripts\python.exe database/import_seed.py
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
+```
+
+在另一个终端启动前端：
+
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
+
+页面默认在 http://127.0.0.1:5173，通过 Vite 代理读取 API-032 的真实就绪状态。业务接口与页面功能待后续开发。数据库默认位于 `database/instance/zhiya.sqlite3`，可在运行命令前设置环境变量 `ZHIYA_DB_PATH`。导入只在空种子表写入，已存在全部种子键时跳过，种子键缺失且表非空时退出。绘本版本和知识初始状态为 `DRAFT`。
+
+在根目录检查数据库及运行测试：
+
+```powershell
+.\.venv\Scripts\python.exe database/init_db.py --check
+.\.venv\Scripts\python.exe -m unittest discover -s database/tests -v
+.\.venv\Scripts\python.exe -m pytest backend/tests -q
+npm --prefix frontend run build
+```
+
 ## 项目资料
 
 - [知芽软件工程团队项目选题报告](docs/知芽-软件工程团队项目选题报告.docx)
