@@ -1,0 +1,31 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      ZHIYA_DB_PATH: /var/lib/zhiya/zhiya.sqlite3
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      MODEL_API_URL: ${MODEL_API_URL:-https://api.deepseek.com/chat/completions}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+      MODEL_NAME: ${MODEL_NAME:-deepseek-flash}
+      MODEL_TIMEOUT_SECONDS: ${MODEL_TIMEOUT_SECONDS:-20}
+      MODEL_MAX_TOKENS: ${MODEL_MAX_TOKENS:-512}
+      ASR_API_URL: ${ASR_API_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}
+      ASR_MODEL: ${ASR_MODEL:-qwen3-asr-flash}
+      TTS_API_URL: ${TTS_API_URL:-}
+      TTS_MODEL: ${TTS_MODEL-qwen-audio-3.1-tts-flash}
+      TTS_VOICE: ${TTS_VOICE-wenhuaiqing_v3.1}
+      VOICE_TIMEOUT_SECONDS: ${VOICE_TIMEOUT_SECONDS:-20}
+    volumes:
+      - sqlite-data:/var/lib/zhiya
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+volumes:
+  sqlite-data:
