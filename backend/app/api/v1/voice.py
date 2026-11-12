@@ -32,7 +32,7 @@ async def authenticate(request, *, write):
 
 async def refresh(request, principal, snapshot, *, write):
     if await authenticate(request, write=write) != principal:
-        raise ServiceError("NOT_FOUND", "请求的资源不存在", 404)
+        raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
     recheck_source(principal, snapshot)
 
 
@@ -158,7 +158,7 @@ async def media(request: Request, resource_key: str):
     store.expire()
     value = store.items.get(resource_key) if re.fullmatch(r"audio-[A-Za-z0-9_-]{32}", resource_key) else None
     if value is None or value.principal != principal:
-        raise ServiceError("NOT_FOUND", "请求的资源不存在", 404)
+        raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
     recheck_source(principal, value.snapshot)
     return Response(value.audio, media_type="audio/wav", headers={
         "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",

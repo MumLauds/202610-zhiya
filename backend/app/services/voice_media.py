@@ -37,7 +37,7 @@ class VoiceMediaStore:
     @contextmanager
     def claim(self, session_id: int):
         if session_id in self.inflight:
-            raise ServiceError("REQUEST_IN_PROGRESS", "该会话正在处理语音，请稍后再试", 409)
+            raise ServiceError("VOICE_REQUEST_IN_PROGRESS", "该会话正在处理语音，请稍后再试", 409)
         if len(self.inflight) >= 4:
             raise ServiceError("VOICE_BUSY", "语音服务繁忙，请稍后再试", 429)
         self.inflight.add(session_id)

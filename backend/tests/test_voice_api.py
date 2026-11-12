@@ -7,6 +7,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -279,6 +280,101 @@ def test_admission_and_media_memory_bound():
     second,_=store.put(*args,b"y"*(MAX_MEDIA_BYTES//2+1))
     assert first not in store.items and second in store.items
     assert sum(len(item.audio) for item in store.items.values()) <= MAX_MEDIA_BYTES
+
+
+@pytest.mark.parametrize("kind", ["asr", "tts"])
+def test_concurrent_voice_request_has_own_code_without_second_provider_call(setup, kind):
+    client, app, _, _ = setup
+
+    async def scenario():
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def provider(**kwargs):
+            entered.set()
+            await release.wait()
+            return Transcription("识别文字") if kind == "asr" else wav(24000)
+
+        gateway = app.state.voice_gateway
+        operation = gateway.transcribe if kind == "asr" else gateway.synthesize
+        operation.side_effect = provider
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as http:
+            async def send():
+                if kind == "asr":
+                    return await http.post("/api/v1/voice/transcriptions", data=PAGE,
+                                           files={"file": ("sample.wav", wav(), "audio/wav")})
+                return await http.post("/api/v1/voice/syntheses", json=PAGE)
+
+            first = asyncio.create_task(send())
+            try:
+                await asyncio.wait_for(entered.wait(), timeout=5)
+                second = await asyncio.wait_for(send(), timeout=5)
+                assert second.status_code == 409
+                assert second.json()["error"]["code"] == "VOICE_REQUEST_IN_PROGRESS"
+                assert second.json()["error"]["retryable"] is False
+                assert "Retry-After" not in second.headers
+                operation.assert_awaited_once()
+            finally:
+                release.set()
+                result = await asyncio.wait_for(first, timeout=5)
+            assert result.status_code == (200 if kind == "asr" else 201)
+            operation.assert_awaited_once()
+            assert not app.state.voice_media.inflight
+
+    client.portal.call(scenario)
+
+
+def test_global_voice_limit_keeps_voice_busy_without_provider(setup):
+    client, app, _, _ = setup
+    app.state.voice_media.inflight.update({30, 31, 32, 33})
+    for response in (upload(client), client.post("/api/v1/voice/syntheses", json=PAGE)):
+        assert response.status_code == 429
+        assert response.json()["error"]["code"] == "VOICE_BUSY"
+        assert response.json()["error"]["retryable"] is False
+        assert "Retry-After" not in response.headers
+    app.state.voice_gateway.transcribe.assert_not_awaited()
+    app.state.voice_gateway.synthesize.assert_not_awaited()
+
+
+def test_voice_missing_or_inaccessible_resources_use_public_code(setup):
+    client, app, _, _ = setup
+    for response in (
+        upload(client, fields={**PAGE, "readingSessionId": 20}),
+        client.post("/api/v1/voice/syntheses", json={"interactionEventId": 999}),
+        client.get("/api/v1/media/audio-missing"),
+    ):
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+        assert response.json()["error"]["retryable"] is False
+    app.state.voice_gateway.transcribe.assert_not_awaited()
+    app.state.voice_gateway.synthesize.assert_not_awaited()
+
+
+def test_voice_identity_change_uses_public_resource_code(setup):
+    client, app, auth, _ = setup
+
+    async def provider(**kwargs):
+        auth.principal = VoicePrincipal(2)
+        return wav(24000)
+
+    app.state.voice_gateway.synthesize.side_effect = provider
+    response = client.post("/api/v1/voice/syntheses", json=PAGE)
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+    assert not app.state.voice_media.items and not app.state.voice_media.inflight
+
+
+def test_voice_database_unavailable_uses_public_code_without_retry(setup, monkeypatch):
+    client, app, _, path = setup
+    url = client.post("/api/v1/voice/syntheses", json=PAGE).json()["data"]["audioUrl"]
+    app.state.voice_gateway.synthesize.reset_mock()
+    monkeypatch.setenv("ZHIYA_DB_PATH", str(path.with_name("missing.sqlite3")))
+    for response in (upload(client), client.post("/api/v1/voice/syntheses", json=PAGE), client.get(url)):
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+        assert response.json()["error"]["retryable"] is False
+        assert "Retry-After" not in response.headers
+    app.state.voice_gateway.transcribe.assert_not_awaited()
+    app.state.voice_gateway.synthesize.assert_not_awaited()
 
 
 def test_disconnect_cancels_inflight_operation():

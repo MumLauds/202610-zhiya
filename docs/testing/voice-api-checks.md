@@ -1,6 +1,6 @@
 # G08 公开语音与录音转换检验
 
-版本：v0.1；日期：2026-11-12；负责人：林鑫。基础提交 8c4172c；分支 feat/backend-model-bootstrap，工作区未提交。对应 DCL-020、FR-08/12/13、NFR-04/05/06/08、AC-07/10/11（局部）。本记录不代替完整 G08 验收。
+版本：v0.2；日期：2026-11-12；负责人：林鑫。初次验证基础提交 8c4172c，分支 feat/backend-model-bootstrap；后续提交和修改验证分节记录。对应 DCL-020/021、FR-08/12/13、NFR-04/05/06/08、AC-07/10/11（局部）。本记录不代替完整 G08 验收。
 
 自动语音识别（Automatic Speech Recognition，ASR）、语音合成（Text-to-Speech，TTS）、脉冲编码调制（Pulse-Code Modulation，PCM）、波形音频文件格式（Waveform Audio File Format，WAV）。接口、限制、错误码和实名对接步骤统一见[交接文档](../design/voice-api-handoff.md)。
 
@@ -28,7 +28,7 @@
 
 完成后由三个只读子智能体分别检查语音权限、转换清理及交接文档，再运行最终代码回归。文档复核中指出的 API-024 撤回疑点已对照实现与测试核实：音频分支确实阻断 WITHDRAWN，图片分支尚未实现；reliable=true 是契约示例，不是可伪造置信度的依据。
 
-## 最终运行记录
+## DCL-020 最终运行记录（历史镜像）
 
 - Windows：93 passed、5 skipped、191 subtests passed。五项跳过为本机未安装 FFmpeg 的真实格式转换，交由 Linux 镜像执行；pip check 通过。
 - Linux 最终镜像：98 passed、191 subtests passed，无跳过；五种格式的真实 FFmpeg 转换全部通过。测试容器运行时使用 --network none；FFmpeg 版本为 7.1.5-0+deb13u1。
@@ -57,3 +57,31 @@
 2026-11-12：用户随后授权提交草稿 PR。核对远端 main 仍为 8c4172c、PR #27 仍为 aa13025；53 个 G08 相关文件纳入提交，个人 .env、凭据、数据库及试听音频排除。后端源码/测试/依赖与上述最终验证归档一致，本轮仅整理说明和配置注释。完整暂存检查发现 agent.py 原始 Schema 快照已有三处尾随空白，为保持与 #27 原文件一致予以保留；排除此文件后的暂存差异检查通过。之前 git diff --check 为当时已跟踪文件的检查，不包含尚未纳入 Git 的 Schema。
 
 补充 PR #28 核对：最新 head 9158c8cf91f17b3e57ad44e07fc0f81df5dc6fa5，仍为文档 Draft。解析 JSON 确认仅新增 minimumBusinessReview，既有正式定义不变；阅读 15 个候选接口和 12 个配套场景，并与本轮媒体、错误/重试、恢复和偏好边界对照。对 5c6f080 与该 head 执行 git merge-tree --write-tree，无文本冲突，未切换、修改工作树或合并该 PR。差异见交接文档；这不是 G04/G08 运行联调验收，本轮仅追加文档，不改变已验证代码。
+
+## DCL-021 错误码调整复核
+
+2026-11-12；基于 cddbd1a 的修正，随 PR #29 更新交付，未合并。只调整语音并发码及资源不可见/业务数据库不可用的公共命名，未修改状态码、授权检查、重试行为或模型网关。
+
+| 用例 | 内容与证据 |
+| --- | --- |
+| TC-VOICE-API-006 | ASR、TTS 分别同时发起两个同会话请求，首请求停留在模拟供应商内时，第二请求返回 409 VOICE_REQUEST_IN_PROGRESS、retryable=false、无 Retry-After；首请求成功，供应商总共仅调用一次，占位释放。全局满额仍为 429 VOICE_BUSY，未调用供应商 |
+| TC-VOICE-API-007 | API-022 越权会话、API-023 不存在事件、API-024 无效资源及供应商调用后身份改变均返回 404 RESOURCE_NOT_FOUND；三条路由读库失败返回 503 SERVICE_UNAVAILABLE、retryable=false、无 Retry-After，不额外调用供应商 |
+
+新增六个测试实例先在旧实现运行，5 failed、1 passed：失败均为预期的新旧错误码差异，全局 VOICE_BUSY 保持通过。修改后、安装 FFmpeg 前，全量执行 `.\.venv\Scripts\python.exe -X utf8 -m pytest backend/tests -q`：**99 passed、5 skipped、191 subtests passed**，保留既有 Starlette/httpx 弃用警告。跳过的五项当时为本机无 FFmpeg 的真实格式转换，随后按用户要求安装并复测，最终结果见下文。本轮没有重建或运行容器，上节历史镜像结果不能作为新源码的容器验证。
+
+首轮全量运行有一项既有 `test_process_terminated_on_timeout_cancel_or_output_limit[timeout]` 失败：150 毫秒期限到达时测试的 processes 列表仍为空，其余 98 项通过。未修改该测试或转码实现，单独复跑为 1 passed，随后全量得到上述 99 passed；记录这一时序敏感现象，不隐去首次失败。
+
+PR #27 的模型请求/结果 Schema 和网关代码不变，既有成功映射、API_ERROR/TIMEOUT 映射、单次调用及空输入不调用供应商测试随全量通过。新增的 INITIAL 指令样例和 API_ERROR 工作流分工见[调用说明](../../backend/README.md#对接-pr-27-的-agent-模型接口)，是待负责人确认的接入建议，不是已实现工作流降级。没有读取个人 .env 或新增付费调用；真实认证、图片媒体、档案偏好与端到端仍待协作。
+
+**用户要求安装 FFmpeg 后的最终复测：** Windows 全量 **104 passed、191 subtests passed、0 skipped**，耗时 18.55 秒；唯一警告仍为既有 Starlette/httpx 弃用提示。WebM/Opus、Ogg/Opus、MP3、分片 MP4/AAC、float32 WAV 五项真实转换均通过，输出验证为 16 kHz、单声道、16 位 PCM WAV，并检查时长；输入为测试生成的正弦波。
+
+- 安装来源：[FFmpeg 官方下载页列出的 Windows 构建](https://ffmpeg.org/download.html#build-windows) → [Gyan release essentials](https://www.gyan.dev/ffmpeg/builds/)，实际版本 9.0.2；ZIP 的 SHA256 与发布方校验文件一致：`60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba`。
+- 本机安装目录：`D:/软工/tools/ffmpeg/ffmpeg-9.0.2-essentials_build/bin`；已追加到用户 86134 的 PATH，二进制未加入仓库。已打开的终端可用下面命令刷新本次进程 PATH。
+- 安装账号首次复跑因无法访问原测试账号创建的 pytest 临时目录而产生 46 个 setup error（其余 58 passed），未修改目录权限或业务代码；改回原测试环境并显式添加 FFmpeg 到进程 PATH 后，得到上述最终全量通过结果。
+
+```powershell
+$env:Path = 'D:\软工\tools\ffmpeg\ffmpeg-9.0.2-essentials_build\bin;' + $env:Path
+.\.venv\Scripts\python.exe -X utf8 -m pytest backend/tests -q --tb=short
+```
+
+源码差异空白检查及本轮说明文档的相对文件链接检查通过。安装和测试没有修改个人 .env，也没有调用真实模型、识别或合成服务。

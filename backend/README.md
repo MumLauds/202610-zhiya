@@ -122,7 +122,23 @@ result = await request.app.state.model_adapter.generate(ModelGenerateRequest(
 
 此分区只约定输入组织方式，不构成提示注入防护或内容安全验收。调用方负责资料授权、审核、上下文预算及生成结果校验；适配器不截断或丢弃上下文，不记录其内容。省略 context_text 的旧网关调用保持原请求格式与返回行为。
 
-本节模型适配只完成接口桥接：不生成 AgentResult、兜底问句或知识引用，不执行检索或保存事件。API-017 INITIAL 无用户问题时的入参规则、API_ERROR 到最终 AgentResult 的降级策略仍需 Agent 负责人确认；当前空 user_input 返回 INVALID_INPUT，不擅自填入虚构问题。SKIPPED 沿用业务层短路，不应调用此适配器。验证见[模型接口对接检查](../docs/testing/agent-model-adapter-checks.md)。
+本节模型适配只完成接口桥接：不生成 AgentResult、兜底问句或知识引用，不执行检索或保存事件。SKIPPED 沿用业务层短路，不应调用此适配器。验证见[模型接口对接检查](../docs/testing/agent-model-adapter-checks.md)。
+
+**INITIAL 调用建议（待 Agent 工作流负责人确认）：** 没有儿童输入时，由工作流根据已授权当前页构造非空生成指令，作为 user_input；这是工作流指令，不应保存成儿童原话。例如：
+
+```python
+result = await request.app.state.model_adapter.generate(ModelGenerateRequest(
+    system_prompt=trusted_system_prompt,
+    context_text="当前页：小兔子把雨伞借给了淋雨的小熊。",  # 示例；实际使用已授权页面与审核资料
+    user_input="请围绕当前页小兔子帮助小熊的情节，提出一个适合幼儿回答的简短问题。",
+))
+```
+
+示例成功结果为 `{"success": true, "text": "小兔子把雨伞借给了谁？", "error_code": null}`，仅用于说明结构，不代表真实模型输出或适龄验收。ModelGenerateRequest 没有任务类型，适配器无法从空串判断 INITIAL；空白/空 user_input 继续抛出 `INVALID_INPUT`（422），不调用供应商，不自动补默认话。非空指令仍遵守 1～200 字符限制。
+
+**API_ERROR 调用约定：** 供应商鉴权、限流、网络、响应异常或模型未配置时，适配器返回 `{"success": false, "text": "", "error_code": "API_ERROR"}`，符合 #27 Schema；超时返回同结构的 `TIMEOUT`。工作流须先判断 success，失败时不把空 text 当作成功回答保存或合成；API_ERROR 最终映射到何种 AgentResult、策略及提示由工作流负责人决定并确认，G08 不新增枚举或自动重试。真实供应商失败至多调用一次，未配置及非法输入不发出请求。
+
+上述结构和调用次数已有 `test_model_adapter.py` 中的成功映射、失败映射、未配置与非法输入测试覆盖；测试使用模拟供应商。双方尚未确认 INITIAL 指令与 API_ERROR 最终工作流降级，本说明不将其记为已完成联调。
 
 ## 超时、错误与日志
 

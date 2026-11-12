@@ -40,7 +40,7 @@ class VoiceSnapshot:
 
 
 def _deny():
-    return ServiceError("NOT_FOUND", "请求的资源不存在", 404)
+    return ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
 
 
 def read_voice_source(principal: VoicePrincipal, *, session_id: int | None = None,
@@ -99,7 +99,7 @@ def read_voice_source(principal: VoicePrincipal, *, session_id: int | None = Non
             return VoiceSnapshot(session_id, row["version_id"], page_number, revision,
                                  event["output_text"] if event is not None else page["body_text"], event_id)
     except sqlite3.Error:
-        raise ServiceError("DEPENDENCY_UNAVAILABLE", "业务数据暂不可用", 503) from None
+        raise ServiceError("SERVICE_UNAVAILABLE", "业务数据暂不可用", 503) from None
 
 
 def recheck_source(principal: VoicePrincipal, snapshot: VoiceSnapshot) -> None:
