@@ -1,6 +1,6 @@
 # G08 公开语音接口与录音转换交接
 
-版本：v0.5；日期：2026-11-12；实现负责人：林鑫。本文为 PR #29 的交接材料，不代表成员已确认、已经合并或完整业务上线。关联 FR-08/12/13、NFR-04/05/06/08、API-022/023/024、DCL-020/021。此前验证记录中的“本地未提交 / 不提交 PR”描述当时状态；历史证据不改写，本轮错误码调整的验证单独追加。
+版本：v0.6；日期：2026-11-12；实现负责人：林鑫。本文为 PR #29 的交接材料，不代表成员已确认、已经合并或完整业务上线。关联 FR-08/12/13、NFR-04/05/06/08、API-022/023/024、DCL-020/021。此前验证记录中的“本地未提交 / 不提交 PR”描述当时状态；历史证据不改写，本轮错误码调整的验证单独追加。
 
 自动语音识别（Automatic Speech Recognition，ASR）、语音合成（Text-to-Speech，TTS）、脉冲编码调制（Pulse-Code Modulation，PCM）、波形音频文件格式（Waveform Audio File Format，WAV）、跨站请求伪造（Cross-Site Request Forgery，CSRF）。
 
@@ -97,6 +97,22 @@ HTTP 身份认证发生在读取请求体之前。现有契约把会话字段放
 | DCL-008：档案已有 nickname/ageBand/interests/preferredMinutes；API-013 是断线恢复事实来源 | #28 尚无 speechPreferences；本轮仅内部六声线/三档，公开合成默认温怀清或服务端配置/NORMAL | 张陈雨菲、姚华俊、林鑫共同评审 API-004/006 增量字段、默认值、清空/省略和迁移；吴怡霏恢复后重取会话状态，不能重放旧页语音。API-013 中 STARTED/PAGE_CHANGED 示例不作为可朗读回答事件 |
 
 Cookie/CSRF、整数标识、响应包、版本撤回等方向相符，但 #28 没有冻结 Cookie 名、令牌摘要算法或提供可复用认证实现，不能据此取消默认拒绝。刘俊延须在真实业务实现接入后验证媒体撤回、恢复后的语音、结束并发与收费重试；黄锦培组织确认以上差异。两条分支共同修改 api-contract.md 和 design-change-log.md；提交前无工作树改动的 merge-tree 检查可自动合并，但文本可合并不代表语义已统一，合并时保留 DCL-005～008 与 DCL-009～020 两组记录。
+
+## G08、G09、G10 统一返回格式约定
+
+G08、G09、G10 共用 [PR #27](https://github.com/MumLauds/202610-zhiya/pull/27) 的 [`backend/app/schemas/agent.py`](../../backend/app/schemas/agent.py)，当前对照版本为 `aa13025`。各模块从 `app.schemas.agent` 引用同一份类型定义，不复制维护各自的 Schema，也不另设字段含义相同但名称不同的 Agent 返回结构。
+
+| 模块 | 共享接口与职责 |
+| --- | --- |
+| G08 模型适配（林鑫） | 接收 `ModelGenerateRequest`，返回 `ModelGenerateResult`（`success`、`text`、`error_code`）；负责模型调用结果，不构造最终 `AgentResult` |
+| G09 检索与内容生成（张智文） | 检索使用 `KnowledgeQuery`、`KnowledgeItem`、`KnowledgeRetrievalResult`；生成复用 G08 模型接口，将检索及生成结果交给工作流，不另设计最终 Agent 响应 |
+| G10 Agent 工作流（陈烨婷） | 汇总检索、生成、安全校验与降级结果，统一构造 `AgentResult`，供业务后端使用 |
+
+最终 `AgentResult` 的字段统一为 `status`、`outputText`、`strategyType`、`sources`；状态、策略枚举及 `AgentSource` 引用结构均以共享 Schema 为准。业务后端在保存事件后补充 `interactionEventId`、`revision`，并按 API-016/017 契约包装 HTTP 响应；这些持久化字段不由 G08/G09/G10 自行生成。
+
+`ModelGenerateResult` 和检索结果是内部中间结果，与最终 `AgentResult` 分工不同。模型失败时，G10 先判断 `success`，再按共同约定完成降级；G08 保留 `TIMEOUT` / `API_ERROR`，不自行新增 `strategyType`。INITIAL 的非空指令组织及 API_ERROR 的最终降级仍按[模型调用说明](../../backend/README.md#对接-pr-27-的-agent-模型接口)由工作流负责人确认，本节不将待接入逻辑记为已经实现。
+
+新增或调整字段、枚举及错误映射时，先在共享契约中说明并由接口维护人与受影响模块负责人确认，再同步 Schema、调用方、接口文档和相关测试；不得只修改某一个模块的返回字典。API-022/023/024 继续沿用各自语音接口契约，本约定不改变它们的响应结构。
 
 ## 按仓库分工的具体交接
 
