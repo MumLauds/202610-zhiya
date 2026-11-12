@@ -6,7 +6,8 @@ from typing import List, Optional, Literal
 class KnowledgeQuery(BaseModel):
     age_band: Optional[str]  # 例如 "AGE_3_4" 或 None(全龄)
     topics: List[str]        # 例如 ["动物"]
-    task_type: str           # 例如 "guidance", "safety"
+    # 修复 2：严格对齐公共术语表，强制大写，防止拼写错误导致检索漏掉
+    task_type: Literal["GUIDANCE", "RETRIEVAL", "SAFETY"] 
     query_text: str          # 用户输入或当前上下文
 
 class KnowledgeItem(BaseModel):
@@ -29,7 +30,8 @@ class ModelGenerateRequest(BaseModel):
 
 class ModelGenerateResult(BaseModel):
     success: bool
-    text: str                # 模型生成的原始文本
+    # 修复 1：给 text 增加默认值 ""，保证超时等失败场景下可以直接构造对象
+    text: str = ""           
     error_code: Optional[str] = None  # 超时: TIMEOUT, 失败: API_ERROR
 
 # ================= 3. 引导工作流 (AgentResult) 冻结 =================
@@ -48,4 +50,4 @@ class AgentResult(BaseModel):
     
     # 以下字段由业务后端在保存数据库时补充，Agent 内部不直接生成
     # interactionEventId: int
-    # revision: int 
+    # revision: int
