@@ -73,6 +73,20 @@ HTTP 身份认证发生在读取请求体之前。现有契约把会话字段放
 
 这是单 worker 的短期资源复用与并发限制，不是跨进程/重启持久化的付费幂等。接口未新增幂等字段或修改 request_executions；缓存失效、内容变化或重启后的新请求可能再次计费。媒体过期/被淘汰后返回 404；不承诺 expiresAt 之前一定保留缓存，前端不得自动重新合成。
 
+## 与 PR #28 的核对及未决差异
+
+2026-11-12 补充核对 [PR #28](https://github.com/MumLauds/202610-zhiya/pull/28)，head 为 `9158c8cf91f17b3e57ad44e07fc0f81df5dc6fa5`，base 为 `8c4172c`。该 PR 处于 Draft，只有三份文档变更，DCL-005～008 均待团队确认；JSON 只新增 minimumBusinessReview，既有正式定义不变。此前实现与运行检验基于 main 和 #27，并未以 #28 为依据；本节是提交草稿前的补充对照，不代表已采用其全部候选规则或与真实 G04/G07 联调通过。
+
+| #28 候选约定 | 本轮 G08 实际情况 | 具体对接与待确认 |
+| --- | --- | --- |
+| DCL-005：coverRef/imageRef 可空、媒体键绑定版本、API-024 返回实际类型二进制 | 音频键已绑定来源版本且逐次授权；只识别 audio- 键、返回 WAV，不实现 asset- 图片或缺图占位 | 姚华俊与林鑫共用一个 API-024 路由并分派图片/音频，统一撤回与归属校验；吴怡霏/卢志勇实现缺图占位，张楠确认资源许可。不得复制两条相同路径路由后依赖注册顺序 |
+| DCL-006：API-015/019 使用 expectedRevision、clientEventId 与事务幂等 | 语音使用既有 API-022/023 的 revision，只读校验当前进度；没有 clientEventId 执行账本，不等于结束/翻页幂等 | 姚华俊保证开始/翻页/结束原子递增与提交；吴怡霏在成功或 API-013 恢复后取最新 currentPage/revision，再发语音；陈烨婷确认事件保存后的 revision。旧音频因状态/进度改变可被拒绝，前端停止旧播放 |
+| DCL-007：API-024 的 404 RESOURCE_NOT_FOUND、503 SERVICE_UNAVAILABLE | 当前语音层为 404 NOT_FOUND、数据库不可用为 503 DEPENDENCY_UNAVAILABLE，另有语音专用错误码 | 姚华俊与林鑫确认统一公共映射及保留内部错误码的边界，吴怡霏按确认后的表处理；当前不得声称已符合 #28 候选错误码 |
+| DCL-007：REQUEST_IN_PROGRESS / RATE_LIMITED 可重试并带 Retry-After | 当前同会话语音在途返回 REQUEST_IN_PROGRESS，但 retryable=false、无 Retry-After；全局繁忙为 VOICE_BUSY。语音没有持久付费幂等，超时可能已产生上游用量 | 姚华俊、林鑫、吴怡霏须确定端点级重试规则，避免按同名错误码给语音自动重发；ASR_TIMEOUT/TTS_TIMEOUT 也不能直接当作已实现 REQUEST_OUTCOME_UNKNOWN 的业务账本恢复 |
+| DCL-008：档案已有 nickname/ageBand/interests/preferredMinutes；API-013 是断线恢复事实来源 | #28 尚无 speechPreferences；本轮仅内部六声线/三档，公开合成默认温怀清或服务端配置/NORMAL | 张陈雨菲、姚华俊、林鑫共同评审 API-004/006 增量字段、默认值、清空/省略和迁移；吴怡霏恢复后重取会话状态，不能重放旧页语音。API-013 中 STARTED/PAGE_CHANGED 示例不作为可朗读回答事件 |
+
+Cookie/CSRF、整数标识、响应包、版本撤回等方向相符，但 #28 没有冻结 Cookie 名、令牌摘要算法或提供可复用认证实现，不能据此取消默认拒绝。刘俊延须在真实业务实现接入后验证媒体撤回、恢复后的语音、结束并发与收费重试；黄锦培组织确认以上差异。两条分支共同修改 api-contract.md 和 design-change-log.md；提交前无工作树改动的 merge-tree 检查可自动合并，但文本可合并不代表语义已统一，合并时保留 DCL-005～008 与 DCL-009～020 两组记录。
+
 ## 按仓库分工的具体交接
 
 成员依据：[项目博客 §4.4 分工安排](../../blogs/妈妈夸我说的队_项目原型设计+概要设计_博客.md#44-分工安排)。岗位来自仓库；下表的实施细分和待确认项是本次提案，尚未代替成员确认。
