@@ -1,6 +1,6 @@
 # G08 公开语音与录音转换检验
 
-版本：v0.2；日期：2026-11-12；负责人：林鑫。初次验证基础提交 8c4172c，分支 feat/backend-model-bootstrap；后续提交和修改验证分节记录。对应 DCL-020/021、FR-08/12/13、NFR-04/05/06/08、AC-07/10/11（局部）。本记录不代替完整 G08 验收。
+版本：v0.3；日期：2026-11-12；负责人：林鑫。初次验证基础提交 8c4172c，分支 feat/backend-model-bootstrap；后续提交和修改验证分节记录。对应 DCL-020/021、FR-08/12/13、NFR-04/05/06/08、AC-07/10/11（局部）。本记录不代替完整 G08 验收。
 
 自动语音识别（Automatic Speech Recognition，ASR）、语音合成（Text-to-Speech，TTS）、脉冲编码调制（Pulse-Code Modulation，PCM）、波形音频文件格式（Waveform Audio File Format，WAV）。接口、限制、错误码和实名对接步骤统一见[交接文档](../design/voice-api-handoff.md)。
 
@@ -85,3 +85,13 @@ $env:Path = 'D:\软工\tools\ffmpeg\ffmpeg-9.0.2-essentials_build\bin;' + $env:P
 ```
 
 源码差异空白检查及本轮说明文档的相对文件链接检查通过。安装和测试没有修改个人 .env，也没有调用真实模型、识别或合成服务。
+
+## P3 转码超时测试稳定性修正
+
+2026-11-12，基于 768d0e9；处理 PR #29 的非阻断反馈，对应 TC-AUDIO-002。旧测试将整个转换期限缩为 150 毫秒，慢启动时尚未获得进程句柄就已超时，导致 processes 为空而断言失败。测试现使用真实 asyncio 超时上下文，先暂不设期限，待真实子进程句柄取得后通过 reschedule 在下一轮事件循环触发超时；继续验证 504 AUDIO_CONVERSION_TIMEOUT 和进程已退出。该用例验证已启动进程的超时回收，不再以启动耗时作为通过条件。
+
+仅修改测试及本记录，生产转换代码、10 秒总期限、取消与回收逻辑均未改变。旧失败记录保留在上文，不改写为首次通过。
+
+- 人为在子进程创建前额外等待 300 毫秒：旧测试稳定复现 processes 为空的失败；修正后在相同条件下通过，随后以 20 个独立 Python 测试进程连续复跑，20/20 通过。
+- 使用已安装的 Windows FFmpeg 9.0.2 执行全量：104 passed、191 subtests passed、0 skipped（22.53 秒）；包含五格式真实转换、取消、输出超限及畸形输出，保留一条既有 Starlette/httpx 弃用提示。没有付费调用或重建容器。
+- 常规复核命令：`.\.venv\Scripts\python.exe -X utf8 -m pytest backend/tests/test_audio_conversion.py -q`；全量命令同上。慢启动复现运行器保存在仓库外 `D:/软工/tmp/g08-voice-api-20261112/check_timeout_stability.py`，只用于注入启动延迟，不属于运行依赖。

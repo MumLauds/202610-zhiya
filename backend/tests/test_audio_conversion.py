@@ -37,6 +37,7 @@ def test_converter_missing_is_safe_and_does_not_echo_input():
 def test_process_terminated_on_timeout_cancel_or_output_limit(monkeypatch,mode):
     original=asyncio.create_subprocess_exec
     processes=[]
+    timeout_scope=None
     async def spawn(*args,**kwargs):
         assert args[0]=="ffmpeg" and args[args.index('-protocol_whitelist')+1]=='pipe'
         assert kwargs['stderr']==asyncio.subprocess.DEVNULL
@@ -45,9 +46,19 @@ def test_process_terminated_on_timeout_cancel_or_output_limit(monkeypatch,mode):
         if mode=='malformed': script="import sys;sys.stdout.buffer.write(b'x');sys.exit(1)"
         process=await original(sys.executable,'-c',script,**kwargs)
         processes.append(process)
+        if mode=='timeout':
+            # Expire on the next loop turn, after the decoder receives the handle.
+            timeout_scope.reschedule(asyncio.get_running_loop().time())
         return process
     monkeypatch.setattr("asyncio.create_subprocess_exec",spawn)
-    if mode=='timeout': monkeypatch.setattr('app.audio_conversion.CONVERSION_TIMEOUT',0.15)
+    if mode=='timeout':
+        original_timeout=asyncio.timeout
+        def timeout_after_spawn(_delay):
+            nonlocal timeout_scope
+            # Keep the real timeout/cancellation path without timing process startup.
+            timeout_scope=original_timeout(None)
+            return timeout_scope
+        monkeypatch.setattr('app.audio_conversion.asyncio.timeout',timeout_after_spawn)
     async def scenario():
         task=asyncio.create_task(normalize_recording(b"sample","audio/webm;codecs=opus"))
         if mode=='cancel':
@@ -57,6 +68,7 @@ def test_process_terminated_on_timeout_cancel_or_output_limit(monkeypatch,mode):
         else:
             with pytest.raises(ServiceError) as failure: await task
             assert failure.value.code=={'timeout':'AUDIO_CONVERSION_TIMEOUT','oversize':'AUDIO_TOO_LONG','malformed':'AUDIO_INVALID'}[mode]
+            if mode=='timeout': assert failure.value.status_code==504
         assert processes and all(p.returncode is not None for p in processes)
     asyncio.run(scenario())
 
