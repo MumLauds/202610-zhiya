@@ -153,13 +153,19 @@ async def synthesize(request: Request):
 @router.get("/media/{resource_key}", response_class=Response,
             responses={200: {"content": {"audio/wav": {"schema": {"type": "string", "format": "binary"}}}}})
 async def media(request: Request, resource_key: str):
-    principal = await authenticate(request, write=False)
-    store = request.app.state.voice_media
-    store.expire()
-    value = store.items.get(resource_key) if re.fullmatch(r"audio-[A-Za-z0-9_-]{32}", resource_key) else None
-    if value is None or value.principal != principal:
-        raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
-    recheck_source(principal, value.snapshot)
+    try:
+        principal = await authenticate(request, write=False)
+        store = request.app.state.voice_media
+        store.expire()
+        value = store.items.get(resource_key) if re.fullmatch(r"audio-[A-Za-z0-9_-]{32}", resource_key) else None
+        if value is None or value.principal != principal:
+            raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
+        recheck_source(principal, value.snapshot)
+    except ServiceError as exc:
+        if exc.status_code == 503 and exc.code == "DEPENDENCY_UNAVAILABLE":
+            # Retrying this GET only rechecks access and reads existing audio; it never synthesizes.
+            exc.retryable = True
+        raise
     return Response(value.audio, media_type="audio/wav", headers={
         "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
         "Content-Disposition": 'inline; filename="speech.wav"',

@@ -89,4 +89,6 @@ DCL-017（2026-11-12）范围调整：当前仅保留温怀清、叶知晴、龙
 
 DCL-020（2026-11-12）实现进展：API-022/023 与 API-024 音频分支已在本地实现，业务认证未接入时默认拒绝。此处声线选项及档案偏好扩展仍待评审和实现；格式转换与接口边界见[公开语音交接](voice-api-handoff.md)，未修改 v0.4 JSON。
 
-DCL-021（2026-11-12）G08 错误码调整：同会话语音在途返回 409 `VOICE_REQUEST_IN_PROGRESS`，区别于 v0.4 JSON 中带幂等记录的业务 `REQUEST_IN_PROGRESS`；全局并发仍返回 429 `VOICE_BUSY`。仅在 API-022/023/024 音频实现中，将资源不存在/不可访问的 404 命名为 `RESOURCE_NOT_FOUND`，只读业务数据库不可用的 503 命名为 `SERVICE_UNAVAILABLE`，采用 #28 对应候选命名，不代表整个 #28 已获团队确认。上述语音错误均保持 retryable=false，不新增自动重试或 Retry-After；状态码、权限检查和其他语音专用码不变。未修改 v0.4 JSON 的业务幂等规则，详见[错误码边界](voice-api-handoff.md#语音错误码与重试边界dcl-021)。
+DCL-021（2026-11-12，历史记录，依赖码及读取重试语义已由 DCL-022 更新）G08 错误码调整：同会话语音在途返回 409 `VOICE_REQUEST_IN_PROGRESS`，区别于 v0.4 JSON 中带幂等记录的业务 `REQUEST_IN_PROGRESS`；全局并发仍返回 429 `VOICE_BUSY`。当时资源不可见使用 `RESOURCE_NOT_FOUND`，数据库不可用采用 #28 早期候选名 `SERVICE_UNAVAILABLE`，均为 retryable=false。
+
+DCL-022（2026-11-14）对齐 #28 合并提交 `16bb85c` 的依赖错误约定：API-022/023/024 音频实现统一使用 503 `DEPENDENCY_UNAVAILABLE`。媒体 GET 的依赖读取失败为 retryable=true，仅允许重试原资源读取并重新校验权限，不触发音频合成；识别/合成 POST 在调用前后遇到数据库故障均保持 retryable=false，不自动再次调用供应商。404 `RESOURCE_NOT_FOUND`、语音并发及其他专用码不变，不添加 Retry-After。当前范围不实现图片业务、认证或档案存储；完整错误边界见[公开语音交接](voice-api-handoff.md#语音错误码与重试边界dcl-021)。

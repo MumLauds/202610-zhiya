@@ -363,18 +363,61 @@ def test_voice_identity_change_uses_public_resource_code(setup):
     assert not app.state.voice_media.items and not app.state.voice_media.inflight
 
 
-def test_voice_database_unavailable_uses_public_code_without_retry(setup, monkeypatch):
+def test_voice_database_unavailable_distinguishes_read_and_write_retry(setup, monkeypatch):
     client, app, _, path = setup
     url = client.post("/api/v1/voice/syntheses", json=PAGE).json()["data"]["audioUrl"]
     app.state.voice_gateway.synthesize.reset_mock()
     monkeypatch.setenv("ZHIYA_DB_PATH", str(path.with_name("missing.sqlite3")))
-    for response in (upload(client), client.post("/api/v1/voice/syntheses", json=PAGE), client.get(url)):
+    for response, retryable in ((upload(client), False),
+                               (client.post("/api/v1/voice/syntheses", json=PAGE), False),
+                               (client.get(url), True)):
         assert response.status_code == 503
-        assert response.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
-        assert response.json()["error"]["retryable"] is False
+        assert response.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+        assert response.json()["error"]["retryable"] is retryable
         assert "Retry-After" not in response.headers
+    monkeypatch.setenv("ZHIYA_DB_PATH", str(path))
+    recovered = client.get(url)
+    assert recovered.status_code == 200 and recovered.content == wav(24000)
     app.state.voice_gateway.transcribe.assert_not_awaited()
     app.state.voice_gateway.synthesize.assert_not_awaited()
+
+
+@pytest.mark.parametrize("code,status,retryable", [
+    ("DEPENDENCY_UNAVAILABLE", 503, True),
+    ("VOICE_AUTH_NOT_CONFIGURED", 503, False),
+    ("AUTH_REQUIRED", 401, False),
+    ("FORBIDDEN", 403, False),
+])
+def test_media_auth_errors_only_retry_unavailable_dependencies(setup, code, status, retryable):
+    client, app, auth, _ = setup
+    url = client.post("/api/v1/voice/syntheses", json=PAGE).json()["data"]["audioUrl"]
+    app.state.voice_gateway.synthesize.reset_mock()
+    auth.error = ServiceError(code, "认证暂不可用", status)
+    response = client.get(url)
+    assert response.status_code == status
+    assert response.json()["error"]["code"] == code
+    assert response.json()["error"]["retryable"] is retryable
+    assert "Retry-After" not in response.headers
+    app.state.voice_gateway.synthesize.assert_not_awaited()
+
+
+@pytest.mark.parametrize("kind", ["asr", "tts"])
+def test_database_failure_after_paid_operation_never_enables_retry(setup, monkeypatch, kind):
+    client, app, _, path = setup
+
+    async def provider(**kwargs):
+        monkeypatch.setenv("ZHIYA_DB_PATH", str(path.with_name("missing.sqlite3")))
+        return Transcription("识别文字") if kind == "asr" else wav(24000)
+
+    operation = app.state.voice_gateway.transcribe if kind == "asr" else app.state.voice_gateway.synthesize
+    operation.side_effect = provider
+    response = upload(client) if kind == "asr" else client.post("/api/v1/voice/syntheses", json=PAGE)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+    assert response.json()["error"]["retryable"] is False
+    assert "Retry-After" not in response.headers
+    operation.assert_awaited_once()
+    assert not app.state.voice_media.items and not app.state.voice_media.inflight
 
 
 def test_disconnect_cancels_inflight_operation():

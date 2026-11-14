@@ -1,6 +1,6 @@
 # G08 公开语音与录音转换检验
 
-版本：v0.3；日期：2026-11-12；负责人：林鑫。初次验证基础提交 8c4172c，分支 feat/backend-model-bootstrap；后续提交和修改验证分节记录。对应 DCL-020/021、FR-08/12/13、NFR-04/05/06/08、AC-07/10/11（局部）。本记录不代替完整 G08 验收。
+版本：v0.4；日期：2026-11-14；负责人：林鑫。初次验证基础提交 8c4172c，分支 feat/backend-model-bootstrap；后续提交和修改验证分节记录。对应 DCL-020/021/022、FR-08/12/13、NFR-04/05/06/08、AC-07/10/11（局部）。本记录不代替完整 G08 验收。
 
 自动语音识别（Automatic Speech Recognition，ASR）、语音合成（Text-to-Speech，TTS）、脉冲编码调制（Pulse-Code Modulation，PCM）、波形音频文件格式（Waveform Audio File Format，WAV）。接口、限制、错误码和实名对接步骤统一见[交接文档](../design/voice-api-handoff.md)。
 
@@ -95,3 +95,16 @@ $env:Path = 'D:\软工\tools\ffmpeg\ffmpeg-9.0.2-essentials_build\bin;' + $env:P
 - 人为在子进程创建前额外等待 300 毫秒：旧测试稳定复现 processes 为空的失败；修正后在相同条件下通过，随后以 20 个独立 Python 测试进程连续复跑，20/20 通过。
 - 使用已安装的 Windows FFmpeg 9.0.2 执行全量：104 passed、191 subtests passed、0 skipped（22.53 秒）；包含五格式真实转换、取消、输出超限及畸形输出，保留一条既有 Starlette/httpx 弃用提示。没有付费调用或重建容器。
 - 常规复核命令：`.\.venv\Scripts\python.exe -X utf8 -m pytest backend/tests/test_audio_conversion.py -q`；全量命令同上。慢启动复现运行器保存在仓库外 `D:/软工/tmp/g08-voice-api-20261112/check_timeout_stability.py`，只用于注入启动延迟，不属于运行依赖。
+
+## DCL-022 依赖错误与媒体读取重试复核
+
+2026-11-14，基于 a05c176，随 PR #29 更新。对照 #28 合并提交 16bb85c（最终 head b859999）的 DCL-007 和 JSON minimumBusinessReview；旧 DCL-021 的 SERVICE_UNAVAILABLE 与 GET 不可重试记录仅代表历史版本。
+
+TC-VOICE-API-008 的验证范围：
+
+- 业务数据库不可用：API-022/023 POST 返回 503 DEPENDENCY_UNAVAILABLE / retryable=false；已有音频的 API-024 GET 返回同码 / retryable=true，均不新增供应商调用或 Retry-After。
+- 依赖恢复后重试同一 audioUrl：返回原 WAV，重新经过认证与内容权限检查，未重新合成。
+- GET 认证依赖故障返回 503 DEPENDENCY_UNAVAILABLE / true；VOICE_AUTH_NOT_CONFIGURED、AUTH_REQUIRED、FORBIDDEN 保持各自状态码及 retryable=false。
+- ASR/TTS 供应商返回后数据库故障：仍为 DEPENDENCY_UNAVAILABLE / false；供应商仅调用一次，执行占位释放且不缓存失败合成。既有 404 不可见及并发专用码检查继续通过。
+
+修改测试后先运行旧实现，定向结果为 4 failed、3 passed，复现旧依赖码和 GET retryable=false；修复后带 Windows FFmpeg 9.0.2 执行上文全量命令，**110 passed、191 subtests passed、0 skipped**（16.56 秒），仅一条既有 Starlette/httpx 弃用提示。测试使用临时 SQLite、测试认证和模拟供应商，五种格式转换仍使用真实 FFmpeg；无付费调用、未修改个人 .env，未重建容器或验证真实浏览器/业务端到端。

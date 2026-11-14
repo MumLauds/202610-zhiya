@@ -1,6 +1,6 @@
 # G08 公开语音接口与录音转换交接
 
-版本：v0.6；日期：2026-11-12；实现负责人：林鑫。本文为 PR #29 的交接材料，不代表成员已确认、已经合并或完整业务上线。关联 FR-08/12/13、NFR-04/05/06/08、API-022/023/024、DCL-020/021。此前验证记录中的“本地未提交 / 不提交 PR”描述当时状态；历史证据不改写，本轮错误码调整的验证单独追加。
+版本：v0.7；日期：2026-11-14；实现负责人：林鑫。本文为 PR #29 的交接材料，不代表成员已确认、已经合并或完整业务上线。关联 FR-08/12/13、NFR-04/05/06/08、API-022/023/024、DCL-020/021/022。此前验证记录中的“本地未提交 / 不提交 PR”描述当时状态；历史证据不改写，本轮错误码调整的验证单独追加。
 
 自动语音识别（Automatic Speech Recognition，ASR）、语音合成（Text-to-Speech，TTS）、脉冲编码调制（Pulse-Code Modulation，PCM）、波形音频文件格式（Waveform Audio File Format，WAV）、跨站请求伪造（Cross-Site Request Forgery，CSRF）。
 
@@ -75,28 +75,33 @@ HTTP 身份认证发生在读取请求体之前。现有契约把会话字段放
 
 ### 语音错误码与重试边界（DCL-021）
 
+2026-11-14：依赖错误码和读取重试语义按 DCL-022 对齐 #28 合并版本；下表为当前实现，取代早期 SERVICE_UNAVAILABLE 候选命名。
+
 | 场景 | 当前对外响应 | 重试语义 |
 | --- | --- | --- |
 | 同会话已有语音请求 | 409 VOICE_REQUEST_IN_PROGRESS | retryable=false；无 Retry-After，不自动重试；被拒绝的请求不调用供应商 |
 | 全局四个语音请求已占满 | 429 VOICE_BUSY | 保留专用码，retryable=false，不自动重试 |
 | 资源不存在、不可访问、已撤回或音频失效；请求期间身份变化 | 404 RESOURCE_NOT_FOUND | 保持原权限检查与不可见语义，retryable=false |
-| 语音只读业务数据库不可用 | 503 SERVICE_UNAVAILABLE | retryable=false；不因使用公共码而自动重试 |
+| API-022/023 的业务数据库不可用（包括调用供应商后的复核） | 503 DEPENDENCY_UNAVAILABLE | retryable=false；POST 可能已产生供应商用量，不自动重试 |
+| API-024 音频 GET 的认证依赖或业务数据库暂不可用 | 503 DEPENDENCY_UNAVAILABLE | retryable=true；仅重试同一媒体 GET，重新检查身份及内容权限，不触发合成 |
+
+可重试读取不等于重新生成：媒体过期、被淘汰、撤回或不可访问仍为 404 RESOURCE_NOT_FOUND / retryable=false；认证未配置等其他 503 保留原专用码和 retryable=false。服务端不自动重发请求，不新增 Retry-After。接口调用方不得将媒体 GET 的可重试标记套用到 API-022/023 POST。
 
 主分支 `8c4172c` 的 v0.4 JSON 已将业务 `REQUEST_IN_PROGRESS` 定义为有幂等记录、retryable=true、携带 Retry-After: 1 的原键查询式重发，不是 #28 才新增的规则。语音并发锁没有该保证，因此使用独立码。ASR_TIMEOUT、TTS_TIMEOUT、AUDIO_CONVERTER_UNAVAILABLE、VOICE_AUTH_NOT_CONFIGURED 等专用码保留；健康检查及其他非语音错误映射不在本次修改范围。
 
 ## 与 PR #28 的核对及未决差异
 
-2026-11-12 补充核对 [PR #28](https://github.com/MumLauds/202610-zhiya/pull/28)，head 为 `9158c8cf91f17b3e57ad44e07fc0f81df5dc6fa5`，base 为 `8c4172c`。该 PR 处于 Draft，只有三份文档变更，DCL-005～008 均待团队确认；JSON 只新增 minimumBusinessReview，既有正式定义不变。此前实现与运行检验基于 main 和 #27，并未以 #28 为依据；本节是提交草稿前的补充对照，不代表已采用其全部候选规则或与真实 G04/G07 联调通过。
+2026-11-12 首次对照的是 [PR #28](https://github.com/MumLauds/202610-zhiya/pull/28) 的早期稿 `9158c8c`。2026-11-14 重新核对：#28 已合并，最终 head 为 `b859999b4008355379aab6d794168b6a0d02a9e3`，合并提交为 `16bb85c2c6c04f6aaf3e0bc76a5915480a8ecbb8`。[合并版 DCL-007](https://github.com/MumLauds/202610-zhiya/blob/16bb85c2c6c04f6aaf3e0bc76a5915480a8ecbb8/docs/design/api-contract.md#dcl-007-错误结构与前端反馈)与 JSON 的 minimumBusinessReview 统一使用 DEPENDENCY_UNAVAILABLE，并区分读取 retryable=true、写入 false。本轮按用户要求对齐这一范围，不以文档合并代替真实 G04/G07 联调或其余候选约定的业务实现。
 
 | #28 候选约定 | 本轮 G08 实际情况 | 具体对接与待确认 |
 | --- | --- | --- |
 | DCL-005：coverRef/imageRef 可空、媒体键绑定版本、API-024 返回实际类型二进制 | 音频键已绑定来源版本且逐次授权；只识别 audio- 键、返回 WAV，不实现 asset- 图片或缺图占位 | 姚华俊与林鑫共用一个 API-024 路由并分派图片/音频，统一撤回与归属校验；吴怡霏/卢志勇实现缺图占位，张楠确认资源许可。不得复制两条相同路径路由后依赖注册顺序 |
 | DCL-006：API-015/019 使用 expectedRevision、clientEventId 与事务幂等 | 语音使用既有 API-022/023 的 revision，只读校验当前进度；没有 clientEventId 执行账本，不等于结束/翻页幂等 | 姚华俊保证开始/翻页/结束原子递增与提交；吴怡霏在成功或 API-013 恢复后取最新 currentPage/revision，再发语音；陈烨婷确认事件保存后的 revision。旧音频因状态/进度改变可被拒绝，前端停止旧播放 |
-| DCL-007：API-024 的 404 RESOURCE_NOT_FOUND、503 SERVICE_UNAVAILABLE | 本轮仅在 G08 资源不存在/不可访问的 404 和业务数据库不可用的 503 采用这两个候选命名；状态码、权限检查及 retryable=false 保持不变 | 此为林鑫在 #29 范围内采用候选命名，不代表团队确认整个 #28；图片分支、其他业务端点及专用码仍由对应负责人对齐 |
+| DCL-007 合并版：404 RESOURCE_NOT_FOUND、503 DEPENDENCY_UNAVAILABLE；读取可重试 | G08 资源不可见仍返回 404/false；依赖故障统一为 503 DEPENDENCY_UNAVAILABLE，API-024 音频 GET 返回 retryable=true，API-022/023 POST 保持 false | GET 重试只读取原媒体并重新授权，不重新合成；图片分支和其他业务端点由对应负责人对齐，不将全部 503 或付费 POST 设为可自动重试 |
 | DCL-007：REQUEST_IN_PROGRESS / RATE_LIMITED 可重试并带 Retry-After | 主分支已规定业务 REQUEST_IN_PROGRESS 的幂等查询语义；语音现使用 VOICE_REQUEST_IN_PROGRESS，retryable=false、无 Retry-After；全局繁忙保留 VOICE_BUSY | 前端按端点及错误码处理，不给语音自动重发；ASR_TIMEOUT/TTS_TIMEOUT 也不代表已实现 REQUEST_OUTCOME_UNKNOWN 的业务账本恢复 |
 | DCL-008：档案已有 nickname/ageBand/interests/preferredMinutes；API-013 是断线恢复事实来源 | #28 尚无 speechPreferences；本轮仅内部六声线/三档，公开合成默认温怀清或服务端配置/NORMAL | 张陈雨菲、姚华俊、林鑫共同评审 API-004/006 增量字段、默认值、清空/省略和迁移；吴怡霏恢复后重取会话状态，不能重放旧页语音。API-013 中 STARTED/PAGE_CHANGED 示例不作为可朗读回答事件 |
 
-Cookie/CSRF、整数标识、响应包、版本撤回等方向相符，但 #28 没有冻结 Cookie 名、令牌摘要算法或提供可复用认证实现，不能据此取消默认拒绝。刘俊延须在真实业务实现接入后验证媒体撤回、恢复后的语音、结束并发与收费重试；黄锦培组织确认以上差异。两条分支共同修改 api-contract.md 和 design-change-log.md；提交前无工作树改动的 merge-tree 检查可自动合并，但文本可合并不代表语义已统一，合并时保留 DCL-005～008 与 DCL-009～020 两组记录。
+Cookie/CSRF、整数标识、响应包、版本撤回等方向相符，但 #28 没有冻结 Cookie 名、令牌摘要算法或提供可复用认证实现，不能据此取消默认拒绝。刘俊延须在真实业务实现接入后验证媒体撤回、恢复后的语音、结束并发与收费重试；黄锦培组织确认以上差异。此前 merge-tree 检查只针对当时的分支快照，不代表当前主分支已经整合；后续合并应保留 #28 的 DCL-005～008 与本分支 DCL-009～022，不能因文本可合并就视为业务语义均已统一。
 
 ## G08、G09、G10 统一返回格式约定
 
