@@ -1,4 +1,4 @@
-"""Shared health and speech API host; speech authentication is supplied by G07."""
+"""Shared business, model and speech API host."""
 
 import asyncio
 import logging
@@ -12,6 +12,9 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
 from app.api.v1.health import router as health_router
+from app.api.v1.auth import router as auth_router
+from app.api.v1.profiles import router as profiles_router
+from app.api.v1.storybooks import router as storybooks_router
 from app.api.v1.voice import router as voice_router
 from app.adapters.model import ModelAdapter
 from app.config import Settings
@@ -19,7 +22,8 @@ from app.errors import ServiceError
 from app.model_gateway import ModelGateway
 from app.speech_config import SpeechSettings
 from app.voice_gateway import VoiceGateway
-from app.services.voice_access import UnconfiguredVoiceAuthenticator, VoiceAuthenticator
+from app.services.voice_access import VoiceAuthenticator
+from app.services.voice_auth import GuardianVoiceAuthenticator
 from app.services.voice_media import VoiceMediaStore
 
 logger = logging.getLogger("zhiya.http")
@@ -54,7 +58,7 @@ def create_app(settings: Settings | None = None, speech_settings: SpeechSettings
                 app.state.voice_media.items.clear()
 
     app = FastAPI(title="知芽后端", version="0.1.0", lifespan=lifespan)
-    app.state.voice_auth = voice_auth if voice_auth is not None else UnconfiguredVoiceAuthenticator()
+    app.state.voice_auth = voice_auth if voice_auth is not None else GuardianVoiceAuthenticator()
     app.state.voice_media = VoiceMediaStore()
     app.state.speech_settings = speech_config
 
@@ -94,6 +98,9 @@ def create_app(settings: Settings | None = None, speech_settings: SpeechSettings
         return JSONResponse(error.as_response(request.state.request_id), status_code=422)
 
     app.include_router(health_router)
+    app.include_router(auth_router)
+    app.include_router(profiles_router)
+    app.include_router(storybooks_router)
     app.include_router(voice_router)
 
     return app

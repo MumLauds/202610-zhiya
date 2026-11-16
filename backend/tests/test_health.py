@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.speech_config import SpeechSettings
 from app.main import app, create_app
+from app.services.voice_access import UnconfiguredVoiceAuthenticator
 
 SCHEMA = Path(__file__).resolve().parents[2] / "database" / "schema.sql"
 client = TestClient(app)
@@ -36,8 +37,12 @@ def test_health_checks_database_readiness(tmp_path, monkeypatch):
 
 
 def test_voice_routes_fail_closed_without_business_authentication():
+    client = TestClient(create_app(Settings(), SpeechSettings(), voice_auth=UnconfiguredVoiceAuthenticator()))
     assert set(client.get("/openapi.json").json()["paths"]) == {
-        "/api/v1/health", "/api/v1/voice/transcriptions", "/api/v1/voice/syntheses", "/api/v1/media/{resource_key}"}
+        "/api/v1/health", "/api/v1/voice/transcriptions", "/api/v1/voice/syntheses", "/api/v1/media/{resource_key}",
+        "/api/v1/auth/registrations", "/api/v1/auth/sessions", "/api/v1/auth/sessions/current",
+        "/api/v1/child-profiles", "/api/v1/child-profiles/{profile_id}",
+        "/api/v1/storybooks", "/api/v1/story-versions/{version_id}"}
     for method, path in (("POST", "/api/v1/voice/transcriptions"), ("POST", "/api/v1/voice/syntheses"),
                          ("GET", "/api/v1/media/audio-unknown")):
         response = client.request(method, path)

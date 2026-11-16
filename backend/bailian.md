@@ -52,7 +52,7 @@ audio_bytes = await request.app.state.voice_gateway.synthesize(
 
 ASR 返回内部 Transcription（text、reliable），非空转写仅表明供应商返回了文本；本接口没有可用的置信度证据，reliable 固定为 false。亲子模式须确认/修正，儿童模式须走受限按钮或重录回退，不自动当成可信回答。空、畸形、非 assistant 消息、携带拒绝或工具调用、超过 200 字的转写失败，不截断后继续生成。
 
-2026-11-12（DCL-020）：API-022/023 路由和 API-024 音频分支已实现，复用现有 SQLite 做只读归属、版本、授权与进度检查，并提供短期内存媒体。真实认证由姚华俊注入，未接入时默认 503；图片分支和业务端到端未完成。详见[接口交接](../docs/design/voice-api-handoff.md)。
+2026-11-12（DCL-020）：API-022/023 路由和 API-024 音频分支已实现，复用现有 SQLite 做只读归属、版本、授权与进度检查，并提供短期内存媒体。2026-11-16（DCL-023）引入 #30 的家长认证并接入语音；默认应用未登录时返回 401，写请求还须 CSRF。阅读会话接口、儿童模式认证、图片分支和业务端到端未完成。详见[接口交接](../docs/design/voice-api-handoff.md)。
 
 ## 协议映射与边界
 
