@@ -1,6 +1,6 @@
 # G08 公开语音与录音转换检验
 
-版本：v0.4；日期：2026-11-14；负责人：林鑫。初次验证基础提交 8c4172c，分支 feat/backend-model-bootstrap；后续提交和修改验证分节记录。对应 DCL-020/021/022、FR-08/12/13、NFR-04/05/06/08、AC-07/10/11（局部）。本记录不代替完整 G08 验收。
+版本：v0.5；日期：2026-11-16；负责人：林鑫。初次验证基础提交 8c4172c，分支 feat/backend-model-bootstrap；后续提交和修改验证分节记录。对应 DCL-020/021/022、FR-08/12/13、NFR-04/05/06/08、AC-07/10/11（局部）。本记录不代替完整 G08 验收。
 
 自动语音识别（Automatic Speech Recognition，ASR）、语音合成（Text-to-Speech，TTS）、脉冲编码调制（Pulse-Code Modulation，PCM）、波形音频文件格式（Waveform Audio File Format，WAV）。接口、限制、错误码和实名对接步骤统一见[交接文档](../design/voice-api-handoff.md)。
 
@@ -108,3 +108,11 @@ TC-VOICE-API-008 的验证范围：
 - ASR/TTS 供应商返回后数据库故障：仍为 DEPENDENCY_UNAVAILABLE / false；供应商仅调用一次，执行占位释放且不缓存失败合成。既有 404 不可见及并发专用码检查继续通过。
 
 修改测试后先运行旧实现，定向结果为 4 failed、3 passed，复现旧依赖码和 GET retryable=false；修复后带 Windows FFmpeg 9.0.2 执行上文全量命令，**110 passed、191 subtests passed、0 skipped**（16.56 秒），仅一条既有 Starlette/httpx 弃用提示。测试使用临时 SQLite、测试认证和模拟供应商，五种格式转换仍使用真实 FFmpeg；无付费调用、未修改个人 .env，未重建容器或验证真实浏览器/业务端到端。
+
+## PR #30 依赖现状核对与回归
+
+2026-11-16，G08 基于 4e8b1c2；对照 #30 的 903695ee2bd45cb1a240d0428a349c99ed01e1f9（未合并草稿），主分支为 16bb85c。本轮仅修改交接文档和验证记录，没有引入 #30 代码或改变 G08 运行逻辑、接口及数据库。
+
+- 逐项核对 #30 的 auth.py、profiles.py、storybooks.py、main.py：已有家长登录/退出、CSRF、档案及绘本读取；尚无语音认证协议适配、真实阅读会话/事件接口、儿童模式认证或图片媒体。记录了 helper 返回值与 VoicePrincipal 的转换、共同应用入口及后续依赖，详见[交接文档](../design/voice-api-handoff.md#与最新-pr-30-的接入核对)。
+- 带 Windows FFmpeg 9.0.2 再次执行上述全量命令：**110 passed、191 subtests passed、0 skipped**（26.15 秒），一条既有 Starlette/httpx 弃用提示。验证范围仍为临时 SQLite、测试认证、模拟供应商和真实五格式转换。
+- 本轮没有运行 #30 与 #29 的组合应用、真实登录到语音的跨分支链路或浏览器端到端，没有付费调用、修改个人 .env 或重建容器。#30 本身的测试数量不并入本记录。

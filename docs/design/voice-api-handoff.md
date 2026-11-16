@@ -1,6 +1,6 @@
 # G08 公开语音接口与录音转换交接
 
-版本：v0.7；日期：2026-11-14；实现负责人：林鑫。本文为 PR #29 的交接材料，不代表成员已确认、已经合并或完整业务上线。关联 FR-08/12/13、NFR-04/05/06/08、API-022/023/024、DCL-020/021/022。此前验证记录中的“本地未提交 / 不提交 PR”描述当时状态；历史证据不改写，本轮错误码调整的验证单独追加。
+版本：v0.8；日期：2026-11-16；实现负责人：林鑫。本文为 PR #29 的交接材料，不代表成员已确认、已经合并或完整业务上线。关联 FR-08/12/13、NFR-04/05/06/08、API-022/023/024、DCL-020/021/022。此前验证记录中的“本地未提交 / 不提交 PR”描述当时状态；历史证据不改写。本轮对照 #30 更新业务依赖现状及接入步骤，不改变运行代码或接口契约。
 
 自动语音识别（Automatic Speech Recognition，ASR）、语音合成（Text-to-Speech，TTS）、脉冲编码调制（Pulse-Code Modulation，PCM）、波形音频文件格式（Waveform Audio File Format，WAV）、跨站请求伪造（Cross-Site Request Forgery，CSRF）。
 
@@ -61,7 +61,7 @@ HTTP 身份认证发生在读取请求体之前。现有契约把会话字段放
 
 ## 鉴权、数据与媒体规则
 
-`create_app(..., voice_auth=adapter)` 接入 `VoiceAuthenticator.authenticate(request, write=...)`。姚华俊的适配器须实时验证服务端 Cookie、角色、到期/撤销状态；write=true 还须验证 CSRF；返回 `VoicePrincipal(guardian_id, child_grant_id=None)` 或对应的儿童 grant_id。不得从客户端提交的 guardianId、请求头声明或测试桩构造身份。本轮默认适配器永远拒绝，测试中的假认证只用于隔离测试。
+`create_app(..., voice_auth=adapter)` 接入 `VoiceAuthenticator.authenticate(request, write=...)`。真实适配须实时验证服务端 Cookie、角色、到期/撤销状态；write=true 还须验证 CSRF；返回 `VoicePrincipal(guardian_id, child_grant_id=None)` 或对应的儿童 grant_id。不得从客户端提交的 guardianId、请求头声明或测试桩构造身份。#30 已有可复用的家长认证实现，具体衔接见下节；尚未注入本分支，本轮默认适配器仍拒绝，测试中的假认证只用于隔离测试。
 
 只读查询复用现有 SQLite 表，检查家庭归属、IN_PROGRESS、当前页和 revision、内容状态以及儿童授权/确切版本范围。WITHDRAWN、未审核草稿、他人私有版本、失效儿童授权拒绝。已有有效会话可读取允许的 RETIRED 内容。事件必须与当前会话版本/页/进度一致，结果为 SUCCESS/FALLBACK 且有正文；FAILED 和非回答类型拒绝。**事件写入方仍须保证正文已经完成内容校验**，语音层不能凭结果枚举替代安全审核。
 
@@ -103,6 +103,25 @@ HTTP 身份认证发生在读取请求体之前。现有契约把会话字段放
 
 Cookie/CSRF、整数标识、响应包、版本撤回等方向相符，但 #28 没有冻结 Cookie 名、令牌摘要算法或提供可复用认证实现，不能据此取消默认拒绝。刘俊延须在真实业务实现接入后验证媒体撤回、恢复后的语音、结束并发与收费重试；黄锦培组织确认以上差异。此前 merge-tree 检查只针对当时的分支快照，不代表当前主分支已经整合；后续合并应保留 #28 的 DCL-005～008 与本分支 DCL-009～022，不能因文本可合并就视为业务语义均已统一。
 
+## 与最新 PR #30 的接入核对
+
+2026-11-16 对照 [PR #30](https://github.com/MumLauds/202610-zhiya/pull/30) 的 `903695ee2bd45cb1a240d0428a349c99ed01e1f9`，当时为未合并草稿，main 仍为 `16bb85c`。以下按实际代码而非 PR 标题判断进度；#30 的功能不计入 #29 已实现内容。
+
+| #30 已提供的代码 | G08 如何复用及剩余边界 |
+| --- | --- |
+| `auth.py`：注册、家长登录、退出；`profiles.py::guardian(db, request, write=...)`：角色、有效期、撤销及写请求 CSRF 校验 | 复用现有认证，不再要求姚华俊重新开发登录。当前 helper 返回 `(guardian_id, failure_response)`，不能直接作为异步 `VoiceAuthenticator` 注入；需衔接返回值和异常 |
+| `zhiya_session` 登录 Cookie；SHA256 令牌摘要；`zhiya_csrf` Cookie 和 `X-CSRF-Token`；CSRF 由登录令牌派生 | 这些是 #30 当前实现约定，尚非跨模块冻结结论。Cookie 含 Secure，联调客户端须使用 HTTPS；浏览器跨域凭据/CORS 需双方确认，不通过关闭 CSRF 绕过 |
+| 档案列表、新建、修改；字段为 nickname/ageBand/interests/preferredMinutes | 已有档案接口，不等于已有声线/语速持久化；speechPreferences 仍待确定增量字段与存储规则，G08 继续使用服务端声线与 NORMAL |
+| `/api/v1/storybooks`、`/api/v1/story-versions/{version_id}` 家长读取 | 最新提交已包含绘本列表与版本详情，但 coverRef/imageRef 仍为 null，没有图片媒体解析或 API-024 图片分支；不能把“绘本详情可读”当作“语音会话已就绪” |
+
+**当前与姚华俊只需推进以下衔接，不重做其已交付功能：**
+
+1. **认证与入口：** 姚华俊确认可复用的认证入口及错误约定，林鑫配合包装为语音协议。成功映射为 `VoicePrincipal(guardian_id, child_grant_id=None)`；失败转换为 `ServiceError`，保留 401 AUTH_REQUIRED、403 FORBIDDEN/CSRF_INVALID，数据库故障为 503 DEPENDENCY_UNAVAILABLE，不把 JSONResponse 当作身份返回。GET 的依赖失败由语音读取路径标记可重试，付费 POST 保持 false。每次 authenticate 都重新读取有效状态，不能缓存登录结果。#30 尚无儿童模式认证，不能用家长身份伪造 child_grant_id。
+2. **共同应用入口：** #30 在模块级创建 FastAPI 并注册 auth/profiles/storybooks；#29 使用 create_app 和 lifespan。整合时在同一个应用内保留双方路由、模型/语音网关初始化、媒体清理、真实认证注入、请求标识与错误处理。两边均定义参数校验处理器，需统一为一套；不能覆盖整个 main.py 或只加入登录路由就认为语音已认证。未注入时继续默认拒绝。
+3. **后续业务依赖：** 姚华俊继续完成真实阅读会话、进度和互动事件持久化、儿童授权及图片媒体；林鑫在可接入提交上验证会话/事件读取及 API-024 图片/音频分派。会话需提供归属、version_id、IN_PROGRESS、current_page_no、revision；可朗读事件需绑定同一会话/版本/进度并有已校验正文。当前不以手工造表数据证明完整业务链路。图片接口就绪后再共用唯一媒体路由，偏好存储确定后再接入合成读取。
+
+认证衔接完成后的最小复测：真实注册/登录 → 带 CSRF 的语音写请求 → 原 audioUrl 读取 → 退出/到期/撤销后拒绝；补缺失或错误 CSRF、越权会话、GET 依赖故障重试原读取且不重合成。供应商可先使用测试桩；会话若仍用临时测试数据，必须注明。本轮只做代码和文档核对，尚未执行这条跨分支认证链路，也未合并 #30。
+
 ## G08、G09、G10 统一返回格式约定
 
 G08、G09、G10 共用 [PR #27](https://github.com/MumLauds/202610-zhiya/pull/27) 的 [`backend/app/schemas/agent.py`](../../backend/app/schemas/agent.py)，当前对照版本为 `aa13025`。各模块从 `app.schemas.agent` 引用同一份类型定义，不复制维护各自的 Schema，也不另设字段含义相同但名称不同的 Agent 返回结构。
@@ -134,7 +153,7 @@ G08、G09、G10 共用 [PR #27](https://github.com/MumLauds/202610-zhiya/pull/27
 | **吴怡霏（G12 互动共读页面）** | 停止录音后提交完整 Blob 和会话/页码/revision；确认或修正转写，按 audioUrl 以 1 倍速播放；切页取消旧播放并忽略旧响应 | 浏览器录音格式；reliable=false 的确认/重录；409/413/415/503/504 回退；从 API-013 恢复最新进度，过期音频不得自动触发收费重合成 |
 | **刘俊延（测试验收）** | 接收可复现命令、脱敏样例、已有验证记录及未覆盖项，对已可用模块同步独立测试，无需等完整业务链路才开始 | 明确版本、真实服务与测试桩范围、异常用例和缺陷记录；真实认证/业务接入后补权限、媒体撤回、恢复与收费重试验证，不将本轮局部结果视为完整 G08 或公网验收 |
 
-**与姚华俊的当前协作属于 G04/G07 业务依赖对接。** 他不是方案列出的 G08 接收人，但真实语音接口接入需要双方共同完成：姚华俊实现 `VoiceAuthenticator.authenticate(request, write=...)`，通过 `create_app(..., voice_auth=adapter)` 注入真实 Cookie/CSRF、角色、到期及撤销校验；林鑫配合适配器接入和语音侧验证。双方结合上节 #28 候选约定，确认身份返回结构、会话/事件读取、API-024 图片与音频共用入口、公共错误码及端点级重试。登录、业务数据保存和图片业务仍由姚华俊负责。
+**与姚华俊的当前协作属于 G04/G07 业务依赖对接。** 他不是方案列出的 G08 接收人。#30 已有家长认证、档案和绘本读取，当前双方先确认复用认证 helper，并衔接语音身份返回、CSRF/错误与统一应用入口，具体步骤见上节。林鑫配合语音适配及验证；登录与业务数据保存仍由姚华俊维护。真实阅读会话/事件、儿童授权、图片媒体及偏好存储尚未随 #30 提供，待对应实现可接入后协作，不要求重复开发已有登录，也不把全部 G07 任务列为林鑫的 G08 待办。
 
 林鑫提供共同资料：明确的分支/提交、运行与配置说明、请求/响应及错误样例、验证记录和限制（4 MiB/120 秒、正文 600 字符、当前页/revision、临时媒体 300 秒、单 worker）。技术说明与脱敏摘要进入 Git，大量录音、日志和视频按方案通过 QQ 交接，凭据单独提供。接收人按说明检查可用性，问题记录在 Issue/PR；完成评审合并后由黄锦培更新任务状态，不能以“已推送分支”代替完成交接。
 
