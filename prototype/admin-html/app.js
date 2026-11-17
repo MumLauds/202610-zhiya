@@ -411,14 +411,17 @@
         <table>
           <thead><tr><th>方法</th><th>接口路径</th><th>用途</th><th>权限边界</th></tr></thead>
           <tbody>
-            <tr><td>POST</td><td>/api/v1/storybooks</td><td>创建绘本草稿与元数据</td><td>内容管理员</td></tr>
-            <tr><td>PATCH</td><td>/api/v1/storybooks/{id}/publish</td><td>审核通过、发布或下线</td><td>内容管理员</td></tr>
-            <tr><td>GET</td><td>/api/v1/knowledge-items</td><td>检索领域知识与来源</td><td>已登录用户 / Agent</td></tr>
-            <tr><td>POST</td><td>/api/v1/agent/guidance</td><td>生成当前页受控共读引导</td><td>当前阅读会话</td></tr>
-            <tr><td>POST</td><td>/api/v1/reading-sessions/{id}/finish</td><td>结束阅读并生成小结</td><td>会话所有者</td></tr>
+            <tr><td>POST</td><td>/api/v1/admin/storybooks</td><td>创建绘本草稿与元数据（API-027）</td><td>内容管理员</td></tr>
+            <tr><td>PATCH</td><td>/api/v1/admin/story-versions/{version_id}</td><td>修改版本内容与发布状态（API-028）</td><td>内容管理员</td></tr>
+            <tr><td>GET</td><td>/api/v1/admin/knowledge-items</td><td>查询知识管理列表与来源（API-029）</td><td>内容管理员</td></tr>
+            <tr><td>POST</td><td>/api/v1/admin/knowledge-items</td><td>新增知识条目（API-030）</td><td>内容管理员</td></tr>
+            <tr><td>PATCH</td><td>/api/v1/admin/knowledge-items/{knowledge_id}</td><td>修订知识内容与审核状态（API-031）</td><td>内容管理员</td></tr>
+            <tr><td>POST</td><td>/api/v1/reading-sessions/{session_id}/guidance</td><td>生成当前页受控共读引导（API-017）</td><td>本人家长或绑定会话儿童</td></tr>
+            <tr><td>POST</td><td>/api/v1/reading-sessions/{session_id}/completions</td><td>结束阅读并生成小结（API-019）</td><td>本人家长或绑定会话儿童</td></tr>
           </tbody>
         </table>
-      </div>`;
+      </div>
+      <p class="notice">以上为接口契约约定。当前原型仅演示；截至 2026-11-17，后端已实现家长结束阅读，儿童凭证、引导及管理员接口尚未实现。受保护写请求须校验 CSRF，权限仍由服务端核验。</p>`;
   }
 
   function currentView() {

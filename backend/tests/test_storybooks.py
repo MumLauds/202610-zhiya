@@ -333,11 +333,16 @@ class _FakeAdapter:
         return self.result
 
 
-def test_finish_generates_ready_report_once_with_model(bookshelf, monkeypatch):
+@pytest.mark.parametrize("suggestion_id, suggestion", [
+    ("NONE", ""),
+    ("REVISIT_PAGE", "可以和孩子再看一页已读内容，由孩子自愿选择是否聊一聊。"),
+    ("TALK_ABOUT_STORY", "可以邀请孩子聊聊故事中喜欢的部分，不必要求回答正确。"),
+])
+def test_finish_generates_ready_report_once_with_model(bookshelf, monkeypatch, suggestion_id, suggestion):
     from app.schemas.agent import ModelGenerateResult
     first, _, path = bookshelf
     headers = {"X-CSRF-Token": first.cookies["zhiya_csrf"]}
-    adapter = _FakeAdapter(ModelGenerateResult(success=True, text=" 今天一起读完了两页，孩子很投入。 "))
+    adapter = _FakeAdapter(ModelGenerateResult(success=True, text=json.dumps({"suggestionId": suggestion_id})))
     monkeypatch.setattr(app.state, "model_adapter", adapter, raising=False)
     session = _started_session(first, headers, path)
     first.post(f"/api/v1/reading-sessions/{session}/events", headers=headers, json={
@@ -346,12 +351,50 @@ def test_finish_generates_ready_report_once_with_model(bookshelf, monkeypatch):
     body = {"reason": "USER_FINISH", "expectedRevision": 1, "clientEventId": "end"}
     assert first.post(url, headers=headers, json=body).json()["data"]["report"]["status"] == "PENDING"
     report = first.get(f"/api/v1/reading-sessions/{session}").json()["data"]["report"]
-    assert report["status"] == "READY" and report["summary"] == "今天一起读完了两页，孩子很投入。"
+    assert report["status"] == "READY" and report["summary"] == "本次共读阅读了第 1 页。" + suggestion
     assert len(adapter.calls) == 1 and adapter.calls[0].user_input == "本次共读阅读了第 1 页。"
     assert "text-11" in adapter.calls[0].context_text
     # Replay and new-key repeats never call the model again.
     first.post(url, headers=headers, json=body)
     first.post(url, headers=headers, json={**body, "clientEventId": "again", "expectedRevision": 2})
+    assert len(adapter.calls) == 1
+
+
+@pytest.mark.parametrize("model_text", [
+    "正确回答十道问题，阅读能力低于同龄儿童。",
+    "今天一起读完了两页，孩子很投入。",
+    "孩子已经掌握了故事中的所有词语。",
+    "建议用体罚帮助孩子集中注意力。",
+    '{"suggestionId":"TALK_ABOUT_STORY","summary":"阅读能力低于同龄儿童"}',
+    '{"suggestionId":"正确回答十道问题"}',
+    '{"suggestionId":["TALK_ABOUT_STORY"]}',
+    "[]", "null", "", "文" * 501,
+])
+def test_finish_rejects_unverified_model_content(bookshelf, monkeypatch, model_text):
+    from app.schemas.agent import ModelGenerateResult
+    first, _, path = bookshelf
+    headers = {"X-CSRF-Token": first.cookies["zhiya_csrf"]}
+    adapter = _FakeAdapter(ModelGenerateResult(success=True, text=model_text))
+    monkeypatch.setattr(app.state, "model_adapter", adapter, raising=False)
+    session = _started_session(first, headers, path, pages=1)
+    base = f"/api/v1/reading-sessions/{session}"
+    first.post(f"{base}/events", headers=headers, json={
+        "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "start"})
+    body = {"reason": "USER_FINISH", "expectedRevision": 1, "clientEventId": "end"}
+    original = first.post(f"{base}/completions", headers=headers, json=body)
+    assert original.status_code == 200
+    assert original.json()["data"]["report"]["status"] == "PENDING"
+    expected = {"readingSessionId": session, "summary": "本次共读阅读了第 1 页。",
+                "activities": [], "status": "FAILED"}
+    assert first.get(base).json()["data"]["report"] == expected
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT status, summary, activities_json FROM reading_reports WHERE session_id = ?",
+                          (session,)).fetchone() == ("FAILED", expected["summary"], "[]")
+    replay = first.post(f"{base}/completions", headers=headers, json=body)
+    assert replay.json()["data"] == original.json()["data"]
+    repeat = first.post(f"{base}/completions", headers=headers,
+                        json={**body, "clientEventId": "again", "expectedRevision": 2})
+    assert repeat.json()["data"]["report"] == expected
     assert len(adapter.calls) == 1
 
 
@@ -553,7 +596,7 @@ def test_delayed_recovery_preserves_a_new_report_during_generation(bookshelf, mo
         async def generate(self, request):
             model_started.set()
             assert await asyncio.to_thread(model_release.wait, 10)
-            return ModelGenerateResult(success=True, text="家长和孩子一起读完了第一页。")
+            return ModelGenerateResult(success=True, text='{"suggestionId":"NONE"}')
 
     finish = {"reason": "USER_FINISH", "expectedRevision": 1, "clientEventId": "finish"}
     with closing(sqlite3.connect(path)) as locker:
@@ -580,7 +623,7 @@ def test_delayed_recovery_preserves_a_new_report_during_generation(bookshelf, mo
                     model_release.set()
                 assert pending_response.result(timeout=10).status_code == 200
             report = client.get(url).json()["data"]["report"]
-            assert (report["status"], report["summary"]) == ("READY", "家长和孩子一起读完了第一页。")
+            assert (report["status"], report["summary"]) == ("READY", "本次共读阅读了第 1 页。")
 
     with closing(sqlite3.connect(path)) as db:
         assert db.execute(
