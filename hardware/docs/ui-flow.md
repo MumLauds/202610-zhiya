@@ -17,6 +17,7 @@
 | --- | --- | --- |
 | `README.md`、`docs/requirements/软件需求规格说明书.md` | 角色与权限（家长/幼儿/管理员）、FR-05/08/12/16/17、HW-01～HW-05、NFR-06/10/11、AC-04/07/10/12 | 页面职责、状态与验收编号 |
 | `docs/design/api-contract.md`、`api-contract-v0.4.json` | `pageNumber` 从 1 开始、`defaultNextPageNumber` 末页为 null、`coverRef`/`imageRef` 可为 null、`expectedRevision`/`clientEventId`、409/504 语义、`{data,requestId}` 与错误结构 | 数据映射与异常策略 |
+| `docs/design/voice-api-handoff.md`、`backend/app/schemas/agent.py` | API-022 仅 ASR、API-023 仅 TTS；G10 汇总 `AgentResult`；业务后端保存事件后补 `interactionEventId/revision`；语音专用错误码与 `reliable` 限制 | 7.1.1 问答链与能力边界 |
 | `docs/standards/知芽_项目设计与开发规范_精简版_v1.2.md`、`glossary.md`、`design-change-log.md` | 文档与命名规范、DCL-025 硬件方案变更 | 术语、编号与变更口径 |
 | `hardware/README.md`、`hardware/docs/h00-hardware-change-request.md`、`h00-interface-decisions.md` | 真实板卡规格、Flash 布局、H00 待评审设备接口（绑定、投影、撤销均**未实现**） | 设备定位与“不得假装已实现”的边界 |
 | `hardware/docs/media-format.md`、`hardware/assets/generated/assets-manifest.json` | 20 本 × `THUMBNAIL`(≤240×160)/`DETAIL`(≤400×300)，40 个 JPEG 共 806,090 B，`decoderVerified=false`，仅封面、无逐页插画 | 素材使用规则 |
@@ -30,6 +31,8 @@
 3. **JPEG 解码未验证**：`assets-manifest.json` 明确 `decoderVerified=false`，H06 上板前不得假设封面能显示。
 4. **没有逐页插画**：`story_pages.json` 的 `image_ref` 是画面描述文本，不是资源键；接口层在无已核验素材时必须序列化为 `imageRef=null`。阅读页只设计占位，不拿封面冒充正文插画。
 5. **实板未验证**：触摸方向、刷新率、内存余量、音频通路均无实测数据，本文所有尺寸与预算均为设计目标。
+6. **完整 AI 问答未上线**：API-022 只是 ASR、API-023 只是 TTS；G10 通过 API-016 产出 `AgentResult`，互动事件由业务后端保存并补 `interactionEventId/revision`，该持久化链路尚未实现；当前 ASR 的 `reliable` 还固定为 false。不得把已有语音路由描述成端到端问答已验收。
+7. **离线到期无法直接推算**：单调计时不能跨断电重启；本文采用“无可信时间即锁定并重新验证”的 safe-fail 策略，尚未在实板验证 RTC/SNTP 与断电场景。
 
 ---
 
@@ -220,7 +223,7 @@ flowchart LR
 
 **儿童限制**：不显示 IP、MAC、错误码；演示入口必须带 `DEMO` 字样，避免被当作正式内容。
 
-**LVGL 组件**：`lv_obj`（屏）、`lv_img`、`lv_label`、`lv_obj`×3（状态行）、`lv_spinner`、`lv_btn`×2。
+**LVGL 组件**：`lv_obj`（屏）、`lv_image`、`lv_label`、`lv_obj`×3（状态行）、`lv_spinner`、`lv_button`×2。
 
 **对应需求**：FR-12、NFR-06、HW-01（取回授权任务的前置状态）；SRS 6.2 步骤 1–2。
 
@@ -277,7 +280,7 @@ flowchart LR
 
 **儿童限制**：页面文案面向家长；不出现密码输入框；儿童点击不产生绑定动作（需家长在手机确认）。
 
-**LVGL 组件**：`lv_label`、`lv_obj`（码卡）、`lv_label`×6（每位数字或单标签）、`lv_label`（倒计时）、`lv_btn`×3、`lv_spinner`、`lv_obj`（二维码占位）。
+**LVGL 组件**：`lv_label`、`lv_obj`（码卡）、`lv_label`×6（每位数字或单标签）、`lv_label`（倒计时）、`lv_button`×3、`lv_spinner`、`lv_obj`（二维码占位）。
 
 **对应需求**：HW-01；SRS 6.2 步骤 1；H00 待评审“一次性授权与兑换”。
 
@@ -293,7 +296,7 @@ flowchart LR
 | --- | --- |
 | 最近会话（书名、封面、页码） | API-013 会话 + API-009 版本投影；DEMO 用本地 fixture |
 | 书架入口预览 | API-008 前 3 个已发布版本的 `coverRef`；无 `coverRef` 时用本地 THUMBNAIL |
-| 设备状态 | Wi‑Fi、DEMO/ONLINE、剩余儿童模式时长（本地计时 + 服务端到期时间） |
+| 设备状态 | Wi‑Fi、DEMO/ONLINE、儿童模式剩余时长：仅在有可信时间时按服务端 `expiresAt` 显示；离线重启无可信时间→“需重新验证”，不显示倒计时 |
 
 **布局**
 
@@ -339,7 +342,7 @@ flowchart LR
 
 **儿童限制**：不展示家长账号、报告、推荐理由长文；“家长设置”需要家长锁。
 
-**LVGL 组件**：`lv_obj`×2（卡）、`lv_img`×4、`lv_label`×8、`lv_btn`×3、`nav_bottom`（3 个 `lv_btn`）。
+**LVGL 组件**：`lv_obj`×2（卡）、`lv_image`×4、`lv_label`×8、`lv_button`×3、`nav_bottom`（3 个 `lv_button`）。
 
 **对应需求**：FR-03、FR-05、FR-16、HW-01。
 
@@ -392,7 +395,7 @@ flowchart LR
 
 **儿童限制**：不展示 `DRAFT`、未审核、越权版本；接口返回 403/404 的条目直接不渲染，不显示“被拒绝”细节。
 
-**LVGL 组件**：`lv_obj`（滚动容器，关闭滚动）、4 个卡片容器、`lv_img`×4、`lv_label`×8、`lv_btn`×2、`lv_obj`（圆点）。
+**LVGL 组件**：`lv_obj`（滚动容器，关闭滚动）、4 个卡片容器、`lv_image`×4、`lv_label`×8、`lv_button`×2、`lv_obj`（圆点）。
 
 **对应需求**：FR-03、FR-11（只展示已发布）、HW-01、HW-02。
 
@@ -447,7 +450,7 @@ flowchart LR
 
 **儿童限制**：不显示版本审核状态、内部 ID；“未授权”文案避免指责语气。
 
-**LVGL 组件**：`lv_img`、`lv_label`×6、`lv_obj`×3（胶囊）、`lv_btn`×2、`lv_spinner`。
+**LVGL 组件**：`lv_image`、`lv_label`×6、`lv_obj`×3（胶囊）、`lv_button`×2、`lv_spinner`。
 
 **对应需求**：FR-03、HW-01、HW-02。
 
@@ -486,15 +489,17 @@ flowchart LR
 
 | 控件 | 正常 | 禁用 | 加载/进行中 |
 | --- | --- | --- | --- |
-| 上一页 | `forest` 图标 | 首页/会话未就绪：40% 透明 | 翻页请求在途：箭头换 20 px spinner，仍可点但去重 |
-| 下一页 | 同上 | 末页（`defaultNextPageNumber=null`） | 同上 |
+| 上一页 | `forest` 图标 | 首页/会话未就绪/离线且目标页无有效缓存：40% 透明 | 翻页请求在途：箭头换 20 px spinner，仍可点但去重 |
+| 下一页 | 同上 | 末页（`defaultNextPageNumber=null`）/离线且目标页无有效缓存 | 同上 |
 | 朗读 | “朗读” | 无文本/音频不可用 | 播放中变“暂停”，图标变双竖线 |
 | AI 问答 | 麦克风 | 录音/上传中、离线、儿童会话未授权 | 进入语音层后本按钮隐藏 |
 | 结束 | “结束” | 会话未就绪 | 提交中显示 spinner，禁止重复点 |
 
 **触摸事件**
 
-- 点翻页 → 视觉立即切换（乐观），同时按 `clientEventId` + `expectedRevision` 上报；服务端未确认前页码角标显示小圆点。
+- **在线**翻页 → 视觉立即切换（乐观），同时按 `clientEventId` + `expectedRevision` 上报；服务端未确认前页码角标显示小圆点。
+- **离线**翻页 → 只有目标页在本地缓存中有效（同一 `storyVersionId` 的该 `pageNumber` 有已缓存文本/页面快照，且未被撤回）才允许切换；否则按钮禁用并提示“这一页还没准备好”。离线翻页只更新本地展示，不递增 `revision`、不显示“已同步”。
+- 联网恢复 → 控制器先调用 API-013 取服务端 `currentPage/revision`，再决定是否用原 `clientEventId` 重放待确认页；遇到 409 先重读，不覆盖服务端进度。恢复过程**不承诺补写一定成功**。
 - 在图片区横向滑动（≥60 px，纵向位移 <40 px）→ 下一页/上一页；滑动与点击互斥，翻页后 250 ms 内忽略再次滑动。
 - 点朗读 → 播放当前页文本音频；再点暂停；播放结束自动回到“朗读”。
 - 点 AI → 打开 HW-UI-07 覆盖层（暂停朗读）。
@@ -513,21 +518,21 @@ flowchart LR
 | `TEXT_MISSING` | 正文区“本页文字暂缺”，图片照常；朗读禁用 |
 | `PAGE_TURNING` | 新页淡入 150 ms（仅透明度，不做位移） |
 | `SYNC_PENDING` | 页码旁 8 px 圆点 + 顶部细条“正在同步进度”；不阻断阅读 |
-| `SYNC_FAILED` | 顶部黄条“进度未同步，点击重试”；不自动重复提交 |
+| `SYNC_FAILED` | 顶部黄条“进度未同步，点击重试”；重试前先对齐 API-013，不自动重复提交 |
 | `SESSION_CONFLICT` | 弹层“这本书的进度已在另一台设备更新”，按钮“重新读取”/“结束阅读” |
 | `SESSION_ENDED` | 弹层“本次阅读已结束”，按钮“返回书架” |
-| `OFFLINE` | 左上角断网角标 + AI 禁用；仍可翻已缓存页，但明确标注“未同步”；结束阅读允许本地退出并在 08 显示“未同步” |
+| `OFFLINE` | 左上角断网角标 + AI 禁用；只有目标页缓存有效才可翻页；本地标“未同步”，不递增 `revision`；结束阅读允许本地退出并在 08 显示“未同步” |
 
 **业务状态与事件**
 
 - 进入阅读：仅在**新建**会话时发 `STARTED`（`clientEventId` 为该次开始生成）；恢复既有会话走 API-013 读取，不重复发 `STARTED`。
-- 翻页：`PAGE_CHANGED`，`pageNumber` 为目标页，`expectedRevision` 为最近一次服务端确认值。
+- 翻页：在线时 `PAGE_CHANGED`，`pageNumber` 为目标页，`expectedRevision` 为最近一次服务端确认值；离线时只记录待确认页，不递增本地 `revision`。
 - 结束：`FINISHED` via API-019，`reason=USER_FINISH`。
-- 服务端 `revision` 是权威；本地只做展示缓存，冲突时以 API-013 为准。
+- 服务端 `revision` 是权威；本地只做展示缓存，冲突时以 API-013 为准。恢复后若 409/504，按 12.2 处理，不把本地页码冒充已同步进度。
 
 **儿童限制**：不能修改时长、不能解绑、不能进入未授权书；结束需确认；不显示服务端错误码原文。
 
-**LVGL 组件**：`lv_obj`（屏）、`lv_img`（页面图/占位）、`lv_label`（正文，启用 `LV_LABEL_LONG_WRAP`）、`lv_label`×2（页码）、`lv_btn`×6、`lv_obj`（横幅/角标）、`lv_spinner`、`lv_obj`（确认弹层）。
+**LVGL 组件**：`lv_obj`（屏）、`lv_image`（页面图/占位）、`lv_label`（正文，启用 `LV_LABEL_LONG_WRAP`）、`lv_label`×2（页码）、`lv_button`×6、`lv_obj`（横幅/角标）、`lv_spinner`、`lv_obj`（确认弹层）。
 
 **对应需求**：FR-05、FR-06（提问入口）、FR-08、FR-12、FR-16、HW-02、HW-05、NFR-11。
 
@@ -543,11 +548,14 @@ flowchart LR
 
 | 内容 | 来源 |
 | --- | --- |
-| 录音上传 | API-022：`file`、`readingSessionId`、`pageNumber`、`revision` |
-| 识别文本 | API-022 响应（字段名以契约与实际实现为准） |
-| 回答与合成 | API-023 返回文本/音频地址（字段以契约为准；设备不传任意正文） |
+| 录音上传 | API-022：`file`、`readingSessionId`、`pageNumber`、`revision`；只做 ASR |
+| 识别文本 | API-022 返回 `text`、`reliable`；`reliable=false` 不进入问答 |
+| 问答与事件 | API-016 `questions`：`inputText`、`pageNumber`、`expectedRevision`、`clientEventId` → G10 返回 `AgentResult`；业务后端保存事件后返回 `interactionEventId`、`revision` |
+| 合成 | API-023：优先 `interactionEventId`；页面朗读才用 `readingSessionId/pageNumber/revision`，两种输入互斥；只做 TTS |
 | 播放 | API-024 的 `audioUrl`/`resource_key`；过期按 404 处理 |
 | 授权 | 会话绑定与 `readingSessionId`；401/403 进入 `ERROR_AUTH` |
+
+> 当前 API-016/G10 与互动事件持久化尚未接入；5.7 的完整问答只能在联调环境验证，不能以 API-022/023 路由存在代替。
 
 **布局**
 
@@ -577,15 +585,15 @@ flowchart LR
 | 场景 | 本页表现 |
 | --- | --- |
 | 加载 | 依次显示 UPLOADING/RECOGNIZING/THINKING/SYNTHESIZING 的状态文字 + 单个 spinner |
-| 成功 | PLAYING 显示波形与识别文本，播完回 IDLE 并提示“还想问点什么？” |
+| 成功 | 仅当 ASR 文本被接受（家长确认或后端可信）且 API-016 事件保存成功后进入 PLAYING；显示波形与识别文本，播完回 IDLE 并提示“还想问点什么？” |
 | 失败 | 对应 `ERROR_*` 态：一句人话 + 重试/取消，阅读页不变 |
 | 空数据 | 空录音 → `ERROR_TOO_SHORT`；无可识别文本 → `ERROR_ASR` |
 
-**业务状态与事件**：语音相关请求失败不得写入阅读会话事件；重试必须重新录音，不复用上一次请求体；401/403 视为授权失效。
+**业务状态与事件**：语音失败不得写入阅读会话事件；ASR 失败需重新录音，TTS/播放失败复用已保存的 `interactionEventId` 重试，不重新上传；401/403 视为授权失效。G10 的 `BLOCKED/FALLBACK` 只展示服务端 `outputText`，不伪造正常回答。
 
 **儿童限制**：录音有时长上限与可见指示；不后台录音；不连续监听；识别失败提供“换个说法”“先不问了”两个出口。
 
-**LVGL 组件**：`lv_obj`（遮罩 + 面板）、`lv_btn`×4（麦克风/关闭/取消/重试）、`lv_label`×4（标题/状态/副文字/识别预览）、`lv_obj`（波形 5 根 4 px 竖条，`lv_anim` 高度变化）、`lv_spinner`。
+**LVGL 组件**：`lv_obj`（遮罩 + 面板）、`lv_button`×4（麦克风/关闭/取消/重试）、`lv_label`×4（标题/状态/副文字/识别预览）、`lv_obj`（波形 5 根 4 px 竖条，`lv_anim` 高度变化）、`lv_spinner`。
 
 **对应需求**：FR-08、AI-05、AI-10、HW-03、HW-04、NFR-11。
 
@@ -632,7 +640,7 @@ flowchart LR
 
 **儿童限制**：不展示家长阅读报告、不展示 AI 评价式结论；不提供“分享”。
 
-**LVGL 组件**：`lv_obj`（卡）、`lv_img`、`lv_label`×4、`lv_btn`×2、`lv_spinner`。
+**LVGL 组件**：`lv_obj`（卡）、`lv_image`、`lv_label`×4、`lv_button`×2、`lv_spinner`。
 
 **对应需求**：FR-09（家长在 Web 查看）、FR-16、HW-05、NFR-11。
 
@@ -680,7 +688,7 @@ flowchart LR
 
 **儿童限制**：不显示 HTTP 状态码、堆栈、内部 ID；文案不出现“错误”“失败”作为标题（用“没找到”“断开啦”）。
 
-**LVGL 组件**：整页 `lv_obj` + `lv_img` + `lv_label`×3 + `lv_btn`×2；横幅 `lv_obj` + `lv_label` + `lv_btn`。
+**LVGL 组件**：整页 `lv_obj` + `lv_image` + `lv_label`×3 + `lv_button`×2；横幅 `lv_obj` + `lv_label` + `lv_button`。
 
 **对应需求**：FR-12、NFR-06、HW-02（缺图占位）。
 
@@ -698,7 +706,7 @@ flowchart LR
 | 音量 | 本地音频编解码器，NVS | 是（家长锁后） |
 | Wi‑Fi 名称/信号 | `esp_wifi` | 否（仅查看） |
 | 设备绑定状态 | NVS + 服务端投影 | 否（解绑在手机端） |
-| 儿童模式剩余时长 | 本地计时 + `expiresAt` | 否（延长在手机端） |
+| 儿童模式剩余时长 | 服务端 `expiresAt` + 可信时间；离线无可信时间则不显示倒计时 | 否（延长在手机端） |
 | 固件版本 | 编译期常量 | 否 |
 
 **布局**
@@ -743,7 +751,7 @@ flowchart LR
 
 **儿童限制**：儿童无法通过本页解绑、延长时长、修改内容范围；家长锁不是身份认证，服务端仍是权威。
 
-**LVGL 组件**：`lv_obj`（列表行）×6、`lv_slider`×2、`lv_label`×6、`lv_btn`×2、`lv_obj`（家长锁弹层）+ `lv_arc`（进度环）。
+**LVGL 组件**：`lv_obj`（列表行）×6、`lv_slider`×2、`lv_label`×6、`lv_button`×2、`lv_obj`（家长锁弹层）+ `lv_arc`（进度环）。
 
 **对应需求**：FR-02（时长由家长设定）、FR-14（解绑在家长侧）、FR-16、NFR-11。
 
@@ -798,7 +806,7 @@ flowchart LR
 | 朗读 | 仅当该页音频可用（服务端返回的页面音频资源或本地缓存）；接口未落地时按钮禁用，不伪造播放 |
 | 朗读与录音 | 进入录音前必须先停朗读；录音期间翻页禁用 |
 | 分支 | 仅当 `branches` 存在、服务端标记已审核、且当前会话允许时显示；两个选项按钮 288×72，位于 64,140,672,240 覆盖面板内 |
-| 断网 | 保留当前页与文字；AI 禁用；结束阅读允许本地退出并在 08 标注“未同步”，不得显示“已保存” |
+| 断网 | 保留当前页与文字；AI 禁用；仅当目标页有有效缓存时才允许离线翻页，否则禁用并提示；本地不递增 `revision`；结束阅读允许本地退出并在 08 标注“未同步”，不得显示“已保存”；恢复后先 API-013，按 409/504/幂等键处理，不承诺补写成功 |
 | 返回 | 必须二次确认，避免误退出 |
 
 ### 6.5 分支选项覆盖层（P1，有权限才显示）
@@ -819,10 +827,28 @@ flowchart LR
 
 ### 7.1 交互前提（不可假设）
 
+- **主状态共 7 个**：`IDLE`、`RECORDING`、`UPLOADING`、`RECOGNIZING`、`THINKING`、`SYNTHESIZING`、`PLAYING`；`PLAYING → IDLE` 是同一闭环的收尾，不把回到 `IDLE` 重复计为第 8 个状态。`ERROR_*` 是失败分支，不计入主状态数。
 - 半双工短语音：**点击开始、点击结束**；不是实时全双工，不支持语音打断、唤醒词、无限连续对话。
 - 录音时长 0.5–15 秒；小于 0.5 秒视为空录音。
 - 录音格式以 `backend/app/audio_conversion.py` 的 MIME/大小/时长限制为准；设备端候选为 WAV PCM16 mono 16 kHz，必须实测确认。
-- 一次提问对应一次上传；识别文本不要求儿童确认（儿童模式），家长模式可在 Web 修正。
+- 一次提问对应一次上传；儿童模式不要求编辑识别文本，`reliable=false` 时重录，不把低置信文本直接送问答。**当前 ASR 的 `reliable` 固定为 false**（供应商没有可用置信度证据）：儿童模式不得自动进入问答，必须重录；家长模式需确认/修正文本后才能提交 API-016。预置问题入口属于后续方案，不在 5.7 首版布局内。
+- **能力边界**：API-022 只做语音识别（ASR），API-023 只做语音合成（TTS），二者都不是问答编排器。完整问答还依赖 API-016 `questions` 调用 G10 Agent、业务后端把结果保存为互动事件并返回 `interactionEventId`，再以该事件调用 API-023。上述链路与互动持久化尚未全部实现前，**不得描述为“完整 AI 问答已上线”**。
+
+### 7.1.1 端到端调用顺序（H06 必须按此依赖实现）
+
+| 步骤 | 接口/模块 | 关键输入 | 关键输出与前置条件 |
+| --- | --- | --- | --- |
+| 1 | API-022 `POST /voice/transcriptions` | `file`、`readingSessionId`、`pageNumber`、`revision` | `text`、`reliable`；只完成识别，不生成答案 |
+| 2 | 本地判别 | `reliable`、`text` | 空文本或 `reliable=false`：儿童重录；家长确认/修正后才进入第 3 步；**不自动送 G10** |
+| 3 | API-016 `POST /reading-sessions/{id}/questions` → G10 | `inputText`、`pageNumber`、`expectedRevision`、`clientEventId` | G10 汇总检索/生成/安全/降级为 `AgentResult`；业务后端保存事件后返回 `interactionEventId`、`revision`，G10 自身不生成持久化 ID |
+| 4 | API-023 `POST /voice/syntheses` | **优先** `interactionEventId`；页面朗读才用 `readingSessionId/pageNumber/revision`（两种输入互斥） | `audioUrl`、`expiresAt`；必须在互动事件保存之后调用，否则没有合法答案来源 |
+| 5 | API-024 `GET /media/{resource_key}` | `audioUrl` 中的资源键 | WAV 音频；过期/404 → `ERROR_MEDIA` |
+
+> 关键约束：
+> 1. API-023 不得在 API-016/事件保存之前调用；不能用页面正文冒充问答答案。
+> 2. `status=BLOCKED` 时仍按服务端 `outputText` 展示安全回应，不展示被拦截内容；`FALLBACK` 不伪装成正常回答。
+> 3. 当前 API-016 路由与互动事件持久化仍待业务后端实现；H06 联调前按“能力未开放”处理，不得把 mock 回答写入正式记录。
+> 4. 语音错误码使用 `VOICE_REQUEST_IN_PROGRESS`（retryable=false、无 Retry-After），不要套用 API-015 的 `REQUEST_IN_PROGRESS` 自动重发语义。
 
 ### 7.2 状态定义
 
@@ -830,13 +856,13 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `IDLE` | “想问什么就问吧” | 麦克风静态，无动画 | 麦克风、关闭 | 无 | 点击 → RECORDING | — | 是（关闭） | 是 |
 | `RECORDING` | “我在听…” + 计时 `00:07` | 麦克风外圈 `gold` 呼吸（`lv_anim` 透明度 0.4–1.0，800 ms） | 结束录音、取消 | 翻页、朗读、AI | 点击结束且 ≥0.5 s → UPLOADING | 超 15 s 自动结束；<0.5 s → `ERROR_TOO_SHORT` | 是 | 是 |
-| `UPLOADING` | “正在上传…” | spinner 32 px + 进度条（可选） | 取消 | 其余 | HTTP 200/202 → RECOGNIZING | 断网 → `ERROR_NETWORK`；409 `REQUEST_IN_PROGRESS` → 按 `Retry-After` 停留；504 → `ERROR_UNKNOWN` | 是（仅停止本地等待） | 是 |
-| `RECOGNIZING` | “正在听懂你说的话…” | spinner | 取消 | 其余 | 返回 text → THINKING | 空/不可靠 → `ERROR_ASR`；401/403 → `ERROR_AUTH` | 是 | 是 |
-| `THINKING` | “让我想一想…” | 3 个点循环（`lv_anim` 透明度） | 取消 | 其余 | 答案就绪 → SYNTHESIZING | 超 20 s → `ERROR_TIMEOUT`；503 → `ERROR_SERVICE` | 是 | 是 |
-| `SYNTHESIZING` | “正在把答案读出来…” | 波形 3 根静态 + spinner | 取消 | 其余 | 拿到 `audioUrl` → PLAYING | `ERROR_TTS`；音频地址过期 → `ERROR_MEDIA` | 是 | 是 |
-| `PLAYING` | “知芽在回答” + 识别文本 1 行 | 波形 5 根随音频音量起伏（或固定 300 ms 循环） | 停止播放、关闭 | 其余 | 播放完成 → IDLE（停留 3 s 自动关闭） | `ERROR_PLAYBACK` | 是 | 是 |
+| `UPLOADING` | “正在上传…” | spinner 32 px + 进度条（可选） | 取消 | 其余 | HTTP 200/202 → RECOGNIZING | 断网 → `ERROR_NETWORK`；409 `VOICE_REQUEST_IN_PROGRESS` → 不自动重发，提示“正在处理”，可取消；504 → `ERROR_UNKNOWN` | 是（仅停止本地等待） | 是 |
+| `RECOGNIZING` | “正在听懂你说的话…” | spinner | 取消 | 其余 | API-022 返回 `text` 且 `reliable=true` → THINKING | 空/`reliable=false` → `ERROR_ASR`；401/403 → `ERROR_AUTH` | 是 | 是 |
+| `THINKING` | “让我想一想…” | 3 个点循环（`lv_anim` 透明度） | 取消 | 其余 | API-016/G10 返回 `outputText` + 已保存的 `interactionEventId` → SYNTHESIZING | 超 20 s → `ERROR_TIMEOUT`；503 → `ERROR_SERVICE`；504 → `ERROR_UNKNOWN`；409 → 退出语音并提示重读会话 | 是 | 是 |
+| `SYNTHESIZING` | “正在把答案读出来…” | 波形 3 根静态 + spinner | 取消 | 其余 | 以 `interactionEventId` 调 API-023，拿到 `audioUrl` → PLAYING | `ERROR_TTS`；事件/进度失效 → `ERROR_MEDIA` 或冲突提示 | 是 | 是 |
+| `PLAYING` | “知芽在回答” + 识别文本 1 行 | 波形 5 根随音频音量起伏（或固定 300 ms 循环） | 停止播放、关闭 | 其余 | API-024 播放完成 → IDLE（停留 3 s 自动关闭） | `ERROR_PLAYBACK`；媒体 404 → `ERROR_MEDIA` | 是 | 是 |
 | `ERROR_TOO_SHORT` | “没有听清，再说一次吧” | 麦克风图标 + 感叹号 | 重试、取消 | 其余 | 重试 → IDLE → RECORDING | — | 是 | 是 |
-| `ERROR_ASR` | “没听清这句话，换个说法试试” | 同上 | 重试、改用按钮选择、取消 | — | 重试 → IDLE | — | 是 | 是 |
+| `ERROR_ASR` | “没听清这句话，换个说法试试” | 同上 | 重试、取消 | — | 重试 → IDLE | — | 是 | 是 |
 | `ERROR_NETWORK` | “网络断开啦，先读故事吧” | 断线云朵 | 重试、取消 | — | 网络恢复 → IDLE | — | 是 | 是 |
 | `ERROR_TIMEOUT` | “想得太久啦，再问一次好吗” | 时钟 | 重试、取消 | — | 重试 → IDLE | — | 是 | 是 |
 | `ERROR_SERVICE` | “知芽现在有点忙” | 云朵 | 重试、取消 | — | 重试 → IDLE | — | 是 | 是 |
@@ -859,19 +885,20 @@ stateDiagram-v2
   UPLOADING --> ERROR_NETWORK: 断网/连接失败
   UPLOADING --> ERROR_UNKNOWN: 504
   UPLOADING --> ERROR_AUTH: 401/403
-  RECOGNIZING --> THINKING: 识别成功
-  RECOGNIZING --> ERROR_ASR: 识别失败/低置信
+  RECOGNIZING --> THINKING: API-022 返回 text 且 reliable
+  RECOGNIZING --> ERROR_ASR: 空文本/reliable=false
   RECOGNIZING --> ERROR_AUTH: 401/403
-  THINKING --> SYNTHESIZING: 回答就绪
+  THINKING --> SYNTHESIZING: API-016/G10 返回答案且事件已保存
   THINKING --> ERROR_TIMEOUT: 超20s
   THINKING --> ERROR_SERVICE: 503
-  SYNTHESIZING --> PLAYING: 音频URL可用
+  THINKING --> ERROR_UNKNOWN: 504
+  SYNTHESIZING --> PLAYING: API-023 返回 audioUrl
   SYNTHESIZING --> ERROR_TTS: 合成失败
-  SYNTHESIZING --> ERROR_MEDIA: 音频地址过期
+  SYNTHESIZING --> ERROR_MEDIA: 事件/音频过期
   PLAYING --> IDLE: 播放完成
   PLAYING --> ERROR_PLAYBACK: 解码/路由失败
   ERROR_TOO_SHORT --> IDLE: 重试
-  ERROR_ASR --> IDLE: 重试/改用按钮
+  ERROR_ASR --> IDLE: 重试
   ERROR_NETWORK --> IDLE: 网络恢复/重试
   ERROR_TIMEOUT --> IDLE: 重试
   ERROR_SERVICE --> IDLE: 重试
@@ -897,7 +924,7 @@ stateDiagram-v2
 | 能力 | 幼儿（设备） | 家长（设备） | 家长（Web） |
 | --- | --- | --- | --- |
 | 翻页、朗读、结束本次阅读 | ✅ | ✅ | ✅ |
-| 受限短语音提问 | ✅（已授权会话内） | ✅ | ✅ |
+| 受限短语音提问 | ✅（已授权会话内；当前受 ASR `reliable=false` 与 API-016 持久化限制） | ✅ | ✅ |
 | 选择已审核故事分支 | ✅（仅家长已开启的儿童模式） | ✅ | ✅ |
 | 修改阅读时长 | ❌ | ❌ | ✅ |
 | 绑定/解绑设备 | ❌ | ❌ | ✅ |
@@ -915,7 +942,12 @@ stateDiagram-v2
 1. 到期前 5 分钟：状态栏右侧显示剩余时间，使用 `goldSoft` 胶囊 + `ink` 文字（不直接把黄色字压在米色底上）。
 2. 到期时：弹出全屏锁（`ink` 70% 遮罩 + 面板），文案“今天的阅读时间到啦”，只保留“请家长解锁（长按 5 秒）”。
 3. 家长长按后：回到设置页，可调整亮度/音量；**延长时长仍显示“请在手机上操作”**。
-4. 儿童无法通过返回键、滑动、重启绕过：到期状态由控制器持有，重启后以服务端 `expiresAt` 为准（离线时按本地最后一次同步值 + 单调计时）。
+4. 儿童无法通过返回键、滑动、重启绕过：到期状态由控制器持有，**重启后必须重新验证**，不能把单调计时跨断电继续使用。
+5. 重启后的判定策略（按安全性从高到低）：
+   - **在线**：调用 API-013/授权状态，以服务端 `expiresAt`、`status`、`revision` 为准；已到期则保持锁定。
+   - **离线且有可信时间**：仅当本次开机能从可信时间源（如已校时且误差有界的 SNTP/RTC）取得当前时间，并与持久化的“服务端确认时刻”比较，才可计算剩余时间；否则进入下一条。
+   - **离线且无可信时间（默认 safe-fail）**：不推算剩余时间，进入儿童锁定页，只提供“请家长解锁（长按 5 秒）”与“重新连接”；不自动恢复阅读、不以本地剩余分钟数放行。
+6. 本地只持久化“最后一次服务端确认的 `expiresAt` + 确认来源/时刻”，并标记可信度；不持久化可被儿童直接修改的“剩余分钟”作为授权依据。重新联网后以服务端结果覆盖本地状态。
 
 ### 8.4 DEMO 模式边界
 
@@ -996,6 +1028,13 @@ stateDiagram-v2
 - 线性、圆角、单色 `forest`；尺寸 24/28/32/56。
 - 必备集合：左箭头、右箭头、麦克风、暂停、播放、喇叭、Wi‑Fi、锁、云朵断线、书本、芽形、感叹号。
 - 不使用 emoji（渲染不一致、字体膨胀）。
+
+### 9.6 LVGL 9.2 控件命名
+
+- 本文统一按 **LVGL 9.2.0** 命名：`lv_button`、`lv_image`、`lv_label`、`lv_obj`、`lv_slider`、`lv_arc`、`lv_spinner`。
+- **不再使用 v8 旧名** `lv_btn` / `lv_img`；H06 创建控件用 `lv_button_create()`、`lv_image_create()`，事件用 `lv_obj_add_event_cb()`。
+- 正文换行保留 `LV_LABEL_LONG_WRAP`；点击/长按/手势使用 `LV_EVENT_CLICKED`、`LV_EVENT_LONG_PRESSED`、`LV_EVENT_GESTURE`，事件回调只投递控制器。
+- 厂商 9.2.0 示例与托管 BSP 3.0.1 的 LVGL 9.4 均使用上述 v9 名称；若 H02 最终切换 9.4，仍按本节命名，不回到 v8 API。
 
 ---
 
@@ -1094,8 +1133,10 @@ stateDiagram-v2
 | 04 书架 | API-008 | — | `items[]`、`storyVersionId`、`coverRef` | 契约已定义（家长 Web 路径）；设备受限投影待定 |
 | 05 详情 | API-009、API-013；API-011（家长创建会话） | API-011 | `pages`、`coverRef`、`summary` | 契约已定义（家长 Web 路径）；`coverRef=null`；设备投影待定 |
 | 06 阅读 | API-009、API-013 | API-015 | `pageNumber`、`defaultNextPageNumber`、`revision` | 契约已定义；设备写权限待评审 |
-| 07 语音 | — | API-022、API-023 | `file`、`readingSessionId`、`pageNumber`、`revision` | 家长 Web 路由存在（H00 记录）；设备认证待定 |
-| 07 播放 | API-024 | — | `audioUrl`/`resource_key` | 音频分支存在（H00 记录）；图片分派未实现 |
+| 07 识别 | — | API-022 | `file`、`readingSessionId`、`pageNumber`、`revision` | ASR 路由存在；`reliable` 当前固定 false；设备认证待定 |
+| 07 问答/事件 | API-016（G10 入口） | API-016 | `inputText`、`expectedRevision`、`clientEventId`、`interactionEventId` | 契约已定义；G10 工作流已存在；**互动持久化待业务后端实现** |
+| 07 合成 | — | API-023 | 优先 `interactionEventId`；页面朗读用 `readingSessionId/pageNumber/revision` | TTS 路由存在；依赖事件保存；不是问答生成器 |
+| 07 播放 | API-024 | — | `audioUrl`/`resource_key` | 音频分支存在；图片分派未实现 |
 | 08 结束 | — | API-019 | `reason`、`expectedRevision`、`clientEventId` | 契约已定义；设备调用待评审 |
 | 09 异常 | 视场景 | — | 错误 `code`、`retryable` | ✅ 契约已定义 |
 | 10 设置 | 无 | 无 | 本地 NVS | ✅ 本地 |
@@ -1107,11 +1148,13 @@ stateDiagram-v2
 3. `pageNumber` 从 1 开始；总页数取 `pages` 中最大 `pageNumber`，不按数组长度。
 4. `defaultNextPageNumber=null` 表示末页；翻页目标用它，不假定连续。
 5. `coverRef`/`imageRef` 可为 null；null 必须显示占位，不得请求空路径。
-6. 会话 `status`、`currentPage`、`revision` 以服务端为准；本地只缓存展示。
+6. 会话 `status`、`currentPage`、`revision` 以服务端为准；本地只缓存展示。离线翻页**不递增本地 `revision`**，只记录“待确认页”。
 7. `409 SESSION_CONFLICT`：先 API-013 重读；确认本次事件是否已被记录，未被记录再按最新 `revision` 提交（键是否复用按 DCL-007 执行），不得直接覆盖。
 8. `504 REQUEST_OUTCOME_UNKNOWN`：先查询会话，保留原 `clientEventId`，不自动创建新请求。
-9. `REQUEST_IN_PROGRESS`：按 `Retry-After` 用原键重发。
+9. `REQUEST_IN_PROGRESS`（API-015）：按 `Retry-After` 用原键重发。
 10. 401/403/404：不得重试登录；分别提示“重新绑定/未授权/已下架”。
+11. 语音专用 `VOICE_REQUEST_IN_PROGRESS` / `VOICE_BUSY` / `ASR_TIMEOUT` / `TTS_TIMEOUT` 不等于 API-015 的 `REQUEST_OUTCOME_UNKNOWN`；语音 POST 不自动重发，按 7.1.1 与 7.2 处理。
+12. 问答链：API-022 只出识别文本；API-016/G10 才出答案并写互动事件；API-023 只读已保存的 `interactionEventId` 做 TTS。不得绕开事件保存直接合成，也不得把 ASR/TTS 描述成完整问答。
 
 ### 12.3 前端状态机归属
 
@@ -1137,17 +1180,19 @@ stateDiagram-v2
 
 | 场景 | 是否可继续阅读 | 页面表现 | 数据一致性 |
 | --- | --- | --- | --- |
-| 断网（已缓存当前页） | ✅ | 左上角断网角标；AI 禁用；翻页仅本地；结束可本地退出 | 明确“未同步”，恢复后重试 |
-| 断网（无缓存） | ❌ | 整页“网络断开啦” | 不写任何事件 |
+| 断网（当前页/目标页缓存有效） | ✅ | 左上角断网角标；AI 禁用；仅可翻到**确实已缓存**的目标页 | 仅本地待确认，不递增 `revision`；恢复后先 API-013，再按原键/409/504 处理，**不承诺补写一定成功** |
+| 断网（目标页无缓存） | ✅（留在当前页） | 目标页按钮禁用/提示“这一页还没准备好”，不切换 | 不伪造翻页成功 |
+| 断网（无任何缓存） | ❌ | 整页“网络断开啦” | 不写任何事件 |
 | 图片 404/解码失败 | ✅ | 图片框占位 + 正文 | 不影响会话 |
 | 音频 404/解码失败 | ✅ | 朗读按钮禁用 + 横幅 | 不伪造播放成功 |
-| ASR 失败 | ✅ | 语音层错误态 + 重试/改用按钮 | 不写会话事件 |
-| TTS 失败 | ✅ | 可只显示文字答案（若接口返回文本） | 不播放静音冒充成功 |
-| 模型超时（>20 s） | ✅ | 错误态 + 重试 | 不重放已提交请求 |
+| ASR 失败/`reliable=false` | ✅ | 语音层错误态 + 重录/取消 | 不写会话事件，不送低置信文本进问答 |
+| TTS 失败 | ✅ | 可显示已保存事件的文字答案（若有） | 不播放静音冒充成功，不重新生成答案 |
+| G10 超时（>20 s） | ✅ | 错误态 + 重试 | 不重放已提交问答；先查事件是否已保存 |
 | 409 冲突 | ⚠ | 弹层“重新读取/结束” | 以 API-013 为准 |
 | 504 未知 | ⚠ | 弹层“正在确认” | 查 API-013，不新建键 |
 | 凭证失效 | ❌ | 整页“需要重新连接家长账号” | 清本地会话缓存 |
-| 儿童模式到期 | ❌ | 全屏锁 | 本地计时 + `expiresAt` |
+| 儿童模式到期（在线） | ❌ | 全屏锁 | 以服务端 `expiresAt/status` 为准 |
+| 儿童模式离线重启 | ❌（安全锁定） | “需要重新连接家长账号确认阅读时间”+ 家长解锁/重连 | 无可信时间则不推算剩余时间，不自动恢复阅读 |
 | 解绑/撤回 | ❌ | 整页“已断开/已下架” | 清受控媒体缓存 |
 
 ### 13.3 提示文案规则
@@ -1165,25 +1210,25 @@ stateDiagram-v2
 | 页面编号 | LVGL 控件（类型/对象名） | 数据来源 | 用户事件 | 状态更新 | 异常处理 | 验收方法 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 01 | `lv_obj` 状态行×3 / `row_wifi`、`row_svc`、`row_cred` | Wi‑Fi 事件、API-032、NVS | 点“重新检查” | CHECKING→ONLINE/OFFLINE/FAULT | 8 s 超时→OFFLINE；503→“服务未就绪” | 断网/恢复各 3 次，状态 5 s 内变化；不显示 IP |
-| 01 | `lv_btn` `btn_demo` | 本地 manifest 可读 | 点击 | 进入首页 `mode=DEMO` | 资源缺失→按钮不出现 | 关 Wi‑Fi 仍能进书架并显示 DEMO 徽标 |
+| 01 | `lv_button` `btn_demo` | 本地 manifest 可读 | 点击 | 进入首页 `mode=DEMO` | 资源缺失→按钮不出现 | 关 Wi‑Fi 仍能进书架并显示 DEMO 徽标 |
 | 02 | `lv_label` `lab_code` + `lab_countdown` | 绑定会话（⚠未实现） | 刷新、长按 3 s 放大 | REQUESTING→CODE_ACTIVE→EXPIRED | 接口 404/501→`UNSUPPORTED` | 用 mock server 验证 6 位码与倒计时；真机未见接口时显示“未开放” |
 | 03 | 卡片 `card_continue` + `btn_continue` | API-013 + API-009 | 点击继续 | 进入阅读（恢复 `currentPage`） | 无会话→空卡；403→“未授权” | 有/无未完成会话各测一次 |
 | 03 | 卡片 `card_shelf` + `img_thumb`×3 | API-008 `coverRef`/H03 THUMBNAIL | 点击 | 进入书架 | 缺图→占位，不空白 | 3 本封面全部显示或占位 |
 | 04 | 容器 `grid_shelf` + `card_book`×4 | API-008 已发布条目 | 点卡、滑动 | 换页、进入详情 | 403/404 条目不渲染 | 授权 N 本按 4/页分页；末页无越界 |
-| 04 | `lv_btn` `btn_prev_page`/`btn_next_page` | 客户端分页 | 点击 | 页码点与文字更新 | 首末页禁用 | 连点 10 次不越界、不重复加载 |
-| 05 | `lv_img` `img_detail` | `coverRef`→API-024 或 H03 DETAIL | 点击开始/继续 | 进入阅读 | 404→占位；401→整页提示 | 断网时仍显示本地 DETAIL |
-| 05 | `lv_btn` `btn_start` | API-013/011 或设备投影（⚠待定） | 点击 | `SESSION_STARTING`→阅读 | 失败停留并提示；不伪造成功 | 断开服务端，按钮恢复且不跳转 |
-| 06 | `lv_img` `img_page` | `imageRef`→API-024；null→占位 | 无（由翻页触发） | 解码完成/失败 | 解码失败→占位 + 正文 | 用损坏 JPEG 测占位；不得用封面替代 |
+| 04 | `lv_button` `btn_prev_page`/`btn_next_page` | 客户端分页 | 点击 | 页码点与文字更新 | 首末页禁用 | 连点 10 次不越界、不重复加载 |
+| 05 | `lv_image` `img_detail` | `coverRef`→API-024 或 H03 DETAIL | 点击开始/继续 | 进入阅读 | 404→占位；401→整页提示 | 断网时仍显示本地 DETAIL |
+| 05 | `lv_button` `btn_start` | API-013/011 或设备投影（⚠待定） | 点击 | `SESSION_STARTING`→阅读 | 失败停留并提示；不伪造成功 | 断开服务端，按钮恢复且不跳转 |
+| 06 | `lv_image` `img_page` | `imageRef`→API-024；null→占位 | 无（由翻页触发） | 解码完成/失败 | 解码失败→占位 + 正文 | 用损坏 JPEG 测占位；不得用封面替代 |
 | 06 | `lv_label` `lab_body`（WRAP） | API-009 `text` | 无 | 换页更新 | 空文本→“本页文字暂缺” | 39 字长句完整显示，不滚动 |
-| 06 | `lv_btn` `btn_prev`/`btn_next` | `pageNumber`、`defaultNextPageNumber` | 点击、滑动 | 乐观换页 + `PAGE_CHANGED` | 409→弹层重读；504→查询 | 首页向前、末页向后均禁用；409 注入测试 |
-| 06 | `lv_btn` `btn_read` | 页面音频/`audioRef` | 点击 | 朗读↔暂停 | 音频失败→禁用 + 横幅 | 播放中切页自动停止；不重叠播放 |
-| 06 | `lv_btn` `btn_ai` | 会话授权 | 点击 | 打开 07 覆盖层 | 离线/未授权→禁用 | 录音期间翻页不可用 |
+| 06 | `lv_button` `btn_prev`/`btn_next` | `pageNumber`、`defaultNextPageNumber` | 点击、滑动 | 在线乐观换页 + `PAGE_CHANGED`；离线只切到有效缓存页、不递增 `revision` | 409→弹层重读；504→查询；离线无缓存→禁用 | 首页向前、末页向后禁用；离线缓存页/无缓存页各测；409 注入测试 |
+| 06 | `lv_button` `btn_read` | 页面音频/`audioRef` | 点击 | 朗读↔暂停 | 音频失败→禁用 + 横幅 | 播放中切页自动停止；不重叠播放 |
+| 06 | `lv_button` `btn_ai` | 会话授权 | 点击 | 打开 07 覆盖层 | 离线/未授权→禁用 | 录音期间翻页不可用 |
 | 06 | 覆盖层 `branch_sheet` | `branches`（已审核） | 选项 A/B | 跳到分支后续页 | 无权限→不显示 | mock 分支数据验证两个不同后续页 |
-| 06 | `lv_btn` `btn_end` + 确认层 | API-019 | 点击 | `FINISHED`→08 | 504→查询；失败→“未同步” | 结束两次：第二次同键重放不重复计数 |
-| 07 | `lv_btn` `btn_mic` + `lab_state` | API-022 | 点开始/点结束/取消 | 核心 8 状态 + 错误态（第 7 节） | 断网/超时/ASR/TTS/播放失败各有态 | 每种失败注入一次，按钮可用性符合 7.2 |
+| 06 | `lv_button` `btn_end` + 确认层 | API-019 | 点击 | `FINISHED`→08 | 504→查询；失败→“未同步” | 结束两次：第二次同键重放不重复计数 |
+| 07 | `lv_button` `btn_mic` + `lab_state` | API-022 → API-016/G10（待接入）→ 事件保存 → API-023 → API-024 | 点开始/点结束/取消 | 7 个主状态 + 错误态（第 7 节） | 断网/超时/ASR/TTS/播放失败各有态；无事件 ID 不合成 | 每种失败注入一次；核对主状态数=7；按钮可用性符合 7.2 |
 | 07 | `lv_obj` 波形 `wave_bars` | 播放回调 | 无 | PLAYING 动画 | 播放失败→ERROR_PLAYBACK | 动画不影响翻页响应（主观观察 + 帧计数） |
-| 07 | `lv_btn` `btn_stop_audio` | API-024 音频 | 点击 | PLAYING→IDLE | 停止失败→仍回 IDLE | 停止后 1 s 内无声 |
-| 08 | `lv_btn` `btn_again`/`btn_shelf` | API-019 结果 | 点击 | 重读/回书架 | 保存失败→“未同步”+重试 | 断网结束：显示未同步，不显示已保存 |
+| 07 | `lv_button` `btn_stop_audio` | API-024 音频 | 点击 | PLAYING→IDLE | 停止失败→仍回 IDLE | 停止后 1 s 内无声 |
+| 08 | `lv_button` `btn_again`/`btn_shelf` | API-019 结果 | 点击 | 重读/回书架 | 保存失败→“未同步”+重试 | 断网结束：显示未同步，不显示已保存 |
 | 09 | 整页 `page_error` / 横幅 `banner` | 错误码 | 重试/返回 | 按 13.2 | 不显示错误码 | 注入 401/403/404/409/503/504 各一次 |
 | 10 | `lv_slider` `sld_bright`/`sld_volume` | 本地 NVS | 拖动 | 立即生效并保存 | 音频未就绪→禁用 | 重启后亮度/音量保持 |
 | 10 | `lv_obj` `lock_overlay` + `lv_arc` | 本地状态 | 长按 5 s | LOCKED→UNLOCKED→30 s 后锁定 | 提前松开→取消 | 儿童无法进入敏感项；解锁后仍不能解绑 |
@@ -1191,6 +1236,8 @@ stateDiagram-v2
 ---
 
 ## 15. UI 验收用例
+
+> 语音用例的“正常问答”以 API-016/G10、互动事件持久化和可接受的 ASR 文本为前提。当前 `reliable` 固定为 false、API-016 持久化未接入，**UI-AC-12 只能作为目标用例，不能记为已通过**；其余静态/离线用例可按本文执行。
 
 | 编号 | 前置 | 步骤 | 预期 | 关联 |
 | --- | --- | --- | --- | --- |
@@ -1203,15 +1250,15 @@ stateDiagram-v2
 | UI-AC-07 | 阅读页第 1 页 | 点上一页 | 按钮禁用，无请求、无提示错误 | HW-02 |
 | UI-AC-08 | 阅读页末页（`defaultNextPageNumber=null`） | 点下一页/右滑 | 禁用且不越界；左滑仍可回上一页 | HW-02 |
 | UI-AC-09 | 阅读页缺图页 | 进入该页 | 图片框占位 + 正文完整；朗读仍可用（有音频时） | HW-02 |
-| UI-AC-10 | 阅读中拔网 | 翻一页 | 页面切换成功但标“未同步”；不显示“已保存” | NFR-06 |
-| UI-AC-11 | 网络恢复 | 点重试同步 | 进度补写成功，角标消失 | FR-12 |
-| UI-AC-12 | 语音正常 | 点 AI → 点麦克风开始 → 说一句 → 点结束 | 依次看到 上传/识别/思考/合成/播放；结束后回阅读页 | FR-08、HW-03/04 |
+| UI-AC-10 | 阅读中拔网 | 翻到有缓存的目标页；再试无缓存页 | 仅缓存页可切换；无缓存页按钮禁用并提示“这一页还没准备好”；标“未同步”，无“已保存” | NFR-06 |
+| UI-AC-11 | 网络恢复 | 点重试同步 | 先读 API-013；无冲突才按原键重放，409 提示重新读取；不承诺补写成功 | FR-12 |
+| UI-AC-12 | 语音正常（依赖 API-016/G10 与事件保存） | 点 AI → 点麦克风开始 → 说一句 → 点结束 | 依次看到 上传/识别/问答/合成/播放；问答事件已保存后才合成；结束后回阅读页 | FR-08、HW-03/04 |
 | UI-AC-13 | 语音空录音 | 点开始后 0.3 s 点结束 | 提示“没有听清，再说一次”，可重试 | FR-08 |
-| UI-AC-14 | ASR 失败注入 | 说一句后服务端返回失败 | 提示“没听清，换个说法”；提供“改用按钮选择” | FR-08 |
+| UI-AC-14 | ASR 失败注入 | 说一句后服务端返回失败 | 提示“没听清，换个说法”；提供重录/取消 | FR-08 |
 | UI-AC-15 | 模型超时 20 s | 提问后等待 | `ERROR_TIMEOUT`，可重试；页面仍在原页 | NFR-06 |
 | UI-AC-16 | 录音中 | 点取消 | 立即停止录音，回到阅读页；不上传 | HW-03 |
 | UI-AC-17 | 会话冲突注入 | 翻页时服务端返回 409 | 弹“进度已在另一台设备更新”，提供重新读取 | API 契约 |
-| UI-AC-18 | 儿童模式剩余 1 分钟 | 等待到期 | 全屏“时间到啦”；儿童无法延长；家长长按可回设置 | FR-16、NFR-11 |
+| UI-AC-18 | 儿童模式剩余 1 分钟 | 等待到期；再断网重启 | 到期全屏锁；离线重启无可信时间保持锁定并要求“重新连接”，儿童无法延长；家长长按可回设置 | FR-16、NFR-11 |
 | UI-AC-19 | 家长锁 | 点设置 → 长按 5 s | 解锁亮度/音量；解绑/时长仍显示“请在手机上操作” | NFR-11 |
 | UI-AC-20 | 结束阅读 | 点结束 → 确认 | 进入 08；显示页数/时长；无完整报告 | HW-05 |
 | UI-AC-21 | 结束时会话已结束（同键重放） | 重复结束 | 同键重放不重复计数；提示已结束 | API 契约 |
@@ -1232,6 +1279,8 @@ stateDiagram-v2
 | R-05 | 字体子集与许可未定稿 | 中文缺字或 Flash 超预算 | H06 + 设计 |
 | R-06 | Figma 画布未逐帧核对 | 圆角/阴影/间距可能偏离设计稿 | 设计负责人复核 |
 | R-07 | 分支内容未审核/未生成 | 6.5 覆盖层只能隐藏 | 内容 + 业务 |
+| R-08 | API-016/G10 互动持久化未实现 | 语音链路只能完成 ASR/TTS，无法形成可追溯问答事件 | 业务后端 + G10 |
+| R-09 | 离线儿童模式无可信时间 | 重启后必须安全锁定，离线续读可用性下降 | 安全/产品 + H06 |
 
 ### 16.2 需要确认的设计决策
 
@@ -1242,10 +1291,13 @@ stateDiagram-v2
 5. 是否允许儿童模式下“结束阅读”无需家长确认（当前设计为二次确认，任何人可结束）。
 6. **页数口径需对齐**：SRS 写“104 页”，当前 `story_pages.json` 为 21 个版本共 110 行；本文按服务端版本的 `pages` 与最大 `pageNumber` 取数，未把任一数字写死为总页数。
 7. 亮度滑条是否由 H02 的背光 PWM 支持；若只有开关，需降级为三档。
+8. 是否接受儿童模式“离线重启无可信时间即锁定”的 safe-fail 策略（会牺牲部分离线续读）。
+9. AI 问答的“完成”以 API-016 互动事件保存为准，还是以 API-023 音频播完为准；本文按“事件保存成功才算问答成功，音频失败可只显示文字”设计。
 
 ### 16.3 后续待办（不属于 H04）
 
 - H06：按第 14 节实现控件与控制器，先做 G2 离线 UI，再接真实接口。
 - H06：实测触摸方向、刷新率、PSRAM 余量、音频通路，回填本文“未验证”条目。
+- H06/G13：待 API-016 互动持久化与 ASR `reliable` 策略落地后，才能执行 UI-AC-12 的完整问答验收。
 - 设计：在 Figma 中补一套 800×480 画板，与本文坐标逐项对齐。
 - 后端：冻结设备接口后再更新 02/06/07 的“⚠”状态。
