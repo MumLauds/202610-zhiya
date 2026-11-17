@@ -211,7 +211,8 @@ python hardware/tools/prepare_assets.py
 python hardware/tools/prepare_assets.py --thumb-size 240x160 --detail-size 400x300 --quality 80 --background "#FFFFFF"
 python hardware/tools/prepare_assets.py --pad          # 按角色框精确填充
 
-# 4) 独立校验：文件存在性、SHA-256、格式、尺寸、重复、覆盖、体积、未引用文件
+# 4) 独立校验：文件存在性、SHA-256、格式、尺寸、重复、覆盖、体积、未引用文件，
+#    以及 bookNo/storybookId/sourcePath 与 cover_mapping.json 的三元一致性和 sourceMappingSha256
 python hardware/tools/validate_assets.py
 python hardware/tools/validate_assets.py --json          # 机器可读摘要
 
@@ -229,7 +230,7 @@ python -m unittest discover -s hardware/tests/assets -v
 
 **失败时的写入策略**：只要存在错误或资源数量不等于 `映射条数 × 2`，`prepare_assets.py` **不写 Manifest**（避免半个清单覆盖上一次可用清单），但仍保留已成功转换的单张文件，便于定位问题。`validate_assets.py` 默认把「文件缺失」判为错误；在未生成二进制的干净克隆中可加 `--allow-missing` 降级为告警，仅用于结构巡检。
 
-**验证可复算性**：`assetSet.sourceMappingSha256` + `sourceSha256` + `encoder` 三项足以判断「这份 Manifest 是否由同一份映射、同一编码参数生成」。
+**验证可复算性**：`assetSet.sourceMappingSha256` + `sourceSha256` + `encoder` 三项足以判断「这份 Manifest 是否由同一份映射、同一编码参数生成」。校验工具会重新计算 `cover_mapping.json` 的 SHA-256 并与 `sourceMappingSha256` 比对，同时把每条资源的 `bookNo` / `storybookId` / `sourcePath` 三个字段一起回绑到映射记录——只比对 `bookNo` 覆盖是不够的，互换两本书的绘本 ID 或封面路径时覆盖率、体积、哈希都可以仍然自洽，必须靠三元比对才能发现。
 
 ---
 
@@ -298,6 +299,8 @@ RGB888: width × height × 3 字节
 | 输出超过角色框或字节预算 | 报 `ASSET_TOO_LARGE` / `OUTPUT_EXCEEDS_ROLE_BOX`，不写 Manifest | 加载前用 `Content-Length`/尺寸字段做上限检查 |
 | 输出目录误设到素材目录 | 报 `OUTPUT_OVERLAPS_SOURCE`，退出码 2 | 不适用 |
 | Manifest 与实际文件不一致 | 校验工具报 `ASSET_FILE_MISSING` / `ASSET_SHA256_MISMATCH` / `ASSET_DIMENSION_MISMATCH` / `UNREFERENCED_ASSET` | 烧录/打包前必须让校验通过 |
+| Manifest 与 `cover_mapping.json` 不一致（含互换绘本 ID 或封面路径） | 报 `SOURCE_MAPPING_SHA_MISMATCH` / `ASSET_STORYBOOK_ID_MISMATCH` / `ASSET_SOURCE_PATH_MISMATCH` | 重新生成 Manifest，不得手工编辑映射字段 |
+| Manifest 条目不是 JSON 对象 | 报 `ASSET_NOT_OBJECT` 并继续检查其余条目，退出码 1 | 不适用 |
 | 设备端不支持该编码 | 无法在构建期发现 | 必须由 H06 真机验证；不支持则退回占位或改用已验证格式 |
 
 统一原则：**构建期失败要显式失败，运行期失败要可见降级**。H06 不应把损坏资源当作正常内容渲染，也不应因为一张封面失败而阻塞整个书架。

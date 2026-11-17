@@ -2,9 +2,10 @@
 """H03-04: validate the generated asset manifest against the files on disk.
 
 The validator is deliberately independent from the exporter: it re-opens every
-declared asset, recomputes SHA-256, re-reads the image header, re-checks the
-mapping coverage and the storybook/version relationship. Any failure exits
-non-zero so it can be wired into CI.
+declared asset, recomputes SHA-256, re-reads the image header, re-binds each
+asset to `cover_mapping.json` (bookNo, storybookId and sourcePath together),
+verifies the mapping fingerprint and the storybook/version relationship. Any
+failure exits non-zero so it can be wired into CI.
 
 Usage:
     python hardware/tools/validate_assets.py
@@ -16,7 +17,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Sequence
 
 from PIL import Image
@@ -66,10 +67,20 @@ def _is_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _asset_label(asset: dict[str, Any], index: int) -> str:
+def _asset_label(asset: Any, index: int) -> str:
+    # Callers may receive anything from a hand-edited manifest, so never assume
+    # a mapping-like object here.
+    if not isinstance(asset, dict):
+        return f"#{index}"
     book = asset.get("bookNo", f"#{index}")
     role = asset.get("assetRole", "?")
     return f"{book}/{role}"
+
+
+def _normalise_repo_path(text: str) -> str:
+    """Compare repository paths without depending on slash style."""
+
+    return str(PurePosixPath(text.replace("\\", "/").strip()))
 
 
 def validate_asset(
@@ -83,10 +94,15 @@ def validate_asset(
     allow_missing: bool,
     log: lib.IssueLog,
 ) -> None:
-    label = _asset_label(asset, index)
     if not isinstance(asset, dict):
-        log.error("ASSET_NOT_OBJECT", "asset entry is not a JSON object", index=index)
+        log.error(
+            "ASSET_NOT_OBJECT",
+            "asset entry is not a JSON object",
+            index=index,
+            value=repr(asset)[:80],
+        )
         return
+    label = _asset_label(asset, index)
 
     missing = [name for name in REQUIRED_ASSET_FIELDS if name not in asset]
     if missing:
@@ -280,6 +296,73 @@ def role_configuration(manifest: dict[str, Any], args: argparse.Namespace, log: 
     return limits, max_bytes
 
 
+def check_mapping_sha(manifest: dict[str, Any], mapping_path: Path, log: lib.IssueLog) -> None:
+    """Compare the manifest fingerprint with the mapping file that is on disk."""
+
+    asset_set = manifest.get("assetSet")
+    declared = asset_set.get("sourceMappingSha256") if isinstance(asset_set, dict) else None
+    actual = lib.sha256_file(mapping_path)
+    if not isinstance(declared, str) or not SHA256_RE.fullmatch(declared):
+        log.error(
+            "MANIFEST_SOURCE_MAPPING_SHA_INVALID",
+            "assetSet.sourceMappingSha256 must be 64 lower-case hex characters",
+            value=repr(declared),
+        )
+        return
+    if declared != actual:
+        log.error(
+            "SOURCE_MAPPING_SHA_MISMATCH",
+            "cover_mapping.json differs from the version recorded in the manifest",
+            manifest=declared,
+            actual=actual,
+        )
+
+
+def check_mapping_identity(
+    assets: Sequence[dict[str, Any]],
+    records: Sequence[lib.CoverRecord],
+    log: lib.IssueLog,
+) -> None:
+    """Re-bind every asset to its mapping record so swapped identities fail.
+
+    A manifest can keep a valid book/role coverage and a valid story/version pair
+    while pointing book A at book B's storybook id or at book B's source image.
+    Comparing the three mapping fields together is the only way to catch that.
+    """
+
+    by_book = {record.book_no: record for record in records}
+    for index, asset in enumerate(assets):
+        if not isinstance(asset, dict):
+            continue
+        book_no = asset.get("bookNo")
+        if not isinstance(book_no, str):
+            continue
+        record = by_book.get(book_no)
+        if record is None:
+            # Unknown book numbers are reported by the coverage check as
+            # COVERAGE_UNEXPECTED, so there is nothing to compare here.
+            continue
+        label = _asset_label(asset, index)
+        if asset.get("storybookId") != record.storybook_id:
+            log.error(
+                "ASSET_STORYBOOK_ID_MISMATCH",
+                "storybookId does not match cover_mapping.json for this bookNo",
+                asset=label,
+                manifest=repr(asset.get("storybookId")),
+                mapping=record.storybook_id,
+            )
+        declared_source = asset.get("sourcePath")
+        if isinstance(declared_source, str):
+            if _normalise_repo_path(declared_source) != _normalise_repo_path(record.cover_path):
+                log.error(
+                    "ASSET_SOURCE_PATH_MISMATCH",
+                    "sourcePath does not match cover_mapping.json for this bookNo",
+                    asset=label,
+                    manifest=declared_source,
+                    mapping=record.cover_path,
+                )
+
+
 def check_coverage(
     manifest: dict[str, Any],
     assets: Sequence[dict[str, Any]],
@@ -290,13 +373,19 @@ def check_coverage(
     log: lib.IssueLog,
 ) -> int:
     if not mapping_path.is_file():
-        log.warning("MAPPING_MISSING", "cover mapping is absent; coverage check skipped", value=str(mapping_path))
+        log.error(
+            "MAPPING_MISSING",
+            "cover mapping is absent; the manifest cannot be re-bound to its source records",
+            value=str(mapping_path),
+        )
         return 0
     try:
         records = lib.load_cover_mapping(mapping_path, repo_root, source_root, log)
     except lib.AssetPipelineError as exc:
         log.error(exc.code, f"coverage check could not read the mapping: {exc.message}")
         return 0
+
+    check_mapping_sha(manifest, mapping_path, log)
 
     asset_set = manifest.get("assetSet")
     if isinstance(asset_set, dict) and _is_int(asset_set.get("mappingRecords")):
@@ -318,6 +407,7 @@ def check_coverage(
         log.error("COVERAGE_MISSING", "mapping record has no matching device asset", bookNo=key[0], assetRole=key[1])
     for key in sorted(present - expected):
         log.error("COVERAGE_UNEXPECTED", "manifest asset has no mapping record", bookNo=key[0], assetRole=key[1])
+    check_mapping_identity(assets, records, log)
     return len(records)
 
 

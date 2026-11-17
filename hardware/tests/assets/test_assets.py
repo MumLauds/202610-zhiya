@@ -130,6 +130,9 @@ class AssetRepo:
     def manifest(self) -> dict:
         return json.loads(self.manifest_path.read_text(encoding="utf-8"))
 
+    def write_manifest(self, payload: dict) -> None:
+        self.manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
     def assets_by_role(self, role: str) -> list[dict]:
         return [asset for asset in self.manifest()["assets"] if asset["assetRole"] == role]
 
@@ -547,6 +550,94 @@ class CoverPipelineTest(unittest.TestCase):
         self.assertEqual(code, 1, output)
         self.assertIn("ASSET_DUPLICATE_ID", output)
         self.assertIn("ASSET_DUPLICATE_PATH", output)
+
+    def test_validator_detects_swapped_mapping_identity(self) -> None:
+        self.repo.cover("a.png")
+        self.repo.cover("b.png")
+        self.repo.mapping(
+            [
+                {"book_no": "B-901", "storybook_id": 901, "cover_path": f"{lib.DEFAULT_SOURCE_ROOT}/a.png"},
+                {"book_no": "B-902", "storybook_id": 902, "cover_path": f"{lib.DEFAULT_SOURCE_ROOT}/b.png"},
+            ]
+        )
+        self.repo.versions([901, 902])
+        self.repo.storybooks([901, 902])
+        self.assertEqual(self.repo.prepare()[0], 0)
+
+        manifest = self.repo.manifest()
+        by_book = {(asset["bookNo"], asset["assetRole"]): asset for asset in manifest["assets"]}
+        for role in lib.ROLES:
+            first = by_book[("B-901", role)]
+            second = by_book[("B-902", role)]
+            # Swap the story identity while the book number and files stay valid:
+            # coverage, hashes and dimensions are all still consistent, so only a
+            # mapping cross-check can notice.
+            first["storybookId"], second["storybookId"] = second["storybookId"], first["storybookId"]
+            first["storyVersionId"], second["storyVersionId"] = second["storyVersionId"], first["storyVersionId"]
+            first["sourcePath"], second["sourcePath"] = second["sourcePath"], first["sourcePath"]
+        self.repo.write_manifest(manifest)
+
+        code, output = self.repo.validate()
+        self.assertEqual(code, 1, output)
+        self.assertIn("ASSET_STORYBOOK_ID_MISMATCH", output)
+        self.assertIn("ASSET_SOURCE_PATH_MISMATCH", output)
+
+    def test_validator_detects_tampered_mapping_file(self) -> None:
+        self.repo.cover("a.png")
+        self.repo.cover("b.png")
+        self.repo.mapping(
+            [
+                {"book_no": "B-901", "storybook_id": 901, "cover_path": f"{lib.DEFAULT_SOURCE_ROOT}/a.png"},
+                {"book_no": "B-902", "storybook_id": 902, "cover_path": f"{lib.DEFAULT_SOURCE_ROOT}/b.png"},
+            ]
+        )
+        self.repo.versions([901, 902])
+        self.repo.storybooks([901, 902])
+        self.assertEqual(self.repo.prepare()[0], 0)
+
+        mapping_path = self.repo.seed / "cover_mapping.json"
+        payload = json.loads(mapping_path.read_text(encoding="utf-8"))
+        payload[0]["storybook_id"], payload[1]["storybook_id"] = (
+            payload[1]["storybook_id"],
+            payload[0]["storybook_id"],
+        )
+        mapping_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        code, output = self.repo.validate()
+        self.assertEqual(code, 1, output)
+        self.assertIn("SOURCE_MAPPING_SHA_MISMATCH", output)
+        self.assertIn("ASSET_STORYBOOK_ID_MISMATCH", output)
+
+    def test_validator_requires_the_mapping_fingerprint(self) -> None:
+        self.repo.single_book()
+        self.assertEqual(self.repo.prepare()[0], 0)
+        manifest = self.repo.manifest()
+        del manifest["assetSet"]["sourceMappingSha256"]
+        self.repo.write_manifest(manifest)
+        code, output = self.repo.validate()
+        self.assertEqual(code, 1, output)
+        self.assertIn("MANIFEST_SOURCE_MAPPING_SHA_INVALID", output)
+
+    def test_validator_requires_the_cover_mapping(self) -> None:
+        self.repo.single_book()
+        self.assertEqual(self.repo.prepare()[0], 0)
+        (self.repo.seed / "cover_mapping.json").unlink()
+        code, output = self.repo.validate()
+        self.assertEqual(code, 1, output)
+        self.assertIn("MAPPING_MISSING", output)
+
+    def test_validator_detects_non_object_asset_entry(self) -> None:
+        self.repo.single_book()
+        self.assertEqual(self.repo.prepare()[0], 0)
+        manifest = self.repo.manifest()
+        manifest["assets"].append("not-an-object")
+        manifest["assets"].append(123)
+        self.repo.write_manifest(manifest)
+
+        code, output = self.repo.validate()
+        self.assertEqual(code, 1, output)
+        self.assertIn("ASSET_NOT_OBJECT", output)
+        self.assertNotIn("Traceback", output)
 
     # ---- CLI exit codes -------------------------------------------------
     def test_cli_exit_codes(self) -> None:
