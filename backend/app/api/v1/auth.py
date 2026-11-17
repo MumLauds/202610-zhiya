@@ -76,6 +76,11 @@ def csrf_for(token: str) -> str:
     return hmac.new(token.encode("utf-8"), b"zhiya-csrf-v1", hashlib.sha256).hexdigest()
 
 
+def valid_csrf(request: Request, token: str) -> bool:
+    supplied = request.headers.get("X-CSRF-Token", "")
+    return supplied.isascii() and hmac.compare_digest(supplied, csrf_for(token))
+
+
 def allowed_login(client: str) -> bool:
     now = time.monotonic()
     with _login_lock:
@@ -147,8 +152,7 @@ def logout(request: Request):
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return error(request, 401, "AUTH_REQUIRED", "请先登录")
-    csrf = request.headers.get("X-CSRF-Token", "")
-    if not hmac.compare_digest(csrf, csrf_for(token)):
+    if not valid_csrf(request, token):
         return error(request, 403, "CSRF_INVALID", "请求校验失败")
     now = int(time.time() * 1000)
     try:

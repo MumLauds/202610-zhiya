@@ -85,7 +85,7 @@ def test_real_login_speech_media_and_logout_rejects_cookie_replay(integrated):
     app.state.voice_gateway.synthesize.assert_awaited_once()
 
 
-@pytest.mark.parametrize("csrf", [None, "wrong"])
+@pytest.mark.parametrize("csrf", [None, "wrong", b"\xff"])
 def test_real_csrf_blocks_both_paid_routes(integrated, csrf):
     client, app, _, _ = integrated
     headers = {} if csrf is None else {"X-CSRF-Token": csrf}

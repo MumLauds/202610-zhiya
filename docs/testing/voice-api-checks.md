@@ -1,6 +1,6 @@
 # G08 公开语音与录音转换检验
 
-版本：v0.6；日期：2026-11-16；负责人：林鑫。初次验证基础提交 8c4172c，分支 feat/backend-model-bootstrap；后续提交和修改验证分节记录。对应 DCL-020/021/022/023、FR-08/12/13、NFR-04/05/06/08、AC-07/10/11（局部）。本记录不代替完整 G08 验收。
+版本：v0.7；日期：2026-11-17；负责人：林鑫。初次验证基础提交 8c4172c，分支 feat/backend-model-bootstrap；后续提交和修改验证分节记录。对应 DCL-020/021/022/023/024、FR-08/12/13、NFR-04/05/06/08、AC-07/10/11（局部）。本记录不代替完整 G08 验收。
 
 自动语音识别（Automatic Speech Recognition，ASR）、语音合成（Text-to-Speech，TTS）、脉冲编码调制（Pulse-Code Modulation，PCM）、波形音频文件格式（Waveform Audio File Format，WAV）。接口、限制、错误码和实名对接步骤统一见[交接文档](../design/voice-api-handoff.md)。
 
@@ -128,3 +128,15 @@ TC-VOICE-AUTH-001（`backend/tests/test_voice_auth_integration.py`，12 个测�
 Windows/FFmpeg 9.0.2 使用上文命令运行：**130 passed、191 subtests passed、0 skipped**（120.46 秒），仅一条既有 Starlette/httpx 弃用提示。包含 #30 的 8 项账号/档案/绘本测试、12 项新增认证与语音整合测试及原有 110 项测试；五种真实录音转换继续通过。另执行 `.\.venv\Scripts\python.exe -X utf8 -m pytest database/tests -q --tb=short`，数据库 4 项测试通过（0.23 秒）。
 
 认证使用临时 SQLite 中真实注册产生的账号、Cookie 与 CSRF，供应商为模拟实现；阅读会话仍由测试构造，因为 #30 尚无相应业务创建接口。没有真实供应商付费调用、个人 .env 修改、容器重建或浏览器端到端验证；不计为完整 G07/G08/G13 验收。
+
+## DCL-024 交付问题修复与复验
+
+2026-11-17，基于 ced699e。上一轮定向检查已复现非 ASCII CSRF 在语音合成及退出登录返回 500，本轮统一安全校验后返回 403 CSRF_INVALID；新增用例确认档案创建/修改及退出均拒绝非法 CSRF，原档案和登录会话不受影响，ASR/TTS 不调用供应商。已有有效 CSRF、身份撤销和越权检查继续通过。
+
+Python 内部统一 age_band、preferred_minutes、page_size，对外仍使用 ageBand、preferredMinutes、pageSize；原创建、PATCH、空值拒绝、分页和筛选测试继续验证接口兼容。Docker 脚本匿名请求预期由 503 VOICE_AUTH_NOT_CONFIGURED 改为 401 AUTH_REQUIRED，并校验 retryable=false 和 requestId 一致。
+
+Windows/FFmpeg 9.0.2：**132 passed、191 subtests passed、0 skipped**（90.06 秒），一条既有 Starlette/httpx 弃用提示；数据库另 **4 passed**（0.99 秒）。命令同上。未读取或修改个人 .env，无付费调用。
+
+Debian WSL Docker 以当前源码重建生产镜像，`infra/check-docker.sh` 全部通过：数据库未就绪/初始化后健康检查、匿名语音 401、源码逐文件哈希、六声线与语速目录、非 root、无 .env、空密钥拒绝、重复种子导入及重启持久化。镜像 ID：`sha256:adb82243b4c74e2b9aaa3aad27b749c2ea27b6dbb04207481969edcb7c9539ab`。在该镜像基础上仅安装 pytest 的测试镜像，以非 root、禁用网络运行全部后端测试：**132 passed、191 subtests passed、0 skipped**（32.84 秒），一条同样的弃用提示；包含真实五格式转换。
+
+运行器与原始日志保存在仓库外 `D:/软工/tmp/g08-voice-api-20261112/verify_docker.py`、`docker-verification.log`，打包清单及源码哈希见同目录 `source-hashes.json`；WSL 测试目录为 `/tmp/zhiya-voice-api-20261112-0g558e`，测试数据卷按脚本约定保留。历史目录名称不代表本次执行日期。容器认证采用真实实现，供应商仍为测试桩；没有真实浏览器、付费模型或完整阅读业务端到端验收。

@@ -64,6 +64,24 @@ def test_expired_revoked_and_invalid_sessions_are_rejected(client):
     assert client.delete("/api/v1/auth/sessions/current", headers=headers).status_code == 401
 
 
+def test_non_ascii_csrf_rejected_without_changing_profile_or_session(client):
+    client, _ = client
+    headers = register_and_login(client)
+    payload = {"ageBand": "AGE_4_5", "preferredMinutes": 10}
+    bad_headers = {"X-CSRF-Token": b"\xff"}
+    profile = client.post("/api/v1/child-profiles", headers=headers, json=payload).json()["data"]
+    for response in (
+        client.post("/api/v1/child-profiles", headers=bad_headers, json=payload),
+        client.patch(f"/api/v1/child-profiles/{profile['childProfileId']}", headers=bad_headers,
+                     json={"preferredMinutes": 20}),
+        client.delete("/api/v1/auth/sessions/current", headers=bad_headers),
+    ):
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "CSRF_INVALID"
+    assert client.get("/api/v1/child-profiles").json()["data"]["items"] == [profile]
+    assert client.delete("/api/v1/auth/sessions/current", headers=headers).status_code == 204
+
+
 def test_profile_ownership_and_partial_updates(client):
     first, _ = client
     headers = register_and_login(first)

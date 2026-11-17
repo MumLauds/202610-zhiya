@@ -60,11 +60,13 @@ for method, path in [('POST', 'voice/transcriptions'), ('POST', 'voice/syntheses
     try:
         urllib.request.urlopen(request, timeout=2)
     except urllib.error.HTTPError as response:
-        assert response.code == 503
-        assert json.load(response)['error']['code'] == 'VOICE_AUTH_NOT_CONFIGURED'
+        assert response.code == 401
+        body = json.load(response)
+        assert body['error'] == {'code': 'AUTH_REQUIRED', 'message': '请先登录', 'retryable': False}
+        assert body['requestId'] == response.headers['X-Request-ID']
     else:
-        raise AssertionError('Voice route did not reject missing business authentication')
-print('PASS public speech routes reject missing business authentication')
+        raise AssertionError('Voice route did not reject anonymous requests')
+print('PASS public speech routes reject anonymous requests')
 PY
 for source in $(find backend/app -name '*.py' -type f) backend/app/voice_catalog.json backend/smoke_model.py backend/smoke_voice.py; do
     expected=$(sha256sum "$source" | cut -d ' ' -f 1)

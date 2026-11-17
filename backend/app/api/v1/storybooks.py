@@ -44,11 +44,11 @@ VISIBLE = """(v.status = 'PUBLISHED' OR
 
 
 @router.get("/storybooks")
-def list_storybooks(request: Request, ageBand: AgeBand | None = None,
+def list_storybooks(request: Request, age_band: AgeBand | None = Query(default=None, alias="ageBand"),
                     topic: str | None = Query(default=None, min_length=1, max_length=100),
                     scope: Literal["mine"] | None = None,
                     page: int = Query(default=1, ge=1, le=9007199254740991),
-                    pageSize: int = Query(default=20, ge=1, le=50)):
+                    page_size: int = Query(default=20, ge=1, le=50, alias="pageSize")):
     try:
         with closing(connect()) as db:
             db.execute("BEGIN")
@@ -57,22 +57,22 @@ def list_storybooks(request: Request, ageBand: AgeBand | None = None,
                 return failure
             conditions = [VISIBLE]
             params = [owner, scope == "mine", owner]
-            if ageBand:
-                low, high = AGES[ageBand]
+            if age_band:
+                low, high = AGES[age_band]
                 conditions.append("v.age_min <= ? AND v.age_max >= ?")
                 params.extend((high, low))
             if topic is not None:
                 conditions.append("EXISTS (SELECT 1 FROM json_each(v.topics_json) WHERE value = ?)")
                 params.append(topic)
             # Avoid exceeding SQLite's signed 64-bit integer range for very large pages.
-            offset = min((page - 1) * pageSize, 9223372036854775807)
+            offset = min((page - 1) * page_size, 9223372036854775807)
             rows = db.execute(
                 "SELECT v.* FROM story_versions v JOIN storybooks b ON b.id = v.storybook_id WHERE "
                 + " AND ".join(conditions) + " ORDER BY v.storybook_id, v.version_no DESC LIMIT ? OFFSET ?",
-                (*params, pageSize, offset),
+                (*params, page_size, offset),
             ).fetchall()
             items = [version_object(db, row) for row in rows]
-            return {"data": {"items": items, "page": page, "pageSize": pageSize}, "requestId": request.state.request_id}
+            return {"data": {"items": items, "page": page, "pageSize": page_size}, "requestId": request.state.request_id}
     except sqlite3.Error:
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用", retryable=True)
 

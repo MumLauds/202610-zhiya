@@ -1,6 +1,5 @@
 """Guardian-owned child profile endpoints."""
 
-import hmac
 import json
 import sqlite3
 import time
@@ -10,7 +9,7 @@ from typing import Literal
 from fastapi import APIRouter, Path, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.api.v1.auth import SESSION_COOKIE, connect, csrf_for, error, token_digest
+from app.api.v1.auth import SESSION_COOKIE, connect, error, token_digest, valid_csrf
 
 router = APIRouter(prefix="/api/v1/child-profiles")
 AgeBand = Literal["AGE_3_4", "AGE_4_5", "AGE_5_6"]
@@ -19,9 +18,9 @@ AgeBand = Literal["AGE_3_4", "AGE_4_5", "AGE_5_6"]
 class ProfileFields(BaseModel):
     model_config = ConfigDict(extra="forbid")
     nickname: str | None = None
-    ageBand: AgeBand | None = None
+    age_band: AgeBand | None = Field(default=None, alias="ageBand")
     interests: list[str] | None = Field(default=None, max_length=10)
-    preferredMinutes: int | None = Field(default=None, ge=1, le=30, strict=True)
+    preferred_minutes: int | None = Field(default=None, ge=1, le=30, strict=True, alias="preferredMinutes")
 
     @field_validator("nickname")
     @classmethod
@@ -45,8 +44,8 @@ class ProfileFields(BaseModel):
 
 
 class ProfileCreate(ProfileFields):
-    ageBand: AgeBand
-    preferredMinutes: int = Field(ge=1, le=30, strict=True)
+    age_band: AgeBand = Field(alias="ageBand")
+    preferred_minutes: int = Field(ge=1, le=30, strict=True, alias="preferredMinutes")
 
     @model_validator(mode="after")
     def check_interests(self):
@@ -60,7 +59,7 @@ class ProfileUpdate(ProfileFields):
     def check_fields(self):
         if not self.model_fields_set:
             raise ValueError("至少提供一个字段")
-        for name in ("ageBand", "interests", "preferredMinutes"):
+        for name in ("age_band", "interests", "preferred_minutes"):
             if name in self.model_fields_set and getattr(self, name) is None:
                 raise ValueError(f"{name} 不可为空")
         return self
@@ -79,7 +78,7 @@ def guardian(db, request: Request, *, write: bool):
         return None, error(request, 401, "AUTH_REQUIRED", "请先登录")
     if row["role"] != "GUARDIAN":
         return None, error(request, 403, "FORBIDDEN", "当前账号不能操作儿童档案")
-    if write and not hmac.compare_digest(request.headers.get("X-CSRF-Token", ""), csrf_for(token)):
+    if write and not valid_csrf(request, token):
         return None, error(request, 403, "CSRF_INVALID", "请求校验失败")
     return row["id"], None
 
@@ -117,8 +116,8 @@ def create_profile(payload: ProfileCreate, request: Request):
                 """INSERT INTO child_profiles
                    (guardian_id, nickname, age_band, interests_json, preferred_minutes, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (owner, payload.nickname, payload.ageBand, json.dumps(payload.interests or [], ensure_ascii=False),
-                 payload.preferredMinutes, now, now),
+                (owner, payload.nickname, payload.age_band, json.dumps(payload.interests or [], ensure_ascii=False),
+                 payload.preferred_minutes, now, now),
             )
             row = db.execute("SELECT * FROM child_profiles WHERE id = ?", (cursor.lastrowid,)).fetchone()
             return {"data": serialize(row), "requestId": request.state.request_id}
@@ -140,7 +139,7 @@ def update_profile(payload: ProfileUpdate, request: Request,
             ).fetchone()
             if not row:
                 return error(request, 404, "RESOURCE_NOT_FOUND", "档案不可用")
-            fields = payload.model_dump(exclude_unset=True)
+            fields = payload.model_dump(exclude_unset=True, by_alias=True)
             current = serialize(row)
             current.update(fields)
             db.execute(
