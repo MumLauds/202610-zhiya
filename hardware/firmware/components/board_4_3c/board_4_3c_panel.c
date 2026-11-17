@@ -27,6 +27,8 @@
 #define GT911_STATUS_REG 0x814E
 #define GT911_FIRST_POINT_REG 0x814F
 #define GT911_DATA_READY 0x80
+#define GT911_LARGE_TOUCH 0x40
+#define GT911_TOUCH_KEY 0x10
 
 static const char *const TAG = "board_4_3c_panel";
 static i2c_master_bus_handle_t bus;
@@ -36,6 +38,7 @@ static esp_lcd_panel_handle_t panel;
 static bool expander_ready;
 static bool touch_gpio_configured;
 static uint8_t outputs;
+static uint8_t touch_track_id;
 
 static esp_err_t add_i2c_device(uint8_t address, i2c_master_dev_handle_t *device)
 {
@@ -186,7 +189,8 @@ esp_err_t board_4_3c_panel_poll_touch(board_4_3c_touch_t *point)
         return status_err;
     }
     if (!(status & GT911_DATA_READY)) {
-        return ESP_OK;
+        /* A not-ready buffer carries no release or coordinate information. */
+        return ESP_ERR_NOT_FINISHED;
     }
 
     const uint8_t count = status & 0x0F;
@@ -199,6 +203,9 @@ esp_err_t board_4_3c_panel_poll_touch(board_4_3c_touch_t *point)
     if (result != ESP_OK || ack != ESP_OK) {
         return result != ESP_OK ? result : ack;
     }
+    if (status & (GT911_LARGE_TOUCH | GT911_TOUCH_KEY)) {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
     if (count != 1) {
         point->pressed = false;
         return count > 1 ? ESP_ERR_INVALID_RESPONSE : ESP_OK;
@@ -207,9 +214,11 @@ esp_err_t board_4_3c_panel_poll_touch(board_4_3c_touch_t *point)
     /* The reference has no XY swap or mirroring in the 800x480 orientation. */
     const uint16_t x = (uint16_t)data[1] | ((uint16_t)data[2] << 8);
     const uint16_t y = (uint16_t)data[3] | ((uint16_t)data[4] << 8);
-    if (x >= BOARD_4_3C_WIDTH || y >= BOARD_4_3C_HEIGHT) {
+    if (x >= BOARD_4_3C_WIDTH || y >= BOARD_4_3C_HEIGHT || data[0] == 32 ||
+        (point->pressed && data[0] != touch_track_id)) {
         return ESP_ERR_INVALID_RESPONSE;
     }
+    touch_track_id = data[0];
     *point = (board_4_3c_touch_t){.x = x, .y = y, .pressed = true};
     return ESP_OK;
 }

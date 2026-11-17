@@ -17,6 +17,8 @@
 static const char *const TAG = "board_4_3c";
 static SemaphoreHandle_t ui_mutex;
 static board_4_3c_touch_t touch;
+static bool touch_wait_release;
+static esp_err_t touch_last_error;
 static esp_err_t flush_status;
 
 static uint32_t lvgl_tick_ms(void)
@@ -38,20 +40,30 @@ static void flush_display(lv_display_t *display, const lv_area_t *area, uint8_t 
 
 static void read_touch(lv_indev_t *indev, lv_indev_data_t *data)
 {
-    static esp_err_t last_error;
     board_4_3c_touch_t next = touch;
     const esp_err_t err = board_4_3c_panel_poll_touch(&next);
-    if (err != ESP_OK) {
-        if (err != last_error && err != ESP_ERR_INVALID_RESPONSE) {
+    if (err == ESP_ERR_NOT_FINISHED) {
+        next = touch;
+    } else if (err != ESP_OK) {
+        if (err != touch_last_error) {
             ESP_LOGW(TAG, "GT911 read failed: %s", esp_err_to_name(err));
         }
+        touch_last_error = err;
         if (touch.pressed) {
             /* Cancel instead of turning a failed sample into a button click. */
             lv_indev_reset(indev, NULL);
         }
+        touch_wait_release = true;
+        next = touch;
         next.pressed = false;
+    } else if (touch_wait_release) {
+        /* Require a real zero-point report before accepting another contact. */
+        touch_wait_release = next.pressed;
+        next = touch;
+        next.pressed = false;
+    } else {
+        touch_last_error = ESP_OK;
     }
-    last_error = err;
     touch = next;
     data->point.x = touch.x;
     data->point.y = touch.y;
@@ -154,6 +166,8 @@ esp_err_t board_4_3c_init(board_4_3c_create_ui_cb_t create_ui)
     lv_indev_set_read_cb(indev, read_touch);
 
     touch = (board_4_3c_touch_t){0};
+    touch_wait_release = false;
+    touch_last_error = ESP_OK;
     flush_status = ESP_OK;
     ESP_GOTO_ON_ERROR(create_ui(display), fail, TAG, "Initial UI");
     lv_refr_now(display);
