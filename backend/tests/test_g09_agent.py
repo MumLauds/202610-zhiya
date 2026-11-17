@@ -89,6 +89,30 @@ class KnowledgeRetrieverTests(G09DatabaseMixin, unittest.TestCase):
         self.assertFalse(result.has_results)
         self.assertEqual(result.items, [])
 
+    def test_natural_chinese_question_ranks_relevant_item_first(self):
+        """A contiguous Chinese question must not collapse to topic/id ordering."""
+        class SentenceRetriever(KnowledgeRetriever):
+            def _rows(self):
+                base = {
+                    "title": "标题", "source_title": "来源", "source_ref": "ref",
+                    "age_band": None, "topics_json": '["动物"]',
+                    "task_types_json": '["GUIDANCE"]', "status": "APPROVED",
+                    "version_no": 1,
+                }
+                return [
+                    dict(base, id=1, item_key="KN-IRRELEVANT",
+                         content="小猫站在门边抬头看小鸟。"),
+                    dict(base, id=2, item_key="KN-UMBRELLA",
+                         content="小兔子把雨伞借给了淋雨的小熊。"),
+                ]
+
+        query = KnowledgeQuery(
+            age_band="AGE_3_4", topics=["动物"], task_type="GUIDANCE",
+            query_text="小兔子为什么把雨伞借给小熊",
+        )
+        result = SentenceRetriever(limit=1).retrieve(query)
+        self.assertEqual([item.item_key for item in result.items], ["KN-UMBRELLA"])
+
     def test_duplicate_item_key_keeps_latest_approved_version(self):
         class DuplicateRetriever(KnowledgeRetriever):
             def _rows(self):
@@ -173,11 +197,56 @@ class G09ContentServiceTests(G09DatabaseMixin, unittest.IsolatedAsyncioTestCase)
 
     async def test_failure_keeps_error_code_and_empty_text(self):
         adapter = FakeAdapter(ModelGenerateResult(success=False, error_code="API_ERROR"))
+        # Use a topic that actually matches approved knowledge so the model is called.
         draft = await self._service(adapter).generate(
-            "RECOMMENDATION_REASON", age_band="AGE_5_6", page_text="当前页。",
-            user_input="说明理由。", topics=["不存在"], query_text="",
+            "RECOMMENDATION_REASON", age_band=None, page_text="当前页。",
+            user_input="说明理由。", topics=["动物"], query_text="雨伞",
         )
         self.assertEqual(draft.text, "")
         self.assertEqual(draft.model_error_code, "API_ERROR")
-        self.assertFalse(draft.has_knowledge)
-        self.assertEqual(draft.sources, [])
+        self.assertTrue(draft.has_knowledge)
+        self.assertEqual(len(adapter.calls), 1)
+
+    async def test_no_approved_knowledge_short_circuits_model_call(self):
+        """Empty / all-DRAFT / missing DB: never call the model, return no-knowledge draft."""
+        from app.agent import ContentGenerator
+
+        scenarios = {
+            "all_draft": self.db_path,
+            "missing_db": Path(self._tmp.name) / "missing.sqlite3",
+        }
+        for name, db_path in scenarios.items():
+            with self.subTest(scenario=name):
+                if name == "all_draft":
+                    with closing(sqlite3.connect(db_path)) as db, db:
+                        db.execute("UPDATE knowledge_items SET status = 'DRAFT'")
+                adapter = FakeAdapter(ModelGenerateResult(success=True, text="不该被调用"))
+                service = G09ContentService(
+                    KnowledgeRetriever(db_path), ContentGenerator(adapter),
+                )
+                draft = await service.generate(
+                    "CONTEXT_QUESTION", age_band="AGE_3_4", page_text="当前页。",
+                    user_input="提个问题。", topics=["动物"], query_text="雨伞",
+                )
+                self.assertEqual(adapter.calls, [])
+                self.assertFalse(draft.has_knowledge)
+                self.assertEqual(draft.text, "")
+                self.assertEqual(draft.sources, [])
+                self.assertIsNone(draft.model_error_code)
+
+    async def test_sources_match_prompt_after_max_items_truncation(self):
+        """sources must list only the items actually placed in the model context."""
+        adapter = FakeAdapter(ModelGenerateResult(success=True, text="回答。"))
+        draft = await self._service(adapter).generate(
+            "CONTEXT_QUESTION", age_band="AGE_3_4", page_text="当前页。",
+            user_input="提个问题。", topics=["动物"], query_text="雨伞", max_items=1,
+        )
+        self.assertEqual(len(adapter.calls), 1)
+        prompt_context = adapter.calls[0].context_text
+        # max_items=1 -> only one knowledge block was sent to the model.
+        self.assertIn("KN-STORY-001", prompt_context)
+        self.assertNotIn("KN-AGE-001", prompt_context)
+        # sources carry exactly that one item, not the full retrieval list.
+        self.assertEqual(len(draft.sources), 1)
+        self.assertEqual(draft.sources[0].sourceTitle, "知芽｜知识库知识条目 v2.5")
+        self.assertEqual(draft.sources[0].knowledgeItemId, 3)  # KN-STORY-001

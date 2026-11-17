@@ -54,6 +54,7 @@ result = KnowledgeRetriever().retrieve(query)
 5. 同一 `item_key` 只返回最新批准版本（DCL-003）。
 6. 排序：主题命中数 > 关键词命中 > 全龄优先 > 版本号/ID。默认最多返回 5 条。
 7. 数据库缺失或不可读时返回空结果，不抛异常，交由 G10 走 `NO_KNOWLEDGE_FALLBACK`。
+8. 关键词匹配支持连续中文：`query_text` 是自然问句（如“小兔子为什么把雨伞借给小熊”）时，按虚词切分并补充 2～3 字片段，不会因整句未出现而退化为按主题/ID 排序（PR #32 review 修复）。
 
 ### 3.2 适龄提示词
 
@@ -93,6 +94,14 @@ draft = await service.generate(
 提示词任务到知识任务类型的映射：`RECOMMENDATION_REASON` → `RETRIEVAL`，`CONTEXT_QUESTION` → `GUIDANCE`，`STORY_ANSWER` → `RETRIEVAL`。如需调整，先在共享契约中说明并与 G10 确认。
 
 模型失败时 `text=""`，`model_error_code` 为 `TIMEOUT` 或 `API_ERROR`，直接透传 G08 的错误分类；G09 不自动重试、不新增策略枚举。
+
+PR #32 review 后的三项修复（G10 需知）：
+
+1. **无可用知识时短路**：检索为空（无 APPROVED / 全部 DRAFT / 缺库）时 `generate()` 在调用模型前直接返回 `ContentDraft(text="", sources=[], has_knowledge=False, model_error_code=None)`，模型调用次数为 0。G10 据此构造 `NO_KNOWLEDGE_FALLBACK`，不必等到模型超时。
+2. **来源与上下文一致**：`build_prompt` 与 `sources` 使用同一份经 `max_items` 截断的知识集合（`_selected_items`）。检索命中数大于 `max_items` 时，`sources` 只列出真正进入模型上下文的条目，不会引用被截断的知识。
+3. **连续中文匹配**：见检索规则第 8 条。
+
+G10 判断优先级：`has_knowledge=False` → 无知识降级（此时不应有 `model_error_code`）；`has_knowledge=True` 且 `model_error_code` 非空 → 模型失败降级；其余为成功草稿。
 
 ## 4. 交接对象与待确认事项
 
