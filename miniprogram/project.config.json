@@ -1,0 +1,16 @@
+{
+  "appid": "touristappid",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "./",
+  "projectname": "知芽亲子共读",
+  "description": "知芽亲子绘本共读与阅读启蒙微信小程序",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "compileHotReLoad": true,
+    "minified": true,
+    "postcss": true
+  },
+  "condition": {}
+}

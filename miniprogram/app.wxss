@@ -1,0 +1,98 @@
+page {
+  --bg: #f8f3e8;
+  --paper: #fffdf7;
+  --forest: #214739;
+  --forest-soft: #4f705d;
+  --sage: #dde8d6;
+  --sage-deep: #c6d8be;
+  --gold: #e4b94e;
+  --gold-soft: #f3e1af;
+  --ink: #29352d;
+  --muted: #72786e;
+  --line: #ded4c0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 28rpx;
+}
+
+view,
+text,
+button,
+input,
+textarea,
+image {
+  box-sizing: border-box;
+}
+
+button {
+  padding: 0;
+  margin: 0;
+  line-height: normal;
+  background: transparent;
+}
+
+button::after {
+  border: 0;
+}
+
+image {
+  display: block;
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.page-wrap {
+  min-height: 100vh;
+  padding-bottom: calc(150rpx + env(safe-area-inset-bottom));
+}
+
+.icon-24 {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+.primary-btn,
+.secondary-btn {
+  min-height: 88rpx;
+  padding: 0 32rpx;
+  border-radius: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.primary-btn {
+  color: var(--paper);
+  background: var(--forest);
+}
+
+.secondary-btn {
+  color: var(--forest);
+  background: var(--paper);
+  border: 2rpx solid rgba(33, 71, 57, 0.25);
+}
+
+.section-title {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin: 40rpx 32rpx 22rpx;
+}
+
+.section-title text:first-child {
+  color: var(--forest);
+  font-family: "STSong", "Songti SC", serif;
+  font-size: 38rpx;
+  font-weight: 700;
+}
+
+.section-title text:last-child {
+  color: var(--muted);
+  font-size: 20rpx;
+}

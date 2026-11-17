@@ -1,0 +1,1349 @@
+.app {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.topbar {
+  height: 108rpx;
+  padding: 0 32rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand-row {
+  display: flex;
+  align-items: center;
+}
+
+.brand-mark {
+  width: 66rpx;
+  height: 66rpx;
+  border-radius: 22rpx;
+  background: var(--forest);
+  color: var(--paper);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 25rpx;
+  font-weight: 700;
+}
+
+.brand-copy {
+  margin-left: 18rpx;
+}
+
+.brand-name,
+.brand-sub {
+  display: block;
+}
+
+.brand-name {
+  color: var(--forest);
+  font-size: 33rpx;
+  font-weight: 700;
+}
+
+.brand-sub {
+  color: var(--muted);
+  font-size: 18rpx;
+  margin-top: 5rpx;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+}
+
+.header-icon,
+.avatar {
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 50%;
+  background: var(--paper);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-icon {
+  margin-right: 14rpx;
+}
+
+.avatar {
+  color: var(--forest);
+  background: var(--sage);
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.view {
+  padding: 0 32rpx 48rpx;
+}
+
+.home-view {
+  padding-bottom: 30rpx;
+}
+
+.hero-card {
+  height: 566rpx;
+  border-radius: 46rpx;
+  overflow: hidden;
+  position: relative;
+  background: var(--sage);
+  box-shadow: 0 24rpx 60rpx rgba(33, 71, 57, 0.11);
+}
+
+.hero-image {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
+.hero-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(248, 243, 232, 0.94),
+    rgba(248, 243, 232, 0.2) 62%
+  );
+}
+
+.hero-content {
+  position: absolute;
+  left: 32rpx;
+  right: 32rpx;
+  top: 34rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.eyebrow {
+  display: inline-flex;
+  min-height: 50rpx;
+  padding: 0 20rpx;
+  align-items: center;
+  border-radius: 999rpx;
+  background: rgba(255, 253, 247, 0.88);
+  color: var(--forest-soft);
+  font-size: 20rpx;
+  font-weight: 600;
+}
+
+.hero-title {
+  display: block;
+  width: 510rpx;
+  margin-top: 28rpx;
+  color: var(--forest);
+  font-family: "STSong", "Songti SC", serif;
+  font-size: 54rpx;
+  line-height: 1.28;
+  font-weight: 700;
+  white-space: pre-line;
+}
+
+.hero-copy {
+  display: block;
+  margin-top: 18rpx;
+  color: var(--forest-soft);
+  font-size: 22rpx;
+}
+
+.hero-btn {
+  min-height: 72rpx;
+  margin-top: 26rpx;
+  padding: 0 28rpx;
+  border-radius: 24rpx;
+  font-size: 24rpx;
+}
+
+.hero-book-chip {
+  position: absolute;
+  right: 24rpx;
+  bottom: 24rpx;
+  width: 360rpx;
+  min-height: 128rpx;
+  background: rgba(255, 253, 247, 0.94);
+  border-radius: 28rpx;
+  padding: 14rpx;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 14rpx 36rpx rgba(33, 71, 57, 0.13);
+}
+
+.hero-chip-cover {
+  width: 116rpx;
+  height: 96rpx;
+  border-radius: 18rpx;
+}
+
+.hero-chip-copy {
+  margin-left: 16rpx;
+  text-align: left;
+}
+
+.hero-chip-title,
+.hero-chip-meta {
+  display: block;
+}
+
+.hero-chip-title {
+  color: var(--forest);
+  font-size: 24rpx;
+  font-weight: 700;
+}
+
+.hero-chip-meta {
+  color: var(--muted);
+  font-size: 18rpx;
+  margin-top: 8rpx;
+}
+
+.plan-card {
+  margin-top: 28rpx;
+  padding: 28rpx;
+  border-radius: 38rpx;
+  background: var(--paper);
+  box-shadow: 0 18rpx 46rpx rgba(33, 71, 57, 0.07);
+}
+
+.plan-head {
+  display: flex;
+  align-items: center;
+  color: var(--forest-soft);
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.plan-star {
+  margin-right: 10rpx;
+  color: var(--gold);
+}
+
+.plan-main {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-top: 18rpx;
+}
+
+.plan-number {
+  color: var(--gold);
+  font-family: "STSong", "Songti SC", serif;
+  font-size: 68rpx;
+  line-height: 1;
+}
+
+.plan-unit {
+  margin-left: 8rpx;
+  color: var(--forest);
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.plan-copy {
+  display: block;
+  max-width: 450rpx;
+  margin-top: 14rpx;
+  color: var(--muted);
+  font-size: 20rpx;
+  line-height: 1.6;
+}
+
+.plan-button {
+  min-height: 66rpx;
+  padding: 0 24rpx;
+  border-radius: 22rpx;
+  font-size: 22rpx;
+}
+
+.book-row {
+  white-space: nowrap;
+}
+
+.book-tile {
+  width: 214rpx;
+  margin-right: 20rpx;
+  display: inline-block;
+  text-align: left;
+  vertical-align: top;
+}
+
+.book-cover {
+  width: 214rpx;
+  height: 160rpx;
+  border-radius: 24rpx;
+  background: var(--sage);
+}
+
+.book-title {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--forest);
+  font-size: 23rpx;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.book-meta {
+  display: block;
+  margin-top: 5rpx;
+  color: var(--muted);
+  font-size: 18rpx;
+}
+
+.page-title {
+  padding: 18rpx 0 6rpx;
+}
+
+.page-heading,
+.page-subtitle {
+  display: block;
+}
+
+.page-heading {
+  color: var(--forest);
+  font-family: "STSong", "Songti SC", serif;
+  font-size: 54rpx;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.page-subtitle {
+  margin-top: 10rpx;
+  color: var(--muted);
+  font-size: 21rpx;
+}
+
+.search-box {
+  height: 84rpx;
+  margin-top: 28rpx;
+  padding: 0 24rpx;
+  border: 2rpx solid var(--line);
+  border-radius: 26rpx;
+  background: var(--paper);
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  color: var(--muted);
+  font-size: 34rpx;
+}
+
+.search-input {
+  flex: 1;
+  margin-left: 14rpx;
+  color: var(--ink);
+  font-size: 23rpx;
+}
+
+.clear-search {
+  color: var(--forest-soft);
+  font-size: 20rpx;
+}
+
+.chip-row {
+  margin-top: 22rpx;
+  white-space: nowrap;
+}
+
+.theme-row {
+  margin-top: 12rpx;
+}
+
+.filter-chip {
+  display: inline-flex;
+  min-height: 58rpx;
+  padding: 0 26rpx;
+  margin-right: 12rpx;
+  align-items: center;
+  justify-content: center;
+  border: 2rpx solid var(--line);
+  border-radius: 999rpx;
+  color: var(--forest-soft);
+  background: var(--paper);
+  font-size: 21rpx;
+}
+
+.filter-chip.small {
+  min-height: 50rpx;
+  padding: 0 20rpx;
+  font-size: 19rpx;
+}
+
+.filter-chip.active {
+  border-color: var(--forest);
+  color: var(--paper);
+  background: var(--forest);
+}
+
+.library-grid {
+  margin-top: 26rpx;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28rpx 20rpx;
+}
+
+.library-card {
+  width: 100%;
+  text-align: left;
+}
+
+.library-cover,
+.library-placeholder {
+  width: 100%;
+  height: 242rpx;
+  border-radius: 28rpx;
+  background: var(--sage);
+}
+
+.library-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--forest);
+  font-size: 28rpx;
+  text-align: center;
+  padding: 20rpx;
+}
+
+.library-title {
+  display: block;
+  margin-top: 13rpx;
+  color: var(--forest);
+  font-size: 25rpx;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.library-meta {
+  display: block;
+  margin-top: 6rpx;
+  color: var(--muted);
+  font-size: 18rpx;
+  line-height: 1.4;
+}
+
+.empty-state {
+  padding: 100rpx 32rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.empty-symbol {
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sage);
+  color: var(--forest);
+  font-size: 30rpx;
+}
+
+.empty-title {
+  margin-top: 24rpx;
+  color: var(--forest);
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.empty-copy {
+  margin-top: 10rpx;
+  color: var(--muted);
+  font-size: 21rpx;
+}
+
+.sub-header {
+  height: 94rpx;
+  display: flex;
+  align-items: center;
+}
+
+.round-back {
+  width: 70rpx;
+  height: 70rpx;
+  border-radius: 50%;
+  border: 2rpx solid var(--line);
+  background: var(--paper);
+  color: var(--forest);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34rpx;
+}
+
+.sub-header-title {
+  margin-left: 22rpx;
+  color: var(--forest);
+  font-size: 35rpx;
+  font-weight: 700;
+}
+
+.sub-header-space {
+  flex: 1;
+}
+
+.detail-cover {
+  width: 100%;
+  height: 500rpx;
+  border-radius: 40rpx;
+  background: var(--sage);
+}
+
+.detail-title-row {
+  margin-top: 30rpx;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.detail-title {
+  display: block;
+  color: var(--forest);
+  font-family: "STSong", "Songti SC", serif;
+  font-size: 50rpx;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.detail-meta {
+  display: block;
+  margin-top: 10rpx;
+  color: var(--muted);
+  font-size: 20rpx;
+}
+
+.shelf-mini,
+.outline-mini {
+  min-height: 58rpx;
+  padding: 0 20rpx;
+  border: 2rpx solid rgba(33, 71, 57, 0.3);
+  border-radius: 999rpx;
+  color: var(--forest);
+  background: var(--paper);
+  font-size: 19rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tag-row {
+  margin-top: 22rpx;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.tag {
+  min-height: 48rpx;
+  padding: 0 18rpx;
+  margin: 0 10rpx 10rpx 0;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999rpx;
+  background: var(--sage);
+  color: var(--forest-soft);
+  font-size: 19rpx;
+}
+
+.detail-summary {
+  margin-top: 16rpx;
+  color: var(--ink);
+  font-size: 25rpx;
+  line-height: 1.9;
+}
+
+.why-card {
+  margin-top: 26rpx;
+  padding: 26rpx;
+  border-radius: 30rpx;
+  background: var(--sage);
+  display: flex;
+}
+
+.why-icon {
+  color: var(--forest);
+  font-size: 32rpx;
+  margin-right: 16rpx;
+}
+
+.why-title,
+.why-copy {
+  display: block;
+}
+
+.why-title {
+  color: var(--forest);
+  font-size: 23rpx;
+  font-weight: 700;
+}
+
+.why-copy {
+  margin-top: 8rpx;
+  color: var(--forest-soft);
+  font-size: 20rpx;
+  line-height: 1.7;
+}
+
+.detail-actions {
+  margin-top: 30rpx;
+  display: grid;
+  grid-template-columns: 0.82fr 1.35fr;
+  gap: 16rpx;
+}
+
+.reader-view {
+  padding-top: 4rpx;
+}
+
+.reader-head {
+  height: 102rpx;
+  display: flex;
+  align-items: center;
+}
+
+.reader-book-title {
+  margin-left: 20rpx;
+  color: var(--forest);
+  font-size: 24rpx;
+  font-weight: 700;
+}
+
+.reader-page {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 20rpx;
+}
+
+.reader-image-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 36rpx;
+}
+
+.reader-image {
+  width: 100%;
+  height: 470rpx;
+  background: var(--sage);
+}
+
+.scene-label {
+  position: absolute;
+  left: 20rpx;
+  right: 20rpx;
+  bottom: 18rpx;
+  padding: 14rpx 18rpx;
+  border-radius: 18rpx;
+  background: rgba(255, 253, 247, 0.9);
+  color: var(--forest-soft);
+  font-size: 18rpx;
+}
+
+.reader-toolbar {
+  margin-top: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.reader-hint {
+  color: var(--muted);
+  font-size: 18rpx;
+}
+
+.pinyin-switch {
+  color: var(--forest-soft);
+  font-size: 19rpx;
+}
+
+.ruby-grid {
+  margin-top: 18rpx;
+  min-height: 220rpx;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  padding: 12rpx 10rpx;
+}
+
+.ruby-token {
+  min-width: 35rpx;
+  min-height: 72rpx;
+  margin: 0 2rpx 6rpx;
+  padding: 4rpx 2rpx;
+  border-radius: 8rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: background 120ms;
+}
+
+.ruby-token.spoken {
+  background: rgba(228, 185, 78, 0.35);
+}
+
+.ruby-pinyin {
+  color: var(--muted);
+  font-size: 16rpx;
+  line-height: 24rpx;
+  min-height: 24rpx;
+}
+
+.ruby-char {
+  color: var(--ink);
+  font-family: "STSong", "Songti SC", serif;
+  font-size: 31rpx;
+  line-height: 42rpx;
+}
+
+.question-card {
+  width: 100%;
+  margin-top: 14rpx;
+  padding: 24rpx;
+  border-radius: 28rpx;
+  background: var(--sage);
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+.question-spark {
+  color: var(--forest);
+  font-size: 30rpx;
+}
+
+.question-copy {
+  flex: 1;
+  margin-left: 16rpx;
+}
+
+.question-label,
+.question-text {
+  display: block;
+}
+
+.question-label {
+  color: var(--forest);
+  font-size: 20rpx;
+  font-weight: 700;
+}
+
+.question-text {
+  margin-top: 7rpx;
+  color: var(--forest-soft);
+  font-size: 20rpx;
+}
+
+.question-arrow {
+  color: var(--forest);
+  font-size: 30rpx;
+}
+
+.audio-card {
+  margin-top: 18rpx;
+  padding: 20rpx;
+  border-radius: 30rpx;
+  background: var(--paper);
+  box-shadow: 0 14rpx 34rpx rgba(33, 71, 57, 0.07);
+  display: flex;
+  align-items: center;
+}
+
+.audio-play {
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: 50%;
+  background: var(--forest);
+  color: var(--paper);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+}
+
+.audio-copy {
+  flex: 1;
+  margin-left: 18rpx;
+}
+
+.audio-title,
+.audio-sub {
+  display: block;
+}
+
+.audio-title {
+  color: var(--forest);
+  font-size: 23rpx;
+  font-weight: 700;
+}
+
+.audio-sub {
+  margin-top: 7rpx;
+  color: var(--muted);
+  font-size: 17rpx;
+  line-height: 1.5;
+}
+
+.audio-status {
+  color: var(--forest);
+  font-size: 20rpx;
+  font-weight: 700;
+}
+
+.reader-controls {
+  margin-top: 24rpx;
+  display: grid;
+  grid-template-columns: 72rpx 1fr 72rpx;
+  gap: 16rpx;
+  align-items: center;
+}
+
+.round-control {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  border: 2rpx solid var(--line);
+  background: var(--paper);
+  color: var(--forest);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+}
+
+.reader-next {
+  min-height: 78rpx;
+}
+
+.reader-progress {
+  width: 100%;
+  height: 7rpx;
+  margin-top: 20rpx;
+  border-radius: 999rpx;
+  background: var(--sage);
+  overflow: hidden;
+}
+
+.reader-progress-value {
+  height: 100%;
+  background: var(--gold);
+  border-radius: inherit;
+}
+
+.summary-hero,
+.growth-hero {
+  margin-top: 18rpx;
+  padding: 38rpx;
+  border-radius: 38rpx;
+  background: var(--forest);
+  color: var(--paper);
+}
+
+.summary-eyebrow,
+.summary-title,
+.growth-label,
+.growth-minutes,
+.growth-streak {
+  display: block;
+}
+
+.summary-eyebrow,
+.growth-label,
+.growth-streak {
+  color: var(--sage-deep);
+  font-size: 21rpx;
+}
+
+.summary-title {
+  margin-top: 16rpx;
+  font-family: "STSong", "Songti SC", serif;
+  font-size: 48rpx;
+  font-weight: 700;
+}
+
+.summary-stats,
+.growth-stats {
+  margin-top: 20rpx;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14rpx;
+}
+
+.summary-stat,
+.growth-stat {
+  padding: 24rpx 12rpx;
+  border-radius: 28rpx;
+  background: var(--paper);
+  text-align: center;
+}
+
+.stat-number {
+  display: block;
+  color: var(--gold);
+  font-family: "STSong", "Songti SC", serif;
+  font-size: 46rpx;
+  font-weight: 700;
+}
+
+.stat-label {
+  display: block;
+  margin-top: 8rpx;
+  color: var(--muted);
+  font-size: 17rpx;
+}
+
+.info-card {
+  margin-top: 20rpx;
+  padding: 28rpx;
+  border-radius: 30rpx;
+  background: var(--sage);
+}
+
+.info-card.pale {
+  background: var(--paper);
+  border: 2rpx solid var(--line);
+}
+
+.info-title {
+  display: block;
+  color: var(--forest);
+  font-size: 24rpx;
+  font-weight: 700;
+}
+
+.info-copy {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--forest-soft);
+  font-size: 21rpx;
+  line-height: 1.8;
+}
+
+.summary-button {
+  width: 100%;
+  margin-top: 18rpx;
+}
+
+.form-card,
+.draft-card,
+.settings-card,
+.backend-card,
+.about-card,
+.child-card {
+  padding: 30rpx;
+  border-radius: 34rpx;
+  background: var(--paper);
+  box-shadow: 0 16rpx 42rpx rgba(33, 71, 57, 0.06);
+}
+
+.field-label {
+  display: block;
+  margin: 24rpx 0 12rpx;
+  color: var(--forest-soft);
+  font-size: 21rpx;
+  font-weight: 700;
+}
+
+.field-label:first-child {
+  margin-top: 0;
+}
+
+.age-picker,
+.theme-picker {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.form-input {
+  width: 100%;
+  min-height: 80rpx;
+  padding: 0 22rpx;
+  margin-top: 10rpx;
+  border: 2rpx solid var(--line);
+  border-radius: 22rpx;
+  background: #fbfcfa;
+  color: var(--ink);
+  font-size: 23rpx;
+}
+
+.generate-button {
+  width: 100%;
+  margin-top: 34rpx;
+}
+
+.form-tip {
+  display: block;
+  margin-top: 18rpx;
+  color: var(--muted);
+  font-size: 18rpx;
+  line-height: 1.6;
+}
+
+.draft-state {
+  margin-left: auto;
+  color: var(--gold);
+  font-size: 19rpx;
+  font-weight: 700;
+}
+
+.draft-cover {
+  width: 100%;
+  height: 360rpx;
+  border-radius: 28rpx;
+  background: var(--sage);
+}
+
+.draft-title {
+  display: block;
+  margin-top: 24rpx;
+  color: var(--forest);
+  font-family: "STSong", "Songti SC", serif;
+  font-size: 42rpx;
+  font-weight: 700;
+}
+
+.draft-meta {
+  display: block;
+  margin-top: 8rpx;
+  color: var(--muted);
+  font-size: 19rpx;
+}
+
+.draft-pages {
+  margin-top: 24rpx;
+}
+
+.draft-page {
+  padding: 18rpx 0;
+  border-top: 2rpx solid var(--line);
+}
+
+.draft-page-no,
+.draft-page-text {
+  display: block;
+}
+
+.draft-page-no {
+  color: var(--forest);
+  font-size: 19rpx;
+  font-weight: 700;
+}
+
+.draft-page-text {
+  margin-top: 8rpx;
+  color: var(--ink);
+  font-size: 23rpx;
+  line-height: 1.8;
+}
+
+.draft-checks {
+  margin-top: 18rpx;
+  padding: 22rpx;
+  border-radius: 24rpx;
+  background: var(--sage);
+  color: var(--forest-soft);
+  font-size: 20rpx;
+  line-height: 1.9;
+}
+
+.draft-checks text {
+  display: block;
+}
+
+.growth-minutes {
+  margin-top: 16rpx;
+  font-family: "STSong", "Songti SC", serif;
+  font-size: 62rpx;
+  font-weight: 700;
+}
+
+.growth-streak {
+  margin-top: 12rpx;
+}
+
+.growth-stat text:first-child {
+  display: block;
+  color: var(--forest);
+  font-size: 37rpx;
+  font-weight: 700;
+}
+
+.growth-stat text:last-child {
+  display: block;
+  margin-top: 8rpx;
+  color: var(--muted);
+  font-size: 17rpx;
+}
+
+.record-list,
+.shelf-list {
+  display: grid;
+  gap: 16rpx;
+}
+
+.record-row,
+.shelf-row {
+  width: 100%;
+  padding: 16rpx;
+  border-radius: 28rpx;
+  background: var(--paper);
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+.record-cover,
+.shelf-cover {
+  width: 150rpx;
+  height: 112rpx;
+  border-radius: 20rpx;
+  background: var(--sage);
+}
+
+.record-copy,
+.shelf-copy {
+  flex: 1;
+  margin-left: 20rpx;
+}
+
+.record-title,
+.record-meta,
+.shelf-title,
+.shelf-meta,
+.shelf-action {
+  display: block;
+}
+
+.record-title,
+.shelf-title {
+  color: var(--forest);
+  font-size: 25rpx;
+  font-weight: 700;
+}
+
+.record-meta,
+.shelf-meta {
+  margin-top: 8rpx;
+  color: var(--muted);
+  font-size: 18rpx;
+}
+
+.record-arrow {
+  color: var(--forest-soft);
+  font-size: 28rpx;
+}
+
+.shelf-action {
+  margin-top: 12rpx;
+  color: var(--forest);
+  font-size: 19rpx;
+  font-weight: 700;
+}
+
+.child-card {
+  display: flex;
+  align-items: center;
+}
+
+.child-avatar {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 50%;
+  background: var(--sage);
+  color: var(--forest);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.child-copy {
+  flex: 1;
+  margin-left: 20rpx;
+}
+
+.child-name,
+.child-meta {
+  display: block;
+}
+
+.child-name {
+  color: var(--forest);
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.child-meta {
+  margin-top: 8rpx;
+  color: var(--muted);
+  font-size: 19rpx;
+}
+
+.settings-card {
+  margin-top: 20rpx;
+}
+
+.setting-row {
+  width: 100%;
+  min-height: 84rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+}
+
+.setting-label {
+  color: var(--forest);
+  font-size: 23rpx;
+  font-weight: 600;
+}
+
+.setting-value {
+  color: var(--muted);
+  font-size: 19rpx;
+}
+
+.setting-divider {
+  height: 2rpx;
+  background: var(--line);
+}
+
+.backend-card {
+  margin-top: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.backend-title,
+.backend-copy {
+  display: block;
+}
+
+.backend-title {
+  color: var(--forest);
+  font-size: 23rpx;
+  font-weight: 700;
+}
+
+.backend-copy {
+  margin-top: 7rpx;
+  color: var(--muted);
+  font-size: 18rpx;
+}
+
+.about-card {
+  margin-top: 20rpx;
+}
+
+.about-title {
+  display: block;
+  color: var(--forest);
+  font-family: "STSong", "Songti SC", serif;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.about-copy {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--muted);
+  font-size: 20rpx;
+  line-height: 1.7;
+}
+
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  min-height: 116rpx;
+  padding: 8rpx 12rpx calc(8rpx + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  background: rgba(255, 253, 247, 0.98);
+  border-top: 2rpx solid rgba(222, 212, 192, 0.65);
+}
+
+.nav-item {
+  min-height: 98rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #a4a89e;
+  font-size: 17rpx;
+}
+
+.nav-item.active {
+  color: var(--forest);
+  font-weight: 700;
+}
+
+.nav-icon {
+  width: 44rpx;
+  height: 44rpx;
+  margin-bottom: 7rpx;
+}
+
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(25, 45, 35, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.login-modal {
+  width: 100%;
+  padding: 34rpx 32rpx calc(36rpx + env(safe-area-inset-bottom));
+  border-radius: 40rpx 40rpx 0 0;
+  background: var(--bg);
+}
+
+.login-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.login-title {
+  color: var(--forest);
+  font-family: "STSong", "Songti SC", serif;
+  font-size: 38rpx;
+  font-weight: 700;
+}
+
+.modal-close {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34rpx;
+}
+
+.login-tip {
+  display: block;
+  margin: 16rpx 0 24rpx;
+  color: var(--muted);
+  font-size: 20rpx;
+  line-height: 1.7;
+}
+
+.login-submit {
+  width: 100%;
+  margin-top: 24rpx;
+}

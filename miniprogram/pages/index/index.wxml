@@ -1,0 +1,435 @@
+<view class="app" style="padding-top: {{statusBarHeight}}px">
+  <view wx:if="{{showTabBar}}" class="topbar">
+    <view class="brand-row">
+      <view class="brand-mark">
+        <text>芽</text>
+      </view>
+      <view class="brand-copy">
+        <text class="brand-name">知芽绘本</text>
+        <text class="brand-sub">亲子共读</text>
+      </view>
+    </view>
+    <view class="header-actions">
+      <button class="header-icon" bindtap="openLibrary">
+        <image class="icon-24" src="/assets/icons/library.png"></image>
+      </button>
+      <button class="avatar" bindtap="openProfile">禾</button>
+    </view>
+  </view>
+
+  <view wx:if="{{view === 'home'}}" class="view home-view">
+    <view class="hero-card">
+      <image class="hero-image" src="{{homeHero.cover}}" mode="aspectFill"></image>
+      <view class="hero-shade"></view>
+      <view class="hero-content">
+        <text class="eyebrow">今日共读 · {{homeHero.age}}</text>
+        <text class="hero-title">和孩子一起\n打开更大的世界</text>
+        <text class="hero-copy">在绘本中，遇见有趣的故事。</text>
+        <button class="primary-btn hero-btn" data-id="{{homeHero.id}}" bindtap="openBook">开始探索 →</button>
+      </view>
+      <button class="hero-book-chip" data-id="{{homeHero.id}}" bindtap="openBook">
+        <image class="hero-chip-cover" src="{{homeHero.cover}}" mode="aspectFill"></image>
+        <view class="hero-chip-copy">
+          <text class="hero-chip-title">{{homeHero.title}}</text>
+          <text class="hero-chip-meta">{{homeHero.age}} · {{homeHero.pageCount}} 页</text>
+        </view>
+      </button>
+    </view>
+
+    <view class="plan-card">
+      <view class="plan-head">
+        <text class="plan-star">✦</text>
+        <text>今日阅读计划</text>
+      </view>
+      <view class="plan-main">
+        <view>
+          <text class="plan-number">{{child.preferredMinutes || 15}}</text>
+          <text class="plan-unit">分钟</text>
+          <text class="plan-copy">和{{child.nickname}}一起读一本关于勇气的书。</text>
+        </view>
+        <button class="primary-btn plan-button" data-id="{{homeHero.id}}" bindtap="openBook">继续共读</button>
+      </view>
+    </view>
+
+    <view class="section-title">
+      <text>为你精选</text>
+      <text bindtap="openLibrary">查看全部 →</text>
+    </view>
+    <scroll-view class="book-row" scroll-x enhanced show-scrollbar="{{false}}">
+      <button
+        wx:for="{{homeBooks}}"
+        wx:key="id"
+        class="book-tile"
+        data-id="{{item.id}}"
+        bindtap="openBook"
+      >
+        <image class="book-cover" src="{{item.cover}}" mode="aspectFill"></image>
+        <text class="book-title">{{item.title}}</text>
+        <text class="book-meta">{{item.age}} · {{item.pageCount}} 页</text>
+      </button>
+    </scroll-view>
+  </view>
+
+  <view wx:if="{{view === 'library'}}" class="view">
+    <view class="page-title">
+      <text class="page-heading">绘本馆</text>
+      <text class="page-subtitle">仓库内的 {{books.length}} 本原创绘本</text>
+    </view>
+    <view class="search-box">
+      <text class="search-icon">⌕</text>
+      <input
+        class="search-input"
+        value="{{query}}"
+        placeholder="搜索书名、主题或编号"
+        bindinput="onSearchInput"
+        confirm-type="search"
+      />
+      <text wx:if="{{query}}" class="clear-search" bindtap="clearSearch">清除</text>
+    </view>
+    <scroll-view class="chip-row" scroll-x enhanced show-scrollbar="{{false}}">
+      <button
+        wx:for="{{ageOptions}}"
+        wx:key="value"
+        class="filter-chip {{activeAge === item.value ? 'active' : ''}}"
+        data-age="{{item.value}}"
+        bindtap="selectAge"
+      >{{item.label}}</button>
+    </scroll-view>
+    <scroll-view class="chip-row theme-row" scroll-x enhanced show-scrollbar="{{false}}">
+      <button
+        wx:for="{{themeOptions}}"
+        wx:key="*this"
+        class="filter-chip small {{activeTheme === item ? 'active' : ''}}"
+        data-theme="{{item}}"
+        bindtap="selectTheme"
+      >{{item}}</button>
+    </scroll-view>
+
+    <view class="library-grid">
+      <button
+        wx:for="{{filteredBooks}}"
+        wx:key="id"
+        class="library-card"
+        data-id="{{item.id}}"
+        bindtap="openBook"
+      >
+        <image wx:if="{{item.cover}}" class="library-cover" src="{{item.cover}}" mode="aspectFill"></image>
+        <view wx:else class="library-placeholder">{{item.title}}</view>
+        <text class="library-title">{{item.title}}</text>
+        <text class="library-meta">{{item.age}} · {{item.themeText}}</text>
+      </button>
+    </view>
+    <view wx:if="{{!filteredBooks.length}}" class="empty-state">
+      <text class="empty-symbol">⌕</text>
+      <text class="empty-title">没有找到匹配的绘本</text>
+      <text class="empty-copy">换一个年龄或关键词试试。</text>
+    </view>
+  </view>
+
+  <view wx:if="{{view === 'detail'}}" class="view detail-view">
+    <view class="sub-header">
+      <button class="round-back" bindtap="goBack">←</button>
+      <text class="sub-header-title">{{currentBook.bookNo}}</text>
+      <view class="sub-header-space"></view>
+    </view>
+    <image wx:if="{{currentBook.cover}}" class="detail-cover" src="{{currentBook.cover}}" mode="aspectFill"></image>
+    <view class="detail-title-row">
+      <view>
+        <text class="detail-title">{{currentBook.title}}</text>
+        <text class="detail-meta">{{currentBook.age}} · {{currentBook.difficulty}} · {{currentBook.pageCount}} 页</text>
+      </view>
+      <button class="shelf-mini" bindtap="toggleShelf">{{inShelf ? '已收藏' : '收藏'}}</button>
+    </view>
+    <view class="tag-row">
+      <text wx:for="{{currentBook.themes}}" wx:key="*this" class="tag">{{item}}</text>
+    </view>
+    <view class="detail-summary">{{currentBook.firstText}}</view>
+    <view class="why-card">
+      <text class="why-icon">✦</text>
+      <view>
+        <text class="why-title">为什么推荐给你</text>
+        <text class="why-copy">适合 {{currentBook.age}} 的亲子共读，主题包括 {{currentBook.themeText}}。</text>
+      </view>
+    </view>
+    <view class="detail-actions">
+      <button class="secondary-btn" bindtap="toggleShelf">{{inShelf ? '移出书架' : '加入书架'}}</button>
+      <button class="primary-btn" bindtap="startReading">开始共读 →</button>
+    </view>
+  </view>
+
+  <view wx:if="{{view === 'reader'}}" class="view reader-view">
+    <view class="reader-head">
+      <button class="round-back" bindtap="goBack">←</button>
+      <text class="reader-book-title">{{currentBook.title}}</text>
+      <text class="reader-page">{{pageProgress}}</text>
+    </view>
+    <view class="reader-image-wrap">
+      <image wx:if="{{currentBook.cover}}" class="reader-image" src="{{currentBook.cover}}" mode="aspectFill"></image>
+      <view class="scene-label">画面：{{currentPage.scene || '绘本画面'}}</view>
+    </view>
+    <view class="reader-toolbar">
+      <text class="reader-hint">逐字拼音 · {{showPinyin ? '已开启' : '已关闭'}}</text>
+      <button class="pinyin-switch" bindtap="togglePinyin">{{showPinyin ? '隐藏拼音' : '显示拼音'}}</button>
+    </view>
+    <view class="ruby-grid">
+      <view
+        wx:for="{{currentPage.tokens}}"
+        wx:key="*this"
+        class="ruby-token {{index === spokenIndex ? 'spoken' : ''}}"
+      >
+        <text wx:if="{{showPinyin}}" class="ruby-pinyin">{{item.pinyin}}</text>
+        <text class="ruby-char">{{item.char}}</text>
+      </view>
+    </view>
+    <button class="question-card" bindtap="readAloud">
+      <text class="question-spark">✦</text>
+      <view class="question-copy">
+        <text class="question-label">共读小问题 · {{currentPage.promptType}}</text>
+        <text class="question-text">{{currentPage.prompt || '你从这一页看到了什么？'}}</text>
+      </view>
+      <text class="question-arrow">→</text>
+    </button>
+    <view class="audio-card">
+      <button class="audio-play" bindtap="readAloud">{{speechState === 'playing' ? 'Ⅱ' : '▶'}}</button>
+      <view class="audio-copy">
+        <text class="audio-title">{{speechState === 'playing' ? '正在朗读' : '听知芽读这一页'}}</text>
+        <text class="audio-sub">本地演示逐字高亮；正式语音需后端TTS配置</text>
+      </view>
+      <text class="audio-status">{{currentPageIndex + 1}}/{{currentBook.pageCount}}</text>
+    </view>
+    <view class="reader-controls">
+      <button class="round-control" bindtap="prevPage">←</button>
+      <button class="primary-btn reader-next" bindtap="nextPage">{{currentPageIndex + 1 === currentBook.pageCount ? '完成阅读' : '下一页'}} →</button>
+      <button class="round-control" bindtap="nextPage" disabled="{{currentPageIndex + 1 === currentBook.pageCount}}">→</button>
+    </view>
+    <view class="reader-progress">
+      <view
+        class="reader-progress-value"
+        style="width: {{(currentPageIndex + 1) / currentBook.pageCount * 100}}%;"
+      ></view>
+    </view>
+  </view>
+
+  <view wx:if="{{view === 'summary'}}" class="view summary-view">
+    <view class="sub-header">
+      <button class="round-back" bindtap="goHome">×</button>
+      <text class="sub-header-title">阅读小结</text>
+      <view class="sub-header-space"></view>
+    </view>
+    <view class="summary-hero">
+      <text class="summary-eyebrow">今天，我们一起读完了</text>
+      <text class="summary-title">《{{summary.title}}》</text>
+    </view>
+    <view class="summary-stats">
+      <view class="summary-stat"><text class="stat-number">{{summary.minutes}}</text><text class="stat-label">分钟共读</text></view>
+      <view class="summary-stat"><text class="stat-number">{{summary.pages}}</text><text class="stat-label">页一起读完</text></view>
+      <view class="summary-stat"><text class="stat-number">{{summary.interactions}}</text><text class="stat-label">次亲子互动</text></view>
+    </view>
+    <view class="info-card">
+      <text class="info-title">知芽看到的小小闪光</text>
+      <text class="info-copy">孩子已经能关注角色的行动，并尝试用“因为……”表达自己的想法。</text>
+    </view>
+    <view class="info-card pale">
+      <text class="info-title">亲子延伸活动</text>
+      <text class="info-copy">再一起看一遍封面，让孩子指出最喜欢的地方，并用自己的话复述一页故事。</text>
+    </view>
+    <button class="primary-btn summary-button" bindtap="switchTab" data-tab="growth">记录到成长</button>
+    <button class="secondary-btn summary-button" bindtap="goHome">回到首页</button>
+  </view>
+
+  <view wx:if="{{view === 'original'}}" class="view original-view">
+    <view class="page-title">
+      <text class="page-heading">原创故事</text>
+      <text class="page-subtitle">把喜欢的角色和场景，变成一本专属绘本。</text>
+    </view>
+    <view class="form-card">
+      <text class="field-label">适龄范围</text>
+      <view class="age-picker">
+        <button class="filter-chip {{originalForm.age === '3–4 岁' ? 'active' : ''}}" data-age="3–4 岁" bindtap="selectOriginalAge">3–4 岁</button>
+        <button class="filter-chip {{originalForm.age === '4–5 岁' ? 'active' : ''}}" data-age="4–5 岁" bindtap="selectOriginalAge">4–5 岁</button>
+        <button class="filter-chip {{originalForm.age === '5–6 岁' ? 'active' : ''}}" data-age="5–6 岁" bindtap="selectOriginalAge">5–6 岁</button>
+      </view>
+      <text class="field-label">故事主题</text>
+      <view class="theme-picker">
+        <button class="filter-chip small {{originalForm.theme === item ? 'active' : ''}}" wx:for="{{themeOptions}}" wx:key="*this" data-theme="{{item}}" bindtap="selectOriginalTheme">{{item}}</button>
+      </view>
+      <text class="field-label">主角</text>
+      <input class="form-input" value="{{originalForm.character}}" data-field="character" bindinput="onOriginalInput" placeholder="例如：小狐狸" />
+      <text class="field-label">故事场景</text>
+      <input class="form-input" value="{{originalForm.scene}}" data-field="scene" bindinput="onOriginalInput" placeholder="例如：雨后森林" />
+      <button class="primary-btn generate-button" bindtap="generateDraft">生成故事草稿</button>
+      <text class="form-tip">生成内容先保存为家长私有草稿，确认后才能进入儿童模式。</text>
+    </view>
+    <view class="info-card pale">
+      <text class="info-title">家长审核</text>
+      <text class="info-copy">检查年龄适宜性、角色一致性、情节完整性和内容安全后，再保存给孩子阅读。</text>
+    </view>
+  </view>
+
+  <view wx:if="{{view === 'originalDraft'}}" class="view draft-view">
+    <view class="sub-header">
+      <button class="round-back" bindtap="goBack">←</button>
+      <text class="sub-header-title">故事草稿</text>
+      <text class="draft-state">待家长确认</text>
+    </view>
+    <view class="draft-card">
+      <image class="draft-cover" src="{{draft.cover}}" mode="aspectFill"></image>
+      <text class="draft-title">{{draft.title}}</text>
+      <text class="draft-meta">{{draft.age}} · {{draft.themes[0]}} · {{draft.pages.length}} 页</text>
+      <view class="draft-pages">
+        <view wx:for="{{draft.pages}}" wx:key="page" class="draft-page">
+          <text class="draft-page-no">第 {{item.page}} 页</text>
+          <text class="draft-page-text">{{item.text}}</text>
+        </view>
+      </view>
+      <view class="draft-checks">
+        <text>✓ 年龄与措辞适合 {{draft.age}}</text>
+        <text>✓ 角色和场景前后一致</text>
+        <text>✓ 内容安全检查通过</text>
+      </view>
+      <view class="detail-actions">
+        <button class="secondary-btn" bindtap="goBack">重新生成</button>
+        <button class="primary-btn" bindtap="saveDraft">家长确认保存</button>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{view === 'growth'}}" class="view growth-view">
+    <view class="page-title">
+      <text class="page-heading">成长记录</text>
+      <text class="page-subtitle">每一次共读，都在悄悄发芽。</text>
+    </view>
+    <view class="growth-hero">
+      <text class="growth-label">累计共读</text>
+      <text class="growth-minutes">{{recordStats.minutes}} 分钟</text>
+      <text class="growth-streak">已记录 {{recordStats.days}} 个阅读日</text>
+    </view>
+    <view class="growth-stats">
+      <view class="growth-stat"><text>{{recordStats.count}}</text><text>共读次数</text></view>
+      <view class="growth-stat"><text>{{recordStats.books}}</text><text>读过的书</text></view>
+      <view class="growth-stat"><text>{{childAgeLabel}}</text><text>当前年龄</text></view>
+    </view>
+    <view class="section-title"><text>最近读过</text><text>{{records.length}} 条</text></view>
+    <view wx:if="{{records.length}}" class="record-list">
+      <button class="record-row" wx:for="{{records}}" wx:key="id" data-id="{{item.bookId}}" bindtap="openBook">
+        <image class="record-cover" src="{{item.cover}}" mode="aspectFill"></image>
+        <view class="record-copy">
+          <text class="record-title">{{item.title}}</text>
+          <text class="record-meta">{{item.date}} · {{item.minutes}} 分钟 · {{item.pages}} 页</text>
+        </view>
+        <text class="record-arrow">→</text>
+      </button>
+    </view>
+    <view wx:else class="empty-state">
+      <text class="empty-symbol">叶</text>
+      <text class="empty-title">还没有阅读记录</text>
+      <text class="empty-copy">先和孩子共读一本绘本吧。</text>
+    </view>
+  </view>
+
+  <view wx:if="{{view === 'profile'}}" class="view profile-view">
+    <view class="page-title">
+      <text class="page-heading">家长中心</text>
+      <text class="page-subtitle">孩子档案、书架与阅读设置。</text>
+    </view>
+    <view class="child-card">
+      <view class="child-avatar">禾</view>
+      <view class="child-copy">
+        <text class="child-name">{{child.nickname}}</text>
+        <text class="child-meta">{{childAgeLabel}} · 喜欢 {{child.interests[0]}} 和 {{child.interests[1]}}</text>
+      </view>
+      <button class="outline-mini" bindtap="changeChildAge">切换年龄</button>
+    </view>
+    <view class="settings-card">
+      <button class="setting-row" bindtap="openShelf">
+        <text class="setting-label">我的书架</text>
+        <text class="setting-value">{{shelfBooks.length}} 本 →</text>
+      </button>
+      <view class="setting-divider"></view>
+      <button class="setting-row" bindtap="changeChildAge">
+        <text class="setting-label">儿童模式</text>
+        <text class="setting-value">家长授权 →</text>
+      </button>
+      <view class="setting-divider"></view>
+      <view class="setting-row">
+        <text class="setting-label">每日阅读</text>
+        <text class="setting-value">{{child.preferredMinutes}} 分钟</text>
+      </view>
+      <view class="setting-divider"></view>
+      <view class="setting-row">
+        <text class="setting-label">拼音显示</text>
+        <text class="setting-value">{{showPinyin ? '已开启' : '已关闭'}}</text>
+      </view>
+    </view>
+    <view class="backend-card">
+      <view>
+        <text class="backend-title">后端连接</text>
+        <text class="backend-copy">{{apiStatus}}</text>
+      </view>
+      <button class="outline-mini" bindtap="openLogin">账号连接</button>
+    </view>
+    <view class="about-card">
+      <text class="about-title">知芽小程序</text>
+      <text class="about-copy">基于领域知识增强的 AI 亲子绘本共读与阅读启蒙系统。</text>
+    </view>
+  </view>
+
+  <view wx:if="{{view === 'shelf'}}" class="view shelf-view">
+    <view class="sub-header">
+      <button class="round-back" bindtap="goBack">←</button>
+      <text class="sub-header-title">我的书架</text>
+      <text class="draft-state">{{shelfBooks.length}} 本</text>
+    </view>
+    <view wx:if="{{shelfBooks.length}}" class="shelf-list">
+      <button class="shelf-row" wx:for="{{shelfBooks}}" wx:key="id" data-id="{{item.id}}" bindtap="openBook">
+        <image class="shelf-cover" src="{{item.cover}}" mode="aspectFill"></image>
+        <view class="shelf-copy">
+          <text class="shelf-title">{{item.title}}</text>
+          <text class="shelf-meta">{{item.age}} · {{item.themeText}}</text>
+          <text class="shelf-action">继续阅读 →</text>
+        </view>
+      </button>
+    </view>
+    <view wx:else class="empty-state">
+      <text class="empty-symbol">书</text>
+      <text class="empty-title">书架还是空的</text>
+      <text class="empty-copy">在绘本详情页点击“加入书架”。</text>
+    </view>
+  </view>
+
+  <view wx:if="{{showTabBar}}" class="bottom-nav">
+    <button class="nav-item {{activeTab === 'home' ? 'active' : ''}}" data-tab="home" bindtap="switchTab">
+      <image class="nav-icon" src="/assets/icons/home{{activeTab === 'home' ? '-active' : ''}}.png"></image>
+      <text>首页</text>
+    </button>
+    <button class="nav-item {{activeTab === 'library' ? 'active' : ''}}" data-tab="library" bindtap="switchTab">
+      <image class="nav-icon" src="/assets/icons/library{{activeTab === 'library' ? '-active' : ''}}.png"></image>
+      <text>绘本馆</text>
+    </button>
+    <button class="nav-item {{activeTab === 'original' ? 'active' : ''}}" data-tab="original" bindtap="switchTab">
+      <image class="nav-icon" src="/assets/icons/original{{activeTab === 'original' ? '-active' : ''}}.png"></image>
+      <text>原创故事</text>
+    </button>
+    <button class="nav-item {{activeTab === 'growth' ? 'active' : ''}}" data-tab="growth" bindtap="switchTab">
+      <image class="nav-icon" src="/assets/icons/growth{{activeTab === 'growth' ? '-active' : ''}}.png"></image>
+      <text>成长</text>
+    </button>
+    <button class="nav-item {{activeTab === 'profile' ? 'active' : ''}}" data-tab="profile" bindtap="switchTab">
+      <image class="nav-icon" src="/assets/icons/profile{{activeTab === 'profile' ? '-active' : ''}}.png"></image>
+      <text>我的</text>
+    </button>
+  </view>
+
+  <view wx:if="{{loginOpen}}" class="modal-mask" bindtap="closeLogin">
+    <view class="login-modal" catchtap="noop">
+      <view class="login-head">
+        <text class="login-title">连接知芽账号</text>
+        <button class="modal-close" bindtap="closeLogin">×</button>
+      </view>
+      <text class="login-tip">当前默认本地演示。启用后端后，可在这里登录家长账号。</text>
+      <input class="form-input" value="{{loginAccount}}" data-field="loginAccount" bindinput="onLoginInput" placeholder="账号" />
+      <input class="form-input" value="{{loginPassword}}" data-field="loginPassword" bindinput="onLoginInput" password placeholder="密码" />
+      <button class="primary-btn login-submit" bindtap="submitLogin">登录</button>
+    </view>
+  </view>
+</view>
