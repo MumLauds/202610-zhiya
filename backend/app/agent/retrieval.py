@@ -44,7 +44,10 @@ def _tokens(text: str) -> list[str]:
     stop_class = "[" + "".join(sorted(CJK_STOP_CHARS)) + "]+"
     for chunk in CJK_PATTERN.findall(lowered):
         for segment in re.split(stop_class, chunk):
-            if len(segment) >= 2:
+            # Keep non-stop single characters too (e.g. 伞, 雨, 火). They are
+            # already split on stop characters, so a non-empty segment is a
+            # meaningful keyword even when it is one character long.
+            if segment:
                 tokens.append(segment)
         for size in (2, 3):
             for index in range(len(chunk) - size + 1):

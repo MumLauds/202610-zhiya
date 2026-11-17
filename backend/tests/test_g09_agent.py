@@ -113,6 +113,35 @@ class KnowledgeRetrieverTests(G09DatabaseMixin, unittest.TestCase):
         result = SentenceRetriever(limit=1).retrieve(query)
         self.assertEqual([item.item_key for item in result.items], ["KN-UMBRELLA"])
 
+    def test_single_chinese_character_keyword_selects_relevant_item(self):
+        """Non-stop single characters (伞/雨) must stay as keywords (PR #32 re-review)."""
+        from app.agent.retrieval import _tokens
+
+        # Keyword extraction keeps meaningful single characters, drops stop chars.
+        self.assertIn("伞", _tokens("伞"))
+        self.assertIn("雨", _tokens("雨"))
+        self.assertEqual(_tokens("的了"), [])
+        self.assertEqual(_tokens("！？，。"), [])
+
+        # Real database retrieval: same age/topic/version, limit=1 must pick id 1.
+        with closing(sqlite3.connect(self.db_path)) as db, db:
+            db.execute("DELETE FROM knowledge_items")
+            _insert_item(db, id=1, version_no=1, item_key="KN-UMBRELLA",
+                         topics=["动物"], task_types=["GUIDANCE"], status="APPROVED",
+                         reviewed_at=1, content="小兔子把雨伞借给了淋雨的小熊。")
+            _insert_item(db, id=2, version_no=1, item_key="KN-CAT",
+                         topics=["动物"], task_types=["GUIDANCE"], status="APPROVED",
+                         reviewed_at=2, content="小猫站在门边抬头看小鸟。")
+
+        for keyword in ("伞", "雨"):
+            with self.subTest(keyword=keyword):
+                query = KnowledgeQuery(
+                    age_band="AGE_3_4", topics=["动物"], task_type="GUIDANCE",
+                    query_text=keyword,
+                )
+                result = KnowledgeRetriever(self.db_path, limit=1).retrieve(query)
+                self.assertEqual([item.knowledge_item_id for item in result.items], [1])
+
     def test_duplicate_item_key_keeps_latest_approved_version(self):
         class DuplicateRetriever(KnowledgeRetriever):
             def _rows(self):
