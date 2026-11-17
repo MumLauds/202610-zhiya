@@ -100,9 +100,9 @@ class KnowledgeRetrieverTests(G09DatabaseMixin, unittest.TestCase):
                     "version_no": 1,
                 }
                 return [
-                    dict(base, id=1, item_key="KN-IRRELEVANT",
+                    dict(base, id=2, item_key="KN-IRRELEVANT",
                          content="小猫站在门边抬头看小鸟。"),
-                    dict(base, id=2, item_key="KN-UMBRELLA",
+                    dict(base, id=1, item_key="KN-UMBRELLA",
                          content="小兔子把雨伞借给了淋雨的小熊。"),
                 ]
 
@@ -113,8 +113,8 @@ class KnowledgeRetrieverTests(G09DatabaseMixin, unittest.TestCase):
         result = SentenceRetriever(limit=1).retrieve(query)
         self.assertEqual([item.item_key for item in result.items], ["KN-UMBRELLA"])
 
-    def test_single_chinese_character_keyword_selects_relevant_item(self):
-        """Non-stop single characters (伞/雨) must stay as keywords (PR #32 re-review)."""
+    def test_chinese_keywords_select_relevant_item(self):
+        """Single characters and full questions must beat the ID tie-breaker."""
         from app.agent.retrieval import _tokens
 
         # Keyword extraction keeps meaningful single characters, drops stop chars.
@@ -122,6 +122,8 @@ class KnowledgeRetrieverTests(G09DatabaseMixin, unittest.TestCase):
         self.assertIn("雨", _tokens("雨"))
         self.assertEqual(_tokens("的了"), [])
         self.assertEqual(_tokens("！？，。"), [])
+        self.assertEqual(_tokens(" \t\n"), [])
+        self.assertEqual(_tokens("Rabbit umbrella RABBIT"), ["rabbit", "umbrella"])
 
         # Real database retrieval: same age/topic/version, limit=1 must pick id 1.
         with closing(sqlite3.connect(self.db_path)) as db, db:
@@ -132,8 +134,9 @@ class KnowledgeRetrieverTests(G09DatabaseMixin, unittest.TestCase):
             _insert_item(db, id=2, version_no=1, item_key="KN-CAT",
                          topics=["动物"], task_types=["GUIDANCE"], status="APPROVED",
                          reviewed_at=2, content="小猫站在门边抬头看小鸟。")
+            db.execute("UPDATE knowledge_items SET title = '动物故事'")
 
-        for keyword in ("伞", "雨"):
+        for keyword in ("伞", "雨", "雨伞 小兔子", "小兔子为什么把雨伞借给小熊"):
             with self.subTest(keyword=keyword):
                 query = KnowledgeQuery(
                     age_band="AGE_3_4", topics=["动物"], task_type="GUIDANCE",
