@@ -97,6 +97,8 @@ H03 清单的 `assetBytes=806,090`、`sourceBytes=117,248,465`、`compressionRat
 
 所有路径使用仓库相对 POSIX 路径；不写开发者电脑绝对路径。
 
+`storybooks.json` 只承载书架元数据，不包含 `pages` 或 `branches`；完整分页和正文只从 `story-details.json` / `GET /api/v1/story-versions/{id}` 读取，避免书架响应携带全部正文。
+
 ### 3.1 `storybooks.json`：书架元数据
 
 根节点：
@@ -309,7 +311,7 @@ python hardware/mock/server.py --port 8765
 | --- | --- | --- | --- |
 | GET | `/api/v1/health` | Mock 健康检查 | 不是 API-032 的正式实现 |
 | GET | `/mock/meta` | 数据计数、模式、`demoOnly` | Mock 专用 |
-| GET | `/api/v1/storybooks` | 20 本、支持 `ageBand/topic/page/pageSize` | API-008 的 DEMO 投影 |
+| GET | `/api/v1/storybooks` | 20 本轻量书架元数据，支持 `ageBand/topic/page/pageSize` | API-008 的 DEMO 投影 |
 | GET | `/api/v1/story-versions/{version_id}` | 版本详情和分页 | API-009 的 DEMO 投影 |
 | GET | `/api/v1/reading-sessions` | 列出内存会话 | API-012 的 DEMO 投影 |
 | POST | `/api/v1/reading-sessions` | 创建初始会话 | API-011 的 DEMO 投影 |
@@ -324,6 +326,8 @@ python hardware/mock/server.py --port 8765
 | POST | `/mock/reset` | 重置内存会话和 fixtures 状态 | Mock 专用，测试使用 |
 
 `scope=mine` 会返回 403 `FORBIDDEN`，因为 H05 没有实现家长历史书架；这不是正式权限实现。
+
+`GET /api/v1/storybooks` 只返回 `storybooks.json` 的轻量元数据，**不包含 `pages` / `branches`**；H06 进入详情页时必须再请求 `GET /api/v1/story-versions/{id}`。Mock 的会话、书籍和计数读取都通过 `RLock` 取快照，避免与 `/mock/reset` 或并发写入互相撕裂。
 
 ### 4.4 示例
 
@@ -397,7 +401,7 @@ GET /api/v1/storybooks?mockError=NO_BOOKS
 stateDiagram-v2
     [*] --> CREATED
     CREATED --> IN_PROGRESS: STARTED\npage=1, expectedRevision=0
-    IN_PROGRESS --> IN_PROGRESS: PAGE_CHANGED\nforward / visited back
+    IN_PROGRESS --> IN_PROGRESS: PAGE_CHANGED\nforward only
     IN_PROGRESS --> FINISHED: USER_FINISH\nrevision 匹配
     FINISHED --> FINISHED: 同键重放 / 新键返回既有终态
 ```
@@ -415,17 +419,16 @@ status=CREATED, currentPage=1, visitedPageNumbers=[], revision=0
 | 请求 | 允许条件 | 成功效果 |
 | --- | --- | --- |
 | `STARTED` | `CREATED`、`pageNumber=1`、`expectedRevision=0` | `IN_PROGRESS`、currentPage=1、visited 增加 1、revision +1 |
-| `PAGE_CHANGED` 向前 | `IN_PROGRESS`，目标等于当前页的 `defaultNextPageNumber` | currentPage=目标、visited 追加、revision +1 |
-| `PAGE_CHANGED` 回到已访问页 | `IN_PROGRESS`，目标在 `visitedPageNumbers` 且不是当前页 | currentPage=目标、visited 追加、revision +1 |
+| `PAGE_CHANGED` | `IN_PROGRESS`，目标等于当前页的 `defaultNextPageNumber` | currentPage=目标、visited 追加、revision +1 |
 | `USER_FINISH` | `IN_PROGRESS`，`expectedRevision` 匹配 | `FINISHED`、revision +1、生成 `report` |
 
 - `expectedRevision` 不匹配：409 `SESSION_CONFLICT`。
 - `FINISHED` 后新键翻页/提问：409 `SESSION_CONFLICT`。
-- 目标页不存在或不可达：409 `SESSION_CONFLICT`。
+- 目标页不存在、非当前页后继、或试图回到已访问旧页：409 `SESSION_CONFLICT`。
 - 页码小于 1、字段类型错误：422 `VALIDATION_ERROR`。
 - 会话不存在：404 `RESOURCE_NOT_FOUND`。
 
-> **Mock 扩展**：允许回到 `visitedPageNumbers` 的页面，是为了 H04 的“返回上一页”演示。正式 API-015 当前只校验当前页的 `default_next_page_number`，因此这个后向翻页不能写成正式契约行为；H06 接真实后端时要按真实接口更新。
+`PAGE_CHANGED` 必须与正式 API-015 一致，只接受当前页的 `defaultNextPageNumber`。H04 的“返回上一页”是 H06 阅读器的本地回看行为：本地改显示页即可，**不能伪装成已被服务端接受的翻页事件**；如果要重新进入正式同步，应由 H06 按自身业务决定后续动作，不能复用旧页的 `PAGE_CHANGED`。
 
 ### 5.3 幂等与重放
 
@@ -466,6 +469,21 @@ Mock 没有真实角色投影；`report` 是演示对象，H06 不得在儿童�
 - 这不是 API-016/G10 的真实结果，不保存真实互动记录，也不调用模型。
 
 正式链路应为：API-022 识别（`reliable=false` 时儿童不自动进入问答；家长确认或后端可信策略）→ API-016/G10 生成并持久化互动事件 → 必要时 API-023 合成 → API-024 读取。H05 仅模拟 UI 状态，不把该链路写成已完成。
+
+### 5.6 并发与快照
+
+`MockState` 用一把 `threading.RLock` 保护共享可变状态：
+
+- `reset()` 在锁内整体替换 books、details、voice、error scenarios 和 sessions；
+- `POST /events`、`POST /completions`、`POST /questions` 在锁内校验 revision、幂等键并更新会话；
+- `GET /reading-sessions/{id}` 在锁内复制 session、events、report 后再发送；
+- `GET /reading-sessions`、`GET /api/v1/storybooks`、`/mock/meta`、语音场景接口在锁内取快照/计数；
+- `create_session` 在锁内检查版本并分配 ID。
+
+HTTP 响应在释放锁后写出，避免慢客户端长期占用状态锁。并发回归测试覆盖：
+
+- 8 个相同 `STARTED` 请求同时到达：只递增一次 revision，其余按幂等重放；
+- 读取会话、列表、书架与 `/mock/reset` 交错执行：不出现 500、空会话或半更新响应。
 
 ## 6. 语音状态模拟
 
@@ -653,7 +671,7 @@ python -m unittest discover -s hardware/tests/mock -v
 实际结果：
 
 ```text
-Ran 22 tests in 1.404s
+Ran 25 tests in 3.585s
 OK
 ```
 
@@ -662,14 +680,15 @@ OK
 - 20 本原创绘本、104 页、40 个 H03 引用；
 - 书号、`storybookId`、`storyVersionId`、`sourcePath` 映射；
 - 页码 1 开始、末页 null、`imageRef=null`；
-- 书架/详情一致、源文件 SHA-256；
+- 书架/详情一致；书架列表不包含 `pages` / `branches`；
 - H03 40 个资源存在、SHA/大小/JPEG；
-- `STARTED`、前进、返回、错误 revision、最后一页、结束态；
+- `STARTED`、前进、错误返回旧页、跳过页、最后一页、结束态；
 - 幂等重放、同键不同请求冲突、重复 STARTED；
 - 问答模板不递增 revision、错误页码；
 - 语音 7 主状态、8 场景、错误恢复、无真实音频；
 - 401/403/404/409/422/429/503/504、空书架、缺封面；
-- 重复生成确定性、`--check`、源文件未修改、`/mock/reset`。
+- 重复生成确定性、`--check`、源文件未修改、`/mock/reset`；
+- 并发相同 `STARTED` 幂等、读取/列表/重置交错一致性。
 
 ### 10.4 只读边界
 
@@ -682,7 +701,9 @@ OK
 - fixtures 由真实种子生成：20 本、104 页、40 个资源引用。
 - `storyVersionId` 按 `storybook_id` 查找，不按数组下标或 ID 等值假设。
 - 所有原创版本保留 `DRAFT`；`coverRef/imageRef=null`；H03 本地封面只出现在 `localCover`。
-- Mock 服务的阅读会话、幂等、冲突、结束态和错误注入通过 22 项离线测试。
+- Mock 服务的阅读会话、幂等、冲突、结束态、错误注入和并发快照通过 25 项离线测试。
+- `GET /api/v1/storybooks` 只返回轻量元数据，不携带 `pages` / `branches`；详情由 API-009 投影单独读取。
+- `PAGE_CHANGED` 只接受当前页 `defaultNextPageNumber`，错误的后向翻页返回 409，不增加 revision。
 - 测试不依赖 Pillow、FastAPI、数据库、云端模型或 ESP32 板卡。
 - 原图和种子在构建/测试后 SHA-256 未变化；H03 40 个资源与 manifest 一致。
 
@@ -698,14 +719,13 @@ OK
 
 ### 11.3 与正式契约的已知差异
 
-1. **后向翻页**：Mock 允许回到 `visitedPageNumbers`；正式 API-015 当前只校验 `defaultNextPageNumber`。H06 接真实后端时以后者为准。
-2. **问答**：Mock 的 `/questions` 返回固定模板，不调用 G10、不递增 revision；正式 API-016 结果和持久化仍待实现。
-3. **语音**：Mock 的 `/mock/voice/*` 不是 API-022/023/024；`success` 的 `reliable=true` 是模拟，真实 API-022 固定 false。
-4. **角色投影**：Mock 无真实身份，不实现儿童 `report=null` 投影；H06 不能把 Mock 的 `report` 直接展示给儿童。
-5. **书籍列表字段**：Mock 额外返回 `total`，正式 API-008 只规定 `items/page/pageSize`；这是测试辅助字段。
-6. **状态**：Mock 的 20 本均为 `DRAFT`，正式书架只能展示服务端授权的已发布/已批准内容。
-7. **媒体**：`localCover.assetPath/devicePath` 不是 API-024 `resource_key`；正式媒体必须由 API-024 逐次校验权限。
-8. **健康检查**：Mock `/api/v1/health` 不是正式 API-032 实现，不能作为生产健康检查结论。
+1. **问答**：Mock 的 `/questions` 返回固定模板，不调用 G10、不递增 revision；正式 API-016 结果和持久化仍待实现。
+2. **语音**：Mock 的 `/mock/voice/*` 不是 API-022/023/024；`success` 的 `reliable=true` 是模拟，真实 API-022 固定 false。
+3. **角色投影**：Mock 无真实身份，不实现儿童 `report=null` 投影；H06 不能把 Mock 的 `report` 直接展示给儿童。
+4. **书籍列表字段**：Mock 额外返回 `total`，正式 API-008 只规定 `items/page/pageSize`；这是测试辅助字段。
+5. **状态**：Mock 的 20 本均为 `DRAFT`，正式书架只能展示服务端授权的已发布/已批准内容。
+6. **媒体**：`localCover.assetPath/devicePath` 不是 API-024 `resource_key`；正式媒体必须由 API-024 逐次校验权限。
+7. **健康检查**：Mock `/api/v1/health` 不是正式 API-032 实现，不能作为生产健康检查结论。
 
 ## 12. H06 验收建议
 
@@ -713,7 +733,7 @@ OK
 
 1. 启动 Mock，`GET /api/v1/storybooks` 返回 20 本、`DRAFT` 和 DEMO 标识。
 2. 书架只使用 `THUMBNAIL`；详情只使用 `DETAIL`；缺图显示占位。
-3. 开始阅读、前进、返回、末页和结束使用 `revision`，不把 `versionNumber` 当 `revision`。
+3. 开始阅读、前进、末页和结束使用 `revision`；返回旧页仅本地回看，不发送 `PAGE_CHANGED`，不把 `versionNumber` 当 `revision`。
 4. 同键重放不重复递增；错误 revision 显示冲突恢复提示；结束后不继续普通翻页。
 5. 语音覆盖 7 主状态；失败态可回 `IDLE`；`audioUrl=null` 时不调用真实播放。
 6. 断网时保留当前页；恢复后先读取会话，不假设自动补写成功。

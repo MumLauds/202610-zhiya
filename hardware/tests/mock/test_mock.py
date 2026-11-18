@@ -10,6 +10,7 @@ backend.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import shutil
@@ -61,7 +62,6 @@ class MockTestCase(unittest.TestCase):
         cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
         cls.thread.start()
         cls.base = f"http://127.0.0.1:{cls.httpd.server_address[1]}"
-        cls.opener = build_opener(ProxyHandler({}))
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -82,7 +82,8 @@ class MockTestCase(unittest.TestCase):
             request_headers.setdefault("Content-Type", "application/json")
         request = Request(self.base + path, data=payload, headers=request_headers, method=method)
         try:
-            with self.opener.open(request, timeout=5) as response:
+            # A fresh opener per call keeps concurrent tests independent.
+            with build_opener(ProxyHandler({})).open(request, timeout=5) as response:
                 return HttpResult(response.status, json.loads(response.read().decode("utf-8")), dict(response.headers))
         except HTTPError as exc:
             return HttpResult(exc.code, json.loads(exc.read().decode("utf-8")), dict(exc.headers))
@@ -202,7 +203,19 @@ class MockTestCase(unittest.TestCase):
         self.assertIsNone(detail.data["coverRef"])
         self.assertIsNone(detail.data["pages"][0]["imageRef"])
 
-    def test_reading_session_start_forward_back_and_last_page(self) -> None:
+    def test_storybook_list_is_lightweight(self) -> None:
+        response = self.request("GET", "/api/v1/storybooks")
+        self.assertEqual(200, response.status)
+        self.assertEqual(20, len(response.data["items"]))
+        self.assertTrue(all("pages" not in item for item in response.data["items"]))
+        self.assertTrue(all("branches" not in item for item in response.data["items"]))
+        self.assertTrue(all("localCover" in item for item in response.data["items"]))
+        detail = self.request("GET", "/api/v1/story-versions/2")
+        self.assertEqual(200, detail.status)
+        self.assertIn("pages", detail.data)
+        self.assertIn("branches", detail.data)
+
+    def test_reading_session_forward_rejects_backward_and_skip(self) -> None:
         started = self.request("POST", "/api/v1/reading-sessions/1/events", {
             "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "start-1",
         })
@@ -217,13 +230,18 @@ class MockTestCase(unittest.TestCase):
         })
         self.assertEqual(201, next_page.status)
         self.assertEqual(2, next_page.data["revision"])
+        # Returning to an old page is H06 local re-display, not an API-015 event.
         back = self.request("POST", "/api/v1/reading-sessions/1/events", {
             "eventType": "PAGE_CHANGED", "pageNumber": 1, "expectedRevision": 2, "clientEventId": "back-1",
         })
-        self.assertEqual(201, back.status)
-        self.assertEqual(3, back.data["revision"])
+        self.assertEqual(409, back.status)
+        self.assertEqual("SESSION_CONFLICT", back.error["code"])
+        after_back = self.request("GET", "/api/v1/reading-sessions/1")
+        self.assertEqual(2, after_back.data["session"]["revision"])
+        self.assertEqual(2, after_back.data["session"]["currentPage"])
+        self.assertEqual([1, 2], after_back.data["session"]["visitedPageNumbers"])
         bad = self.request("POST", "/api/v1/reading-sessions/1/events", {
-            "eventType": "PAGE_CHANGED", "pageNumber": 6, "expectedRevision": 3, "clientEventId": "skip-6",
+            "eventType": "PAGE_CHANGED", "pageNumber": 6, "expectedRevision": 2, "clientEventId": "skip-6",
         })
         self.assertEqual(409, bad.status)
         self.assertEqual("SESSION_CONFLICT", bad.error["code"])
@@ -400,6 +418,46 @@ class MockTestCase(unittest.TestCase):
         current = self.request("GET", "/api/v1/reading-sessions/1")
         self.assertEqual("CREATED", current.data["session"]["status"])
         self.assertEqual(0, current.data["session"]["revision"])
+
+    def test_concurrent_identical_started_is_idempotent(self) -> None:
+        body = {
+            "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0,
+            "clientEventId": "concurrent-start",
+        }
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(lambda _: self.request(
+                "POST", "/api/v1/reading-sessions/1/events", body
+            ), range(8)))
+        self.assertEqual([201] * 8, [result.status for result in results])
+        self.assertEqual({1}, {result.data["revision"] for result in results})
+        current = self.request("GET", "/api/v1/reading-sessions/1")
+        self.assertEqual(1, current.data["session"]["revision"])
+        self.assertEqual([1], current.data["session"]["visitedPageNumbers"])
+
+    def test_concurrent_reads_lists_and_reset_are_consistent(self) -> None:
+        def worker(index: int) -> HttpResult:
+            mode = index % 4
+            if mode == 0:
+                return self.request("POST", "/mock/reset", {})
+            if mode == 1:
+                return self.request("GET", "/api/v1/reading-sessions/1")
+            if mode == 2:
+                return self.request("GET", "/api/v1/reading-sessions")
+            return self.request("GET", "/api/v1/storybooks")
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(worker, range(24)))
+        for result in results:
+            self.assertEqual(200, result.status)
+            self.assertIsInstance(result.data, dict)
+            if "session" in result.data:
+                self.assertIn("readingSessionId", result.data["session"])
+                self.assertIn("revision", result.data["session"])
+            if "items" in result.data:
+                self.assertIsInstance(result.data["items"], list)
+                if result.data.get("total") == 20:
+                    self.assertEqual(20, len(result.data["items"]))
+        self.assertEqual(20, self.request("GET", "/api/v1/storybooks").data["total"])
 
 
 if __name__ == "__main__":
