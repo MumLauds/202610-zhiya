@@ -77,8 +77,9 @@ it('starts a new filtered library at page one and discards a late unfiltered pag
   expect(button('加载更多绘本')).toBeUndefined()
 })
 
-it('keeps both pages and the selected book when a start request from another filter returns 404', async () => {
-  listProfiles.mockResolvedValueOnce([{ childProfileId: 7 }])
+it.each(['start', 'profile lookup'])('keeps the new filtered shelf when the old %s response arrives late', async (pending) => {
+  const profiles = [{ childProfileId: 7 }]
+  listProfiles.mockResolvedValue(profiles)
   const newShelf = Array.from({ length: 60 }, (_, i) => ({ ...book, storyVersionId: i + 1, title: '新书' + (i + 1) }))
   listStorybooks.mockImplementation(async ({ ageBand, page, pageSize }) => (
     ageBand === 'AGE_5_6' ? newShelf.slice((page - 1) * pageSize, page * pageSize) : [book]
@@ -92,6 +93,13 @@ it('keeps both pages and the selected book when a start request from another fil
   await flushPromises()
   await button('开始阅读').trigger('click')
   expect(createReadingSession).toHaveBeenCalledWith({ childProfileId: 7, storyVersionId: book.storyVersionId })
+  let finishLookup
+  if (pending === 'profile lookup') {
+    listProfiles.mockReturnValueOnce(new Promise((resolve) => { finishLookup = resolve }))
+    rejectStart(missing())
+    await flushPromises()
+    expect(listProfiles).toHaveBeenCalledTimes(2)
+  }
 
   await button('5–6 岁').trigger('click')
   await flushPromises()
@@ -102,7 +110,8 @@ it('keeps both pages and the selected book when a start request from another fil
   await flushPromises()
   expect(wrapper.get('.library-feature-copy h2').text()).toBe('新书32')
 
-  rejectStart(missing())
+  if (pending === 'start') rejectStart(missing())
+  else finishLookup(profiles)
   await flushPromises()
   expect(carousel.props('books').map((item) => item.storyVersionId)).toEqual(newShelf.map((item) => item.storyVersionId))
   expect(wrapper.get('.library-feature-copy h2').text()).toBe('新书32')
@@ -127,7 +136,7 @@ it('hides withdrawn details and removes the stale version when returning to the 
 it.each([
   ['detail', false], ['detail', true], ['start', true],
 ])('recovers a withdrawn book’s shifted neighbour via %s (end already seen: %s)', async (entry, endSeen) => {
-  listProfiles.mockResolvedValueOnce([{ childProfileId: 7 }])
+  listProfiles.mockResolvedValue([{ childProfileId: 7 }])
   const catalog = [...firstPage, { ...book, storyVersionId: 31, title: '绘本31' }]
   listStorybooks.mockImplementation(async ({ page, pageSize }) => catalog.slice((page - 1) * pageSize, page * pageSize))
   await open('library')
@@ -167,8 +176,59 @@ it.each([
   ])
 })
 
-it('keeps a visible book when the missing resource is the child profile', async () => {
-  listProfiles.mockResolvedValueOnce([{ childProfileId: 7 }])
+it('keeps the second shelf page until the guardian selects a replacement for a deleted profile', async () => {
+  const remaining = [{ childProfileId: 8, nickname: '小雨' }, { childProfileId: 9, nickname: '小禾' }]
+  listProfiles.mockResolvedValueOnce([{ childProfileId: 7 }, ...remaining]).mockResolvedValue(remaining)
+  const catalog = Array.from({ length: 60 }, (_, i) => ({ ...book, storyVersionId: i + 1, title: '绘本' + (i + 1) }))
+  listStorybooks.mockImplementation(async ({ page, pageSize }) => catalog.slice((page - 1) * pageSize, page * pageSize))
+  createReadingSession.mockRejectedValueOnce(missing()).mockResolvedValueOnce({ readingSessionId: 55 })
+  const session = { readingSessionId: 55, storyVersionId: 32, currentPage: 1, revision: 1, status: 'IN_PROGRESS', visitedPageNumbers: [1] }
+  getReadingSession.mockResolvedValue({ session, events: [], report: null })
+  getStoryVersion.mockResolvedValue(catalog[31])
+  await open('library')
+  const button = (label) => wrapper.findAll('button').find((item) => item.text() === label)
+  await button('加载更多绘本').trigger('click')
+  await flushPromises()
+  const carousel = wrapper.getComponent({ name: 'BookCarousel' })
+  carousel.vm.$emit('select', carousel.props('books')[31].id)
+  await flushPromises()
+  await button('开始阅读').trigger('click')
+  await flushPromises()
+  expect(carousel.props('books')).toHaveLength(60)
+  expect(wrapper.get('.library-feature-copy h2').text()).toBe('绘本32')
+  expect(wrapper.get('[role="status"]').text()).toContain('重新选择')
+
+  await button('开始阅读').trigger('click')
+  await vi.waitFor(() => expect(wrapper.find('.child-card').exists()).toBe(true))
+  expect(wrapper.get('.child-switch').text()).toContain('选择儿童档案')
+  expect(wrapper.find('.child-card.active').exists()).toBe(false)
+  expect(createReadingSession).toHaveBeenCalledTimes(1)
+  const chosen = wrapper.findAll('.child-card').find((card) => card.get('h2').text() === '小禾')
+  await chosen.get('button').trigger('click')
+  await button('绘本馆').trigger('click')
+  await vi.waitFor(() => expect(wrapper.find('.library-feature-copy h2').text()).toBe('绘本32'))
+  await button('开始阅读').trigger('click')
+  await vi.waitFor(() => expect(location.hash).toBe('#reader/55'))
+  expect(createReadingSession.mock.calls.map(([input]) => input)).toEqual([
+    { childProfileId: 7, storyVersionId: 32 }, { childProfileId: 9, storyVersionId: 32 },
+  ])
+  expect(listStorybooks.mock.calls.map(([query]) => query.page)).toEqual([1, 2])
+})
+
+it('preserves the shelf when the profile lookup fails after a reading 404', async () => {
+  listProfiles.mockResolvedValueOnce([{ childProfileId: 7 }]).mockRejectedValueOnce(new ApiError('暂不可用', { status: 503 }))
+  createReadingSession.mockRejectedValueOnce(missing())
+  await open('library')
+  await wrapper.findAll('button').find((item) => item.text() === '开始阅读').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[role="status"]').text()).toContain('服务暂不可用')
+  expect(wrapper.get('.library-feature-copy h2').text()).toBe(book.title)
+  expect(listStorybooks).toHaveBeenCalledTimes(1)
+  expect(createReadingSession).toHaveBeenCalledTimes(1)
+})
+
+it('retries the shelf refresh when the profile is valid and the catalog is unavailable', async () => {
+  listProfiles.mockResolvedValue([{ childProfileId: 7 }])
   listStorybooks.mockResolvedValueOnce([book]).mockRejectedValueOnce(new ApiError('书架暂不可用', { status: 503 }))
     .mockResolvedValueOnce([book])
   createReadingSession.mockRejectedValueOnce(missing())

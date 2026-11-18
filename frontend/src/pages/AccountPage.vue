@@ -7,7 +7,7 @@ const props = defineProps({
   section: { type: String, default: 'overview' },
   auth: { type: Object, required: true },
   profiles: { type: Array, default: () => [] },
-  activeProfileId: { type: Number, default: 0 },
+  activeProfileId: { type: Number, default: null },
   sessions: { type: Array, default: () => [] },
   books: { type: Array, default: () => [] },
   totals: { type: Object, required: true },
@@ -30,9 +30,11 @@ const nav = [
   ['growth', '成长记录', '⌁'],
   ['plan', '阅读计划', '▦'],
 ]
-const activeProfile = computed(() =>
-  props.profiles.find((profile) => profile.childProfileId === props.activeProfileId) || props.profiles[0] || null,
-)
+const activeProfile = computed(() => {
+  if (props.activeProfileId === null) return props.profiles[0] || null
+  return props.profiles.find((profile) => profile.childProfileId === props.activeProfileId) || null
+})
+const profileAction = computed(() => props.profiles.length ? '选择儿童档案' : '添加儿童档案')
 const recentSessions = computed(() => props.sessions.slice(0, 4))
 const sessionStatusLabels = {
   CREATED: '未开始',
@@ -103,7 +105,7 @@ function sessionTitle(session) {
           <div><strong>{{ auth.nickname }}</strong><small>{{ auth.account || '本地预览账号' }}</small></div>
         </div>
         <button class="pill child-switch" type="button" @click="emit('navigate', 'account/children')">
-          <span>{{ activeProfile ? `${activeProfile.nickname || '宝贝'} · ${ageLabels[activeProfile.ageBand] || '年龄段暂缺'}` : '添加孩子档案' }}</span><span>⌄</span>
+          <span>{{ activeProfile ? `${activeProfile.nickname || '宝贝'} · ${ageLabels[activeProfile.ageBand] || '年龄段暂缺'}` : profileAction }}</span><span>⌄</span>
         </button>
         <nav class="account-nav" aria-label="个人中心功能">
           <button
@@ -210,7 +212,8 @@ function sessionTitle(session) {
             <div class="account-hero-copy">
               <p class="eyebrow">今天也来陪孩子读一点</p>
               <h1>{{ activeProfile?.nickname || '孩子' }}的阅读空间</h1>
-              <p>{{ activeProfile?.interests?.join(' · ') || '添加儿童档案后开始个性化阅读' }}</p>
+              <p v-if="!activeProfile">{{ profileAction }}后开始个性化阅读</p>
+              <p v-else-if="activeProfile.interests?.length">{{ activeProfile.interests.join(' · ') }}</p>
               <button class="secondary" type="button" @click="emit('navigate', 'account/children')">管理儿童档案</button>
             </div>
             <div class="hero-illustration"><img src="/assets/reader-scene.svg" alt=""></div>
@@ -219,7 +222,7 @@ function sessionTitle(session) {
             <div class="stat-card"><span>已完成/进行中会话</span><strong>{{ totals.sessions }}</strong></div>
             <div class="stat-card"><span>访问绘本</span><strong>{{ totals.read }}</strong></div>
             <div class="stat-card"><span>浏览页面</span><strong>{{ totals.pages }}</strong></div>
-            <div class="stat-card"><span>当前档案</span><strong>{{ activeProfile ? '已选择' : '待添加' }}</strong></div>
+            <div class="stat-card"><span>当前档案</span><strong>{{ activeProfile ? '已选择' : (profiles.length ? '待选择' : '待添加') }}</strong></div>
           </div>
           <section class="account-card">
             <div class="account-card-head"><h2>最近阅读</h2><button class="text-button" type="button" @click="emit('navigate', 'account/growth')">查看全部</button></div>

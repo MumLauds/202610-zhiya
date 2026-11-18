@@ -23,7 +23,7 @@ function parseRoute() {
   return { name: 'home' }
 }
 
-const savedProfileId = Number(localStorage.getItem('zhiya.activeProfileId') || 0)
+const savedProfileId = localStorage.getItem('zhiya.activeProfileId')
 const savedNickname = localStorage.getItem('zhiya.guardianNickname') || '知芽家长'
 
 const state = reactive({
@@ -37,7 +37,7 @@ const state = reactive({
     nickname: savedNickname,
   },
   profiles: [],
-  activeProfileId: savedProfileId,
+  activeProfileId: savedProfileId === null ? null : Number(savedProfileId),
   books: previewBooks,
   booksSource: 'preview',
   booksLoading: false,
@@ -60,6 +60,7 @@ const state = reactive({
 
 let toastTimer = null
 let authEpoch = 0
+let profilesRequest = 0
 let booksRequest = 0
 let detailRequest = 0
 let sessionsRequest = 0
@@ -68,7 +69,7 @@ let pendingReading = null
 
 function clearAccountData() {
   state.profiles = []
-  state.activeProfileId = 0
+  state.activeProfileId = null
   state.sessions = []
   state.currentBook = null
   state.currentSession = null
@@ -93,7 +94,7 @@ function resetAuthentication() {
 }
 
 function activeProfile() {
-  return state.profiles.find((profile) => profile.childProfileId === state.activeProfileId) || state.profiles[0] || null
+  return state.profiles.find((profile) => profile.childProfileId === state.activeProfileId) || null
 }
 
 function setToast(message, tone = 'info') {
@@ -208,11 +209,22 @@ function refreshShelfAfterNotFound() {
 
 async function loadProfiles() {
   const epoch = authEpoch
-  const items = await listProfiles()
-  if (epoch !== authEpoch) return []
+  const request = ++profilesRequest
+  const isCurrent = () => epoch === authEpoch && request === profilesRequest
+  let items
+  try {
+    items = await listProfiles()
+  } catch (error) {
+    if (!isCurrent()) return null
+    throw error
+  }
+  if (!isCurrent()) return null
   state.profiles = items
-  if (!items.some((profile) => profile.childProfileId === state.activeProfileId)) {
+  // Only a new login defaults to the first child. A removed selection needs a guardian's choice.
+  if (state.activeProfileId === null) {
     state.activeProfileId = items[0]?.childProfileId || 0
+  } else if (!items.some((profile) => profile.childProfileId === state.activeProfileId)) {
+    state.activeProfileId = 0
   }
   localStorage.setItem('zhiya.activeProfileId', String(state.activeProfileId))
   return items
@@ -385,7 +397,7 @@ async function startReading(book) {
   }
   const profile = activeProfile()
   if (!profile) {
-    setToast('请先为孩子创建阅读档案', 'error')
+    setToast(state.profiles.length ? '请先选择本次阅读使用的儿童档案' : '请先为孩子创建阅读档案', 'error')
     navigate('account/children')
     return
   }
@@ -402,9 +414,19 @@ async function startReading(book) {
     navigate(`reader/${created.readingSessionId}`)
   } catch (error) {
     if (epoch !== authEpoch) return
-    // API-011 returns the same 404 for an unavailable profile or book.
-    if (error.status === 404 && state.booksSource === 'api' && state.bookFilters === filtersAtStart) {
-      void refreshShelfAfterNotFound()
+    if (error.status === 404) {
+      // API-011 returns the same 404 for an unavailable profile or book.
+      const profiles = await loadProfiles().catch((lookupError) => {
+        if (epoch === authEpoch) setToast(describeApiError(lookupError), 'error')
+        return null
+      })
+      if (!profiles || epoch !== authEpoch) return
+      if (!profiles.some((item) => item.childProfileId === profile.childProfileId)) {
+        if (activeProfile()) return
+        setToast(profiles.length ? '原儿童档案已失效，请到个人中心重新选择儿童档案。' : '原儿童档案已失效，请先添加儿童档案。', 'error')
+        return
+      }
+      if (state.booksSource === 'api' && state.bookFilters === filtersAtStart) void refreshShelfAfterNotFound()
     }
     setToast(describeApiError(error), 'error')
   } finally {

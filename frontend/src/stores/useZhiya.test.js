@@ -227,6 +227,28 @@ describe('account isolation and logout', () => {
     expect(state.booksSource).toBe('preview')
   })
 
+  it.each(['success', 'failure'])('keeps a newer child selection after a late profile lookup %s', async (outcome) => {
+    await actions.signIn('parent-a', 'password123')
+    const lookup = deferred()
+    profiles.listProfiles.mockReturnValueOnce(lookup.promise)
+    reading.createReadingSession.mockRejectedValueOnce(new ApiError('资源不可用', { status: 404 }))
+    const start = actions.startReading(state.books[0])
+    await Promise.resolve()
+    expect(profiles.listProfiles).toHaveBeenCalledTimes(2)
+
+    const replacement = { childProfileId: 9, nickname: '小禾' }
+    profiles.listProfiles.mockResolvedValueOnce([replacement])
+    await actions.loadProfiles()
+    actions.selectProfile(replacement.childProfileId)
+    if (outcome === 'success') lookup.resolve([])
+    else lookup.reject(new ApiError('暂不可用', { status: 503 }))
+    await start
+    expect(state.profiles).toEqual([replacement])
+    expect(state.activeProfileId).toBe(9)
+    expect(state.toast.message).toContain('小禾')
+    expect(books.listStorybooks).toHaveBeenCalledTimes(1)
+  })
+
   it('ignores an old session response after changing routes', async () => {
     const pending = deferred()
     reading.getReadingSession.mockReturnValueOnce(pending.promise)
