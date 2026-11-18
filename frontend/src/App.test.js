@@ -77,6 +77,7 @@ it('starts a new filtered library at page one and discards a late unfiltered pag
 })
 
 it('hides withdrawn details and removes the stale version when returning to the library', async () => {
+  listStorybooks.mockResolvedValueOnce([book]).mockResolvedValue([])
   getStoryVersion.mockRejectedValueOnce(missing())
   await open('detail/88')
   expect(getStoryVersion).toHaveBeenCalledWith(88)
@@ -88,7 +89,7 @@ it('hides withdrawn details and removes the stale version when returning to the 
   expect(wrapper.text()).not.toContain(book.title)
 })
 
-it('keeps the book that moves onto the first filtered page after a withdrawal', async () => {
+it.each([false, true])('recovers the shifted book after a withdrawal (end of list already seen: %s)', async (endSeen) => {
   const catalog = [...firstPage, { ...book, storyVersionId: 31, title: '绘本31' }]
   listStorybooks.mockImplementation(async ({ page, pageSize }) => catalog.slice((page - 1) * pageSize, page * pageSize))
   await open('library')
@@ -98,6 +99,11 @@ it('keeps the book that moves onto the first filtered page after a withdrawal', 
   await flushPromises()
 
   catalog.shift()
+  if (endSeen) {
+    await button('加载更多绘本').trigger('click')
+    await flushPromises()
+    expect(button('加载更多绘本')).toBeUndefined()
+  }
   getStoryVersion.mockRejectedValueOnce(missing())
   await button('查看详情').trigger('click')
   await vi.waitFor(() => expect(wrapper.text()).toContain('绘本暂不可用'))
@@ -110,7 +116,38 @@ it('keeps the book that moves onto the first filtered page after a withdrawal', 
     .toEqual(catalog.map((item) => item.storyVersionId))
   expect(button('加载更多绘本')).toBeUndefined()
   expect(listStorybooks.mock.calls.map(([{ page, ageBand }]) => [page, ageBand])).toEqual([
-    [1, undefined], [1, 'AGE_4_5'], [1, 'AGE_4_5'], [2, 'AGE_4_5'],
+    [1, undefined], ...(endSeen ? [1, 2, 1, 2] : [1, 1, 2]).map((page) => [page, 'AGE_4_5']),
+  ])
+})
+
+it('retains the filtered shelf after a failed withdrawal refresh and retries page one', async () => {
+  let failRefresh
+  const remaining = [...firstPage.slice(1), { ...book, storyVersionId: 31, title: '绘本31' }]
+  listStorybooks.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(firstPage)
+    .mockReturnValueOnce(new Promise((_, reject) => { failRefresh = reject }))
+    .mockResolvedValueOnce(remaining)
+  await open('library')
+  const button = (label) => wrapper.findAll('button').find((item) => item.text() === label)
+  const books = () => wrapper.getComponent({ name: 'BookCarousel' }).props('books').map((item) => item.storyVersionId)
+  await button('年龄').trigger('click')
+  await button('4–5 岁').trigger('click')
+  await flushPromises()
+  getStoryVersion.mockRejectedValueOnce(missing())
+  await button('查看详情').trigger('click')
+  await vi.waitFor(() => expect(wrapper.text()).toContain('绘本暂不可用'))
+  await wrapper.get('.detail-toolbar button').trigger('click')
+  await vi.waitFor(() => expect(wrapper.find('.library-page').exists()).toBe(true))
+
+  failRefresh(new ApiError('书架暂不可用', { status: 503 }))
+  await flushPromises()
+  expect(books()).toEqual(firstPage.slice(1).map((item) => item.storyVersionId))
+  expect(wrapper.get('[role="alert"]').text()).toContain('书架暂不可用')
+  await button('重新加载书架').trigger('click')
+  await flushPromises()
+  expect(books()).toEqual(remaining.map((item) => item.storyVersionId))
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  expect(listStorybooks.mock.calls.map(([{ page, ageBand }]) => [page, ageBand])).toEqual([
+    [1, undefined], [1, 'AGE_4_5'], [1, 'AGE_4_5'], [1, 'AGE_4_5'],
   ])
 })
 

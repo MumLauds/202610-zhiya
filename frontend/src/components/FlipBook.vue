@@ -5,6 +5,7 @@ import { mediaUrl } from '../api/client'
 const props = defineProps({
   pages: { type: Array, required: true },
   title: { type: String, default: '绘本' },
+  pageCount: { type: Number, default: null },
   startPage: { type: Number, default: 0 },
   disabled: { type: Boolean, default: false },
 })
@@ -74,7 +75,7 @@ defineExpose({
 
 <template>
   <div ref="container" class="flipbook-book" :inert="disabled" :aria-label="`${title}软页绘本`">
-    <template v-for="page in pages" :key="page.pageNumber">
+    <template v-for="(page, index) in pages" :key="index">
       <section class="flip-page flip-page--illustration" data-density="soft" :aria-label="`第 ${page.pageNumber} 页插图`">
         <div v-if="!page.imageRef || imageErrors.has(page.pageNumber)" class="flip-page-empty">
           <div><h2>{{ page.imageRef ? '插图暂时无法显示' : '本页暂无插图' }}</h2><p>文字内容仍可继续阅读。</p></div>
@@ -86,8 +87,8 @@ defineExpose({
           <p class="eyebrow">{{ title }} · 第 {{ page.pageNumber }} 页</p>
           <blockquote class="page-quote">{{ page.text }}</blockquote>
           <div class="page-number">
-            <span>第 {{ page.pageNumber }} 页 · 共 {{ pages.length }} 页</span>
-            <span class="page-dots"><i v-for="item in pages" :key="item.pageNumber" :class="{ active: item.pageNumber === page.pageNumber }" /></span>
+            <span>第 {{ page.pageNumber }} 页 · 共 {{ pageCount ?? pages.length }} 页</span>
+            <span class="page-dots"><i v-for="position in pages.length" :key="position" :class="{ active: position === index + 1 }" /></span>
           </div>
         </div>
       </section>

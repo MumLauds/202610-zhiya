@@ -80,7 +80,7 @@ onBeforeUnmount(() => window.removeEventListener('hashchange', onHashChange))
       :books="state.books"
       :selected-id="state.selectedBookId"
       :loading="state.booksLoading"
-      :has-more="state.nextBooksPage !== null"
+      :next-page="state.nextBooksPage"
       :source="state.booksSource"
       :error="state.booksError"
       @select="zhiyaActions.selectBook"

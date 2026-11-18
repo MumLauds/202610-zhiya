@@ -139,14 +139,16 @@ function loadPreviewBooks(message = '') {
   applyBooks(filtered, 'preview', message)
 }
 
-async function loadBooks(filters = {}, page = 1) {
+function loadBooks(filters = {}) {
+  state.bookFilters = { ...state.bookFilters, ...filters }
+  state.nextBooksPage = null
+  return fetchBooksPage(1)
+}
+
+async function fetchBooksPage(page) {
   const epoch = authEpoch
   const request = ++booksRequest
   const pageSize = 30
-  if (page === 1) {
-    state.bookFilters = { ...state.bookFilters, ...filters }
-    state.nextBooksPage = null
-  }
   state.booksLoading = true
   state.booksError = ''
   try {
@@ -179,8 +181,8 @@ async function loadBooks(filters = {}, page = 1) {
     if (error instanceof ApiError && error.status === 401) {
       resetAuthentication()
       loadPreviewBooks('登录后读取后端绘本，当前展示本地设计预览。')
-    } else if (page > 1) {
-      state.booksError = error.message || '后续绘本加载失败，请重试。'
+    } else if (state.nextBooksPage !== null) {
+      state.booksError = error.message || '书架加载失败，请重试。'
     } else {
       loadPreviewBooks(error.message || '绘本列表暂时不可用，已切换到本地预览。')
     }
@@ -191,7 +193,7 @@ async function loadBooks(filters = {}, page = 1) {
 
 function loadMoreBooks() {
   if (!state.booksLoading && state.nextBooksPage && state.auth.status === 'authenticated') {
-    return loadBooks({}, state.nextBooksPage)
+    return fetchBooksPage(state.nextBooksPage)
   }
 }
 
@@ -343,9 +345,15 @@ async function loadDetail(versionId) {
     if (!isCurrent()) return
     if (error.status === 404 && state.booksSource === 'api') {
       const remaining = state.books.filter((book) => book.storyVersionId !== Number(versionId))
-      const pageBoundaryChanged = state.nextBooksPage !== null && remaining.length < state.books.length
+      const removed = remaining.length < state.books.length
       applyBooks(remaining, 'api')
-      if (state.booksLoading || pageBoundaryChanged) void loadBooks()
+      if (state.booksLoading && state.nextBooksPage === null) {
+        // The old shelf may still be visible while a new filter's first page loads.
+        void loadBooks()
+      } else if (removed || state.booksLoading) {
+        state.nextBooksPage = 1
+        void fetchBooksPage(1)
+      }
     }
     setToast(describeApiError(error), 'error')
   } finally {

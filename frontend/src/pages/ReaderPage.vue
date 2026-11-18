@@ -36,40 +36,53 @@ let audio = null
 let audioGeneration = 0
 let speechRequest = null
 
-const currentPage = computed(() => props.book?.pages?.[pageIndex.value] || props.book?.pages?.[0] || null)
+const reviewingHistory = computed(() => ['FINISHED', 'INTERRUPTED'].includes(props.session?.status) && props.session.visitedPageNumbers.length > 0)
+const readerPages = computed(() => {
+  const pages = props.book?.pages || []
+  if (!reviewingHistory.value) return pages
+  const byNumber = new Map(pages.map(page => [page.pageNumber, page]))
+  return props.session.visitedPageNumbers.map(number => byNumber.get(number)).filter(Boolean)
+})
+const currentPage = computed(() => readerPages.value[pageIndex.value] || readerPages.value[0] || null)
 const isLast = computed(() => currentPage.value?.defaultNextPageNumber == null)
-const nextPageVisited = computed(() => props.session?.visitedPageNumbers.includes(currentPage.value?.defaultNextPageNumber))
+const nextIndex = computed(() => reviewingHistory.value
+  ? pageIndex.value + 1
+  : readerPages.value.findIndex(page => page.pageNumber === currentPage.value?.defaultNextPageNumber))
 const rereading = computed(() => currentPage.value?.pageNumber !== props.session?.currentPage)
 const canFinish = computed(() => !props.loading && !turnBusy.value && !props.syncRequired && props.session?.status === 'IN_PROGRESS' && (props.session?.preview || props.authenticated))
 const mediaAllowed = computed(() => canFinish.value && !rereading.value)
 
 watch(transcriptEditor, (editor) => editor?.focus(), { flush: 'post' })
 
-function showPage(pageNumber) {
-  const index = props.book?.pages?.findIndex((page) => page.pageNumber === pageNumber) ?? -1
+function showIndex(index) {
   pageIndex.value = Math.max(0, index)
   flipBook.value?.showPage(pageIndex.value)
 }
 
+function showPage(pageNumber) {
+  showIndex(readerPages.value.findLastIndex(page => page.pageNumber === pageNumber))
+}
+
 watch(
-  () => [props.session?.readingSessionId, props.session?.currentPage, props.book],
-  () => {
-    showPage(props.session?.currentPage)
+  [() => props.session?.readingSessionId, () => props.session?.currentPage, () => props.book, reviewingHistory],
+  ([id, current, book, reviewing], [previousId, , , wasReviewing]) => {
+    const justFinished = reviewing && !wasReviewing && id === previousId
+    showPage(justFinished ? book?.pages[pageIndex.value]?.pageNumber : current)
   },
   { immediate: true },
 )
 
 async function onPageChange({ storyIndex }) {
-  const target = props.book?.pages?.[storyIndex]
+  const target = readerPages.value[storyIndex]
   if (!target || turnBusy.value || props.syncRequired) {
     flipBook.value?.showPage(pageIndex.value)
     return
   }
-  if (target.pageNumber === currentPage.value?.pageNumber) return
+  if (storyIndex === pageIndex.value) return
   stopNarration()
   closeVoice()
-  if (props.session.visitedPageNumbers.includes(target.pageNumber)) {
-    showPage(target.pageNumber)
+  if (reviewingHistory.value || props.session.visitedPageNumbers.includes(target.pageNumber)) {
+    showIndex(storyIndex)
     return
   }
   const serverPage = props.book.pages.find((page) => page.pageNumber === props.session.currentPage)
@@ -91,15 +104,14 @@ async function onPageChange({ storyIndex }) {
 }
 
 function goPrevious() {
+  if (reviewingHistory.value) return onPageChange({ storyIndex: pageIndex.value - 1 })
   const visited = props.session.visitedPageNumbers
   const index = visited.indexOf(currentPage.value?.pageNumber)
   if (index > 0) onPageChange({ storyIndex: props.book.pages.findIndex((page) => page.pageNumber === visited[index - 1]) })
 }
 
-async function goNext() {
-  if (turnBusy.value || props.syncRequired) return
-  const index = props.book.pages.findIndex((page) => page.pageNumber === currentPage.value.defaultNextPageNumber)
-  await onPageChange({ storyIndex: index })
+function goNext() {
+  return onPageChange({ storyIndex: nextIndex.value })
 }
 
 async function finishReading() {
@@ -353,8 +365,9 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
         <div class="flipbook-stage">
           <FlipBook
             ref="flipBook"
-            :key="session.readingSessionId"
-            :pages="book.pages"
+            :key="`${session.readingSessionId}-${reviewingHistory}`"
+            :pages="readerPages"
+            :page-count="book.pageCount"
             :title="book.title"
             :start-page="pageIndex"
             :disabled="turnBusy || syncRequired"
@@ -367,8 +380,8 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
           <button class="dock-button" type="button" :disabled="pageIndex === 0 || turnBusy || syncRequired" @click="goPrevious"><span class="dock-glyph">‹</span>上一页</button>
           <button class="dock-button" type="button" :disabled="!mediaAllowed" @click="playNarration"><span class="dock-glyph">{{ audioStatus === 'playing' ? 'Ⅱ' : '▶' }}</span>{{ audioStatus === 'playing' ? '暂停朗读' : audioStatus === 'loading' ? '取消朗读' : '朗读' }}</button>
           <button class="dock-button primary" type="button" :disabled="!mediaAllowed" @click="openVoice()"><span class="dock-glyph">芽</span>语音识别</button>
-          <button v-if="isLast" class="dock-button" type="button" :disabled="!canFinish" @click="finishReading"><span class="dock-glyph">✓</span>完成</button>
-          <button v-else class="dock-button" type="button" :disabled="turnBusy || syncRequired || (session.status !== 'IN_PROGRESS' && !nextPageVisited)" @click="goNext"><span class="dock-glyph">›</span>下一页</button>
+          <button v-if="isLast && !readerPages[nextIndex]" class="dock-button" type="button" :disabled="!canFinish" @click="finishReading"><span class="dock-glyph">✓</span>完成</button>
+          <button v-else class="dock-button" type="button" :disabled="turnBusy || syncRequired || !readerPages[nextIndex] || (!reviewingHistory && session.status !== 'IN_PROGRESS')" @click="goNext"><span class="dock-glyph">›</span>下一页</button>
         </nav>
       </section>
 
