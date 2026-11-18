@@ -88,6 +88,32 @@ it('hides withdrawn details and removes the stale version when returning to the 
   expect(wrapper.text()).not.toContain(book.title)
 })
 
+it('keeps the book that moves onto the first filtered page after a withdrawal', async () => {
+  const catalog = [...firstPage, { ...book, storyVersionId: 31, title: '绘本31' }]
+  listStorybooks.mockImplementation(async ({ page, pageSize }) => catalog.slice((page - 1) * pageSize, page * pageSize))
+  await open('library')
+  const button = (label) => wrapper.findAll('button').find((item) => item.text() === label)
+  await button('年龄').trigger('click')
+  await button('4–5 岁').trigger('click')
+  await flushPromises()
+
+  catalog.shift()
+  getStoryVersion.mockRejectedValueOnce(missing())
+  await button('查看详情').trigger('click')
+  await vi.waitFor(() => expect(wrapper.text()).toContain('绘本暂不可用'))
+  await wrapper.get('.detail-toolbar button').trigger('click')
+  await vi.waitFor(() => expect(wrapper.find('.library-page').exists()).toBe(true))
+  await button('加载更多绘本').trigger('click')
+  await flushPromises()
+
+  expect(wrapper.getComponent({ name: 'BookCarousel' }).props('books').map((item) => item.storyVersionId))
+    .toEqual(catalog.map((item) => item.storyVersionId))
+  expect(button('加载更多绘本')).toBeUndefined()
+  expect(listStorybooks.mock.calls.map(([{ page, ageBand }]) => [page, ageBand])).toEqual([
+    [1, undefined], [1, 'AGE_4_5'], [1, 'AGE_4_5'], [2, 'AGE_4_5'],
+  ])
+})
+
 it('allows an explicitly labelled local preview to open without fetching API details', async () => {
   listStorybooks.mockResolvedValue([])
   await open('detail/1001')

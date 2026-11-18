@@ -281,6 +281,23 @@ describe('reader state and visual progress', () => {
     expect(button('结束本次阅读')).toBeUndefined()
   })
 
+  it('only enables forward navigation to previously visited pages after an early finish', async () => {
+    const session = { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3] }
+    render({ session })
+    await button('结束本次阅读').trigger('click')
+    await wrapper.setProps({ session: { ...session, status: 'FINISHED' } })
+    await flushPromises()
+    expect(button('下一页').element.disabled).toBe(true)
+
+    await button('上一页').trigger('click')
+    expect(showPage).toHaveBeenLastCalledWith(0)
+    expect(button('下一页').element.disabled).toBe(false)
+    await button('下一页').trigger('click')
+    expect(showPage).toHaveBeenLastCalledWith(1)
+    expect(button('下一页').element.disabled).toBe(true)
+    expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
+  })
+
   it('finishes while reviewing an earlier page without changing the saved progress', async () => {
     const completeReading = vi.fn()
     render({ session: { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3] }, completeReading })

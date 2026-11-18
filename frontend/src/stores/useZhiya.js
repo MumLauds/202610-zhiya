@@ -342,8 +342,10 @@ async function loadDetail(versionId) {
   } catch (error) {
     if (!isCurrent()) return
     if (error.status === 404 && state.booksSource === 'api') {
-      applyBooks(state.books.filter((book) => book.storyVersionId !== Number(versionId)), 'api')
-      if (state.booksLoading) void loadBooks()
+      const remaining = state.books.filter((book) => book.storyVersionId !== Number(versionId))
+      const pageBoundaryChanged = state.nextBooksPage !== null && remaining.length < state.books.length
+      applyBooks(remaining, 'api')
+      if (state.booksLoading || pageBoundaryChanged) void loadBooks()
     }
     setToast(describeApiError(error), 'error')
   } finally {

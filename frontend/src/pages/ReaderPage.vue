@@ -38,6 +38,7 @@ let speechRequest = null
 
 const currentPage = computed(() => props.book?.pages?.[pageIndex.value] || props.book?.pages?.[0] || null)
 const isLast = computed(() => currentPage.value?.defaultNextPageNumber == null)
+const nextPageVisited = computed(() => props.session?.visitedPageNumbers.includes(currentPage.value?.defaultNextPageNumber))
 const rereading = computed(() => currentPage.value?.pageNumber !== props.session?.currentPage)
 const canFinish = computed(() => !props.loading && !turnBusy.value && !props.syncRequired && props.session?.status === 'IN_PROGRESS' && (props.session?.preview || props.authenticated))
 const mediaAllowed = computed(() => canFinish.value && !rereading.value)
@@ -367,7 +368,7 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
           <button class="dock-button" type="button" :disabled="!mediaAllowed" @click="playNarration"><span class="dock-glyph">{{ audioStatus === 'playing' ? 'Ⅱ' : '▶' }}</span>{{ audioStatus === 'playing' ? '暂停朗读' : audioStatus === 'loading' ? '取消朗读' : '朗读' }}</button>
           <button class="dock-button primary" type="button" :disabled="!mediaAllowed" @click="openVoice()"><span class="dock-glyph">芽</span>语音识别</button>
           <button v-if="isLast" class="dock-button" type="button" :disabled="!canFinish" @click="finishReading"><span class="dock-glyph">✓</span>完成</button>
-          <button v-else class="dock-button" type="button" :disabled="turnBusy || syncRequired || session.status === 'CREATED'" @click="goNext"><span class="dock-glyph">›</span>下一页</button>
+          <button v-else class="dock-button" type="button" :disabled="turnBusy || syncRequired || (session.status !== 'IN_PROGRESS' && !nextPageVisited)" @click="goNext"><span class="dock-glyph">›</span>下一页</button>
         </nav>
       </section>
 
