@@ -18,6 +18,7 @@ from app.api.v1.profiles import router as profiles_router
 from app.api.v1.storybooks import router as storybooks_router
 from app.api.v1.voice import router as voice_router
 from app.api.v1.reading_sessions import router as reading_sessions_router
+from app.api.v1.guidance import router as guidance_router
 from app.adapters.model import ModelAdapter
 from app.config import Settings
 from app.errors import ServiceError
@@ -117,6 +118,7 @@ def create_app(settings: Settings | None = None, speech_settings: SpeechSettings
     app.include_router(storybooks_router)
     app.include_router(voice_router)
     app.include_router(reading_sessions_router)
+    app.include_router(guidance_router)
 
     return app
 
