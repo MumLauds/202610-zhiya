@@ -6,11 +6,13 @@ const props = defineProps({
   pages: { type: Array, required: true },
   title: { type: String, default: '绘本' },
   pageCount: { type: Number, default: null },
+  reviewingHistory: { type: Boolean, default: false },
   startPage: { type: Number, default: 0 },
   disabled: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['page-change', 'error'])
+const MAX_HISTORY_DOTS = 12
 const container = ref(null)
 const imageErrors = ref(new Set())
 let book = null
@@ -88,7 +90,8 @@ defineExpose({
           <blockquote class="page-quote">{{ page.text }}</blockquote>
           <div class="page-number">
             <span>第 {{ page.pageNumber }} 页 · 共 {{ pageCount ?? pages.length }} 页</span>
-            <span class="page-dots"><i v-for="position in pages.length" :key="position" :class="{ active: position === index + 1 }" /></span>
+            <span v-if="reviewingHistory && pages.length > MAX_HISTORY_DOTS">回看 {{ index + 1 }} / {{ pages.length }}</span>
+            <span v-else class="page-dots"><i v-for="position in pages.length" :key="position" :class="{ active: position === index + 1 }" /></span>
           </div>
         </div>
       </section>

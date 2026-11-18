@@ -330,6 +330,24 @@ describe('reader state and visual progress', () => {
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
   })
 
+  it.each([12, 13, 200])('bounds review dots while preserving all %i visits in order', (count) => {
+    const visits = Array.from({ length: count }, (_, index) => index % 2 === 0 ? 1 : 3)
+    vi.stubGlobal('OpenPageFlip', { createBook: () => ({ on: vi.fn(), turnTo: vi.fn(), destroy: vi.fn() }) })
+    render({ session: { ...initialSession, status: 'FINISHED', currentPage: visits.at(-1), visitedPageNumbers: visits } }, true)
+
+    const pages = wrapper.findAll('.flip-page--text')
+    expect(pages.map(page => page.attributes('aria-label'))).toEqual(visits.map(number => `第 ${number} 页文字`))
+    if (count === 12) {
+      expect(wrapper.findAll('.page-dots i')).toHaveLength(count * count)
+      expect(wrapper.findAll('.page-dots i.active')).toHaveLength(count)
+    } else {
+      expect(wrapper.findAll('.page-dots i')).toHaveLength(0)
+      pages.forEach((page, index) => {
+        expect(page.get('.page-number').text()).toContain(`回看 ${index + 1} / ${count}`)
+      })
+    }
+  })
+
   it('keeps the position of each visit when an approved branch revisits a page', async () => {
     render({ session: { ...initialSession, status: 'FINISHED', currentPage: 1, visitedPageNumbers: [1, 7, 1] } })
     expect(button('上一页').element.disabled).toBe(false)

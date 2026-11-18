@@ -368,6 +368,7 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
             :key="`${session.readingSessionId}-${reviewingHistory}`"
             :pages="readerPages"
             :page-count="book.pageCount"
+            :reviewing-history="reviewingHistory"
             :title="book.title"
             :start-page="pageIndex"
             :disabled="turnBusy || syncRequired"
