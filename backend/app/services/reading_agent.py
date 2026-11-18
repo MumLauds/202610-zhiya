@@ -74,10 +74,17 @@ async def run_agent(
             "sources": []
         }
 
-    # 8. 补全最后的返回
+    # 8. 补全最后的返回（根据反馈动态判断 strategyType）
+    if feedback_type == "NOT_UNDERSTOOD":
+        strategy = "CONCRETE_RECALL"
+    elif feedback_type == "UNDERSTOOD":
+        strategy = "DEEPEN_QUESTION" # 契约里暂未定义，你可以自己定一个合理的，或者沿用 CONTEXT_QUESTION
+    else:
+        strategy = "CONTEXT_QUESTION"
+
     return {
         "status": "GENERATED",
         "outputText": result.text,
-        "strategyType": "CONTEXT_QUESTION",
+        "strategyType": strategy,  # 这里使用动态判断的变量
         "sources": [{"knowledgeItemId": k["knowledge_item_id"], "sourceTitle": k["source_title"]} for k in knowledge["items"]]
     }
