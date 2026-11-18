@@ -53,6 +53,29 @@ describe('forms wait for completion', () => {
   })
 })
 
+describe('account display labels', () => {
+  it('shows readable ages and reading states in profiles and both history lists', async () => {
+    const statuses = ['CREATED', 'IN_PROGRESS', 'FINISHED', 'INTERRUPTED']
+    const wrapper = render(AccountPage, {
+      section: 'children', auth: {}, totals: {}, saveProfileAction: vi.fn(),
+      profiles: [{ childProfileId: 1, ageBand: 'AGE_4_5', preferredMinutes: 15 }],
+      sessions: statuses.map((status, index) => ({
+        readingSessionId: index + 1, status, currentPage: 1, visitedPageNumbers: [1],
+      })),
+    })
+    expect(wrapper.get('.child-switch').text()).toContain('4–5 岁')
+    expect(wrapper.get('.child-card').text()).toContain('4–5 岁')
+    for (const section of ['overview', 'growth']) {
+      await wrapper.setProps({ section })
+      const labels = wrapper.findAll('.recent-item').map((item) => item.text())
+      for (const [index, label] of ['未开始', '阅读中', '已完成', '已中断'].entries()) {
+        expect(labels[index]).toContain(label)
+        expect(labels[index]).not.toContain(statuses[index])
+      }
+    }
+  })
+})
+
 describe('real book metadata', () => {
   it('does not borrow author, cover, age or questions from preview books', () => {
     const book = mapApiBook({ storybookId: 101, storyVersionId: 88, title: '后端绘本', status: 'PUBLISHED', pages: [{ pageNumber: 1, text: '真实内容', imageRef: 'page-key' }] })

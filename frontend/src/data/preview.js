@@ -130,9 +130,10 @@ export const previewBooks = definitions.map((definition) => ({
   pages: pagesFrom(definition, definition.seeds),
 }))
 
+export const ageLabels = { AGE_3_4: '3–4 岁', AGE_4_5: '4–5 岁', AGE_5_6: '5–6 岁' }
+
 export function mapApiBook(version) {
   const pages = (version.pages || []).map((page) => ({ ...page }))
-  const ageLabels = { AGE_3_4: '3–4 岁', AGE_4_5: '4–5 岁', AGE_5_6: '5–6 岁' }
   return {
     id: `version-${version.storyVersionId}`,
     source: 'api',

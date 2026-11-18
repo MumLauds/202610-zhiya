@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { describeApiError } from '../api/client'
+import { ageLabels } from '../data/preview'
 
 const props = defineProps({
   section: { type: String, default: 'overview' },
@@ -33,6 +34,12 @@ const activeProfile = computed(() =>
   props.profiles.find((profile) => profile.childProfileId === props.activeProfileId) || props.profiles[0] || null,
 )
 const recentSessions = computed(() => props.sessions.slice(0, 4))
+const sessionStatusLabels = {
+  CREATED: '未开始',
+  IN_PROGRESS: '阅读中',
+  FINISHED: '已完成',
+  INTERRUPTED: '已中断',
+}
 
 function openNew() {
   if (saving.value) return
@@ -96,7 +103,7 @@ function sessionTitle(session) {
           <div><strong>{{ auth.nickname }}</strong><small>{{ auth.account || '本地预览账号' }}</small></div>
         </div>
         <button class="pill child-switch" type="button" @click="emit('navigate', 'account/children')">
-          <span>{{ activeProfile ? `${activeProfile.nickname || '宝贝'} · ${activeProfile.ageBand.replaceAll('_', ' ')}` : '添加孩子档案' }}</span><span>⌄</span>
+          <span>{{ activeProfile ? `${activeProfile.nickname || '宝贝'} · ${ageLabels[activeProfile.ageBand] || '年龄段暂缺'}` : '添加孩子档案' }}</span><span>⌄</span>
         </button>
         <nav class="account-nav" aria-label="个人中心功能">
           <button
@@ -123,7 +130,7 @@ function sessionTitle(session) {
             <article v-for="profile in profiles" :key="profile.childProfileId" class="account-card child-card" :class="{ active: profile.childProfileId === activeProfileId }">
               <div class="child-avatar">{{ profile.nickname?.slice(0, 1) || '芽' }}</div>
               <h2>{{ profile.nickname || '未命名宝贝' }}</h2>
-              <p>{{ profile.ageBand.replaceAll('_', ' ') }} · 每日 {{ profile.preferredMinutes }} 分钟</p>
+              <p>{{ ageLabels[profile.ageBand] || '年龄段暂缺' }} · 每日 {{ profile.preferredMinutes }} 分钟</p>
               <div class="book-meta"><span v-for="interest in profile.interests" :key="interest">{{ interest }}</span></div>
               <div class="card-actions">
                 <button class="secondary" type="button" @click="emit('select-profile', profile.childProfileId)">切换</button>
@@ -138,9 +145,7 @@ function sessionTitle(session) {
             <label class="form-field"><span>昵称</span><input v-model="form.nickname" maxlength="32"></label>
             <label class="form-field"><span>年龄段</span>
               <select v-model="form.ageBand">
-                <option value="AGE_3_4">3–4 岁</option>
-                <option value="AGE_4_5">4–5 岁</option>
-                <option value="AGE_5_6">5–6 岁</option>
+                <option v-for="(label, band) in ageLabels" :key="band" :value="band">{{ label }}</option>
               </select>
             </label>
             <label class="form-field"><span>兴趣</span><input v-model="form.interests" placeholder="用顿号分隔，例如：动物、自然"></label>
@@ -160,7 +165,7 @@ function sessionTitle(session) {
           <div v-if="loading" class="reader-loading"><div class="spinner" /></div>
           <div v-else-if="recentSessions.length" class="recent-list">
             <article v-for="session in recentSessions" :key="session.readingSessionId" class="recent-item">
-              <div><strong>{{ sessionTitle(session) }}</strong><p>浏览 {{ session.visitedPageNumbers.length }} 页 · {{ session.status }}</p></div>
+              <div><strong>{{ sessionTitle(session) }}</strong><p>浏览 {{ session.visitedPageNumbers.length }} 页 · {{ sessionStatusLabels[session.status] || '状态待确认' }}</p></div>
               <span class="pill">修订 {{ session.revision }}</span>
             </article>
           </div>
@@ -219,7 +224,7 @@ function sessionTitle(session) {
           <section class="account-card">
             <div class="account-card-head"><h2>最近阅读</h2><button class="text-button" type="button" @click="emit('navigate', 'account/growth')">查看全部</button></div>
             <div v-if="recentSessions.length" class="recent-list">
-              <article v-for="session in recentSessions" :key="session.readingSessionId" class="recent-item"><strong>{{ sessionTitle(session) }}</strong><span>第 {{ session.currentPage }} 页 · {{ session.status }}</span></article>
+              <article v-for="session in recentSessions" :key="session.readingSessionId" class="recent-item"><strong>{{ sessionTitle(session) }}</strong><span>第 {{ session.currentPage }} 页 · {{ sessionStatusLabels[session.status] || '状态待确认' }}</span></article>
             </div>
             <p v-else class="address">还没有真实阅读会话，从绘本馆开始一次亲子共读吧。</p>
           </section>

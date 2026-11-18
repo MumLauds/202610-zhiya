@@ -7,11 +7,12 @@ const props = defineProps({
   books: { type: Array, default: () => [] },
   selectedId: { type: String, default: '' },
   loading: { type: Boolean, default: false },
+  hasMore: { type: Boolean, default: false },
   source: { type: String, default: 'preview' },
   error: { type: String, default: '' },
 })
 
-const emit = defineEmits(['select', 'detail', 'start', 'filter', 'login'])
+const emit = defineEmits(['select', 'detail', 'start', 'filter', 'login', 'more'])
 const category = ref('')
 
 const ageOptions = [
@@ -66,7 +67,7 @@ function chooseFilter(value) {
           </p>
         </aside>
 
-        <div v-if="loading" class="library-feature-card">
+        <div v-if="loading && !hasMore" class="library-feature-card">
           <div class="library-feature-cover skeleton" />
           <div><div class="skeleton" style="height:22px;width:46%" /><div class="skeleton" style="height:38px;width:68%;margin-top:13px" /></div>
         </div>
@@ -92,6 +93,12 @@ function chooseFilter(value) {
         </div>
       </div>
       <BookCarousel v-if="books.length" :books="books" :selected-id="selected?.id" @select="emit('select', $event)" />
+      <div v-if="hasMore">
+        <p v-if="error" role="alert">{{ error }}</p>
+        <button class="secondary" type="button" :disabled="loading" @click="emit('more')">
+          {{ loading ? '正在加载…' : '加载更多绘本' }}
+        </button>
+      </div>
     </div>
   </main>
 </template>

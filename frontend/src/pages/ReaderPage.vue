@@ -39,7 +39,8 @@ let speechRequest = null
 const currentPage = computed(() => props.book?.pages?.[pageIndex.value] || props.book?.pages?.[0] || null)
 const isLast = computed(() => currentPage.value?.defaultNextPageNumber == null)
 const rereading = computed(() => currentPage.value?.pageNumber !== props.session?.currentPage)
-const mediaAllowed = computed(() => !props.loading && !turnBusy.value && !props.syncRequired && !rereading.value && props.session?.status === 'IN_PROGRESS' && (props.session?.preview || props.authenticated))
+const canFinish = computed(() => !props.loading && !turnBusy.value && !props.syncRequired && props.session?.status === 'IN_PROGRESS' && (props.session?.preview || props.authenticated))
+const mediaAllowed = computed(() => canFinish.value && !rereading.value)
 
 watch(transcriptEditor, (editor) => editor?.focus(), { flush: 'post' })
 
@@ -96,16 +97,17 @@ function goPrevious() {
 
 async function goNext() {
   if (turnBusy.value || props.syncRequired) return
-  if (isLast.value) {
-    stopNarration()
-    closeVoice()
-    turnBusy.value = true
-    try { await props.completeReading() } catch (error) { audioMessage.value = describeApiError(error) }
-    finally { turnBusy.value = false }
-    return
-  }
   const index = props.book.pages.findIndex((page) => page.pageNumber === currentPage.value.defaultNextPageNumber)
   await onPageChange({ storyIndex: index })
+}
+
+async function finishReading() {
+  if (!canFinish.value) return
+  stopNarration()
+  closeVoice()
+  turnBusy.value = true
+  try { await props.completeReading() } catch (error) { audioMessage.value = describeApiError(error) }
+  finally { turnBusy.value = false }
 }
 
 function stopNarration() {
@@ -188,11 +190,13 @@ async function toggleRecording() {
   if (props.session?.preview || !props.authenticated) {
     voiceState.value = 'unavailable'
     voiceError.value = '当前是本地预览模式。登录并创建后端阅读会话后才能上传录音。'
+    editQuestionText()
     return
   }
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
     voiceState.value = 'unavailable'
-    voiceError.value = '当前浏览器不支持录音，请使用文字输入与孩子交流。'
+    voiceError.value = '当前浏览器不支持录音，可以输入文字。'
+    editQuestionText()
     return
   }
   const generation = ++voiceGeneration
@@ -229,7 +233,7 @@ async function toggleRecording() {
         recognitionRequest = new AbortController()
         const result = await transcribe(blob, snapshot, recognitionRequest.signal)
         if (generation !== voiceGeneration) return
-        transcript.value = { text: result.text, status: result.reliable === true ? 'recognized' : 'uncertain' }
+        transcript.value = { text: result.text, status: result.reliable === true ? 'recognized' : 'draft', source: 'recording' }
         voiceState.value = 'idle'
       } catch (error) {
         if (generation !== voiceGeneration) return
@@ -251,19 +255,25 @@ async function toggleRecording() {
     if (generation !== voiceGeneration) return
     cancelRecording()
     voiceState.value = 'error'
-    voiceError.value = '麦克风不可用，可以和孩子口头讨论当前问题。'
+    voiceError.value = '麦克风不可用，可以输入文字。'
+    editQuestionText()
   }
+}
+
+function editQuestionText() {
+  if (transcript.value?.status === 'draft') return
+  transcript.value = { text: transcript.value?.text || '', status: 'draft', source: 'typed' }
 }
 
 function confirmTranscript() {
   const draft = transcript.value
-  if (draft?.status !== 'uncertain' || !draft.text.trim()) return
+  if (draft?.status !== 'draft' || !draft.text.trim()) return
   draft.text = draft.text.trim()
   draft.status = 'confirmed'
   voiceError.value = ''
 }
 
-function openVoice() {
+function openVoice(typed = false) {
   if (!mediaAllowed.value) return
   stopNarration()
   cancelRecording()
@@ -271,6 +281,7 @@ function openVoice() {
   voiceState.value = 'idle'
   transcript.value = null
   voiceError.value = ''
+  if (typed) editQuestionText()
 }
 
 function cancelRecording() {
@@ -331,6 +342,7 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
         <p v-if="rereading">回看期间仅阅读文字和插图；返回当前进度后可继续朗读与录音。</p>
         <button v-if="syncRequired" class="secondary" type="button" :disabled="turnBusy" @click="refreshProgress">确认并同步进度</button>
         <button v-else-if="session.status === 'CREATED'" class="primary" type="button" @click="emit('start-session')">开始本次阅读</button>
+        <button v-if="!isLast && session.status === 'IN_PROGRESS'" class="secondary" type="button" :disabled="!canFinish" @click="finishReading">结束本次阅读</button>
       </div>
       <span class="pill">{{ report ? '本次阅读已完成' : '亲子共读模式' }}</span>
     </div>
@@ -353,8 +365,9 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
         <nav class="reader-dock" aria-label="阅读控制">
           <button class="dock-button" type="button" :disabled="pageIndex === 0 || turnBusy || syncRequired" @click="goPrevious"><span class="dock-glyph">‹</span>上一页</button>
           <button class="dock-button" type="button" :disabled="!mediaAllowed" @click="playNarration"><span class="dock-glyph">{{ audioStatus === 'playing' ? 'Ⅱ' : '▶' }}</span>{{ audioStatus === 'playing' ? '暂停朗读' : audioStatus === 'loading' ? '取消朗读' : '朗读' }}</button>
-          <button class="dock-button primary" type="button" :disabled="!mediaAllowed" @click="openVoice"><span class="dock-glyph">芽</span>语音识别</button>
-          <button class="dock-button" type="button" :disabled="turnBusy || syncRequired || session.status === 'CREATED' || (isLast && session.status !== 'IN_PROGRESS')" @click="goNext"><span class="dock-glyph">{{ isLast ? '✓' : '›' }}</span>{{ isLast ? '完成' : '下一页' }}</button>
+          <button class="dock-button primary" type="button" :disabled="!mediaAllowed" @click="openVoice()"><span class="dock-glyph">芽</span>语音识别</button>
+          <button v-if="isLast" class="dock-button" type="button" :disabled="!canFinish" @click="finishReading"><span class="dock-glyph">✓</span>完成</button>
+          <button v-else class="dock-button" type="button" :disabled="turnBusy || syncRequired || session.status === 'CREATED'" @click="goNext"><span class="dock-glyph">›</span>下一页</button>
         </nav>
       </section>
 
@@ -368,7 +381,7 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
           <div class="question-actions">
             <button class="secondary" type="button" disabled>已理解（暂不可用）</button>
             <button class="secondary" type="button" disabled>还没懂（暂不可用）</button>
-            <button class="primary" type="button" :disabled="!mediaAllowed" @click="openVoice">试用语音识别</button>
+            <button class="primary" type="button" :disabled="!mediaAllowed" @click="openVoice(true)">输入文字</button>
           </div>
         </section>
         <section class="side-card parent-tip">
@@ -389,25 +402,26 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
     <div v-if="voiceOpen" class="modal-backdrop" @click.self="closeVoice">
       <section class="modal-card voice-card" role="dialog" aria-modal="true" aria-labelledby="voice-title">
         <div class="modal-head">
-          <div><h2 id="voice-title">语音识别</h2><p>{{ book.title }} · 第 {{ currentPage?.pageNumber }} 页</p></div>
-          <button class="modal-close" type="button" aria-label="关闭语音识别" @click="closeVoice">×</button>
+          <div><h2 id="voice-title">本页问题</h2><p>{{ book.title }} · 第 {{ currentPage?.pageNumber }} 页</p></div>
+          <button class="modal-close" type="button" aria-label="关闭本页问题" @click="closeVoice">×</button>
         </div>
         <p v-if="voiceError" class="form-error" role="alert">{{ voiceError }}</p>
         <template v-if="transcript && voiceState !== 'starting'">
           <div class="transcript-box">
-            <template v-if="transcript.status === 'uncertain'">
-              <label for="voice-transcript">待确认的转写</label>
+            <template v-if="transcript.status === 'draft'">
+              <label for="voice-transcript">{{ transcript.source === 'typed' ? '输入问题' : '待确认的转写' }}</label>
               <p id="transcript-hint">请核对孩子说的话，确认前可以修改文字。</p>
               <textarea id="voice-transcript" ref="transcriptEditor" v-model="transcript.text" aria-describedby="transcript-hint" rows="3"></textarea>
             </template>
             <template v-else>
-              <h3 role="status">{{ transcript.status === 'confirmed' ? '已确认的转写' : '识别到的问题' }}</h3>
+              <h3 role="status">{{ transcript.source === 'typed' ? '已确认的文字' : transcript.status === 'confirmed' ? '已确认的转写' : '识别到的问题' }}</h3>
               <p>{{ transcript.text }}</p>
             </template>
           </div>
+          <p>文字仅在本次弹窗内查看，关闭或换页后清除。互动问答尚未接入。</p>
           <div class="modal-actions">
-            <button class="secondary" type="button" @click="toggleRecording">重新录音</button>
-            <button v-if="transcript.status === 'uncertain'" class="primary" type="button" :disabled="!transcript.text.trim()" @click="confirmTranscript">确认转写</button>
+            <button class="secondary" type="button" @click="toggleRecording">{{ transcript.source === 'typed' ? '改用录音' : '重新录音' }}</button>
+            <button v-if="transcript.status === 'draft'" class="primary" type="button" :disabled="!transcript.text.trim()" @click="confirmTranscript">{{ transcript.source === 'typed' ? '确认文字' : '确认转写' }}</button>
             <button v-else class="primary" type="button" @click="closeVoice">关闭</button>
           </div>
         </template>
@@ -419,6 +433,7 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
             <h3>{{ voiceState === 'recording' ? '正在录音，点停止后识别' : voiceState === 'starting' ? '正在申请麦克风' : voiceState === 'processing' ? '正在识别' : '点一下，说出你的问题' }}</h3>
             <p v-if="!voiceError">点击“停止并识别”会上传本段录音，识别结果将在这里显示。取消会丢弃录音。</p>
           </div>
+          <button v-if="['idle', 'error', 'unavailable'].includes(voiceState)" class="secondary" type="button" @click="editQuestionText">直接输入文字</button>
           <button class="secondary" type="button" @click="closeVoice">取消并关闭</button>
         </template>
       </section>

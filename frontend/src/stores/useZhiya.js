@@ -42,6 +42,7 @@ const state = reactive({
   booksSource: 'preview',
   booksLoading: false,
   booksError: '',
+  nextBooksPage: null,
   bookFilters: { ageBand: '', topic: '' },
   selectedBookId: localStorage.getItem('zhiya.selectedBookId') || previewBooks[0].id,
   currentBook: null,
@@ -128,6 +129,7 @@ function applyBooks(items, source, message = '') {
 }
 
 function loadPreviewBooks(message = '') {
+  state.nextBooksPage = null
   const { ageBand, topic } = state.bookFilters
   const filtered = previewBooks.filter((book) => {
     if (ageBand && book.ageBand !== ageBand) return false
@@ -137,10 +139,14 @@ function loadPreviewBooks(message = '') {
   applyBooks(filtered, 'preview', message)
 }
 
-async function loadBooks(filters = {}) {
+async function loadBooks(filters = {}, page = 1) {
   const epoch = authEpoch
   const request = ++booksRequest
-  state.bookFilters = { ...state.bookFilters, ...filters }
+  const pageSize = 30
+  if (page === 1) {
+    state.bookFilters = { ...state.bookFilters, ...filters }
+    state.nextBooksPage = null
+  }
   state.booksLoading = true
   state.booksError = ''
   try {
@@ -151,8 +157,18 @@ async function loadBooks(filters = {}) {
     const items = await listStorybooks({
       ageBand: state.bookFilters.ageBand || undefined,
       topic: state.bookFilters.topic || undefined,
+      page,
+      pageSize,
     })
     if (epoch !== authEpoch || request !== booksRequest) return
+    state.nextBooksPage = items.length === pageSize ? page + 1 : null
+    if (page > 1) {
+      const existing = new Set(state.books.map((book) => book.storyVersionId))
+      const added = items.filter((book) => !existing.has(book.storyVersionId)).map(mapApiBook)
+      applyBooks([...state.books, ...added], 'api')
+      if (added.length) selectBook(added[0].id)
+      return
+    }
     if (!items.length && !state.bookFilters.ageBand && !state.bookFilters.topic) {
       loadPreviewBooks('后端当前没有可见的已发布绘本，当前展示本地设计预览。')
       return
@@ -163,11 +179,19 @@ async function loadBooks(filters = {}) {
     if (error instanceof ApiError && error.status === 401) {
       resetAuthentication()
       loadPreviewBooks('登录后读取后端绘本，当前展示本地设计预览。')
+    } else if (page > 1) {
+      state.booksError = error.message || '后续绘本加载失败，请重试。'
     } else {
       loadPreviewBooks(error.message || '绘本列表暂时不可用，已切换到本地预览。')
     }
   } finally {
     if (request === booksRequest) state.booksLoading = false
+  }
+}
+
+function loadMoreBooks() {
+  if (!state.booksLoading && state.nextBooksPage && state.auth.status === 'authenticated') {
+    return loadBooks({}, state.nextBooksPage)
   }
 }
 
@@ -637,6 +661,7 @@ export const zhiyaActions = {
   editProfile,
   loadProfiles,
   loadBooks,
+  loadMoreBooks,
   selectBook,
   openDetail,
   loadDetail,

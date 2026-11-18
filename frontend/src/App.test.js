@@ -10,6 +10,7 @@ vi.mock('./api/storybooks', () => ({ getStoryVersion: vi.fn(), listStorybooks: v
 vi.mock('./api/reading', () => ({ getReadingSession: vi.fn(), addReadingEvent: vi.fn() }))
 
 const book = { storyVersionId: 88, title: '书架上的绘本', status: 'PUBLISHED', pages: [{ pageNumber: 1, text: '只在授权时可读的正文' }] }
+const firstPage = Array.from({ length: 30 }, (_, i) => ({ ...book, storyVersionId: i + 1, title: '绘本' + (i + 1) }))
 const missing = () => new ApiError('资源不可用', { status: 404, code: 'RESOURCE_NOT_FOUND' })
 let wrapper
 
@@ -28,6 +29,52 @@ beforeEach(() => {
   listStorybooks.mockResolvedValue([book])
 })
 afterEach(() => wrapper?.unmount())
+
+it('displays the 31st book when a guardian loads the next library page', async () => {
+  listStorybooks.mockResolvedValueOnce(firstPage).mockResolvedValueOnce([{ ...book, storyVersionId: 31, title: '第31本绘本' }])
+  await open('library')
+  expect(wrapper.get('.library-feature-copy h2').text()).toBe('绘本1')
+  await wrapper.findAll('button').find((button) => button.text() === '加载更多绘本').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('.library-feature-copy h2').text()).toBe('第31本绘本')
+  expect(wrapper.text()).not.toContain('加载更多绘本')
+  expect(listStorybooks.mock.calls.map(([query]) => query.page)).toEqual([1, 2])
+})
+
+it('retains the library after a failed append and retries the same page', async () => {
+  listStorybooks.mockResolvedValueOnce(firstPage).mockRejectedValueOnce(new Error('请求超时')).mockResolvedValueOnce([])
+  await open('library')
+  const more = () => wrapper.findAll('button').find((button) => button.text() === '加载更多绘本')
+  await more().trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).toContain('请求超时')
+  expect(wrapper.get('.library-feature-copy h2').text()).toBe('绘本1')
+  await more().trigger('click')
+  await flushPromises()
+  expect(listStorybooks.mock.calls.map(([query]) => query.page)).toEqual([1, 2, 2])
+  expect(wrapper.get('.library-feature-copy h2').text()).toBe('绘本1')
+  expect(more()).toBeUndefined()
+})
+
+it('starts a new filtered library at page one and discards a late unfiltered page', async () => {
+  let finishOldRequest
+  listStorybooks.mockResolvedValueOnce(firstPage)
+    .mockReturnValueOnce(new Promise((resolve) => { finishOldRequest = resolve }))
+    .mockResolvedValueOnce([book])
+  await open('library')
+  const button = (label) => wrapper.findAll('button').find((item) => item.text() === label)
+  await button('加载更多绘本').trigger('click')
+  await button('年龄').trigger('click')
+  await button('4–5 岁').trigger('click')
+  await flushPromises()
+  finishOldRequest([{ ...book, storyVersionId: 31, title: '旧筛选下的绘本' }])
+  await flushPromises()
+  expect(listStorybooks.mock.calls.map(([{ page, ageBand }]) => [page, ageBand])).toEqual([
+    [1, undefined], [2, undefined], [1, 'AGE_4_5'],
+  ])
+  expect(wrapper.get('.library-feature-copy h2').text()).toBe(book.title)
+  expect(button('加载更多绘本')).toBeUndefined()
+})
 
 it('hides withdrawn details and removes the stale version when returning to the library', async () => {
   getStoryVersion.mockRejectedValueOnce(missing())

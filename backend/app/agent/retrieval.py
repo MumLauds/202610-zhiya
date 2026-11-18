@@ -63,18 +63,6 @@ def _tokens(text: str) -> list[str]:
     return unique
 
 
-def _score(row: sqlite3.Row, query: KnowledgeQuery, topics: set[str]) -> int:
-    score = 0
-    score += 3 * len(topics.intersection(set(query.topics)))
-    content = f"{row['title']} {row['content']}".lower()
-    for token in _tokens(query.query_text):
-        if token in content:
-            score += 2
-    if row["age_band"] is None:
-        score += 1
-    return score
-
-
 class KnowledgeRetriever:
     """Read-only retrieval of approved knowledge items.
 
@@ -107,25 +95,29 @@ class KnowledgeRetriever:
 
     def retrieve(self, query: KnowledgeQuery) -> KnowledgeRetrievalResult:
         topics = set(query.topics)
-        candidates: list[tuple[int, sqlite3.Row, set[str]]] = []
+        keywords = _tokens(query.query_text)
+        candidates: list[tuple[tuple[int, int, bool, int, int], sqlite3.Row]] = []
         for row in self._rows():
             if query.age_band is None:
                 if row["age_band"] is not None:
                     continue
             elif row["age_band"] not in (None, query.age_band):
                 continue
-            row_topics = set(_json_list(row["topics_json"]))
-            if topics and not topics.intersection(row_topics):
+            topic_matches = len(topics.intersection(_json_list(row["topics_json"])))
+            if topics and not topic_matches:
                 continue
             if query.task_type not in _json_list(row["task_types_json"]):
                 continue
-            candidates.append((_score(row, query, row_topics), row, row_topics))
+            content = f"{row['title']} {row['content']}".lower()
+            keyword_matches = sum(keyword in content for keyword in keywords)
+            rank = (topic_matches, keyword_matches, row["age_band"] is None, row["version_no"], row["id"])
+            candidates.append((rank, row))
 
-        candidates.sort(key=lambda entry: (-entry[0], -entry[1]["version_no"], -entry[1]["id"]))
+        candidates.sort(key=lambda entry: entry[0], reverse=True)
 
         items: list[KnowledgeItem] = []
         seen_keys: set[str] = set()
-        for _, row, _ in candidates:
+        for _, row in candidates:
             if row["item_key"] in seen_keys:
                 continue
             seen_keys.add(row["item_key"])
