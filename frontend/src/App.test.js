@@ -77,6 +77,40 @@ it('starts a new filtered library at page one and discards a late unfiltered pag
   expect(button('加载更多绘本')).toBeUndefined()
 })
 
+it('keeps both pages and the selected book when a start request from another filter returns 404', async () => {
+  listProfiles.mockResolvedValueOnce([{ childProfileId: 7 }])
+  const newShelf = Array.from({ length: 60 }, (_, i) => ({ ...book, storyVersionId: i + 1, title: '新书' + (i + 1) }))
+  listStorybooks.mockImplementation(async ({ ageBand, page, pageSize }) => (
+    ageBand === 'AGE_5_6' ? newShelf.slice((page - 1) * pageSize, page * pageSize) : [book]
+  ))
+  let rejectStart
+  createReadingSession.mockReturnValueOnce(new Promise((_, reject) => { rejectStart = reject }))
+  await open('library')
+  const button = (label) => wrapper.findAll('button').find((item) => item.text() === label)
+  await button('年龄').trigger('click')
+  await button('3–4 岁').trigger('click')
+  await flushPromises()
+  await button('开始阅读').trigger('click')
+  expect(createReadingSession).toHaveBeenCalledWith({ childProfileId: 7, storyVersionId: book.storyVersionId })
+
+  await button('5–6 岁').trigger('click')
+  await flushPromises()
+  await button('加载更多绘本').trigger('click')
+  await flushPromises()
+  const carousel = wrapper.getComponent({ name: 'BookCarousel' })
+  carousel.vm.$emit('select', carousel.props('books')[31].id)
+  await flushPromises()
+  expect(wrapper.get('.library-feature-copy h2').text()).toBe('新书32')
+
+  rejectStart(missing())
+  await flushPromises()
+  expect(carousel.props('books').map((item) => item.storyVersionId)).toEqual(newShelf.map((item) => item.storyVersionId))
+  expect(wrapper.get('.library-feature-copy h2').text()).toBe('新书32')
+  expect(listStorybooks.mock.calls.map(([{ ageBand, page }]) => [ageBand, page])).toEqual([
+    [undefined, 1], ['AGE_3_4', 1], ['AGE_5_6', 1], ['AGE_5_6', 2],
+  ])
+})
+
 it('hides withdrawn details and removes the stale version when returning to the library', async () => {
   listStorybooks.mockResolvedValueOnce([book]).mockResolvedValue([])
   getStoryVersion.mockRejectedValueOnce(missing())

@@ -389,6 +389,8 @@ async function startReading(book) {
     navigate('account/children')
     return
   }
+  // A new shelf query replaces the filters object; loading another page keeps it.
+  const filtersAtStart = state.bookFilters
   try {
     state.sessionBusy = true
     const created = await createReadingSession({
@@ -401,7 +403,9 @@ async function startReading(book) {
   } catch (error) {
     if (epoch !== authEpoch) return
     // API-011 returns the same 404 for an unavailable profile or book.
-    if (error.status === 404 && state.booksSource === 'api') void refreshShelfAfterNotFound()
+    if (error.status === 404 && state.booksSource === 'api' && state.bookFilters === filtersAtStart) {
+      void refreshShelfAfterNotFound()
+    }
     setToast(describeApiError(error), 'error')
   } finally {
     if (epoch === authEpoch) state.sessionBusy = false
