@@ -50,4 +50,5 @@ ESP-IDF 分区表位于 `0x8000`。NVS 从 `0x9000` 开始，占 24 KiB，供后
 
 - H01 已在 Windows 上使用 ESP-IDF v5.5.5 验证 `idf.py set-target esp32s3` 和 `idf.py build`，生成应用、引导程序和分区表。上板验收由硬件负责人记录。此阶段的设备行为限于串口诊断。
 - H02 先验证 H01 上板及厂商 LCD、触摸、LVGL 示例。按实际板卡修订对照[微雪原理图资源](https://docs.waveshare.com/ESP32-S3-Touch-LCD-4.3C/Resources-And-Documents)，核对 IO 扩展器及触摸复位、背光、RGB 时序，再实测触摸方向和 PSRAM 余量。微雪示例与托管 BSP 的 IO 扩展器存在 CH422G/CH32V003 命名差异，需结合原理图与实板确认。
+- H05 提供本地 DEMO 数据与 Mock HTTP：`python hardware/mock/build_fixtures.py` 生成 20 本 / 104 页 / 40 个 H03 封面引用；`python hardware/mock/server.py` 默认在 `127.0.0.1:8765` 运行。它不调用真实后端或云端 AI，不替代设备认证，也不负责 LVGL 页面。字段、错误码和 H06 交接见[`docs/mock-contract.md`](docs/mock-contract.md)。
 - [SRS v0.3](../docs/requirements/软件需求规格说明书.md) 记录 4.3C 彩色触摸方案，保留 HW-01～HW-05 的可选扩展级别，修订依据见 [DCL-025](../docs/standards/design-change-log.md)。SRS 修订及后续设备认证、授权和受控媒体访问待团队评审。现有接口以[接口契约 v0.4](../docs/design/api-contract.md)和[对应 JSON](../docs/design/api-contract-v0.4.json)为基准。
