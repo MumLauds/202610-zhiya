@@ -7,7 +7,6 @@ from app.schemas.agent import ModelGenerateRequest, ModelGenerateResult
 
 class ModelAdapter:
     def __init__(self, gateway: ModelGateway) -> None:
-        # The application owns the gateway's connection pool and lifecycle.
         self._gateway = gateway
 
     async def generate(self, request: ModelGenerateRequest) -> ModelGenerateResult:
@@ -18,7 +17,6 @@ class ModelAdapter:
                 context_text=request.context_text,
             )
         except ServiceError as exc:
-            # Keep invalid input and unrelated errors visible to the caller.
             if not exc.code.startswith("MODEL_"):
                 raise
             return ModelGenerateResult(

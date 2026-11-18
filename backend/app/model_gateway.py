@@ -94,7 +94,9 @@ class ModelGateway:
                 ],
                 "max_tokens": self._settings.model_max_tokens,
                 "stream": False,
-                "thinking": {"type": "disabled"},
+                # 注：DeepSeek API 不支持该参数，联调时注释掉以兼容 DeepSeek。
+                # 若未来切换回智谱等支持该参数的模型，可取消注释。
+                #"thinking": {"type": "disabled"},
             },
         ) as response:
             if response.status_code in (401, 403):
