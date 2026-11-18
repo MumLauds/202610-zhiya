@@ -197,6 +197,15 @@ function loadMoreBooks() {
   }
 }
 
+function refreshShelfAfterNotFound() {
+  if (state.booksLoading && state.nextBooksPage === null) {
+    // The old shelf may still be visible while a new filter's first page loads.
+    return loadBooks()
+  }
+  state.nextBooksPage = 1
+  return fetchBooksPage(1)
+}
+
 async function loadProfiles() {
   const epoch = authEpoch
   const items = await listProfiles()
@@ -347,13 +356,7 @@ async function loadDetail(versionId) {
       const remaining = state.books.filter((book) => book.storyVersionId !== Number(versionId))
       const removed = remaining.length < state.books.length
       applyBooks(remaining, 'api')
-      if (state.booksLoading && state.nextBooksPage === null) {
-        // The old shelf may still be visible while a new filter's first page loads.
-        void loadBooks()
-      } else if (removed || state.booksLoading) {
-        state.nextBooksPage = 1
-        void fetchBooksPage(1)
-      }
+      if (removed || state.booksLoading) void refreshShelfAfterNotFound()
     }
     setToast(describeApiError(error), 'error')
   } finally {
@@ -396,7 +399,10 @@ async function startReading(book) {
     state.currentSession = created
     navigate(`reader/${created.readingSessionId}`)
   } catch (error) {
-    if (epoch === authEpoch) setToast(describeApiError(error), 'error')
+    if (epoch !== authEpoch) return
+    // API-011 returns the same 404 for an unavailable profile or book.
+    if (error.status === 404 && state.booksSource === 'api') void refreshShelfAfterNotFound()
+    setToast(describeApiError(error), 'error')
   } finally {
     if (epoch === authEpoch) state.sessionBusy = false
   }

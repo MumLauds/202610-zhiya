@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ApiError } from './api/client'
+import { listProfiles } from './api/profiles'
 import { getStoryVersion, listStorybooks } from './api/storybooks'
-import { addReadingEvent, getReadingSession } from './api/reading'
+import { addReadingEvent, createReadingSession, getReadingSession } from './api/reading'
 
 vi.mock('./api/auth', () => ({ checkHealth: vi.fn() }))
 vi.mock('./api/profiles', () => ({ listProfiles: vi.fn(async () => []) }))
 vi.mock('./api/storybooks', () => ({ getStoryVersion: vi.fn(), listStorybooks: vi.fn() }))
-vi.mock('./api/reading', () => ({ getReadingSession: vi.fn(), addReadingEvent: vi.fn() }))
+vi.mock('./api/reading', () => ({ getReadingSession: vi.fn(), addReadingEvent: vi.fn(), createReadingSession: vi.fn() }))
 
 const book = { storyVersionId: 88, title: '书架上的绘本', status: 'PUBLISHED', pages: [{ pageNumber: 1, text: '只在授权时可读的正文' }] }
 const firstPage = Array.from({ length: 30 }, (_, i) => ({ ...book, storyVersionId: i + 1, title: '绘本' + (i + 1) }))
@@ -89,7 +90,10 @@ it('hides withdrawn details and removes the stale version when returning to the 
   expect(wrapper.text()).not.toContain(book.title)
 })
 
-it.each([false, true])('recovers the shifted book after a withdrawal (end of list already seen: %s)', async (endSeen) => {
+it.each([
+  ['detail', false], ['detail', true], ['start', true],
+])('recovers a withdrawn book’s shifted neighbour via %s (end already seen: %s)', async (entry, endSeen) => {
+  listProfiles.mockResolvedValueOnce([{ childProfileId: 7 }])
   const catalog = [...firstPage, { ...book, storyVersionId: 31, title: '绘本31' }]
   listStorybooks.mockImplementation(async ({ page, pageSize }) => catalog.slice((page - 1) * pageSize, page * pageSize))
   await open('library')
@@ -104,11 +108,20 @@ it.each([false, true])('recovers the shifted book after a withdrawal (end of lis
     await flushPromises()
     expect(button('加载更多绘本')).toBeUndefined()
   }
-  getStoryVersion.mockRejectedValueOnce(missing())
-  await button('查看详情').trigger('click')
-  await vi.waitFor(() => expect(wrapper.text()).toContain('绘本暂不可用'))
-  await wrapper.get('.detail-toolbar button').trigger('click')
-  await vi.waitFor(() => expect(wrapper.find('.library-page').exists()).toBe(true))
+  if (entry === 'detail') {
+    getStoryVersion.mockRejectedValueOnce(missing())
+    await button('查看详情').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('绘本暂不可用'))
+    await wrapper.get('.detail-toolbar button').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('.library-page').exists()).toBe(true))
+  } else {
+    createReadingSession.mockRejectedValueOnce(missing())
+    await button('开始阅读').trigger('click')
+    await flushPromises()
+    expect(createReadingSession).toHaveBeenCalledTimes(1)
+    expect(createReadingSession).toHaveBeenCalledWith({ storyVersionId: 1, childProfileId: 7 })
+    expect(button('加载更多绘本')).toBeDefined()
+  }
   await button('加载更多绘本').trigger('click')
   await flushPromises()
 
@@ -118,6 +131,24 @@ it.each([false, true])('recovers the shifted book after a withdrawal (end of lis
   expect(listStorybooks.mock.calls.map(([{ page, ageBand }]) => [page, ageBand])).toEqual([
     [1, undefined], ...(endSeen ? [1, 2, 1, 2] : [1, 1, 2]).map((page) => [page, 'AGE_4_5']),
   ])
+})
+
+it('keeps a visible book when the missing resource is the child profile', async () => {
+  listProfiles.mockResolvedValueOnce([{ childProfileId: 7 }])
+  listStorybooks.mockResolvedValueOnce([book]).mockRejectedValueOnce(new ApiError('书架暂不可用', { status: 503 }))
+    .mockResolvedValueOnce([book])
+  createReadingSession.mockRejectedValueOnce(missing())
+  await open('library')
+  const button = (label) => wrapper.findAll('button').find((item) => item.text() === label)
+  await button('开始阅读').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('.library-feature-copy h2').text()).toBe(book.title)
+  expect(wrapper.get('[role="alert"]').text()).toContain('书架暂不可用')
+  await button('重新加载书架').trigger('click')
+  await flushPromises()
+  expect(listStorybooks.mock.calls.map(([query]) => query.page)).toEqual([1, 1, 1])
+  expect(wrapper.get('.library-feature-copy h2').text()).toBe(book.title)
+  expect(createReadingSession).toHaveBeenCalledTimes(1)
 })
 
 it('retains the filtered shelf after a failed withdrawal refresh and retries page one', async () => {

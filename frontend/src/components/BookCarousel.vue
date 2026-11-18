@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
   books: { type: Array, required: true },
@@ -8,16 +8,29 @@ const props = defineProps({
 
 const emit = defineEmits(['select'])
 const wheel = ref(null)
+const dots = ref(null)
 const panelWidth = ref(900)
 let observer = null
 
 const selectedIndex = computed(() => Math.max(0, props.books.findIndex((book) => book.id === props.selectedId)))
+
+function revealSelectedDot() {
+  const strip = dots.value
+  const dot = strip?.children[selectedIndex.value]
+  if (!dot) return
+  const right = dot.offsetLeft + dot.offsetWidth
+  if (dot.offsetLeft < strip.scrollLeft) strip.scrollLeft = dot.offsetLeft
+  else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth
+}
+
+watch([selectedIndex, () => props.books.length], revealSelectedDot, { flush: 'post' })
 
 onMounted(() => {
   if (!wheel.value) return
   panelWidth.value = wheel.value.clientWidth
   observer = new ResizeObserver(([entry]) => {
     panelWidth.value = entry.contentRect.width
+    revealSelectedDot()
   })
   observer.observe(wheel.value)
 })
@@ -95,7 +108,7 @@ function move(step) {
           </span>
         </button>
       </div>
-      <div class="carousel-dots" aria-label="绘本位置">
+      <div ref="dots" class="carousel-dots" aria-label="绘本位置">
         <button
           v-for="book in books"
           :key="`dot-${book.id}`"

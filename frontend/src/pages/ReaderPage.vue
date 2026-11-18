@@ -352,7 +352,7 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
         <button class="text-button" type="button" @click="leaveReader">← 返回绘本详情</button>
         <h1>{{ book.title }}</h1>
         <p>第 {{ currentPage?.pageNumber }} 页 · 共 {{ book.pageCount }} 页 · {{ session.preview ? '本地预览' : syncRequired ? '进度待确认' : turnBusy ? '正在同步进度' : rereading ? `回看已读页，服务端进度为第 ${session.currentPage} 页` : '后端会话已同步' }}</p>
-        <p v-if="rereading">回看期间仅阅读文字和插图；返回当前进度后可继续朗读与录音。</p>
+        <p v-if="rereading && session.status === 'IN_PROGRESS'">回看期间仅阅读文字和插图；返回当前进度后可继续朗读与录音。</p>
         <button v-if="syncRequired" class="secondary" type="button" :disabled="turnBusy" @click="refreshProgress">确认并同步进度</button>
         <button v-else-if="session.status === 'CREATED'" class="primary" type="button" @click="emit('start-session')">开始本次阅读</button>
         <button v-if="!isLast && session.status === 'IN_PROGRESS'" class="secondary" type="button" :disabled="!canFinish" @click="finishReading">结束本次阅读</button>

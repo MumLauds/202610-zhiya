@@ -428,17 +428,20 @@ describe('reader state and visual progress', () => {
     expect(wrapper.findComponent({ name: 'FlipBook' }).props('startPage')).toBe(0)
   })
 
-  it('allows read-only revisits without writes or voice calls for an old snapshot', async () => {
+  it.each(['IN_PROGRESS', 'FINISHED', 'INTERRUPTED'])('keeps the revisit hint consistent with media controls in %s sessions', async (status) => {
     const record = vi.fn()
-    render({ session: { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3], revision: 2 }, recordPage: record })
+    render({ session: { ...initialSession, status, currentPage: 3, visitedPageNumbers: [1, 3], revision: 2 }, recordPage: record })
     await button('上一页').trigger('click')
     expect(wrapper.text()).toContain('回看已读页')
+    expect(wrapper.text().includes('返回当前进度后可继续朗读与录音')).toBe(status === 'IN_PROGRESS')
     expect(button('朗读').element.disabled).toBe(true)
+    expect(button('语音识别').element.disabled).toBe(true)
     expect(record).not.toHaveBeenCalled()
     await button('下一页').trigger('click')
     expect(showPage).toHaveBeenLastCalledWith(1)
     expect(record).not.toHaveBeenCalled()
-    expect(button('朗读').element.disabled).toBe(false)
+    expect(button('朗读').element.disabled).toBe(status !== 'IN_PROGRESS')
+    expect(button('语音识别').element.disabled).toBe(status !== 'IN_PROGRESS')
   })
 
   it('marks unintegrated interactions unavailable and unknown progress as pending', () => {
