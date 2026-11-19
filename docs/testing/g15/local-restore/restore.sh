@@ -102,20 +102,34 @@ case "$action" in
         dc exec -T backend python /test/fixture.py deployment-snapshot /var/lib/zhiya/zhiya.sqlite3 > "$out/$action.json"
         dc logs --no-log-prefix provider > "$out/$action-supplier.txt"
         ;;
-    down-a|stop-b-source) dc down;;
-    down-b)
+    down-a) dc down;;
+    stop-b-source|down-b)
+        case "$action" in
+            stop-b-source) supplier_log=b-source-stopped-supplier.txt;;
+            down-b) supplier_log=b-restored-stopped-supplier.txt;;
+        esac
         backend_id=$(dc ps --all -q backend)
         if [ -z "$backend_id" ]; then
-            [ -s "$capture_dest/b-stopped-at.txt" ] && [ -s "$capture_dest/b-target-after.json" ] && [ -s "$capture_dest/b-source-after.json" ] || {
-                echo 'No restored backend or completed stop evidence' >&2; exit 1;
-            }
+            [ -f "$capture_dest/$supplier_log" ] || { echo 'Missing final supplier log' >&2; exit 1; }
+            if [ "$action" = down-b ]; then
+                [ -s "$capture_dest/b-stopped-at.txt" ] && [ -s "$capture_dest/b-target-after.json" ] && [ -s "$capture_dest/b-source-after.json" ] || {
+                    echo 'No restored backend or completed stop evidence' >&2; exit 1;
+                }
+            fi
             dc down
             exit 0
         fi
+        provider_id=$(dc ps --all -q provider)
+        [ -n "$provider_id" ] || { echo 'Missing provider container for final supplier log' >&2; exit 1; }
         dc stop
-        docker inspect --format '{{.State.FinishedAt}}' "$backend_id" > "$out/b-stopped-at.txt"
-        stopped "$run-b-source-data"; run_bundle probe "$run-b-source-data" '' b-source-after
-        stopped "$G15_VOLUME"; run_bundle probe "$G15_VOLUME" '' b-target-after
+        docker logs "$provider_id" > "$out/$supplier_log" 2>&1 || {
+            echo "Cannot read final supplier log from $provider_id" >&2; exit 1;
+        }
+        if [ "$action" = down-b ]; then
+            docker inspect --format '{{.State.FinishedAt}}' "$backend_id" > "$out/b-stopped-at.txt"
+            stopped "$run-b-source-data"; run_bundle probe "$run-b-source-data" '' b-source-after
+            stopped "$G15_VOLUME"; run_bundle probe "$G15_VOLUME" '' b-target-after
+        fi
         publish_capture
         dc down
         exit 0 ;;

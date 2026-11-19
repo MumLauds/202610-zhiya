@@ -30,6 +30,17 @@ def table_counts(counts):
             "request_executions": counts["executions"]}
 
 
+def stopped_supplier_calls(evidence, probe_name, stopped_name):
+    def read_calls(name):
+        return [json.loads(line) for line in (evidence / name).read_bytes().splitlines() if line]
+
+    probe = read_calls(probe_name)
+    stopped = read_calls(stopped_name)
+    if stopped != probe:
+        raise ValueError(f"supplier requests differ between {probe_name} and {stopped_name}")
+    return stopped
+
+
 def check_first_round(baseline, cold, running, *, legacy_event_page=False):
     expected = baseline["database"]
     if legacy_event_page and expected != cold["session"] and expected["pages"] == [1] and len(expected["events"]) == 1:
@@ -216,10 +227,10 @@ def main():
     original_image = "fixture-source/g15-restore-paper-boat.png"
     if b["originalFileSha256"].get(original_image) != image or original_image in files:
         raise ValueError("Expected the fixture source image only in the original volume")
-    b["sourceSupplierCalls"] = [json.loads(line) for line in
-                                (parsed.evidence / "probe-b-source-supplier.txt").read_text().splitlines() if line]
-    b["restoredSupplierCalls"] = [json.loads(line) for line in
-                                  (parsed.evidence / "probe-b-supplier.txt").read_text().splitlines() if line]
+    b["sourceSupplierCalls"] = stopped_supplier_calls(
+        parsed.evidence, "probe-b-source-supplier.txt", "b-source-stopped-supplier.txt")
+    b["restoredSupplierCalls"] = stopped_supplier_calls(
+        parsed.evidence, "probe-b-supplier.txt", "b-restored-stopped-supplier.txt")
     if load("b-source-after") != load("b-backup")["source"]:
         raise ValueError("Source volume changed after backup")
     source = b["restoredReading"]

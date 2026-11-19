@@ -11,6 +11,7 @@ from pathlib import Path
 
 from collect_restore import (
     check_family_probes, check_first_round, check_pinned_media, check_restored_family, check_restored_login_time,
+    stopped_supplier_calls,
 )
 
 
@@ -201,6 +202,18 @@ class RestoreChecks(unittest.TestCase):
             with self.subTest(status=attempt["status"]), self.assertRaisesRegex(ValueError, "supplier requests"):
                 self.check([attempt])
 
+    def test_source_report_must_already_be_present_at_probe(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            stopped = root / "b-source-stopped-supplier.txt"
+            probe = root / "probe-b-source-supplier.txt"
+            stopped.write_text(json.dumps(self.report) + "\n")
+            probe.write_text("")
+            with self.assertRaisesRegex(ValueError, "supplier requests differ"):
+                stopped_supplier_calls(root, probe.name, stopped.name)
+            probe.write_bytes(stopped.read_bytes())
+            self.assertEqual(stopped_supplier_calls(root, probe.name, stopped.name), [self.report])
+
     def test_restored_login_uses_server_date_even_when_the_browser_clock_is_wrong(self):
         start = datetime(2026, 11, 19, 13, 0, 0, 720000, timezone.utc)
         stop = start.replace(minute=2, microsecond=0)
@@ -235,6 +248,62 @@ class RestoreChecks(unittest.TestCase):
             self.browser[stage]["pageImage"]["rgbaSha256"] = "0" * 64
         with self.assertRaisesRegex(ValueError, "image"):
             self.check()
+
+    @unittest.skipUnless(os.name == "posix", "restore.sh runs on the Linux Docker host")
+    def test_stop_captures_late_supplier_calls_before_removing_containers(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            baseline = {"images": {k: {"id": k} for k in ("web", "backend")},
+                        "containers": {"backend": {"persistentSqliteVolume": "original"}}}
+            (root / "baseline.json").write_text(json.dumps(baseline))
+            docker = root / "docker"
+            docker.write_text("""#!/bin/sh
+case "$1" in
+  image) echo "$5";;
+  run|inspect) echo fixture;;
+  compose) case " $* " in
+    *" ps "*) [ -f "$STATE/removed" ] || echo container;;
+    *" stop "*) touch "$STATE/stopped";;
+    *" down "*) touch "$STATE/removed";;
+  esac;;
+  logs) [ -f "$STATE/stopped" ] && [ ! -f "$STATE/removed" ] && cat "$STATE/live";;
+esac
+""")
+            docker.chmod(0o700)
+            for action, side, probe in (("stop-b-source", "source", "probe-b-source"),
+                                        ("down-b", "restored", "probe-b")):
+                with self.subTest(side=side):
+                    state = root / side
+                    state.mkdir()
+                    env = dict(os.environ, PATH=temp + os.pathsep + os.environ["PATH"], G15_RESTORE_RUN="run",
+                               G15_TEST_TLS=temp, G15_BASELINE=str(root / "baseline.json"),
+                               G15_EVIDENCE=str(state), STATE=str(state))
+
+                    def stop():
+                        return subprocess.run(["sh", HERE / "restore.sh", action], env=env, capture_output=True)
+
+                    probe_name = probe + "-supplier.txt"
+                    stopped_name = f"b-{side}-stopped-supplier.txt"
+                    earlier = [self.report] if side == "source" else []
+                    probe_lines = "".join(json.dumps(call) + "\n" for call in earlier)
+                    (state / probe_name).write_text(probe_lines)
+                    self.assertNotEqual(stop().returncode, 0)  # Log read fails while the container still exists.
+                    self.assertFalse((state / "removed").exists())
+                    self.assertFalse((state / stopped_name).exists())
+                    late = {"call": "report", "status": 422}
+                    (state / "live").write_text(probe_lines + json.dumps(late) + "\n")
+                    result = stop()
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertTrue((state / "removed").exists())
+                    self.assertEqual(stop().returncode, 0)
+                    calls = [json.loads(line) for line in (state / stopped_name).read_bytes().splitlines()]
+                    self.assertEqual(calls, earlier + [late])
+                    with self.assertRaisesRegex(ValueError, "supplier requests differ"):
+                        stopped_supplier_calls(state, probe_name, stopped_name)
+                    (state / stopped_name).write_text("")
+                    (state / probe_name).write_text(json.dumps(late))
+                    with self.assertRaisesRegex(ValueError, "supplier requests differ"):
+                        stopped_supplier_calls(state, probe_name, stopped_name)
 
     @unittest.skipUnless(os.name == "posix", "restore.sh runs on the Linux Docker host")
     def test_probe_preserves_both_files_on_either_capture_failure(self):
