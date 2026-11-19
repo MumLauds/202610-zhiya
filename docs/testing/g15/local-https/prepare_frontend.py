@@ -9,6 +9,31 @@ import zipfile
 from pathlib import Path
 
 
+def verify_reused_dependencies(frontend, installed):
+    manifest = json.loads((frontend / "package.json").read_bytes())
+    lock = json.loads((frontend / "package-lock.json").read_bytes())
+    if (manifest != json.loads((installed / "package.json").read_bytes())
+            or lock != json.loads((installed / "package-lock.json").read_bytes())):
+        raise ValueError("Dependency manifests differ from the requested commit")
+
+    # npm's hidden lock lists the packages installed on this platform.
+    installed_packages = json.loads((installed / "node_modules/.package-lock.json").read_bytes())["packages"]
+    locked_packages = lock["packages"]
+    if installed_packages.keys() - locked_packages.keys():
+        raise ValueError("The npm installation contains packages outside the requested lockfile")
+    for path, expected in locked_packages.items():
+        if not path:  # Project itself.
+            continue
+        receipt = installed_packages.get(path)
+        package = installed / path / "package.json"
+        if receipt is None and expected.get("optional") and not package.exists():
+            continue
+        if receipt is None or any(receipt.get(key) != expected.get(key) for key in ("version", "resolved", "integrity")):
+            raise ValueError(f"npm installation and requested lockfile differ for {path}")
+        if json.loads(package.read_bytes())["version"] != expected["version"]:
+            raise ValueError(f"Installed version differs from the requested lockfile for {path}")
+
+
 def prepare(commit, output, installed):
     repo = Path(__file__).resolve().parents[4]
     git = ["git", "-c", f"safe.directory={repo.as_posix()}", "-C", str(repo)]
@@ -26,9 +51,7 @@ def prepare(commit, output, installed):
             source.extractall(stage)
         frontend = stage / "frontend"
         if installed:
-            for name in ("package.json", "package-lock.json"):
-                if json.loads((frontend / name).read_bytes()) != json.loads((installed / name).read_bytes()):
-                    raise ValueError(f"Installed dependency tree has a different {name}")
+            verify_reused_dependencies(frontend, installed)
             vite = installed / "node_modules/vite/bin/vite.js"
             build = ["node", str(vite), "build"]
         else:

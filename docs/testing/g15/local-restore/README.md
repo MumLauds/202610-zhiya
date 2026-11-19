@@ -63,7 +63,7 @@ sh "$ops" backup-a && sh "$ops" restore-a && sh "$ops" start-a
 sh "$ops" probe-a && sh "$ops" down-a && sh "$ops" original
 ```
 
-汇总时会将 `a-backup.json` 的源记录、`a-restore.json` 的恢复记录、`probe-a.json` 的启动后记录与本次基线中的 `afterBrowserReadback.database` 比对。`original-after.json` 用于核对原卷的文件和业务数据。
+汇总时将停写源卷、冷恢复卷和启动后的会话与首轮 `afterBrowserReadback` 基线比对。阅读会话、事件、小结、执行记录的总数都须一致，启动后的各状态会话数也须与首轮相同。`original-after.json` 用于核对原卷的文件和业务数据。
 
 **B 组。** 在同一部署终端运行 `sh "$ops" seed-b && sh "$ops" start-b-source`。另开浏览器终端，从仓库根目录运行下列命令。`PIN` 取站点公钥摘要（`openssl x509 -in "$G15_TEST_TLS/cert.pem" -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A`）。两个终端需访问同一份 `G15_EVIDENCE` 目录。Windows 上运行浏览器脚本时，将下方两个路径替换为其可访问的对应 Windows 路径。浏览器读取夹具声明的 PNG 及 RGBA 摘要，并从同目录读取恢复服务启动后记录的目标卷名。
 
@@ -87,7 +87,7 @@ python3 docs/testing/g15/local-restore/collect_restore.py "$G15_EVIDENCE" "$G15_
 
 审查修复后从新项目串跑两轮的[脱敏实测结果](../rerun-result.json)记录了首轮基线、第二轮实际使用的卷、重新登录前后的计数及内页图摘要。
 
-在有 Git 和 Python Playwright 的 Linux 环境中，可从仓库根目录单独运行 9 项回归测试，覆盖构建失败、停写查询失败、错误卷、重复供应商请求和错误像素。
+在有 Git 和 Python Playwright 的 Linux 环境中，可从仓库根目录单独运行回归测试，覆盖构建失败、停写查询失败、恢复前后记录计数不符、错误卷、重复供应商请求和错误像素。
 
 ```sh
 python3 -B -m unittest discover -s docs/testing/g15/local-https && \

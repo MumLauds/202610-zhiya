@@ -6,6 +6,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def check_first_round(baseline, cold, running):
+    if not baseline["database"] == cold["session"] == running["database"]:
+        raise ValueError("Restored session differs from the first-round baseline")
+    counts = baseline["counts"]
+    if running["counts"] != counts:
+        raise ValueError("Running restored volume has different reading counts from the first-round baseline")
+    expected_tables = {"reading_sessions": sum(counts["sessionsByStatus"].values()),
+                       "reading_reports": counts["reports"], "interaction_events": counts["events"],
+                       "request_executions": counts["executions"]}
+    if cold["counts"] != expected_tables:
+        raise ValueError("Cold volume has different reading counts from the first-round baseline")
+
+
 def check_restored_family(source, target, browser, fixture, source_calls, restored_calls):
     if source_calls != [{"call": "report", "status": 200, "visitedPages": [1]}] or restored_calls:
         raise ValueError("Expected one successful source report and no restored supplier requests")
@@ -71,7 +84,8 @@ def main():
         assert backup["manifestSha256"] == restored["manifestSha256"]
         assert backup["backup"]["files"] == restored["files"]
         source = backup["source"]["reading"]
-        assert source == restored["reading"]
+        if source != restored["reading"]:
+            raise ValueError(f"Restored reading snapshot differs from the cold source for {letter}")
         assert source["session"] == load("probe-" + letter)["database"]
         assert source["integrityCheck"] == "ok" and source["foreignKeyViolations"] == 0
         dest = run + "-" + letter + "-restored-data"
@@ -84,7 +98,7 @@ def main():
 
     a = case("a", original, "a-service")
     assert load("a-backup")["source"] == load("original-after")
-    assert a["restoredReading"]["session"] == previous["afterBrowserReadback"]["database"]
+    check_first_round(previous["afterBrowserReadback"], a["restoredReading"], load("probe-a"))
     a.update(sourceRecheckedUnchanged=True, matchesPreviousDeployment=True)
 
     b = case("b", run + "-b-source-data", "b-restored-service")

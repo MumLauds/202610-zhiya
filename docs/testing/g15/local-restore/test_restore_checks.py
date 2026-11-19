@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from collect_restore import check_restored_family
+from collect_restore import check_first_round, check_restored_family
 
 
 HERE = Path(__file__).resolve().parent
@@ -23,6 +23,24 @@ class RestoreChecks(unittest.TestCase):
 
     def check(self, restored_calls=()):
         check_restored_family(self.source, self.target, self.browser, self.fixture, [self.report], restored_calls)
+
+    def test_first_round_counts_match_cold_and_running_volumes(self):
+        baseline = json.loads((HERE.parent / "local-https/deployment-result.json").read_bytes())["afterBrowserReadback"]
+        cold = json.loads((HERE / "restore-result.json").read_bytes())["previousTestVolume"]["restoredReading"]
+        running = {"database": baseline["database"], "counts": baseline["counts"]}
+        check_first_round(baseline, cold, running)
+
+        for key in cold["counts"]:
+            with self.subTest(cold_table=key):
+                modified = dict(cold["counts"])
+                modified[key] += 1
+                with self.assertRaisesRegex(ValueError, "Cold volume"):
+                    check_first_round(baseline, dict(cold, counts=modified), running)
+        for key, value in (("reports", 2), ("events", 2), ("executions", 3), ("sessionsByStatus", {"CREATED": 1})):
+            with self.subTest(running_count=key):
+                modified = dict(running["counts"], **{key: value})
+                with self.assertRaisesRegex(ValueError, "Running restored volume"):
+                    check_first_round(baseline, cold, dict(running, counts=modified))
 
     def test_new_guardian_login_only_on_restored_volume(self):
         self.check()

@@ -180,7 +180,7 @@ def main():
         new_label, reloaded = read_history(page, origin, sid, reader_hash)
         assert label == new_label and original == reloaded and before == after
         browser.close()
-    result = {"atUtc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    result = {"atUtc": datetime.now(timezone.utc).isoformat(),
               "origin": origin, "browser": "Chrome " + browser_version, "playwright": version("playwright"),
               "profileId": profile_id, "sessionId": sid, "readerHash": reader_hash, "readerRefresh": active,
               "voice": voice, "beforeRestart": {**before, "history": label, "detail": original},

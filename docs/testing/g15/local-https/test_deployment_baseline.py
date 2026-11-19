@@ -1,11 +1,13 @@
 import json
 import subprocess
 import tempfile
+from copy import deepcopy
+from datetime import datetime, timedelta
 from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from deployment_baseline import collect
+from deployment_baseline import collect, verify_browser_readback
 from prepare_frontend import prepare
 
 HERE = Path(__file__).resolve().parent
@@ -40,12 +42,14 @@ class DeploymentTests(unittest.TestCase):
             state = Path(tmp)
             for index, phase in enumerate(("beforeRestart", "afterBrowserReadback")):
                 record = archive[phase]
-                probe = {"database": record["database"], "counts": record["counts"], "loginSessions": 1 + index}
+                probe = {"database": record["database"], "counts": record["counts"], "loginSessions": 1 + index,
+                         "capturedAtUtc": (datetime.fromisoformat(browser["atUtc"]) + timedelta(seconds=index)).isoformat()}
                 (state / f"{phase}-db.json").write_text(json.dumps(probe))
                 calls = [dict(call, status=200) for call in record["supplierCalls"]]
                 (state / f"{phase}-provider.jsonl").write_text("\n".join(json.dumps(call) for call in calls) + "\n")
                 for name, container in archive["containers"].items():
-                    value = {"image": container["image"], "reference": "fixture:" + name, "started": str(index),
+                    started = container["startedAtBeforeRestart" if index == 0 else "startedAtAfterRestart"]
+                    value = {"image": container["image"], "reference": "fixture:" + name, "started": started,
                              "revision": archive["commit"], "volume": container.get("persistentSqliteVolume", "")}
                     (state / f"{phase}-{name}.json").write_text(json.dumps(value))
             args = (state, browser, archive["project"], archive["commit"])
@@ -67,6 +71,29 @@ class DeploymentTests(unittest.TestCase):
                 log.write('{"call": "report", "status": 422}\n')
             with self.assertRaises(ValueError):
                 collect(*args)
+
+    def test_previous_or_late_browser_report_cannot_prove_current_readback(self):
+        browser = json.loads((HERE / "browser-result.json").read_bytes())
+        row = json.loads((HERE / "deployment-result.json").read_bytes())["afterBrowserReadback"]["database"]
+        at = datetime.fromisoformat(browser["atUtc"])
+        for start, end in ((at + timedelta(seconds=1), at + timedelta(minutes=1)),
+                           (at - timedelta(minutes=1), at - timedelta(seconds=1))):
+            with self.subTest(start=start, end=end), self.assertRaisesRegex(ValueError, "outside"):
+                verify_browser_readback(browser, row, start, end)
+
+    def test_browser_detail_must_match_the_persisted_session_and_events(self):
+        browser = json.loads((HERE / "browser-result.json").read_bytes())
+        row = json.loads((HERE / "deployment-result.json").read_bytes())["afterBrowserReadback"]["database"]
+        at = datetime.fromisoformat(browser["atUtc"])
+        for field, value in (("session", {"storyVersionId": 12}), ("report", {"summary": "another summary"}),
+                             ("events", {"interactionEventId": 9})):
+            with self.subTest(field=field):
+                changed = deepcopy(browser)
+                for phase in ("beforeRestart", "afterRestart"):
+                    item = changed[phase]["detail"][field]
+                    (item[0] if field == "events" else item).update(value)
+                with self.assertRaisesRegex(ValueError, "differs|differ"):
+                    verify_browser_readback(changed, row, at, at)
 
 
 if __name__ == "__main__":

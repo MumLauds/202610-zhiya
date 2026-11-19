@@ -48,7 +48,7 @@ python3 "$g15/prepare_frontend.py" "$G15_COMMIT" "$G15_STATE/frontend-build" && 
   sh "$g15/stack.sh" build && sh "$g15/stack.sh" up && sh "$g15/stack.sh" inspect
 ```
 
-前端脚本从 Git 归档解出指定提交的前端，在新的输出目录执行 Vite 构建。离线复用本机相同平台的已有依赖时，可追加 `--reuse-deps /path/to/frontend`。脚本比对该目录的两份包清单，构建成功后写入提交号及逐文件 SHA-256。Docker 构建检查这些摘要，读取本轮产物。
+前端脚本从 Git 归档解出指定提交的前端，在新的输出目录执行 Vite 构建。离线复用本机相同平台的已有依赖时，可追加 `--reuse-deps /path/to/frontend`。脚本比对项目的两份包清单，再核对 npm 安装时写入的 `node_modules/.package-lock.json` 和各已安装包的版本。若切换分支后依赖与目标锁文件不符，应重新执行 `npm ci`。构建成功后写入提交号及逐文件 SHA-256，供 Docker 打包时校验。
 
 Windows/WSL 分开运行时，在 Windows 用相同的 Python 命令准备前端，再在 WSL 设置 `G15_FRONTEND_BUILD` 指向该新目录的 WSL 路径。Docker 引擎中没有 Git 时，在 Windows 以 `git archive -o <new.tar> <完整受测提交> -- backend/app backend/requirements.txt backend/smoke_model.py backend/smoke_voice.py database data/seed knowledge-base_v2.5/图片 infra/Dockerfile` 创建源码包，将 tar 的 WSL 路径设为 `G15_SOURCE_TAR`。前端准备成功后，在部署终端执行上面的 `build && up && inspect`。
 
@@ -72,3 +72,5 @@ export G15_BASELINE="$G15_STATE/deployment-result.json"
 ```
 
 `baseline` 比较两次采集到的阅读会话、事件、小结、执行记录和供应商请求，并检查新登录使库内登录会话数增加 1。成功后写出本轮独有的卷名、镜像引用及 ID、会话和毫秒时间戳。保留该文件、数据卷、本轮 TLS 目录和镜像，可接着执行[备份恢复预演](../local-restore/README.md)。
+
+采集脚本同时对照浏览器与数据库的阅读详情、事件和小结，要求浏览器报告的完成时间落在本轮后端重启与最终数据库快照之间。新快照随数据记录 UTC 采集时间。复核没有 `capturedAtUtc` 字段的旧快照时，使用 Docker 宿主上的原始 `afterBrowserReadback-db.json` 或保留其修改时间的副本；此时结果中的 `snapshotTimeSource` 为 `originalFileMtime`。

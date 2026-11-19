@@ -4,6 +4,7 @@ import argparse
 import json
 import sqlite3
 from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
 
 TITLE = "纸船停在哪里"
@@ -49,7 +50,8 @@ def deployment_snapshot(db):
                                  ("executions", "request_executions"))}
     counts["sessionsByStatus"] = dict(db.execute("SELECT status, COUNT(*) FROM reading_sessions GROUP BY status"))
     return {"database": snapshot(db), "counts": counts,
-            "loginSessions": db.execute("SELECT COUNT(*) FROM auth_sessions").fetchone()[0]}
+            "loginSessions": db.execute("SELECT COUNT(*) FROM auth_sessions").fetchone()[0],
+            "capturedAtUtc": datetime.now(timezone.utc).isoformat()}
 
 
 if __name__ == "__main__":

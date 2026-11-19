@@ -1,7 +1,26 @@
 """Compare snapshots bracketing the restart and fresh browser login, then publish the restore baseline."""
 import argparse
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+def verify_browser_readback(browser, row, restarted_at, captured_at):
+    completed_at = datetime.fromisoformat(browser["atUtc"])
+    if not restarted_at <= completed_at <= captured_at:
+        raise ValueError("Browser report falls outside this restart and final database snapshot")
+    detail = browser["afterRestart"]["detail"]
+    session = detail["session"]
+    report = detail["report"]
+    if (session["readingSessionId"] != row["sessionId"] or session["storyVersionId"] != row["versionId"]
+            or session["revision"] != row["revision"] or session["status"] != row["status"]
+            or session["visitedPageNumbers"] != row["pages"] or report["readingSessionId"] != row["sessionId"]
+            or report["summary"] != row["summary"] or report["status"] != row["reportStatus"]):
+        raise ValueError("Browser reading or report differs from this database snapshot")
+    observed = [(e["interactionEventId"], e["eventType"]) for e in detail["events"]]
+    expected = [(e["id"], e["eventType"]) for e in row["events"]]
+    if observed != expected:
+        raise ValueError("Browser events differ from this database snapshot")
 
 
 def collect(state, browser, project, revision):
@@ -41,6 +60,15 @@ def collect(state, browser, project, revision):
             if new["volume"] != project + "_sqlite-data":
                 raise ValueError("Unexpected source volume")
             result["containers"][service]["persistentSqliteVolume"] = new["volume"]
+    restarted_at = datetime.fromisoformat(result["containers"]["backend"]["startedAtAfterRestart"].replace("Z", "+00:00"))
+    if "capturedAtUtc" in after:
+        captured_at = datetime.fromisoformat(after["capturedAtUtc"])
+    else:
+        # Older raw snapshots recorded completion only in the original Docker-host file's mtime.
+        captured_at = datetime.fromtimestamp((state / "afterBrowserReadback-db.json").stat().st_mtime, timezone.utc)
+    verify_browser_readback(browser, row, restarted_at, captured_at)
+    result["browserReadback"] = {"completedAtUtc": browser["atUtc"], "databaseSnapshotAtUtc": captured_at.isoformat(),
+                                 "snapshotTimeSource": "capturedAtUtc" if "capturedAtUtc" in after else "originalFileMtime"}
     return result
 
 
