@@ -1,0 +1,426 @@
+{
+  "startedAt": "2026-11-19T08:18:00.372000+08:00",
+  "checks": {
+    "commit": "6e04a14292c801f72e14247dfb73b89642d0de85",
+    "run": "run-1795047480372",
+    "session": {
+      "guardianId": 9001,
+      "profileId": 1,
+      "sessionId": 1,
+      "versionId": 9100,
+      "status": "FINISHED",
+      "currentPage": 2,
+      "revision": 3,
+      "visitedPages": [
+        1,
+        2
+      ],
+      "reportStatus": "READY",
+      "summary": "本次共读阅读了第 1、2 页。可以和孩子再看一页已读内容，由孩子自愿选择是否聊一聊。",
+      "activities": []
+    },
+    "events": [
+      {
+        "eventType": "STARTED",
+        "page": 1,
+        "revision": 1
+      },
+      {
+        "eventType": "PAGE_CHANGED",
+        "page": 2,
+        "revision": 2
+      }
+    ],
+    "sessionCount": 1,
+    "foreignKeyViolations": 0,
+    "publishedFixtureCountAfterPagination": 31,
+    "unchangedDraftSeedVersions": 21,
+    "registeredQAEndpoints": {
+      "questions": false,
+      "guidance": false
+    },
+    "providerTransports": "in-process HTTP fixtures",
+    "providers": [
+      {
+        "kind": "TTS",
+        "pageText": "纸船在一片绿叶旁停下来。",
+        "voice": "wenhuaiqing_v3.1"
+      },
+      {
+        "kind": "TTS media",
+        "hz": 24000,
+        "durationSeconds": 2
+      },
+      {
+        "kind": "upload format",
+        "declaredMime": "audio/webm",
+        "headerHex": "4f676753",
+        "bytes": 24837,
+        "declaredDecode": {
+          "exit": 3199971767,
+          "pcmBytes": 0
+        },
+        "detectedDecode": {
+          "exit": 0,
+          "pcmBytes": 47360
+        }
+      },
+      {
+        "kind": "report",
+        "suggestionId": "REVISIT_PAGE"
+      }
+    ]
+  },
+  "browserSteps": [
+    {
+      "step": "已校验证书的本地 HTTPS",
+      "browser": "Firefox 153.0",
+      "security": {
+        "issuer": "G13 Round1 Local QA Root",
+        "protocol": "TLS 1.3",
+        "subjectName": "localhost",
+        "validFrom": 1795045981,
+        "validTo": 1795132381
+      },
+      "ignoreHTTPSErrors": false
+    },
+    {
+      "step": "家长登录",
+      "cookieFlags": [
+        {
+          "name": "zhiya_session",
+          "secure": true,
+          "httpOnly": true,
+          "sameSite": "Lax"
+        },
+        {
+          "name": "zhiya_csrf",
+          "secure": true,
+          "httpOnly": false,
+          "sameSite": "Lax"
+        }
+      ]
+    },
+    {
+      "step": "创建儿童档案",
+      "childId": 1
+    },
+    {
+      "step": "从书架创建并开始同一次阅读",
+      "sessionId": 1,
+      "childId": 1,
+      "versionId": 9100
+    },
+    {
+      "step": "翻页及只读回看",
+      "visible": [
+        1,
+        2,
+        1,
+        2
+      ],
+      "extraWriteEvents": 0
+    },
+    {
+      "step": "当前页音频播放至结束"
+    },
+    {
+      "step": "原生录音转写",
+      "outcome": "blocked",
+      "http": 422,
+      "code": "AUDIO_INVALID",
+      "requestId": "6e980533cde449d79fe8bb090a2c9a4c"
+    },
+    {
+      "step": "录音失败后的手动文字确认",
+      "corrected": "纸船为什么停在绿叶旁？",
+      "clearedOnClose": true
+    },
+    {
+      "step": "儿童问答阻塞已定位",
+      "sessionId": 1
+    },
+    {
+      "step": "提前结束并保存小结",
+      "summary": "本次共读阅读了第 1、2 页。可以和孩子再看一页已读内容，由孩子自愿选择是否聊一聊。"
+    },
+    {
+      "step": "结束后回看止于实际已读的第二页"
+    },
+    {
+      "step": "页面历史记录",
+      "historyText": "纸船停在哪里\n\n浏览 2 页 · 已完成\n\n修订 3",
+      "detailControls": 0
+    },
+    {
+      "step": "同账号重新登录后从原会话读取相同小结",
+      "sessionId": 1
+    },
+    {
+      "step": "书架跨页加载",
+      "pageSize": 30,
+      "secondPageItems": 1,
+      "lastTitle": "分页占位 30"
+    }
+  ],
+  "browserRequests": [
+    {
+      "method": "GET",
+      "path": "/api/v1/health",
+      "status": 200,
+      "requestId": "608b9ac4932c41f6b06fcdd5b8cd846b",
+      "businessStatus": "ok"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/child-profiles",
+      "status": 401,
+      "requestId": "29edb487409e4d26a1886139b43a6379",
+      "errorCode": "AUTH_REQUIRED"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/sessions",
+      "status": 201,
+      "requestId": "c10ae89f64a949539c65b3ea97bb441a",
+      "accountId": 9001
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/child-profiles",
+      "status": 200,
+      "requestId": "25e3db91c48c4edea7380d88353b385c",
+      "count": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/storybooks",
+      "status": 200,
+      "requestId": "3b0a5599952c43d582dc95c4efbe5be2",
+      "query": {
+        "page": 1,
+        "pageSize": 30
+      },
+      "count": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/child-profiles",
+      "status": 201,
+      "requestId": "4accc15684af4b08b66999d4aee2d477",
+      "childProfileId": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/child-profiles",
+      "status": 200,
+      "requestId": "3535110b95e9409a913df07e3af78e90",
+      "count": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/reading-sessions",
+      "status": 201,
+      "requestId": "060dd3a80a764d88bff045d8bc4b6445",
+      "businessStatus": "CREATED",
+      "storyVersionId": 9100,
+      "readingSessionId": 1,
+      "revision": 0,
+      "currentPage": 1,
+      "visitedPageNumbers": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reading-sessions/1",
+      "status": 200,
+      "requestId": "f3a01e8544544c4fb60381dba7384b4c",
+      "businessStatus": "CREATED",
+      "storyVersionId": 9100,
+      "readingSessionId": 1,
+      "revision": 0,
+      "currentPage": 1,
+      "visitedPageNumbers": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/reading-sessions/1/events",
+      "status": 201,
+      "requestId": "59144891f75e4c97b77c4f164136e891",
+      "revision": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/reading-sessions/1/events",
+      "status": 201,
+      "requestId": "98320d30f4144cdf951e5f71fb286759",
+      "revision": 2
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/voice/syntheses",
+      "status": 201,
+      "requestId": "5993400d904e40d1a72b732293efba8d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/media/{audio}",
+      "status": 200,
+      "requestId": "352082355b454533b7da97c3c1fbafc2"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/voice/transcriptions",
+      "status": 422,
+      "requestId": "6e980533cde449d79fe8bb090a2c9a4c",
+      "errorCode": "AUDIO_INVALID"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/reading-sessions/1/completions",
+      "status": 200,
+      "requestId": "036b79e64b3048c191221d3ed3326e79",
+      "businessStatus": "FINISHED",
+      "storyVersionId": 9100,
+      "readingSessionId": 1,
+      "revision": 3,
+      "currentPage": 2,
+      "visitedPageNumbers": [
+        1,
+        2
+      ],
+      "reportStatus": "PENDING"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reading-sessions/1",
+      "status": 200,
+      "requestId": "c2d9deb256aa4de1a5da4d05f611c401",
+      "businessStatus": "FINISHED",
+      "storyVersionId": 9100,
+      "readingSessionId": 1,
+      "revision": 3,
+      "currentPage": 2,
+      "visitedPageNumbers": [
+        1,
+        2
+      ],
+      "reportStatus": "READY"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reading-sessions",
+      "status": 200,
+      "requestId": "c2257530c0dd4e32963895204e220844",
+      "query": {
+        "page": 1,
+        "pageSize": 50
+      },
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reading-sessions",
+      "status": 200,
+      "requestId": "f02b70c356144942ba6d7604a59c8059",
+      "query": {
+        "page": 1,
+        "pageSize": 50
+      },
+      "count": 1
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/auth/sessions/current",
+      "status": 204,
+      "requestId": "75a93d78865f4856815008116d2bd137"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/sessions",
+      "status": 201,
+      "requestId": "b163e212f78e4b22bad23188e092780b",
+      "accountId": 9001
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/child-profiles",
+      "status": 200,
+      "requestId": "0638416b184f457db172a7ac5e109ca5",
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/storybooks",
+      "status": 200,
+      "requestId": "9a4a4ab0a7e748b9b30889d83a97ff77",
+      "query": {
+        "page": 1,
+        "pageSize": 30
+      },
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reading-sessions",
+      "status": 200,
+      "requestId": "63d0670717544b23ae68e3bc6bbabede",
+      "query": {
+        "page": 1,
+        "pageSize": 50
+      },
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reading-sessions/1",
+      "status": 200,
+      "requestId": "d4fae641be4a499fa591fd889bf26ccb",
+      "businessStatus": "FINISHED",
+      "storyVersionId": 9100,
+      "readingSessionId": 1,
+      "revision": 3,
+      "currentPage": 2,
+      "visitedPageNumbers": [
+        1,
+        2
+      ],
+      "reportStatus": "READY"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/health",
+      "status": 200,
+      "requestId": "7a602e8613c641c1a81799b8b62a7566",
+      "businessStatus": "ok"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/child-profiles",
+      "status": 200,
+      "requestId": "2b999044d3a0441286c890b72733500b",
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/storybooks",
+      "status": 200,
+      "requestId": "01d0d0d197f843e6927f78d363c2bdfa",
+      "query": {
+        "page": 1,
+        "pageSize": 30
+      },
+      "count": 30
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/storybooks",
+      "status": 200,
+      "requestId": "6d6bba873b724ecbb7e98aaec42c8cb2",
+      "query": {
+        "page": 2,
+        "pageSize": 30
+      },
+      "count": 1
+    }
+  ]
+}

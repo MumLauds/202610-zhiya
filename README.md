@@ -77,6 +77,7 @@ npm --prefix frontend run build
 - [G08 声线与模型合成语速交接](docs/design/speech-preferences-handoff.md)
 - [声线语速实测与最新容器检查](docs/testing/speech-preferences-checks.md)
 - [六声线试听与独立交付验证](docs/testing/g08-live-delivery-checks.md)
+- [G13 系统联调记录与复测步骤](docs/integration.md)
 - [知芽软件工程团队项目选题报告（立项版本）](docs/知芽-软件工程团队项目选题报告.docx)
 - [软件需求规格说明书 v0.3（待团队评审）](docs/requirements/软件需求规格说明书.md)
 - [项目设计与开发规范 v1.2（修订评审稿）](docs/standards/知芽_项目设计与开发规范_精简版_v1.2.md)

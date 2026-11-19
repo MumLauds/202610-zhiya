@@ -1,0 +1,146 @@
+{
+  "commit": "a09f9b669762d3d957be1db8ff70a17e01bc9692",
+  "atUtc": "2026-11-19T08:59:34+00:00",
+  "browser": "Chrome 154.0.8037.98",
+  "pytest": "9.2.0",
+  "playwright": "1.65.2",
+  "sessionId": 1,
+  "pageNumber": 1,
+  "writes": [
+    {
+      "key": "g13-initial",
+      "feedback": "INITIAL",
+      "expectedRevision": 1,
+      "http": 201,
+      "eventId": 2,
+      "replyRevision": 2,
+      "dbRevision": 2,
+      "eventCount": 2,
+      "guidanceExecutions": 1,
+      "evidenceRows": 1,
+      "modelCalls": 1
+    },
+    {
+      "key": "g13-initial",
+      "feedback": "INITIAL",
+      "expectedRevision": 1,
+      "http": 200,
+      "eventId": 2,
+      "replyRevision": 2,
+      "dbRevision": 2,
+      "eventCount": 2,
+      "guidanceExecutions": 1,
+      "evidenceRows": 1,
+      "modelCalls": 1
+    },
+    {
+      "key": "g13-feedback",
+      "feedback": "NOT_UNDERSTOOD",
+      "expectedRevision": 2,
+      "http": 201,
+      "eventId": 3,
+      "replyRevision": 3,
+      "dbRevision": 3,
+      "eventCount": 3,
+      "guidanceExecutions": 2,
+      "evidenceRows": 2,
+      "modelCalls": 2
+    },
+    {
+      "key": "g13-feedback",
+      "feedback": "NOT_UNDERSTOOD",
+      "expectedRevision": 2,
+      "http": 200,
+      "eventId": 3,
+      "replyRevision": 3,
+      "dbRevision": 3,
+      "eventCount": 3,
+      "guidanceExecutions": 2,
+      "evidenceRows": 2,
+      "modelCalls": 2
+    },
+    {
+      "key": "g13-initial",
+      "feedback": "INITIAL",
+      "expectedRevision": 1,
+      "http": 200,
+      "eventId": 2,
+      "replyRevision": 2,
+      "dbRevision": 3,
+      "eventCount": 3,
+      "guidanceExecutions": 2,
+      "evidenceRows": 2,
+      "modelCalls": 2
+    }
+  ],
+  "refresh": {
+    "http": 200,
+    "revision": 3,
+    "events": [
+      {
+        "interactionEventId": 1,
+        "eventType": "STARTED",
+        "pageNumber": 1
+      },
+      {
+        "interactionEventId": 2,
+        "eventType": "QUESTION",
+        "pageNumber": 1,
+        "outputText": "读到“小园把一只纸船放进水里”时，你看见了谁？",
+        "strategyType": "CONTEXT_QUESTION"
+      },
+      {
+        "interactionEventId": 3,
+        "eventType": "FEEDBACK",
+        "pageNumber": 1,
+        "outputText": "读到“小园把一只纸船放进水里”时，你能指一指画面里的角色吗？",
+        "strategyType": "CONCRETE_RECALL",
+        "feedback": "NOT_UNDERSTOOD"
+      }
+    ]
+  },
+  "database": {
+    "revision": 3,
+    "events": [
+      [
+        1,
+        "STARTED",
+        1
+      ],
+      [
+        2,
+        "QUESTION",
+        2
+      ],
+      [
+        3,
+        "FEEDBACK",
+        3
+      ]
+    ],
+    "executions": [
+      [
+        "g13-initial",
+        "SUCCEEDED"
+      ],
+      [
+        "g13-feedback",
+        "SUCCEEDED"
+      ]
+    ],
+    "evidence": [
+      [
+        2,
+        81
+      ],
+      [
+        3,
+        81
+      ]
+    ]
+  },
+  "provider": {
+    "mode": "httpx.MockTransport",
+    "calls": 2
+  }
+}
