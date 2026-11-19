@@ -74,6 +74,32 @@ def _seed_derived_data(path: Path, profile_id: int, session_id: int, grant_id: i
                 (knowledge_version_id, session_id))
 
 
+def test_deletion_status_checks_ownership_even_if_the_book_was_withdrawn(env):
+    owner, other, path = env
+    headers = {"X-CSRF-Token": owner.cookies["zhiya_csrf"]}
+    profile = owner.post("/api/v1/child-profiles", headers=headers,
+                         json={"ageBand": "AGE_3_4", "preferredMinutes": 10}).json()["data"]
+    sessions = "/api/v1/reading-sessions"
+    session_id = owner.post(sessions, headers=headers, json={
+        "childProfileId": profile["childProfileId"], "storyVersionId": 11, "mode": "PARENT_CHILD",
+    }).json()["data"]["readingSessionId"]
+    resource = f"{sessions}/{session_id}"
+    query = {"view": "deletion-status"}
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_versions SET status = 'WITHDRAWN' WHERE id = 11")
+    assert owner.get(sessions).json()["data"]["items"] == []
+    assert owner.get(resource).status_code == 404
+    status = owner.get(resource, params=query)
+    assert status.status_code == 200
+    assert status.headers["Cache-Control"] == "no-store"
+    assert status.json()["data"] == {"exists": True}
+    assert other.get(resource, params=query).json()["data"] == {"exists": False}
+    with TestClient(app, base_url="https://testserver") as anonymous:
+        assert anonymous.get(resource, params=query).status_code == 401
+    assert owner.delete(resource, headers=headers).status_code == 204
+    assert owner.get(resource, params=query).json()["data"] == {"exists": False}
+
+
 def test_delete_reading_session_cleans_rows_grants_media_and_enforces_auth(env, monkeypatch, tmp_path):
     first, second, path = env
     headers = {"X-CSRF-Token": first.cookies["zhiya_csrf"]}

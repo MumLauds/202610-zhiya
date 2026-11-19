@@ -12,8 +12,8 @@ export class ApiError extends Error {
   }
 }
 
-function readCookie(name) {
-  const prefix = `${encodeURIComponent(name)}=`
+export function readCsrfCookie() {
+  const prefix = 'zhiya_csrf='
   return document.cookie
     .split(';')
     .map((part) => part.trim())
@@ -33,7 +33,7 @@ export async function apiRequest(path, options = {}) {
     body = JSON.stringify(body)
   }
   if (!['GET', 'HEAD'].includes(method)) {
-    const csrf = decodeURIComponent(readCookie('zhiya_csrf'))
+    const csrf = decodeURIComponent(readCsrfCookie())
     if (csrf) headers.set('X-CSRF-Token', csrf)
   }
 
@@ -78,6 +78,7 @@ export async function apiRequest(path, options = {}) {
 export function describeApiError(error) {
   if (error.code === 'REQUEST_OUTCOME_UNKNOWN') return '请求结果尚未确认，请先查询状态，不要重复提交。'
   if (error.code === 'REQUEST_IN_PROGRESS') return '原请求仍在处理，请稍后确认原请求。'
+  if (error.code === 'INVALID_CREDENTIALS') return error.message || '账号或密码错误'
   if (error.status === 401) return '登录已失效，请重新登录。'
   if (error.code === 'CSRF_INVALID') return '登录校验已变化，请刷新页面后重试。'
   if (error.status === 409) return `${error.message}，请刷新当前状态后再操作。`

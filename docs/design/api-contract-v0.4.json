@@ -1513,6 +1513,13 @@
       "uniqueKey": "GET /api/v1/reading-sessions/{session_id}",
       "additionalExamples": [
         {
+          "name": "家长核对本人阅读记录是否仍存在",
+          "query": { "view": "deletion-status" },
+          "status": 200,
+          "data": { "exists": true },
+          "note": "按 API-014 归属查询，包含绘本已撤回的本人记录。已删除或不属于当前家长时返回 false，仅返回布尔值。响应禁止缓存。有效儿童凭证返回 403，未认证返回 401。省略 view 或使用 reading 时返回默认会话详情。"
+        },
+        {
           "name": "小结处理中",
           "status": 200,
           "data": {

@@ -22,6 +22,11 @@ export async function getReadingSession(sessionId) {
   return result.data
 }
 
+export async function getDeletionStatus(sessionId) {
+  const result = await apiRequest(`/reading-sessions/${sessionId}?view=deletion-status`, { cache: 'no-store' })
+  return result?.data?.exists
+}
+
 export async function addReadingEvent(sessionId, payload) {
   const result = await apiRequest(`/reading-sessions/${sessionId}/events`, {
     method: 'POST',
@@ -33,6 +38,20 @@ export async function addReadingEvent(sessionId, payload) {
 export async function completeReadingSession(sessionId, payload) {
   const result = await apiRequest(`/reading-sessions/${sessionId}/completions`, {
     method: 'POST',
+    body: payload,
+  })
+  return result.data
+}
+
+export async function deleteReadingSession(sessionId) {
+  await apiRequest(`/reading-sessions/${sessionId}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function updateReadingMode(sessionId, payload) {
+  const result = await apiRequest(`/reading-sessions/${sessionId}/mode-settings`, {
+    method: 'PUT',
     body: payload,
   })
   return result.data

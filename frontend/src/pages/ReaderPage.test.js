@@ -6,8 +6,8 @@ import { synthesize, transcribe } from '../api/voice'
 
 vi.mock('../api/voice', () => ({ synthesize: vi.fn(), transcribe: vi.fn() }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
-const book = { title: '绘本', pageCount: 3, pages: [{ pageNumber: 1, text: '一', defaultNextPageNumber: 3 }, { pageNumber: 3, text: '三', defaultNextPageNumber: 7 }, { pageNumber: 7, text: '七', defaultNextPageNumber: null }] }
-const initialSession = { readingSessionId: 55, currentPage: 1, visitedPageNumbers: [1], revision: 1, status: 'IN_PROGRESS' }
+const book = { storyVersionId: 88, title: '绘本', pageCount: 3, pages: [{ pageNumber: 1, text: '一', defaultNextPageNumber: 3 }, { pageNumber: 3, text: '三', defaultNextPageNumber: 7 }, { pageNumber: 7, text: '七', defaultNextPageNumber: null }] }
+const initialSession = { readingSessionId: 55, mode: 'PARENT_CHILD', currentPage: 1, visitedPageNumbers: [1], revision: 1, status: 'IN_PROGRESS' }
 let wrapper, track, getUserMedia, recorders, audios, showPage
 const button = (text) => wrapper.findAll('button').find((item) => item.text().includes(text))
 
@@ -217,6 +217,41 @@ describe('parent transcript review', () => {
     await button('确认转写').trigger('click')
     expect(dialog.get('.transcript-box p').text()).toBe('仍可确认的文字')
     expect(transcribe).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('parent child-mode handoff', () => {
+  it('sends the current story and selected duration to the child-mode action', async () => {
+    const enterChildModeAction = vi.fn().mockResolvedValue(true)
+    render({
+      session: { ...initialSession, status: 'CREATED', revision: 0, visitedPageNumbers: [] },
+      availableBooks: [book, { storyVersionId: 99, title: '另一本' }],
+      enterChildModeAction,
+    })
+    await button('设置并进入儿童模式').trigger('click')
+    const dialog = wrapper.get('[role="dialog"]')
+    expect(dialog.text()).toContain('儿童端可能是竖版 Web、横版硬件')
+    await dialog.find('select').setValue('15')
+    await dialog.findAll('input[type="checkbox"]')[1].setValue(true)
+    await dialog.findAll('button').find((item) => item.text().includes('开启儿童模式')).trigger('click')
+    await flushPromises()
+    expect(enterChildModeAction).toHaveBeenCalledWith(55, [88, 99], 900)
+  })
+
+  it('blocks switching after the parent-child session has started', () => {
+    render()
+    const modeButton = button('本次阅读已开始')
+    expect(modeButton.element.disabled).toBe(true)
+  })
+
+  it('keeps an already authorized CREATED session out of first-time handoff', async () => {
+    const enterChildModeAction = vi.fn()
+    render({ session: { ...initialSession, mode: 'CHILD_SOLO', status: 'CREATED' }, enterChildModeAction })
+    const modeButton = button('此会话已开启儿童模式')
+    expect(modeButton.element.disabled).toBe(true)
+    await modeButton.trigger('click')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(enterChildModeAction).not.toHaveBeenCalled()
   })
 })
 

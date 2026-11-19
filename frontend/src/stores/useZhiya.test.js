@@ -5,12 +5,12 @@ import * as profiles from '../api/profiles'
 import * as books from '../api/storybooks'
 import * as reading from '../api/reading'
 
-vi.mock('../api/auth', () => ({ checkHealth: vi.fn(), login: vi.fn(), logout: vi.fn(), register: vi.fn() }))
-vi.mock('../api/profiles', () => ({ listProfiles: vi.fn(), createProfile: vi.fn(), updateProfile: vi.fn() }))
+vi.mock('../api/auth', () => ({ checkHealth: vi.fn(), login: vi.fn(), logout: vi.fn(), parentUnlock: vi.fn(), register: vi.fn() }))
+vi.mock('../api/profiles', () => ({ listProfiles: vi.fn(), createProfile: vi.fn(), updateProfile: vi.fn(), deleteProfile: vi.fn() }))
 vi.mock('../api/storybooks', () => ({ listStorybooks: vi.fn(), getStoryVersion: vi.fn() }))
-vi.mock('../api/reading', () => ({ createReadingSession: vi.fn(), getReadingSession: vi.fn(), addReadingEvent: vi.fn(), completeReadingSession: vi.fn(), listReadingSessions: vi.fn() }))
+vi.mock('../api/reading', () => ({ createReadingSession: vi.fn(), getReadingSession: vi.fn(), addReadingEvent: vi.fn(), completeReadingSession: vi.fn(), listReadingSessions: vi.fn(), deleteReadingSession: vi.fn(), updateReadingMode: vi.fn() }))
 
-const session = (overrides = {}) => ({ readingSessionId: 55, storyVersionId: 88, currentPage: 1, visitedPageNumbers: [1], revision: 1, status: 'IN_PROGRESS', ...overrides })
+const session = (overrides = {}) => ({ readingSessionId: 55, storyVersionId: 88, mode: 'PARENT_CHILD', currentPage: 1, visitedPageNumbers: [1], revision: 1, status: 'IN_PROGRESS', ...overrides })
 const detail = (overrides = {}) => ({ session: session(overrides), events: [], report: null })
 const version = { storyVersionId: 88, title: '测试绘本', status: 'APPROVED_PRIVATE', pages: [{ pageNumber: 1, text: '一', defaultNextPageNumber: 3 }, { pageNumber: 3, text: '三', defaultNextPageNumber: 7 }, { pageNumber: 7, text: '七', defaultNextPageNumber: null }] }
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
@@ -21,6 +21,7 @@ beforeEach(async () => {
   vi.resetAllMocks()
   vi.useFakeTimers()
   localStorage.clear()
+  sessionStorage.clear()
   window.history.replaceState({}, '', '/#reader/55')
   auth.login.mockResolvedValue({ data: { accountId: 1 } })
   auth.logout.mockResolvedValue(null)
@@ -30,6 +31,10 @@ beforeEach(async () => {
   reading.getReadingSession.mockImplementation(async () => detail())
   reading.addReadingEvent.mockResolvedValue({ revision: 2 })
   reading.listReadingSessions.mockResolvedValue([session()])
+  profiles.deleteProfile.mockResolvedValue(undefined)
+  reading.deleteReadingSession.mockResolvedValue(undefined)
+  reading.updateReadingMode.mockResolvedValue({ mode: 'CHILD_SOLO', childGrantId: 4, allowedStoryVersionIds: [88], expiresAt: '2026-11-18T08:00:00Z' })
+  auth.parentUnlock.mockResolvedValue({ accountId: 1 })
   const store = await import('./useZhiya')
   state = store.zhiya
   actions = store.zhiyaActions
@@ -151,6 +156,8 @@ describe('authoritative reading progress', () => {
     reading.getReadingSession.mockResolvedValueOnce(detail({ status: 'CREATED', revision: 0, visitedPageNumbers: [] }))
     reading.addReadingEvent.mockResolvedValueOnce({ revision: 1 })
     await actions.loadReaderRoute()
+    expect(reading.addReadingEvent).not.toHaveBeenCalled()
+    expect(await actions.startCurrentReading()).toBe(true)
     expect(reading.addReadingEvent.mock.calls[0][1]).toMatchObject({ eventType: 'STARTED', expectedRevision: 0, pageNumber: 1 })
     expect(state.currentSession.status).toBe('IN_PROGRESS')
   })
@@ -169,6 +176,49 @@ describe('authoritative reading progress', () => {
 })
 
 describe('account isolation and logout', () => {
+  it.each(['account', 'credential'])('invalidates pending guardian reads on a change of %s', async (change) => {
+    await actions.signIn('parent-a', 'password123')
+    await actions.loadSessions()
+    const oldBooks = deferred(), oldHistory = deferred(), oldReader = deferred()
+    books.listStorybooks.mockReturnValueOnce(oldBooks.promise)
+    reading.listReadingSessions.mockReturnValueOnce(oldHistory.promise)
+    reading.getReadingSession.mockReturnValueOnce(oldReader.promise)
+    window.history.replaceState({}, '', '/#reader/55')
+    const staleReads = [actions.loadBooks(), actions.loadSessions(), actions.syncRoute()]
+    if (change === 'account') localStorage.setItem('zhiya.account', 'parent-b')
+    else document.cookie = 'zhiya_csrf=fixture-new-session; path=/'
+    try {
+      window.history.replaceState({}, '', '/#account/growth')
+      await actions.syncRoute()
+      const newProfiles = deferred()
+      profiles.listProfiles.mockReturnValueOnce(newProfiles.promise)
+      const refreshing = actions.refreshIdentity()
+      expect(state.auth.authenticated).toBe(false)
+      expect(state.profiles).toEqual([])
+      expect(state.sessions).toEqual([])
+      expect(state.currentBook).toBeNull()
+      expect(state.currentReport).toBeNull()
+      expect(state.booksSource).toBe('preview')
+      const newBook = { ...version, storyVersionId: 99, title: '新书' }
+      books.listStorybooks.mockResolvedValueOnce([newBook])
+      reading.listReadingSessions.mockResolvedValueOnce([session({ readingSessionId: 66, storyVersionId: 99 })])
+      newProfiles.resolve([{ childProfileId: 2, nickname: '小禾' }])
+      await refreshing
+      oldBooks.resolve([version])
+      oldHistory.resolve([session()])
+      oldReader.resolve({ ...detail(), report: { title: '先前的小结' } })
+      await Promise.all(staleReads)
+      expect(state.auth.authenticated).toBe(true)
+      expect(state.profiles.map(p => p.childProfileId)).toEqual([2])
+      expect(state.books.map(b => b.storyVersionId)).toEqual([99])
+      expect(state.sessions.map(s => s.readingSessionId)).toEqual([66])
+      expect(state.currentSession).toBeNull()
+      expect(state.currentReport).toBeNull()
+    } finally {
+      document.cookie = 'zhiya_csrf=; Max-Age=0; path=/'
+    }
+  })
+
   it('keeps a late success from restoring details after the latest request received a 404', async () => {
     window.history.replaceState({}, '', '/#detail/88')
     const first = deferred()
@@ -258,6 +308,218 @@ describe('account isolation and logout', () => {
     pending.resolve(detail({ readingSessionId: 99 }))
     await loading
     expect(state.currentSession).toBeNull()
+  })
+
+  it('deletes a child profile and refreshes the active profile and reading history', async () => {
+    await actions.signIn('parent-a', 'password123')
+    profiles.listProfiles.mockResolvedValueOnce([])
+    reading.listReadingSessions.mockResolvedValueOnce([])
+    expect(await actions.removeProfile(1)).toBe(true)
+    expect(profiles.deleteProfile).toHaveBeenCalledWith(1)
+    expect(state.profiles).toEqual([])
+    expect(state.activeProfileId).toBe(0)
+    expect(localStorage.getItem('zhiya.activeProfileId')).toBeNull()
+  })
+
+  it('removes a deleted reading session from account state', async () => {
+    await actions.signIn('parent-a', 'password123')
+    await actions.loadSessions()
+    expect(await actions.removeReadingSession(55)).toBe(true)
+    expect(reading.deleteReadingSession).toHaveBeenCalledWith(55)
+    expect(state.sessions).toEqual([])
+  })
+
+  it('keeps an uncertain deletion pending until every history page can be checked', async () => {
+    await actions.signIn('parent-a', 'password123')
+    reading.deleteReadingSession.mockRejectedValueOnce(new ApiError('连接中断', { code: 'REQUEST_OUTCOME_UNKNOWN' }))
+    const firstPage = Array.from({ length: 50 }, (_, i) => session({ readingSessionId: 200 - i }))
+    reading.listReadingSessions.mockResolvedValueOnce(firstPage).mockRejectedValueOnce(new ApiError('暂不可用', { status: 503 }))
+    expect(await actions.removeReadingSession(55)).toBe('unconfirmed')
+    expect(await actions.checkDeletion('session', 55)).toBe('unconfirmed')
+    expect(await actions.removeReadingSession(55)).toBe('unconfirmed')
+    reading.listReadingSessions.mockResolvedValueOnce(firstPage).mockResolvedValueOnce([session()])
+    expect(await actions.checkDeletion('session', 55)).toBe('present')
+    expect(reading.deleteReadingSession).toHaveBeenCalledOnce()
+    expect(reading.listReadingSessions.mock.calls).toEqual([[1, 50], [2, 50], [1, 50], [2, 50]])
+  })
+
+  it('ignores a pre-deletion history read arriving after the fresh list', async () => {
+    await actions.signIn('parent-a', 'password123')
+    const deleted = session({ readingSessionId: 11, storyVersionId: 1, visitedPageNumbers: [1, 2] })
+    const remaining = session({ readingSessionId: 12, storyVersionId: 2 })
+    reading.listReadingSessions.mockResolvedValueOnce([deleted, remaining])
+    await actions.loadSessions()
+    const oldRead = deferred()
+    reading.listReadingSessions.mockReturnValueOnce(oldRead.promise).mockResolvedValueOnce([remaining])
+    const oldHistory = actions.loadSessions()
+    expect(await actions.removeReadingSession(11)).toBe(true)
+    oldRead.resolve([deleted, remaining])
+    await oldHistory
+    const { totals } = await import('./useZhiya')
+    expect(state.sessions.map(item => item.readingSessionId)).toEqual([12])
+    expect(totals.value).toEqual({ sessions: 1, read: 1, pages: 1 })
+    expect(state.sessionsLoading).toBe(false)
+  })
+
+  it('keeps a deleted profile removed when refreshing its list fails', async () => {
+    await actions.signIn('parent-a', 'password123')
+    profiles.listProfiles.mockRejectedValueOnce(new ApiError('服务暂不可用', {
+      status: 503,
+      code: 'DEPENDENCY_UNAVAILABLE',
+    }))
+    reading.listReadingSessions.mockResolvedValueOnce([])
+    expect(await actions.removeProfile(1)).toBe(true)
+    expect(state.profiles).toEqual([])
+    expect(state.activeProfileId).toBe(0)
+    expect(state.profilesError).toContain('服务暂不可用')
+    expect(state.toast.message).toContain('儿童档案已删除')
+  })
+})
+
+describe('child-mode handoff', () => {
+  async function openNewParentSession() {
+    await actions.bootstrap()
+    books.listStorybooks.mockClear()
+    reading.getReadingSession.mockResolvedValueOnce(detail({ status: 'CREATED', revision: 0, visitedPageNumbers: [] }))
+    await actions.loadReaderRoute()
+  }
+
+  function confirmChildCredential() {
+    profiles.listProfiles.mockRejectedValueOnce(new ApiError('仅限家长', { status: 403, code: 'FORBIDDEN' }))
+  }
+
+  it('keeps a guardian on the reader if another device already issued the grant', async () => {
+    await openNewParentSession()
+    expect(await actions.enterChildMode(55, [88], 300)).toBe(true)
+    expect(reading.updateReadingMode).toHaveBeenCalledOnce()
+    expect(state.auth.status).toBe('authenticated')
+    expect(state.currentSession.mode).toBe('CHILD_SOLO')
+    expect(state.currentSession.expiresAt).toBe('2026-11-18T08:00:00Z')
+    expect(state.childMode).toBeNull()
+    expect(localStorage.getItem('zhiya.childHandoffSessionId')).toBeNull()
+    expect(sessionStorage.getItem('zhiya.childHandoffSessionId')).toBeNull()
+    expect(location.hash).toBe('#reader/55')
+    expect(await actions.enterChildMode(55, [88], 300)).toBe(false)
+    expect(reading.updateReadingMode).toHaveBeenCalledOnce()
+  })
+
+  it('restricts the device while its credential cannot be confirmed after a successful mode change', async () => {
+    await openNewParentSession()
+    profiles.listProfiles.mockRejectedValueOnce(new ApiError('暂不可用', { status: 503 }))
+    expect(await actions.enterChildMode(55, [88], 600)).toBe(true)
+    expect(state.auth.authenticated).toBe(false)
+    expect(state.profiles).toEqual([])
+    expect(location.hash).toBe('#child/55')
+    await actions.refreshIdentity()
+    expect(state.auth.status).toBe('authenticated')
+    expect(location.hash).toBe('#account/overview')
+    expect(reading.updateReadingMode).toHaveBeenCalledOnce()
+  })
+
+  it('enters child mode only from CREATED and restores the parent after password unlock', async () => {
+    await openNewParentSession()
+    expect(await actions.startCurrentReading()).toBe(true)
+    expect(await actions.enterChildMode(55, [88], 600)).toBe(false)
+
+    reading.getReadingSession.mockResolvedValueOnce(detail({ status: 'CREATED', revision: 0, visitedPageNumbers: [] }))
+    await actions.loadReaderRoute()
+    confirmChildCredential()
+    expect(await actions.enterChildMode(55, [88], 600)).toBe(true)
+    expect(reading.updateReadingMode).toHaveBeenCalledWith(55, {
+      mode: 'CHILD_SOLO',
+      allowedStoryVersionIds: [88],
+      timeLimitSeconds: 600,
+    })
+    expect(state.auth.status).toBe('child')
+    expect(state.auth.authenticated).toBe(false)
+    expect(state.childMode.sessionId).toBe(55)
+
+    expect(await actions.unlockChildMode('parent-a', 'password123')).toBe(true)
+    expect(auth.parentUnlock).toHaveBeenCalledWith('parent-a', 'password123')
+    expect(state.childMode).toBeNull()
+    expect(state.auth.status).toBe('authenticated')
+    expect(state.auth.authenticated).toBe(true)
+  })
+
+  it('keeps the child credential on the handoff when browser navigation changes the hash', async () => {
+    await openNewParentSession()
+    confirmChildCredential()
+    expect(await actions.enterChildMode(55, [88], 600)).toBe(true)
+    window.history.replaceState({}, '', '/#library')
+    await actions.syncRoute()
+    expect(state.auth.status).toBe('child')
+    expect(state.route).toEqual({ name: 'child', sessionId: 55 })
+    expect(location.hash).toBe('#child/55')
+    expect(sessionStorage.getItem('zhiya.childHandoffSessionId')).toBe('55')
+  })
+
+  it('routes a guardian credential away from an old child handoff link', async () => {
+    await actions.signIn('parent-a', 'password123')
+    reading.getReadingSession.mockClear()
+    window.history.replaceState({}, '', '/#child/55')
+    await actions.syncRoute()
+    expect(state.auth.status).toBe('authenticated')
+    expect(state.route).toEqual({ name: 'account', section: 'overview' })
+    expect(location.hash).toBe('#account/overview')
+    expect(reading.getReadingSession).not.toHaveBeenCalled()
+  })
+
+  it('leaves the handoff as soon as unlock succeeds, even if profile refresh fails', async () => {
+    await openNewParentSession()
+    confirmChildCredential()
+    expect(await actions.enterChildMode(55, [88], 600)).toBe(true)
+    const profileRefresh = deferred()
+    profiles.listProfiles.mockReturnValueOnce(profileRefresh.promise)
+    const unlocking = actions.unlockChildMode('parent-a', 'password123')
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(state.auth.status).toBe('authenticated')
+    expect(state.childMode).toBeNull()
+    expect(state.route).toEqual({ name: 'account', section: 'overview' })
+    profileRefresh.reject(new ApiError('服务暂不可用', {
+      status: 503,
+      code: 'DEPENDENCY_UNAVAILABLE',
+    }))
+    expect(await unlocking).toBe(true)
+    expect(state.profilesError).toContain('服务暂不可用')
+    expect(auth.parentUnlock).toHaveBeenCalledTimes(1)
+
+    profiles.listProfiles.mockResolvedValueOnce([{ childProfileId: 1, nickname: '小芽' }])
+    expect(await actions.reloadProfiles()).toBe(true)
+    expect(state.profiles).toEqual([{ childProfileId: 1, nickname: '小芽' }])
+    expect(reading.listReadingSessions).toHaveBeenCalledTimes(1)
+    expect(books.listStorybooks).toHaveBeenCalledTimes(1)
+    expect(auth.parentUnlock).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a rejected password on the handoff and routes a lost credential to login', async () => {
+    window.history.replaceState({}, '', '/#child/55')
+    await actions.syncRoute()
+    profiles.listProfiles.mockRejectedValueOnce(new ApiError('请先登录', { status: 401, code: 'AUTH_REQUIRED' }))
+    await actions.bootstrap()
+    expect(state.auth.authenticated).toBe(false)
+    auth.parentUnlock.mockRejectedValueOnce(new ApiError('账号或密码错误', { status: 401, code: 'INVALID_CREDENTIALS' }))
+    await expect(actions.unlockChildMode('parent-a', 'wrong-password')).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' })
+    expect(location.hash).toBe('#child/55')
+    auth.parentUnlock.mockRejectedValueOnce(new ApiError('请先登录', { status: 401, code: 'AUTH_REQUIRED' }))
+    expect(await actions.unlockChildMode('parent-a', 'password123')).toBe(false)
+    expect(location.hash).toBe('#auth')
+  })
+
+  it('does not claim an exact authorization count that cannot be restored', async () => {
+    await openNewParentSession()
+    confirmChildCredential()
+    reading.updateReadingMode.mockResolvedValueOnce({
+      mode: 'CHILD_SOLO',
+      childGrantId: 4,
+      allowedStoryVersionIds: [88, 99],
+      expiresAt: '2026-11-18T08:00:00Z',
+    })
+    expect(await actions.enterChildMode(55, [88, 99], 600)).toBe(true)
+    expect(state.childMode.allowedStoryVersionCount).toBe(2)
+    expect(await actions.restoreChildMode(55)).toBe(true)
+    expect(state.childMode.allowedStoryVersionCount).toBeNull()
   })
 })
 

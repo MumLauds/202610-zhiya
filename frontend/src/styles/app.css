@@ -1591,9 +1591,26 @@
     .form-error { color: var(--danger); font-size: 12px; line-height: 19px; }
     .toast.error { border-color: #e4b9ac; color: #7d3025; }
     .account-content { min-width: 0; }
+    .account-data-error {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+      padding: 13px 15px;
+      border: 1px solid #e4b9ac;
+      border-radius: 14px;
+      color: #7d3025;
+      background: #fff5f0;
+      font-size: 12px;
+      line-height: 19px;
+    }
+    .account-data-error .secondary { flex: 0 0 auto; min-height: 34px; }
     .recent-item { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 13px 0; border-bottom: 1px solid var(--line); }
     .recent-item:last-child { border-bottom: 0; }
     .recent-item p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+    .recent-item-actions { display: flex; align-items: center; gap: 8px; }
+    .recent-item-actions .danger { min-height: 34px; padding: 0 12px; font-size: 11px; }
     .shelf-card img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 12px; }
     .shelf-card h2 { margin: 10px 0 4px; font-family: var(--font-story); font-size: 18px; }
     .shelf-card p { color: var(--muted); font-size: 11px; }
@@ -1601,6 +1618,103 @@
     .child-avatar { width: 62px; height: 62px; display: grid; place-items: center; border-radius: 50%; color: var(--leaf); background: var(--leaf-pale); font-family: var(--font-story); font-size: 26px; }
     .profile-form { display: grid; gap: 12px; }
     .voice-center .mic-button.recording { color: #fff; background: var(--danger); }
+    .child-handoff-page {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 32px 20px;
+      background:
+        radial-gradient(circle at 50% 0, rgba(241, 203, 130, .34), transparent 32rem),
+        linear-gradient(160deg, #f9f1e4, #edf2e9);
+    }
+    .child-handoff-card {
+      width: min(100%, 680px);
+      padding: clamp(28px, 6vw, 54px);
+      border: 1px solid rgba(210, 192, 169, .86);
+      border-radius: 28px;
+      background: rgba(255, 252, 246, .96);
+      box-shadow: 0 24px 70px rgba(65, 48, 29, .14);
+      text-align: center;
+    }
+    .child-mode-mark {
+      width: 76px;
+      height: 76px;
+      margin: 0 auto 18px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--leaf);
+      font-family: var(--font-story);
+      font-size: 32px;
+    }
+    .child-handoff-card h1 {
+      margin: 12px 0;
+      font-family: var(--font-story);
+      font-size: clamp(34px, 5vw, 54px);
+      line-height: 1.18;
+      font-weight: 500;
+    }
+    .child-handoff-card > p {
+      color: #635d54;
+      font-size: 15px;
+      line-height: 25px;
+    }
+    .child-handoff-book { font-weight: 600; }
+    .child-handoff-notice {
+      margin: 24px 0;
+      padding: 16px 18px;
+      border-radius: 15px;
+      color: #625849;
+      background: #f4ebdc;
+      font-size: 13px;
+      line-height: 22px;
+      text-align: left;
+    }
+    .child-handoff-unlock {
+      margin-top: 24px;
+      padding-top: 22px;
+      border-top: 1px solid var(--line);
+      display: grid;
+      gap: 12px;
+      text-align: left;
+    }
+    .child-handoff-unlock h2 { margin: 0; font-family: var(--font-story); font-size: 24px; }
+    .child-handoff-unlock .primary { width: 100%; margin-top: 4px; }
+    .child-handoff-loading {
+      margin-top: 24px;
+      padding: 18px;
+      border-radius: 14px;
+      color: var(--muted);
+      background: var(--paper);
+      font-size: 13px;
+    }
+    .child-book-range {
+      max-height: 180px;
+      overflow: auto;
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--paper);
+    }
+    .child-book-range label {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 13px;
+      line-height: 20px;
+    }
+    .child-book-range input { width: 18px; height: 18px; }
+    .child-mode-card p { color: #665f55; font-size: 12px; line-height: 20px; }
+    .child-mode-card .secondary { width: 100%; margin-top: 8px; }
+    .child-handoff-modal-note {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 20px;
+    }
     @media (max-width: 900px) {
       .auth-scene { grid-template-columns: 1fr; }
       .auth-copy h1 { font-size: clamp(36px, 8vw, 54px); }
@@ -1610,6 +1724,8 @@
       .auth-scene { padding: 22px; border-radius: 22px; }
       .auth-card { padding: 19px; }
       .recent-item { align-items: flex-start; flex-direction: column; }
+      .account-data-error { align-items: stretch; flex-direction: column; }
+      .account-data-error .secondary { width: 100%; }
       .home-actions { width: 100%; }
       .home-actions .primary,
       .home-actions .secondary { width: 100%; }

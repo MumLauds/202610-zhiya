@@ -208,11 +208,21 @@ def session_event_object(event: sqlite3.Row) -> dict:
 
 
 @router.get("/{session_id}")
-def get_session(request: Request, session_id: int = Path(ge=1, le=MAX_ID)):
+def get_session(request: Request, session_id: int = Path(ge=1, le=MAX_ID),
+                view: Literal["reading", "deletion-status"] = "reading"):
+    deletion_check = view == "deletion-status"
     try:
-        with authorized_db(request) as (db, principal, failure):
+        with authorized_db(
+            request, guardian_only=deletion_check, settle_guardian=not deletion_check
+        ) as (db, principal, failure):
             if failure:
                 return failure
+            if deletion_check:
+                target = owned_deletion_target(db, session_id, principal.guardian_id)
+                return JSONResponse(
+                    content={"data": {"exists": target is not None}, "requestId": request.state.request_id},
+                    headers={"Cache-Control": "no-store"},
+                )
             row = owned_session(db, session_id, principal)
             if not row:
                 return error(request, 404, "RESOURCE_NOT_FOUND", "会话不可用")
@@ -339,6 +349,15 @@ def update_mode_settings(payload: ModeSettings, request: Request, session_id: in
     return response
 
 
+def owned_deletion_target(db, session_id: int, guardian_id: int):
+    return db.execute(
+        """SELECT s.id, s.grant_id FROM reading_sessions s
+           JOIN child_profiles p ON p.id = s.profile_id
+           WHERE s.id = ? AND p.guardian_id = ?""",
+        (session_id, guardian_id),
+    ).fetchone()
+
+
 @router.delete("/{session_id}", status_code=204)
 def delete_session(request: Request, session_id: int = Path(ge=1, le=MAX_ID)):
     """API-014: delete a guardian-owned reading session, its derived rows, and revoke its active grant."""
@@ -346,13 +365,7 @@ def delete_session(request: Request, session_id: int = Path(ge=1, le=MAX_ID)):
         with authorized_db(request, write=True, guardian_only=True, settle_guardian=False) as (db, principal, failure):
             if failure:
                 return failure
-            owner = principal.guardian_id
-            row = db.execute(
-                """SELECT s.id, s.grant_id FROM reading_sessions s
-                JOIN child_profiles p ON p.id = s.profile_id
-                WHERE s.id = ? AND p.guardian_id = ?""",
-                (session_id, owner),
-            ).fetchone()
+            row = owned_deletion_target(db, session_id, principal.guardian_id)
             if not row:
                 return error(request, 404, "RESOURCE_NOT_FOUND", "会话不可用")
             now = int(time.time() * 1000)

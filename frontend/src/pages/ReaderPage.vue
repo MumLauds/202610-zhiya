@@ -14,6 +14,8 @@ const props = defineProps({
   recordPage: { type: Function, required: true },
   completeReading: { type: Function, required: true },
   refreshReading: { type: Function, required: true },
+  availableBooks: { type: Array, default: () => [] },
+  enterChildModeAction: { type: Function, default: async () => false },
 })
 
 const emit = defineEmits(['back', 'library', 'start-session'])
@@ -22,6 +24,10 @@ const pageIndex = ref(0)
 const turnBusy = ref(false)
 const audioStatus = ref('idle')
 const audioMessage = ref('')
+const childModeOpen = ref(false)
+const childModeBusy = ref(false)
+const childMinutes = ref(10)
+const childAllowedVersions = ref([])
 const voiceOpen = ref(false)
 const voiceState = ref('idle')
 const voiceError = ref('')
@@ -51,6 +57,10 @@ const nextIndex = computed(() => reviewingHistory.value
 const rereading = computed(() => currentPage.value?.pageNumber !== props.session?.currentPage)
 const canFinish = computed(() => !props.loading && !turnBusy.value && !props.syncRequired && props.session?.status === 'IN_PROGRESS' && (props.session?.preview || props.authenticated))
 const mediaAllowed = computed(() => canFinish.value && !rereading.value)
+const childBookChoices = computed(() => {
+  const items = props.book ? [props.book, ...props.availableBooks] : props.availableBooks
+  return [...new Map(items.filter((item) => item.storyVersionId).map((item) => [item.storyVersionId, item])).values()]
+})
 
 watch(transcriptEditor, (editor) => editor?.focus(), { flush: 'post' })
 
@@ -324,6 +334,35 @@ function leaveReader() {
   emit('back', props.book)
 }
 
+function openChildMode() {
+  if (!props.authenticated || props.session?.preview || props.session?.status !== 'CREATED' || props.session.mode !== 'PARENT_CHILD') return
+  childMinutes.value = 10
+  childAllowedVersions.value = props.book?.storyVersionId ? [props.book.storyVersionId] : []
+  childModeOpen.value = true
+}
+
+function toggleChildBook(versionId) {
+  if (versionId === props.book?.storyVersionId) return
+  childAllowedVersions.value = childAllowedVersions.value.includes(versionId)
+    ? childAllowedVersions.value.filter((id) => id !== versionId)
+    : [...childAllowedVersions.value, versionId]
+}
+
+async function submitChildMode() {
+  if (childModeBusy.value || !childAllowedVersions.value.length) return
+  childModeBusy.value = true
+  try {
+    const entered = await props.enterChildModeAction(
+      props.session.readingSessionId,
+      childAllowedVersions.value,
+      childMinutes.value * 60,
+    )
+    if (entered) childModeOpen.value = false
+  } finally {
+    childModeBusy.value = false
+  }
+}
+
 async function refreshProgress() {
   if (turnBusy.value) return
   const syncingProgress = props.syncRequired
@@ -403,6 +442,18 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
           <h2>给家长的共读提示</h2>
           <p>{{ session.preview ? currentPage?.answer : '可以和孩子一起阅读当前页。个性化共读提示尚未接入。' }}</p>
         </section>
+        <section v-if="authenticated && !session.preview" class="side-card child-mode-card">
+          <h2>儿童自主阅读</h2>
+          <p>桌面家长端只负责授权绘本范围、阅读时长和会话交接，不渲染儿童端界面。</p>
+          <button
+            class="secondary"
+            type="button"
+            :disabled="session.status !== 'CREATED' || session.mode !== 'PARENT_CHILD' || turnBusy"
+            @click="openChildMode"
+          >
+            {{ session.mode === 'CHILD_SOLO' ? '此会话已开启儿童模式' : session.status === 'CREATED' ? '设置并进入儿童模式' : '本次阅读已开始，不能切换模式' }}
+          </button>
+        </section>
         <section v-if="report" class="side-card">
           <h2>本次共读小结</h2>
           <p v-if="report.status === 'PENDING'" role="status">小结正在生成，以下是已保存的阅读记录。</p>
@@ -451,6 +502,47 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
           <button v-if="['idle', 'error', 'unavailable'].includes(voiceState)" class="secondary" type="button" @click="editQuestionText">直接输入文字</button>
           <button class="secondary" type="button" @click="closeVoice">取消并关闭</button>
         </template>
+      </section>
+    </div>
+
+    <div v-if="childModeOpen" class="modal-backdrop" @click.self="childModeOpen = false">
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="child-mode-title">
+        <div class="modal-head">
+          <div><h2 id="child-mode-title">交接给儿童自主阅读</h2><p>开启后当前浏览器会切换为受限儿童会话，家长导航和档案将不可访问。</p></div>
+          <button class="modal-close" type="button" aria-label="关闭儿童模式设置" :disabled="childModeBusy" @click="childModeOpen = false">×</button>
+        </div>
+        <div class="form-field">
+          <span>本次阅读时长</span>
+          <select v-model.number="childMinutes" :disabled="childModeBusy">
+            <option :value="5">5 分钟</option>
+            <option :value="10">10 分钟</option>
+            <option :value="15">15 分钟</option>
+            <option :value="20">20 分钟</option>
+            <option :value="30">30 分钟</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <span>授权绘本范围</span>
+          <div class="child-book-range">
+            <label v-for="book in childBookChoices" :key="book.storyVersionId">
+              <input
+                type="checkbox"
+                :checked="childAllowedVersions.includes(book.storyVersionId)"
+                :disabled="childModeBusy || book.storyVersionId === props.book?.storyVersionId"
+                @change="toggleChildBook(book.storyVersionId)"
+              >
+              <span>{{ book.title }}</span>
+            </label>
+          </div>
+          <small>当前正在阅读的绘本必须保留在授权范围内。</small>
+        </div>
+        <p class="child-handoff-modal-note">儿童端可能是竖版 Web、横版硬件，或在其他设备中使用受控会话；本桌面页只完成家长授权与交接。</p>
+        <div class="modal-actions">
+          <button class="secondary" type="button" :disabled="childModeBusy" @click="childModeOpen = false">取消</button>
+          <button class="primary" type="button" :disabled="childModeBusy || !childAllowedVersions.length" @click="submitChildMode">
+            {{ childModeBusy ? '正在开启…' : '开启儿童模式' }}
+          </button>
+        </div>
       </section>
     </div>
   </main>

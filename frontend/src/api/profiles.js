@@ -20,3 +20,9 @@ export async function updateProfile(profileId, profile) {
   })
   return result.data
 }
+
+export async function deleteProfile(profileId) {
+  await apiRequest(`/child-profiles/${profileId}`, {
+    method: 'DELETE',
+  })
+}

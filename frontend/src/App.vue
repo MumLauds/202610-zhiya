@@ -7,6 +7,7 @@ import LibraryPage from './pages/LibraryPage.vue'
 import BookDetailPage from './pages/BookDetailPage.vue'
 import ReaderPage from './pages/ReaderPage.vue'
 import AccountPage from './pages/AccountPage.vue'
+import ChildModePage from './pages/ChildModePage.vue'
 import { activeProfile, totals, zhiya, zhiyaActions } from './stores/useZhiya'
 
 const state = zhiya
@@ -41,14 +42,32 @@ function onHashChange() {
 
 onMounted(() => {
   window.addEventListener('hashchange', onHashChange)
+  window.addEventListener('focus', zhiyaActions.refreshIdentity)
+  window.addEventListener('storage', zhiyaActions.syncStoredIdentity)
   zhiyaActions.bootstrap()
 })
 
-onBeforeUnmount(() => window.removeEventListener('hashchange', onHashChange))
+onBeforeUnmount(() => {
+  window.removeEventListener('hashchange', onHashChange)
+  window.removeEventListener('focus', zhiyaActions.refreshIdentity)
+  window.removeEventListener('storage', zhiyaActions.syncStoredIdentity)
+})
 </script>
 
 <template>
-  <div class="app">
+  <ChildModePage
+    v-if="state.route.name === 'child'"
+    :child-mode="state.childMode"
+    :session="state.currentSession"
+    :book="state.currentBook"
+    :auth="state.auth"
+    :loading="state.sessionLoading"
+    :identity-loading="state.profilesLoading"
+    :identity-error="state.profilesError"
+    @recheck-identity="zhiyaActions.refreshIdentity"
+    :unlock-action="zhiyaActions.unlockChildMode"
+  />
+  <div v-else :key="state.accountViewKey" class="app">
     <AppHeader
       :route="state.route"
       :auth="state.auth"
@@ -108,23 +127,35 @@ onBeforeUnmount(() => window.removeEventListener('hashchange', onHashChange))
       :record-page="zhiyaActions.recordPageChange"
       :complete-reading="zhiyaActions.completeReading"
       :refresh-reading="zhiyaActions.refreshReading"
+      :available-books="state.books.filter((book) => book.source === 'api')"
+      :enter-child-mode-action="zhiyaActions.enterChildMode"
       @back="openDetail"
       @library="zhiyaActions.navigate('library')"
-      @start-session="zhiyaActions.loadReaderRoute"
+      @start-session="zhiyaActions.startCurrentReading"
     />
     <AccountPage
       v-else-if="state.route.name === 'account'"
       :section="state.route.section"
       :auth="state.auth"
       :profiles="state.profiles"
+      :profiles-error="state.profilesError"
+      :profiles-loading="state.profilesLoading"
       :active-profile-id="state.activeProfileId"
       :sessions="state.sessions"
+      :sessions-error="state.sessionsError"
       :books="state.books"
       :totals="totals"
+      :totals-loaded="state.sessionsLoaded"
       :loading="state.sessionsLoading"
       @navigate="zhiyaActions.navigate"
       @select-profile="zhiyaActions.selectProfile"
       :save-profile-action="handleProfileSave"
+      :delete-profile-action="zhiyaActions.removeProfile"
+      :delete-session-action="zhiyaActions.removeReadingSession"
+      :check-deletion-action="zhiyaActions.checkDeletion"
+      :pending-deletion-checks="state.pendingDeletionChecks"
+      :reload-account-data-action="zhiyaActions.reloadProfiles"
+      @reload-sessions="zhiyaActions.loadSessions"
       @sign-out="zhiyaActions.signOut"
       @start="startBook"
     />
@@ -142,8 +173,8 @@ onBeforeUnmount(() => window.removeEventListener('hashchange', onHashChange))
       @navigate="zhiyaActions.navigate"
     />
 
-    <div class="toast" :class="{ show: state.toast.visible, error: state.toast.tone === 'error' }" role="status">
-      {{ state.toast.message }}
-    </div>
+  </div>
+  <div class="toast" :class="{ show: state.toast.visible, error: state.toast.tone === 'error' }" role="status">
+    {{ state.toast.message }}
   </div>
 </template>

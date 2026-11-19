@@ -5,12 +5,18 @@ import AccountPage from './AccountPage.vue'
 import BookDetailPage from './BookDetailPage.vue'
 import HomePage from './HomePage.vue'
 import LibraryPage from './LibraryPage.vue'
+import ChildModePage from './ChildModePage.vue'
 import { mapApiBook } from '../data/preview'
+import { ApiError } from '../api/client'
 
 const wrappers = []
 const render = (component, props) => { const wrapper = mount(component, { props, global: { stubs: { BookCarousel: true } } }); wrappers.push(wrapper); return wrapper }
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
-afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()); localStorage.clear() })
+afterEach(() => {
+  wrappers.splice(0).forEach((wrapper) => wrapper.unmount())
+  localStorage.clear()
+  sessionStorage.clear()
+})
 
 describe('forms wait for completion', () => {
   it.each(['login', 'register'])('prevents duplicate %s and retains fields after failure', async (mode) => {
@@ -50,6 +56,167 @@ describe('forms wait for completion', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
     expect(wrapper.find('form').exists()).toBe(false)
+  })
+
+  it('confirms profile deletion and waits for the backend action', async () => {
+    const remove = vi.fn().mockResolvedValue(true)
+    const wrapper = render(AccountPage, {
+      section: 'children',
+      auth: { nickname: '家长', authenticated: true },
+      profiles: [{ childProfileId: 2, nickname: '小芽', ageBand: 'AGE_4_5', interests: [], preferredMinutes: 15 }],
+      activeProfileId: 2,
+      totals: { read: 0, pages: 0, sessions: 0 },
+      saveProfileAction: vi.fn(),
+      deleteProfileAction: remove,
+    })
+    await wrapper.findAll('button').find((button) => button.text() === '删除档案').trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('小芽')
+    await wrapper.findAll('button').find((button) => button.text().includes('确认删除')).trigger('click')
+    await flushPromises()
+    expect(remove).toHaveBeenCalledWith(2)
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+  })
+
+  it.each([null, '小芽'])('identifies both profiles on their cards and confirmations for nickname %s', async nickname => {
+    const profiles = [7, 8].map(childProfileId => ({ childProfileId, nickname, ageBand: 'AGE_4_5', interests: [], preferredMinutes: 10 }))
+    const wrapper = render(AccountPage, {
+      section: 'children', auth: { authenticated: true }, profiles,
+      totals: { read: 0, pages: 0, sessions: 0 }, saveProfileAction: vi.fn(),
+    })
+    for (const [index, card] of wrapper.findAll('.child-card').entries()) {
+      const label = '档案 #' + profiles[index].childProfileId
+      expect(card.text()).toContain(label)
+      await card.get('button.danger').trigger('click')
+      const dialog = wrapper.get('[role="dialog"]')
+      expect(dialog.text()).toContain(label)
+      await dialog.get('.modal-close').trigger('click')
+    }
+  })
+
+  it('confirms reading-history deletion without removing successful-row state early', async () => {
+    const request = deferred()
+    const remove = vi.fn().mockReturnValue(request.promise)
+    const wrapper = render(AccountPage, {
+      section: 'growth',
+      auth: { nickname: '家长', authenticated: true },
+      books: [{ storyVersionId: 88, title: '测试绘本' }],
+      sessions: [{ readingSessionId: 7, storyVersionId: 88, visitedPageNumbers: [1], status: 'FINISHED', revision: 2 }],
+      totals: { read: 1, pages: 1, sessions: 1 },
+      saveProfileAction: vi.fn(),
+      deleteSessionAction: remove,
+    })
+    await wrapper.findAll('button').find((button) => button.text() === '删除记录').trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('确认删除')).trigger('click')
+    expect(remove).toHaveBeenCalledWith(7)
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+    request.resolve(true)
+    await flushPromises()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+  })
+
+  it('shows every history record and labels identical readings by record id', async () => {
+    const sessions = Array.from({ length: 5 }, (_, index) => ({
+      readingSessionId: 10 - index,
+      storyVersionId: 88,
+      visitedPageNumbers: [1],
+      status: 'FINISHED',
+      revision: 2,
+    }))
+    const wrapper = render(AccountPage, {
+      section: 'growth',
+      auth: { nickname: '家长', authenticated: true },
+      books: [{ storyVersionId: 88, title: '同一本绘本' }],
+      sessions,
+      totals: { read: 1, pages: 5, sessions: 5 },
+      saveProfileAction: vi.fn(),
+      deleteSessionAction: vi.fn().mockResolvedValue(true),
+    })
+    const deleteButtons = wrapper.findAll('button').filter((button) => button.text() === '删除记录')
+    expect(deleteButtons).toHaveLength(5)
+    expect(wrapper.text()).toContain('阅读记录 #10')
+    expect(wrapper.text()).toContain('阅读记录 #6')
+    await deleteButtons[4].trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('阅读记录 #6')
+  })
+
+  it('keeps refreshed profile data separate from a completed deletion', async () => {
+    const reload = vi.fn()
+    const wrapper = render(AccountPage, {
+      section: 'children',
+      auth: { nickname: '家长', authenticated: true },
+      profiles: [],
+      profilesError: '服务暂不可用，请稍后重试',
+      totals: { read: 0, pages: 0, sessions: 0 },
+      saveProfileAction: vi.fn(),
+      reloadAccountDataAction: reload,
+    })
+    expect(wrapper.get('[role="alert"]').text()).toContain('服务暂不可用')
+    expect(wrapper.findAll('button').find((button) => button.text() === '＋ 添加孩子').element.disabled).toBe(true)
+    await wrapper.findAll('button').find((button) => button.text() === '重新读取家长资料').trigger('click')
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('child-mode parent unlock', () => {
+  it('requires the guardian password and delegates unlock to the backend action', async () => {
+    const request = deferred()
+    const unlock = vi.fn().mockReturnValue(request.promise)
+    const wrapper = render(ChildModePage, {
+      childMode: { sessionId: 9, allowedStoryVersionIds: [88], expiresAt: new Date(Date.now() + 600000).toISOString() },
+      book: { title: '测试绘本' },
+      auth: { account: 'parent-a' },
+      unlockAction: unlock,
+    })
+    const form = wrapper.get('.child-handoff-unlock')
+    await form.find('input[type="password"]').setValue('password123')
+    await form.trigger('submit')
+    await form.trigger('submit')
+    expect(unlock).toHaveBeenCalledTimes(1)
+    expect(unlock).toHaveBeenCalledWith('parent-a', 'password123')
+    expect(wrapper.get('.child-handoff-unlock button').element.disabled).toBe(true)
+    request.resolve(true)
+    await flushPromises()
+    expect(wrapper.get('.child-handoff-unlock button').element.disabled).toBe(false)
+  })
+
+  it.each([
+    [
+      '密码错误',
+      new ApiError('账号或密码错误', { status: 401, code: 'INVALID_CREDENTIALS' }),
+      '账号或密码错误',
+    ],
+    [
+      '限流',
+      new ApiError('尝试次数过多', { status: 429, code: 'RATE_LIMITED', retryAfter: '60' }),
+      '请求过于频繁',
+    ],
+    [
+      '服务不可用',
+      new ApiError('服务暂不可用', { status: 503, code: 'DEPENDENCY_UNAVAILABLE' }),
+      '服务暂不可用',
+    ],
+  ])('shows the backend reason when unlock fails because of %s', async (_, failure, expected) => {
+    const unlock = vi.fn().mockRejectedValue(failure)
+    const wrapper = render(ChildModePage, {
+      childMode: { sessionId: 9, allowedStoryVersionCount: 1, expiresAt: new Date(Date.now() + 600000).toISOString() },
+      auth: { account: 'parent-a' },
+      unlockAction: unlock,
+    })
+    const form = wrapper.get('.child-handoff-unlock')
+    await form.find('input[type="password"]').setValue('password123')
+    await form.trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain(expected)
+  })
+
+  it('omits an unverifiable authorization count after restoring a handoff', () => {
+    const wrapper = render(ChildModePage, {
+      childMode: { sessionId: 9, allowedStoryVersionIds: [], allowedStoryVersionCount: null, expiresAt: null },
+      auth: { account: 'parent-a' },
+      unlockAction: vi.fn(),
+    })
+    expect(wrapper.text()).toContain('以儿童端显示为准')
+    expect(wrapper.text()).not.toContain('已授权')
   })
 })
 

@@ -116,6 +116,7 @@ def test_enter_child_mode_scopes_access_voice_and_parent_unlock(child_env, monke
                        json={"nickname": "乐乐"}).status_code == 403
     assert first.delete(f"/api/v1/child-profiles/{profile_id}", headers=child_headers).status_code == 403
     assert first.get("/api/v1/reading-sessions").status_code == 403
+    assert first.get(f"/api/v1/reading-sessions/{s_child}", params={"view": "deletion-status"}).status_code == 403
     assert first.post("/api/v1/reading-sessions", headers=child_headers, json={
         "childProfileId": profile_id, "storyVersionId": 11, "mode": "PARENT_CHILD"
     }).status_code == 403

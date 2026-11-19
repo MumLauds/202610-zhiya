@@ -63,10 +63,12 @@
 | API-009 绘本详情 | 路径 `version_id`，无请求体 | 200，绘本版本对象 |
 | API-011 创建共读会话 | `childProfileId`、`storyVersionId`、`mode=PARENT_CHILD` 必填 | 201，会话对象，`status=CREATED`、`revision=0` |
 | API-012 会话列表 | 可选 `page`、`pageSize`，规则同 API-008 | 200，`items` 为会话对象数组，附 `page`、`pageSize` |
-| API-013 读取或恢复会话 | 路径 `session_id`，无请求体 | 200，`session`、`events`、`report`，未生成小结时 `report=null` |
+| API-013 读取或恢复会话 | 路径 `session_id`。可选查询 `view` 默认为 `reading`。家长可选 `deletion-status` 核对删除结果 | 默认返回 200 及 `session`、`events`、`report`，未生成小结时 `report=null`。删除核对返回 200 及布尔值 `data.exists`，响应带 `Cache-Control: no-store` |
 | API-015 开始与翻页 | 路径 `session_id`。必填 `eventType=STARTED/PAGE_CHANGED`、`pageNumber`、`expectedRevision`、`clientEventId`（1～64 字符） | 首次 201，`interactionEventId`、更新后的 `revision`。同键成功重放 200 |
 | API-019 结束 | 路径 `session_id`。必填 `reason=USER_FINISH`、`expectedRevision`、`clientEventId`（1～64 字符） | 首次和成功重放均为 200，`session`、`report` |
 | API-024 媒体 | 路径 `resource_key`，无请求体 | 200，资源二进制及实际 `Content-Type` |
+
+API-013 的 `view=deletion-status` 按 API-014 的家长归属规则查询。本人名下仍存在的记录返回 `exists=true`，包括绘本已撤回的记录。记录已删除或不属于当前家长时统一返回 `exists=false`。该视图仅返回布尔值。未认证请求返回 401，有效儿童凭证返回 403。普通会话读取继续按版本可见范围返回内容。
 
 ### DCL-005 封面与媒体
 

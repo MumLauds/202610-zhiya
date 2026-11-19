@@ -252,6 +252,12 @@
 
 复核覆盖跨家庭及同家庭不同授权、数据库回滚、启动恢复、截止时间、撤回、解锁和当前页事件。[儿童模式回归用例](../../backend/tests/test_child_mode.py)
 
+### DCL-028｜核实已撤回绘本的个人阅读记录删除结果
+
+2026-11-19，PR 评审中。关联 FR-14、G07 业务后端和家长 Web 端。[PR #46 复审意见](https://github.com/MumLauds/202610-zhiya/pull/46#discussion_r4623112631)
+
+API-012 会隐藏已撤回绘本的阅读记录。API-013 增加可选 `view=deletion-status`，复用 API-014 的归属检查，只向家长返回本人记录是否存在。默认阅读响应、会话状态机与数据库结构沿用现有设计。前端在删除结果不明且记录未列入历史时使用此视图。[接口契约](../design/api-contract.md)和[删除测试](../../backend/tests/test_deletes.py)
+
 ### DCL-031｜阅读引导的保存、刷新与儿童输出
 
 2026-11-19，G05 引导、G07 业务后端、G08 模型网关和 G09 知识检索。关联 FR-07、AI-07、AC-06。状态为已修订，待评审。[PR #47](https://github.com/MumLauds/202610-zhiya/pull/47)
