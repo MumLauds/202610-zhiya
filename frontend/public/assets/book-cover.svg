@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 640 420" role="img" aria-label="绘本插画">
+            <path fill="#e8e5d6" d="M0 0h640v420H0z"></path>
+            <circle cx="507" cy="92" r="57" fill="#f1ca7e"></circle>
+            <path d="M0 281Q170 218 316 284T640 255V420H0Z" fill="#8fa772"></path>
+            <path d="M0 353Q168 293 367 340T640 325V420H0Z" fill="#77945f"></path>
+            <path d="M189 420V267l95-78 98 78v153Z" fill="#f7ead1" stroke="#cbb99e" stroke-width="3"></path>
+            <path d="m167 276 117-97 120 97" fill="none" stroke="#8a6748" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"></path>
+            <rect x="253" y="329" width="62" height="91" rx="4" fill="#9f744f"></rect>
+            <rect x="214" y="292" width="29" height="29" rx="3" fill="#f1cb82"></rect><rect x="333" y="292" width="29" height="29" rx="3" fill="#f1cb82"></rect>
+            <path d="M384 337q56-36 83 8" fill="none" stroke="#d5a164" stroke-width="25" stroke-linecap="round"></path>
+            <circle cx="467" cy="344" r="20" fill="#c58e61"></circle></svg>

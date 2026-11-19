@@ -1,9 +1,10 @@
 {
   "document": "知芽系统接口契约",
   "status": "待团队评审",
+  "glossary": "../standards/glossary.md",
   "note": "所有示例为格式数据，不是真实模型输出、凭证或测试结果。",
   "common": {
-    "authentication": "服务端Cookie使用Secure/HttpOnly/SameSite=Lax，写入验证CSRF。进入儿童模式时同事务吊销当前设备家长auth_sessions、签发child_grants及版本范围并绑定会话。退出须重新验证账号密码，撤销儿童授权并签发全新家长凭证；旧家长凭证不恢复。",
+    "authentication": "会话 Cookie zhiya_session 使用 Secure、HttpOnly 和 SameSite=Lax。受保护的写请求须在 X-CSRF-Token 中提交可读 Cookie zhiya_csrf 的值。进入儿童模式时，在同一事务内吊销当前设备的家长 auth_sessions、签发 child_grants 及版本范围并绑定会话。恢复家长权限时重新验证账号密码，撤销儿童授权并签发全新家长凭证。",
     "ownership": "私有资源每次执行归属校验；非本人统一404。",
     "pagination": {
       "defaultPageSize": 20,
@@ -40,7 +41,7 @@
       "sourceReadingSessionId": "正整数；仅已认证家长访问本人同档案的IN_PROGRESS亲子会话。",
       "resumePageNumber": "服务端生成并随内容审核冻结；客户端不得在创建会话时指定或覆盖。",
       "clientRequestId": "字符串1～64字符；原创生成和续写切换必填，同一操作保持同键和同请求体。",
-      "storyVersionId": "具体版本主键；会话、页面、分支与授权固定到此版本；storybookId仅表示稳定本体。",
+      "storyVersionId": "会话、页面、分支与授权固定到此版本。标识语义见公共术语表。",
       "time": "库内UTC毫秒INTEGER，经序列化转换为ISO 8601 UTC文本。"
     },
     "interfaceGroups": {
@@ -86,8 +87,10 @@
         "READY",
         "FAILED"
       ],
-      "completion": "首次结束阅读在同一事务保存会话终态、事实记录和PENDING小结；事务外生成成功后置READY，确定失败置FAILED并保留事实摘要。",
-      "read": "API-013读取当前小结；READY返回已生成内容，FAILED只返回事实摘要及空活动数组。FALLBACK仅用于模型/互动结果，不是ReadingReport.status。",
+      "completion": "首次结束阅读在同一事务保存会话终态、事实记录、PENDING小结和供同键重放的原响应。事务外按既有文本模型调用超时生成；仅当小结仍为PENDING时，成功置READY，确定失败置FAILED并保留事实摘要。",
+      "contentValidation": "AI-06/NFR-09要求不伪造儿童表现、不提供能力诊断。DCL-026当前实现由服务端已读页记录生成事实摘要，模型仅选择固定的温和建议编号；自由文本、非法结构、额外字段、未知编号或超长内容均视为失败并保留事实摘要。READY只展示服务端事实与固定建议，activities仍为空；不代表FR-10/AC-09活动功能完成。不改变公共响应字段、状态及重放规则，不追溯改写历史READY。",
+      "startupRecovery": "首版单工作进程启动或重启时，在应用就绪前将遗留的PENDING小结条件更新为FAILED，保留事实摘要并将activities置为空数组。恢复不调用模型，保留会话终态、事实记录及原结束响应。",
+      "read": "API-013读取当前小结。READY返回已生成内容；PENDING或FAILED返回事实摘要及空活动数组。FALLBACK仅用于模型/互动结果，不是ReadingReport.status。",
       "repeat": "同键重放原结束响应，可能仍含PENDING；新键重复结束只返回既有终态及当前小结，不再次调用模型。本阶段不提供失败小结重新生成入口。"
     },
     "versionAccess": {
@@ -98,8 +101,12 @@
       "withdrawn": "WITHDRAWN立即拒绝新建会话、既有会话内容、正文和媒体访问；scope=mine和历史记录不能绕过。所有内容入口与媒体入口使用同一版本权限规则。"
     },
     "knowledgeVersioning": {
-      "identity": "knowledgeItemId对应具体knowledge_items行；同一itemKey由versionNumber区分版本。所有PATCH均插入新行、新ID，版本号由服务端原子分配递增；包含草稿内容修改和仅审核状态变更。旧行内容、来源及历史event_evidence引用不变。",
+      "identity": "知识版本与标识的含义见公共术语表。所有PATCH均插入新行及新ID，版本号由服务端原子分配递增。草稿内容修改和仅审核状态变更均遵循此规则。旧行内容、来源及历史event_evidence引用不变。",
+      "ageBand": "知识ageBand的取值见公共术语表。API-030必须提供该字段；API-031省略时沿用路径所指版本的值，显式传null时新版本适用全龄。API-029至API-031响应中的全龄知识返回ageBand: null。",
+      "taskTypes": "taskTypes为知识适用标签数组，取值见公共术语表的知识适用标签。task_types_json使用相同的UPPER_SNAKE_CASE值，标签按精确值匹配。",
+      "retrieval": "领域知识检索仅使用APPROVED版本。按具体年龄段初筛时仅匹配该年龄段与全龄知识，不扩展到其他年龄段。候选还须符合主题及知识适用标签筛选，再按关键词相关度取有限片段；候选不足时沿用该任务的安全回退。",
       "approval": "提交status=APPROVED须由有权内容管理员完成新内容与来源审核，服务端校验并记录reviewed_at，不将客户端状态值本身视为已批准。激活新APPROVED行与退休同itemKey旧APPROVED行在一个事务内完成；新DRAFT行不退休当前APPROVED版本。",
+      "retirement": "API-031停用请求只提交status=RETIRED，混入其他字段返回422。路径必须指向该itemKey当前APPROVED版本；已存在但不再是当前APPROVED的ID返回409。服务端在同一事务内按目标ID和status=APPROVED条件更新为RETIRED，须恰好更新一行，再插入同itemKey的RETIRED新版本。新版本复制内容和来源，响应返回新ID。任一步失败则回滚；成功后该itemKey退出新检索，历史引用继续指向实际使用的版本。",
       "example": "API-030创建806/v1(APPROVED)，API-031以806为来源修订得到807/v2(APPROVED)，同itemKey=guided-observation；806转RETIRED，已有event_evidence.knowledge_item_id仍为806，新检索使用807。"
     },
     "deliveryScope": {
@@ -116,6 +123,919 @@
       ],
       "approval": "用户范围确认已记录；组长确认及设计PR审核、合并仍待实际完成，不以本文代替正式审批。",
       "baseFlow": "普通主链路无需触发续写即可完成档案、选书、阅读、互动和结束记录；续写为本期有明确边界的P1流程。"
+    }
+  },
+  "minimumBusinessReview": {
+    "status": "待团队确认",
+    "baseline": "8c4172c",
+    "decisionIds": [
+      "DCL-005",
+      "DCL-006",
+      "DCL-007",
+      "DCL-008"
+    ],
+    "note": "候选示例按 interfaceId 引用现行方法、路径及权限。示例 ID 与资源键仅作演示。",
+    "fieldRules": {
+      "account": {
+        "trim": true,
+        "minLength": 3,
+        "maxLength": 64,
+        "caseSensitive": true
+      },
+      "password": {
+        "trim": false,
+        "minLength": 8,
+        "maxLength": 128
+      },
+      "childProfile": {
+        "nickname": {
+          "trim": true,
+          "minLength": 1,
+          "maxLength": 32,
+          "nullable": true,
+          "default": null
+        },
+        "ageBand": [
+          "AGE_3_4",
+          "AGE_4_5",
+          "AGE_5_6"
+        ],
+        "interests": {
+          "maxItems": 10,
+          "itemMinLength": 1,
+          "itemMaxLength": 32,
+          "trimItems": true,
+          "default": []
+        },
+        "preferredMinutes": {
+          "min": 1,
+          "max": 30
+        },
+        "patch": "至少提供一项。省略保留原值，nickname=null 清除昵称，interests=[] 清除兴趣。"
+      },
+      "pagination": {
+        "page": 1,
+        "pageSize": 20,
+        "maxPageSize": 50
+      },
+      "media": {
+        "coverRef": "版本绑定的媒体键或 null",
+        "imageRef": "版本绑定的媒体键或 null",
+        "placeholder": "缺图时使用客户端本地占位",
+        "access": "API-024 逐次按 common.versionAccess 检查，私有与撤回资源不得越权读取。",
+        "imageRefConversion": {
+          "storage": "story_pages.image_ref 保持 TEXT NOT NULL。",
+          "resourceKey": "版本和页号解析到已核验可用图片时返回版本绑定的受控媒体键。",
+          "nullCases": [
+            "/assets/placeholder.png",
+            "旧版页面的画面描述",
+            "已确认缺少素材的引用"
+          ],
+          "dependencyFailure": "依赖暂不可用时返回 503 DEPENDENCY_UNAVAILABLE。"
+        }
+      },
+      "sessionEvent": {
+        "clientEventId": {
+          "minLength": 1,
+          "maxLength": 64,
+          "scope": "SESSION_EVENT"
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "requiredFor": [
+            "API-015",
+            "API-019"
+          ]
+        },
+        "terminalReportForChild": null
+      },
+      "dependencyError": {
+        "status": 503,
+        "code": "DEPENDENCY_UNAVAILABLE",
+        "alignedWith": "API-032",
+        "retryable": {
+          "read": true,
+          "write": false
+        },
+        "unknownWriteOutcome": {
+          "status": 504,
+          "code": "REQUEST_OUTCOME_UNKNOWN",
+          "retryable": false,
+          "appliesTo": [
+            "API-015",
+            "API-019"
+          ]
+        }
+      }
+    },
+    "endpoints": [
+      {
+        "interfaceId": "API-001",
+        "request": {
+          "body": {
+            "account": "demo-parent",
+            "password": "demo-pass-1234"
+          }
+        },
+        "success": {
+          "status": 201,
+          "body": {
+            "data": {
+              "accountId": 1
+            },
+            "requestId": "req-001"
+          }
+        },
+        "errorCodes": [
+          "ACCOUNT_EXISTS",
+          "VALIDATION_ERROR",
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      },
+      {
+        "interfaceId": "API-002",
+        "request": {
+          "body": {
+            "account": "demo-parent",
+            "password": "demo-pass-1234"
+          }
+        },
+        "success": {
+          "status": 201,
+          "body": {
+            "data": {
+              "accountId": 1
+            },
+            "requestId": "req-002"
+          },
+          "setsSessionCookie": true
+        },
+        "errorCodes": [
+          "INVALID_CREDENTIALS",
+          "RATE_LIMITED",
+          "VALIDATION_ERROR",
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      },
+      {
+        "interfaceId": "API-003",
+        "request": {},
+        "success": {
+          "status": 204,
+          "body": null
+        },
+        "errorCodes": [
+          "AUTH_REQUIRED",
+          "FORBIDDEN",
+          "CSRF_INVALID",
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      },
+      {
+        "interfaceId": "API-004",
+        "request": {},
+        "success": {
+          "status": 200,
+          "body": {
+            "data": {
+              "items": [
+                {
+                  "childProfileId": 101,
+                  "nickname": null,
+                  "ageBand": "AGE_4_5",
+                  "interests": [
+                    "动物"
+                  ],
+                  "preferredMinutes": 10
+                }
+              ]
+            },
+            "requestId": "req-004"
+          }
+        },
+        "errorCodes": [
+          "AUTH_REQUIRED",
+          "FORBIDDEN",
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      },
+      {
+        "interfaceId": "API-005",
+        "request": {
+          "body": {
+            "ageBand": "AGE_4_5",
+            "interests": [
+              "动物"
+            ],
+            "preferredMinutes": 10
+          }
+        },
+        "success": {
+          "status": 201,
+          "body": {
+            "data": {
+              "childProfileId": 101,
+              "nickname": null,
+              "ageBand": "AGE_4_5",
+              "interests": [
+                "动物"
+              ],
+              "preferredMinutes": 10
+            },
+            "requestId": "req-005"
+          }
+        },
+        "errorCodes": [
+          "AUTH_REQUIRED",
+          "FORBIDDEN",
+          "CSRF_INVALID",
+          "VALIDATION_ERROR",
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      },
+      {
+        "interfaceId": "API-006",
+        "request": {
+          "path": {
+            "profile_id": 101
+          },
+          "body": {
+            "nickname": "小芽",
+            "interests": []
+          }
+        },
+        "success": {
+          "status": 200,
+          "body": {
+            "data": {
+              "childProfileId": 101,
+              "nickname": "小芽",
+              "ageBand": "AGE_4_5",
+              "interests": [],
+              "preferredMinutes": 10
+            },
+            "requestId": "req-006"
+          }
+        },
+        "errorCodes": [
+          "AUTH_REQUIRED",
+          "FORBIDDEN",
+          "CSRF_INVALID",
+          "RESOURCE_NOT_FOUND",
+          "VALIDATION_ERROR",
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      },
+      {
+        "interfaceId": "API-007",
+        "request": {
+          "path": {
+            "profile_id": 102
+          }
+        },
+        "success": {
+          "status": 204,
+          "body": null
+        },
+        "errorCodes": [
+          "AUTH_REQUIRED",
+          "FORBIDDEN",
+          "CSRF_INVALID",
+          "RESOURCE_NOT_FOUND",
+          "VALIDATION_ERROR",
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      },
+      {
+        "interfaceId": "API-008",
+        "request": {
+          "query": {
+            "ageBand": "AGE_4_5",
+            "page": 1,
+            "pageSize": 20
+          }
+        },
+        "success": {
+          "status": 200,
+          "body": {
+            "data": {
+              "items": [
+                {
+                  "storybookId": 201,
+                  "storyVersionId": 301,
+                  "versionNumber": 1,
+                  "title": "示例绘本",
+                  "status": "APPROVED_PRIVATE",
+                  "coverRef": "asset-301-cover",
+                  "pages": [
+                    {
+                      "pageNumber": 1,
+                      "text": "小兔准备出门。",
+                      "imageRef": "asset-301-page-1",
+                      "defaultNextPageNumber": 2
+                    },
+                    {
+                      "pageNumber": 2,
+                      "text": "小兔在路上遇见朋友。",
+                      "imageRef": null,
+                      "defaultNextPageNumber": 3
+                    },
+                    {
+                      "pageNumber": 3,
+                      "text": "他们一起走过小桥。",
+                      "imageRef": null,
+                      "defaultNextPageNumber": 4
+                    },
+                    {
+                      "pageNumber": 4,
+                      "text": "他们挥手道别。",
+                      "imageRef": null,
+                      "defaultNextPageNumber": null
+                    }
+                  ],
+                  "branches": []
+                }
+              ],
+              "page": 1,
+              "pageSize": 20
+            },
+            "requestId": "req-008"
+          }
+        },
+        "errorCodes": [
+          "AUTH_REQUIRED",
+          "FORBIDDEN",
+          "VALIDATION_ERROR",
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      },
+      {
+        "interfaceId": "API-009",
+        "request": {
+          "path": {
+            "version_id": 301
+          }
+        },
+        "success": {
+          "status": 200,
+          "body": {
+            "data": {
+              "storybookId": 201,
+              "storyVersionId": 301,
+              "versionNumber": 1,
+              "title": "示例绘本",
+              "status": "APPROVED_PRIVATE",
+              "coverRef": "asset-301-cover",
+              "pages": [
+                {
+                  "pageNumber": 1,
+                  "text": "小兔准备出门。",
+                  "imageRef": "asset-301-page-1",
+                  "defaultNextPageNumber": 2
+                },
+                {
+                  "pageNumber": 2,
+                  "text": "小兔在路上遇见朋友。",
+                  "imageRef": null,
+                  "defaultNextPageNumber": 3
+                },
+                {
+                  "pageNumber": 3,
+                  "text": "他们一起走过小桥。",
+                  "imageRef": null,
+                  "defaultNextPageNumber": 4
+                },
+                {
+                  "pageNumber": 4,
+                  "text": "他们挥手道别。",
+                  "imageRef": null,
+                  "defaultNextPageNumber": null
+                }
+              ],
+              "branches": []
+            },
+            "requestId": "req-009"
+          }
+        },
+        "errorCodes": [
+          "AUTH_REQUIRED",
+          "FORBIDDEN",
+          "RESOURCE_NOT_FOUND",
+          "VALIDATION_ERROR",
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      },
+      {
+        "interfaceId": "API-011",
+        "request": {
+          "body": {
+            "childProfileId": 101,
+            "storyVersionId": 301,
+            "mode": "PARENT_CHILD"
+          }
+        },
+        "success": {
+          "status": 201,
+          "body": {
+            "data": {
+              "readingSessionId": 401,
+              "storyVersionId": 301,
+              "currentPage": 1,
+              "visitedPageNumbers": [],
+              "mode": "PARENT_CHILD",
+              "status": "CREATED",
+              "revision": 0,
+              "expiresAt": null
+            },
+            "requestId": "req-011"
+          }
+        },
+        "errorCodes": [
+          "AUTH_REQUIRED",
+          "FORBIDDEN",
+          "CSRF_INVALID",
+          "RESOURCE_NOT_FOUND",
+          "VALIDATION_ERROR",
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      },
+      {
+        "interfaceId": "API-012",
+        "request": {
+          "query": {
+            "page": 1,
+            "pageSize": 20
+          }
+        },
+        "success": {
+          "status": 200,
+          "body": {
+            "data": {
+              "items": [
+                {
+                  "readingSessionId": 401,
+                  "storyVersionId": 301,
+                  "currentPage": 2,
+                  "visitedPageNumbers": [
+                    1,
+                    2
+                  ],
+                  "mode": "PARENT_CHILD",
+                  "status": "IN_PROGRESS",
+                  "revision": 2,
+                  "expiresAt": null
+                }
+              ],
+              "page": 1,
+              "pageSize": 20
+            },
+            "requestId": "req-012"
+          }
+        },
+        "errorCodes": [
+          "AUTH_REQUIRED",
+          "FORBIDDEN",
+          "VALIDATION_ERROR",
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      },
+      {
+        "interfaceId": "API-013",
+        "request": {
+          "path": {
+            "session_id": 401
+          }
+        },
+        "success": {
+          "status": 200,
+          "body": {
+            "data": {
+              "session": {
+                "readingSessionId": 401,
+                "storyVersionId": 301,
+                "currentPage": 2,
+                "visitedPageNumbers": [
+                  1,
+                  2
+                ],
+                "mode": "PARENT_CHILD",
+                "status": "IN_PROGRESS",
+                "revision": 2,
+                "expiresAt": null
+              },
+              "events": [
+                {
+                  "interactionEventId": 801,
+                  "eventType": "STARTED",
+                  "pageNumber": 1
+                },
+                {
+                  "interactionEventId": 802,
+                  "eventType": "PAGE_CHANGED",
+                  "pageNumber": 2
+                }
+              ],
+              "report": null
+            },
+            "requestId": "req-013"
+          }
+        },
+        "errorCodes": [
+          "AUTH_REQUIRED",
+          "FORBIDDEN",
+          "RESOURCE_NOT_FOUND",
+          "VALIDATION_ERROR",
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      },
+      {
+        "interfaceId": "API-015",
+        "request": {
+          "path": {
+            "session_id": 401
+          },
+          "body": {
+            "eventType": "PAGE_CHANGED",
+            "pageNumber": 2,
+            "expectedRevision": 1,
+            "clientEventId": "event-002"
+          }
+        },
+        "success": {
+          "status": 201,
+          "body": {
+            "data": {
+              "interactionEventId": 802,
+              "revision": 2
+            },
+            "requestId": "req-015"
+          }
+        },
+        "errorCodes": [
+          "AUTH_REQUIRED",
+          "FORBIDDEN",
+          "CSRF_INVALID",
+          "RESOURCE_NOT_FOUND",
+          "SESSION_CONFLICT",
+          "IDEMPOTENCY_CONFLICT",
+          "REQUEST_IN_PROGRESS",
+          "VALIDATION_ERROR",
+          "DEPENDENCY_UNAVAILABLE",
+          "REQUEST_OUTCOME_UNKNOWN"
+        ]
+      },
+      {
+        "interfaceId": "API-019",
+        "request": {
+          "path": {
+            "session_id": 401
+          },
+          "body": {
+            "reason": "USER_FINISH",
+            "expectedRevision": 2,
+            "clientEventId": "event-end"
+          }
+        },
+        "success": {
+          "status": 200,
+          "body": {
+            "data": {
+              "session": {
+                "readingSessionId": 401,
+                "storyVersionId": 301,
+                "currentPage": 2,
+                "visitedPageNumbers": [
+                  1,
+                  2
+                ],
+                "mode": "PARENT_CHILD",
+                "status": "FINISHED",
+                "revision": 3,
+                "expiresAt": null
+              },
+              "report": {
+                "readingSessionId": 401,
+                "summary": "本次共读阅读了第 1、2 页。",
+                "activities": [],
+                "status": "PENDING"
+              }
+            },
+            "requestId": "req-019"
+          }
+        },
+        "errorCodes": [
+          "AUTH_REQUIRED",
+          "FORBIDDEN",
+          "CSRF_INVALID",
+          "RESOURCE_NOT_FOUND",
+          "SESSION_CONFLICT",
+          "IDEMPOTENCY_CONFLICT",
+          "REQUEST_IN_PROGRESS",
+          "VALIDATION_ERROR",
+          "DEPENDENCY_UNAVAILABLE",
+          "REQUEST_OUTCOME_UNKNOWN"
+        ]
+      },
+      {
+        "interfaceId": "API-024",
+        "request": {
+          "path": {
+            "resource_key": "asset-301-cover"
+          }
+        },
+        "success": {
+          "status": 200,
+          "contentType": "image/webp",
+          "binary": true
+        },
+        "errorCodes": [
+          "AUTH_REQUIRED",
+          "FORBIDDEN",
+          "RESOURCE_NOT_FOUND",
+          "VALIDATION_ERROR",
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    ],
+    "scenarios": {
+      "startSession": {
+        "interfaceId": "API-015",
+        "request": {
+          "path": {
+            "session_id": 401
+          },
+          "body": {
+            "eventType": "STARTED",
+            "pageNumber": 1,
+            "expectedRevision": 0,
+            "clientEventId": "event-001"
+          }
+        },
+        "response": {
+          "status": 201,
+          "body": {
+            "data": {
+              "interactionEventId": 801,
+              "revision": 1
+            },
+            "requestId": "req-start"
+          }
+        }
+      },
+      "pageChangeReplay": {
+        "interfaceId": "API-015",
+        "request": {
+          "path": {
+            "session_id": 401
+          },
+          "body": {
+            "eventType": "PAGE_CHANGED",
+            "pageNumber": 2,
+            "expectedRevision": 1,
+            "clientEventId": "event-002"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "data": {
+              "interactionEventId": 802,
+              "revision": 2
+            },
+            "requestId": "req-page-replay"
+          }
+        }
+      },
+      "finishLosesRace": {
+        "interfaceId": "API-019",
+        "request": {
+          "path": {
+            "session_id": 401
+          },
+          "body": {
+            "reason": "USER_FINISH",
+            "expectedRevision": 1,
+            "clientEventId": "event-stale"
+          }
+        },
+        "response": {
+          "status": 409,
+          "body": {
+            "error": {
+              "code": "SESSION_CONFLICT",
+              "message": "阅读进度已更新，请刷新后再结束。",
+              "retryable": false
+            },
+            "requestId": "req-stale"
+          }
+        }
+      },
+      "pageChangeAfterFinish": {
+        "interfaceId": "API-015",
+        "request": {
+          "path": {
+            "session_id": 401
+          },
+          "body": {
+            "eventType": "PAGE_CHANGED",
+            "pageNumber": 3,
+            "expectedRevision": 3,
+            "clientEventId": "event-late"
+          }
+        },
+        "response": {
+          "status": 409,
+          "body": {
+            "error": {
+              "code": "SESSION_CONFLICT",
+              "message": "本次阅读已结束。",
+              "retryable": false
+            },
+            "requestId": "req-late"
+          }
+        }
+      },
+      "sameKeyFinishReplay": {
+        "interfaceId": "API-019",
+        "request": {
+          "path": {
+            "session_id": 401
+          },
+          "body": {
+            "reason": "USER_FINISH",
+            "expectedRevision": 2,
+            "clientEventId": "event-end"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "data": {
+              "session": {
+                "readingSessionId": 401,
+                "storyVersionId": 301,
+                "currentPage": 2,
+                "visitedPageNumbers": [
+                  1,
+                  2
+                ],
+                "mode": "PARENT_CHILD",
+                "status": "FINISHED",
+                "revision": 3,
+                "expiresAt": null
+              },
+              "report": {
+                "readingSessionId": 401,
+                "summary": "本次共读阅读了第 1、2 页。",
+                "activities": [],
+                "status": "PENDING"
+              }
+            },
+            "requestId": "req-replay"
+          }
+        }
+      },
+      "sameKeyChangedPayload": {
+        "interfaceId": "API-019",
+        "request": {
+          "path": {
+            "session_id": 401
+          },
+          "body": {
+            "reason": "USER_FINISH",
+            "expectedRevision": 3,
+            "clientEventId": "event-end"
+          }
+        },
+        "response": {
+          "status": 409,
+          "body": {
+            "error": {
+              "code": "IDEMPOTENCY_CONFLICT",
+              "message": "请求标识已用于其他操作，请刷新阅读状态。",
+              "retryable": false
+            },
+            "requestId": "req-conflict"
+          }
+        }
+      },
+      "newKeyAfterFinish": {
+        "interfaceId": "API-019",
+        "request": {
+          "path": {
+            "session_id": 401
+          },
+          "body": {
+            "reason": "USER_FINISH",
+            "expectedRevision": 3,
+            "clientEventId": "event-end-repeat"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "data": {
+              "session": {
+                "readingSessionId": 401,
+                "storyVersionId": 301,
+                "currentPage": 2,
+                "visitedPageNumbers": [
+                  1,
+                  2
+                ],
+                "mode": "PARENT_CHILD",
+                "status": "FINISHED",
+                "revision": 3,
+                "expiresAt": null
+              },
+              "report": {
+                "readingSessionId": 401,
+                "summary": "读完第 2 页后结束了共读。",
+                "activities": [],
+                "status": "READY"
+              }
+            },
+            "requestId": "req-repeat"
+          }
+        }
+      },
+      "childFinishView": {
+        "interfaceId": "API-019",
+        "precondition": "儿童模式会话，授权与版本均有效。",
+        "response": {
+          "status": 200,
+          "body": {
+            "data": {
+              "session": {
+                "readingSessionId": 401,
+                "storyVersionId": 301,
+                "currentPage": 2,
+                "visitedPageNumbers": [
+                  1,
+                  2
+                ],
+                "mode": "CHILD_SOLO",
+                "status": "FINISHED",
+                "revision": 3,
+                "expiresAt": "2026-11-12T12:15:00Z"
+              },
+              "report": null
+            },
+            "requestId": "req-child"
+          }
+        }
+      },
+      "inProgress": {
+        "status": 409,
+        "headers": {
+          "Retry-After": "1"
+        },
+        "body": {
+          "error": {
+            "code": "REQUEST_IN_PROGRESS",
+            "message": "请求正在处理，请稍候。",
+            "retryable": true
+          },
+          "requestId": "req-running"
+        }
+      },
+      "unknownOutcome": {
+        "status": 504,
+        "body": {
+          "error": {
+            "code": "REQUEST_OUTCOME_UNKNOWN",
+            "message": "请求结果暂不可知，请刷新阅读状态。",
+            "retryable": false
+          },
+          "requestId": "req-unknown"
+        }
+      },
+      "mediaNotAccessible": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "RESOURCE_NOT_FOUND",
+            "message": "资源不可用。",
+            "retryable": false
+          },
+          "requestId": "req-media"
+        }
+      },
+      "loginRateLimited": {
+        "status": 429,
+        "headers": {
+          "Retry-After": "30"
+        },
+        "body": {
+          "error": {
+            "code": "RATE_LIMITED",
+            "message": "尝试次数过多，请稍后再试。",
+            "retryable": true
+          },
+          "requestId": "req-rate"
+        }
+      }
     }
   },
   "endpoints": [
@@ -161,7 +1081,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "成功设置服务端会话Cookie；错误凭证401，重复失败限流。",
+      "constraints": "成功设置服务端会话 Cookie。错误凭证返回 401，重复失败限流。持有未吊销儿童凭证时返回 403 FORBIDDEN，请使用 API-021 验证所属家长密码。",
       "interfaceId": "API-002",
       "uniqueKey": "POST /api/v1/auth/sessions"
     },
@@ -176,7 +1096,7 @@
       "successStatus": 204,
       "responseExample": null,
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "吊销当前登录和儿童授权。",
+      "constraints": "家长退出撤销当前设备的家长登录及该账号名下全部儿童授权，其他设备的家长登录继续有效。儿童退出只撤销当前授权。先结算已到期或内容已撤回的会话，再中断仍未终结的会话。",
       "interfaceId": "API-003",
       "uniqueKey": "DELETE /api/v1/auth/sessions/current"
     },
@@ -588,10 +1508,17 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "儿童只返回当前进度、可读页面与必要交互，不返回完整历史、管理或个人资料。内容读取遵守common.versionAccess。本人家长可读取当前小结，状态仅PENDING/READY/FAILED；生成中及失败时保留事实摘要，失败不提供模型生成活动。",
+      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。已保存完整响应的 API-017 引导事件还返回 outputText 和 strategyType，实际反馈事件另含 feedback，供刷新后恢复。儿童在 IN_PROGRESS 时另收到 data.answerOptions 字符串数组，供 API-015 作答。该数组取自当前页最近一道可展示的问题，包括首次 QUESTION 和理解反馈 FEEDBACK 中保存的追问。跳过、拦截及空正文不算作问题。API-017 的儿童问题及回退均可用固定短答作答，最终响应 data.answerOptions 保存实际选项。旧提问未带此字段时使用固定短答“是”“不是”“不知道”。当前页尚无可展示提问时沿用已审核的分支选项文案。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
       "interfaceId": "API-013",
       "uniqueKey": "GET /api/v1/reading-sessions/{session_id}",
       "additionalExamples": [
+        {
+          "name": "家长核对本人阅读记录是否仍存在",
+          "query": { "view": "deletion-status" },
+          "status": 200,
+          "data": { "exists": true },
+          "note": "按 API-014 归属查询，包含绘本已撤回的本人记录。已删除或不属于当前家长时返回 false，仅返回布尔值。响应禁止缓存。有效儿童凭证返回 403，未认证返回 401。省略 view 或使用 reading 时返回默认会话详情。"
+        },
         {
           "name": "小结处理中",
           "status": 200,
@@ -643,7 +1570,7 @@
           }
         },
         {
-          "name": "小结生成失败",
+          "name": "小结生成失败或启动恢复后为FAILED",
           "status": 200,
           "data": {
             "session": {
@@ -700,7 +1627,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "类型STARTED/PAGE_CHANGED/ANSWER/FEEDBACK；SKIPPED是feedback取值，不是eventType。QUESTION、ASK、BRANCH_CHOSEN由对应服务写入；同键先重放，新键检查revision。",
+      "constraints": "类型STARTED/PAGE_CHANGED/ANSWER/FEEDBACK；SKIPPED是feedback取值，不是eventType。儿童 ANSWER 的 inputText 去除两端空白后须精确匹配服务端按 API-013 data.answerOptions 计算的当前选项，否则返回 422 VALIDATION_ERROR 并保持进度。家长共读仍可提交文本。QUESTION、ASK、BRANCH_CHOSEN由对应服务写入；同键先重放，新键检查revision。",
       "interfaceId": "API-015",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/events"
     },
@@ -760,7 +1687,7 @@
         "requestId": "req-initial"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "STARTED成功或翻页/分支/续写切换进入当前页后，前端在需要情境提问且无可恢复问题时发送INITIAL；不由GET或STARTED响应隐式调用模型。首次不要求既往问题或反馈。服务端构造年龄及页面上下文，一次返回一个问题。UNDERSTOOD/NOT_UNDERSTOOD针对当前页最后一个已保存问题，缺失时409 PROMPT_REQUIRED；SKIPPED只写事件，不调用Agent/模型，outputText为空、strategyType=SKIP、status=FALLBACK。执行前按common.requestExecution占位；翻页后晚到结果不得保存或播放。",
+      "constraints": "STARTED成功或翻页/分支/续写切换进入当前页后，前端在需要情境提问且无可恢复问题时发送INITIAL；不由GET或STARTED响应隐式调用模型。首次不要求既往问题或反馈。服务端构造年龄及页面上下文，一次返回一个问题。UNDERSTOOD/NOT_UNDERSTOOD针对当前页最后展示的首题或追问，缺失时409 PROMPT_REQUIRED。SKIPPED不要求已有问题，直接保存反馈并递增revision，outputText为空、strategyType=SKIP、status=FALLBACK。CHILD_SOLO的可作答问题与超时、无知识回退均带已核验的answerOptions。模型TIMEOUT可保存TIMEOUT_FALLBACK。其他API_ERROR返回503 DEPENDENCY_UNAVAILABLE并记录FAILED，原键重放该错误，未写事件或递增revision。执行前按common.requestExecution占位。翻页或跳过先提交后，迟到的问题不得保存或播放。",
       "interfaceId": "API-017",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/guidance",
       "additionalExamples": [
@@ -780,6 +1707,25 @@
             "strategyType": "CONCRETE_RECALL",
             "status": "FALLBACK",
             "sources": []
+          }
+        },
+        {
+          "name": "儿童模式缺少适用知识时的首题",
+          "request": {
+            "pageNumber": 1,
+            "feedback": "INITIAL",
+            "expectedRevision": 1,
+            "clientEventId": "child-initial"
+          },
+          "status": 201,
+          "data": {
+            "interactionEventId": 805,
+            "revision": 2,
+            "outputText": "你喜欢这一页吗？",
+            "strategyType": "NO_KNOWLEDGE_FALLBACK",
+            "status": "FALLBACK",
+            "sources": [],
+            "answerOptions": ["是", "不是", "不知道"]
           }
         },
         {
@@ -837,7 +1783,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "分支属于当前故事和当前节点且已审核；原子提交进度及事件。重复相同请求200；标识复用且内容不同409。",
+      "constraints": "分支属于当前故事和当前节点且已审核；原子提交进度及事件。重复相同请求时，复核该正文版本的API-009读取权限，通过后返回200；正文不可读返回404。标识复用且内容不同409。",
       "interfaceId": "API-018",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/branches"
     },
@@ -877,7 +1823,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "首次结束同事务保存终态、事实记录及PENDING小结，随后事务外生成至READY/FAILED；用API-013读取最新状态。同键重放原响应，新键重复结束返回既有终态与当前小结，均不重复生成。本阶段不提供失败小结重试入口。TIME_LIMIT由服务端触发；CONTINUED仅由续写切换事务设置，客户端不得提交该reason。",
+      "constraints": "首次正常结束同事务保存终态、事实记录及 PENDING 小结，提交成功后派发模型任务。生成、恢复及重复结束见 common.reportLifecycle。儿童阅读已开始且内容可读时，到期按授权截止时刻写 FINISHED/TIME_LIMIT。未开始即到期写 INTERRUPTED/GRANT_REVOKED，未终结时发现内容撤回写 INTERRUPTED/CONTENT_WITHDRAWN，中断不生成小结。TIME_LIMIT 与续写切换的 CONTINUED 均由服务端设置。",
       "interfaceId": "API-019",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/completions",
       "examplePrecondition": "本例承接API-011创建的会话401（CREATED、revision=0、路径[]）。通过API-015提交STARTED后为IN_PROGRESS、currentPage=1、visitedPageNumbers=[1]、revision=1；此时立即主动结束，没有发生其他互动或翻页。"
@@ -932,7 +1878,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "验证账号密码及儿童授权归属；原子撤销儿童授权，结束未终态会话，创建新家长auth_sessions并设置Cookie。旧家长凭证不恢复；失败401且不提权。",
+      "constraints": "验证所属家长账号密码和 CSRF。儿童 Cookie 保留 24 小时，业务授权到期后，持有未吊销凭证的设备仍可解锁。成功时原子撤销儿童授权，结束未终态会话并签发新家长 Cookie。密码错误返回 401。",
       "interfaceId": "API-021",
       "uniqueKey": "POST /api/v1/auth/parent-unlocks"
     },
@@ -1313,7 +2259,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "可提交WITHDRAWN撤回；发布前检查完整性、许可、内容和全部分支；修改已发布文本须建立新版本。发布新版时原子退休旧当前版本；LIBRARY退休版本禁止新会话，既有有效会话可续读。WITHDRAWN立即阻断所有内容和媒体入口。",
+      "constraints": "可提交WITHDRAWN撤回。发布操作仅适用于许可完备的LIBRARY版本，须由内容管理员执行。发布前检查完整性、许可、内容和全部分支。发布时在同一事务记录服务端鉴权得到的管理员账号ID为reviewed_by_id、服务器时间为reviewed_at，并将版本置为PUBLISHED。修改已发布文本须建立新版本。发布新版时原子退休旧当前版本；LIBRARY退休版本禁止新会话，既有有效会话可续读。WITHDRAWN立即阻断所有内容和媒体入口。",
       "interfaceId": "API-028",
       "uniqueKey": "PATCH /api/v1/admin/story-versions/{version_id}"
     },
@@ -1337,14 +2283,14 @@
               "title": "知识条目示例",
               "sourceTitle": "来源名称示例",
               "sourceReference": "来源文献定位示例",
-              "ageBand": "AGE_4_5",
+              "ageBand": null,
               "topicTags": [
                 "动物"
               ],
               "taskTypes": [
                 "GUIDANCE"
               ],
-              "content": "已审核知识示例",
+              "content": "待审核知识示例",
               "status": "DRAFT",
               "versionNumber": 1,
               "itemKey": "guided-observation"
@@ -1354,9 +2300,10 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "按知识版本逐项返回，knowledgeItemId标识具体行，itemKey关联同一知识条目的各版本；遵守common.knowledgeVersioning。",
+      "constraints": "按知识版本逐项返回，knowledgeItemId标识具体行，itemKey关联同一知识条目的各版本；全龄知识返回ageBand: null。遵守common.knowledgeVersioning。",
       "interfaceId": "API-029",
-      "uniqueKey": "GET /api/v1/admin/knowledge-items"
+      "uniqueKey": "GET /api/v1/admin/knowledge-items",
+      "examplePrecondition": "本例独立于API-030至API-031的连续示例。"
     },
     {
       "method": "POST",
@@ -1369,7 +2316,7 @@
         "title": "知识条目示例",
         "sourceTitle": "来源名称示例",
         "sourceReference": "来源文献定位示例",
-        "ageBand": "AGE_4_5",
+        "ageBand": null,
         "topicTags": [
           "动物"
         ],
@@ -1389,7 +2336,7 @@
           "title": "知识条目示例",
           "sourceTitle": "来源名称示例",
           "sourceReference": "来源文献定位示例",
-          "ageBand": "AGE_4_5",
+          "ageBand": null,
           "topicTags": [
             "动物"
           ],
@@ -1405,7 +2352,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "来源和年龄段必填；示例为有权管理员审核内容与来源后创建806/v1，服务端审核校验通过并记录reviewed_at才可保存APPROVED。仅APPROVED版本可检索；DRAFT创建不进入检索。知识版本规则见common.knowledgeVersioning。",
+      "constraints": "来源和ageBand字段必填，ageBand可显式为null表示全龄；创建状态为DRAFT或APPROVED。示例为有权管理员审核内容与来源后创建806/v1，服务端审核校验通过并记录reviewed_at才可保存APPROVED。知识版本与检索规则见common.knowledgeVersioning。",
       "interfaceId": "API-030",
       "uniqueKey": "POST /api/v1/admin/knowledge-items"
     },
@@ -1427,7 +2374,7 @@
           "title": "知识条目示例",
           "sourceTitle": "来源名称示例",
           "sourceReference": "来源文献定位示例",
-          "ageBand": "AGE_4_5",
+          "ageBand": null,
           "topicTags": [
             "动物"
           ],
@@ -1443,7 +2390,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "示例路径knowledge_id=806；审核修订后插入807/v2，同itemKey。所有PATCH均新行，包括草稿与仅状态修改；版本号由服务端原子递增。新APPROVED须完成服务端审核校验，并与退休旧APPROVED在同一事务提交；新DRAFT不退休当前批准版本。旧806内容及来源不覆盖，历史event_evidence仍引用806；规则见common.knowledgeVersioning。",
+      "constraints": "示例路径knowledge_id=806；审核修订后插入807/v2，同itemKey。所有PATCH均新行，包括草稿与仅状态修改；版本号由服务端原子递增。省略ageBand时沿用路径所指版本的值，显式传null时新版本适用全龄。新APPROVED须完成服务端审核校验，并与退休旧APPROVED在同一事务提交；新DRAFT不退休当前批准版本。停用仅接受status=RETIRED且路径指向当前APPROVED，旧版本ID返回409；事务及历史引用规则见common.knowledgeVersioning。",
       "interfaceId": "API-031",
       "uniqueKey": "PATCH /api/v1/admin/knowledge-items/{knowledge_id}",
       "additionalExamples": [
@@ -1460,7 +2407,7 @@
             "title": "知识条目示例",
             "sourceTitle": "来源名称示例",
             "sourceReference": "来源文献定位示例",
-            "ageBand": "AGE_4_5",
+            "ageBand": null,
             "topicTags": [
               "动物"
             ],
@@ -1486,6 +2433,44 @@
               "versionNumber": 2,
               "status": "APPROVED"
             },
+            "existingEventEvidence": {
+              "knowledgeItemId": 806
+            }
+          }
+        },
+        {
+          "name": "停用当前批准版并保留历史引用",
+          "requestPath": "/api/v1/admin/knowledge-items/807",
+          "request": {
+            "status": "RETIRED"
+          },
+          "status": 200,
+          "data": {
+            "knowledgeItemId": 808,
+            "title": "知识条目示例",
+            "sourceTitle": "来源名称示例",
+            "sourceReference": "来源文献定位示例",
+            "ageBand": null,
+            "topicTags": [
+              "动物"
+            ],
+            "taskTypes": [
+              "GUIDANCE"
+            ],
+            "content": "修订后的知识示例",
+            "status": "RETIRED",
+            "versionNumber": 3,
+            "itemKey": "guided-observation",
+            "locator": "第2节"
+          },
+          "postconditions": {
+            "oldVersion": {
+              "knowledgeItemId": 807,
+              "itemKey": "guided-observation",
+              "versionNumber": 2,
+              "status": "RETIRED"
+            },
+            "currentApprovedVersion": null,
             "existingEventEvidence": {
               "knowledgeItemId": 806
             }

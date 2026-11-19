@@ -28,7 +28,7 @@
     "age_max": 4,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 3,
@@ -43,7 +43,7 @@
     "age_max": 5,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 4,
@@ -58,7 +58,7 @@
     "age_max": 4,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 5,
@@ -73,7 +73,7 @@
     "age_max": 5,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 6,
@@ -88,7 +88,7 @@
     "age_max": 6,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 7,
@@ -103,7 +103,7 @@
     "age_max": 4,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 8,
@@ -118,7 +118,7 @@
     "age_max": 4,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 9,
@@ -133,7 +133,7 @@
     "age_max": 4,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 10,
@@ -148,7 +148,7 @@
     "age_max": 4,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 11,
@@ -162,7 +162,7 @@
     "age_max": 4,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 12,
@@ -177,7 +177,7 @@
     "age_max": 5,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 13,
@@ -192,7 +192,7 @@
     "age_max": 5,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 14,
@@ -207,7 +207,7 @@
     "age_max": 5,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 15,
@@ -222,7 +222,7 @@
     "age_max": 5,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 16,
@@ -237,7 +237,7 @@
     "age_max": 5,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 17,
@@ -252,7 +252,7 @@
     "age_max": 6,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 18,
@@ -267,7 +267,7 @@
     "age_max": 6,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 19,
@@ -282,7 +282,7 @@
     "age_max": 6,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 20,
@@ -297,7 +297,7 @@
     "age_max": 6,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   },
   {
     "id": 21,
@@ -312,6 +312,6 @@
     "age_max": 6,
     "source_ref": "妈妈夸我说的队 · 知芽项目自研绘本",
     "license_note": "团队原创，仅限课程学习与演示，禁止商用",
-    "status": "PUBLISHED"
+    "status": "DRAFT"
   }
 ]

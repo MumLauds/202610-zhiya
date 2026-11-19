@@ -1,0 +1,15 @@
+{
+  "name": "知芽移动端原型生成器 v2",
+  "id": "1652847301968423719",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": [
+    "figma"
+  ],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": [
+      "none"
+    ]
+  }
+}

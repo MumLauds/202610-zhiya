@@ -1,0 +1,2 @@
+# Shell verification runs in Linux/WSL even when checked out on Windows.
+infra/*.sh text eol=lf

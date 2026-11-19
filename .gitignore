@@ -23,9 +23,11 @@ build/
 coverage/
 
 # Local databases and runtime files
+/database/instance/
 *.db
 *.db-*
 *.sqlite
+*.sqlite-*
 *.sqlite3
 *.sqlite3-*
 *.log
@@ -39,3 +41,9 @@ uploads/
 Thumbs.db
 ~$*
 *.tmp
+
+# Local visual QA artifacts
+.edge-*/
+preview-*.png
+verify-*.png
+figma-export/*.zip

@@ -1,0 +1,82 @@
+{
+  "sourceUrl": "https://help.aliyun.com/zh/model-studio/qwen-audio-tts-voice-list",
+  "verifiedOn": "2026-11-11",
+  "model": "qwen-audio-3.1-tts-flash",
+  "voices": [
+    {
+      "voiceId": "wenhuaiqing_v3.1",
+      "displayName": "温怀清",
+      "description": "女声；清亮、柔和",
+      "category": "CHINESE",
+      "languages": [
+        "中文普通话"
+      ],
+      "dialects": [],
+      "scenarios": [
+        "儿童故事",
+        "客服助手",
+        "广告营销",
+        "新闻播报"
+      ]
+    },
+    {
+      "voiceId": "yezhiqing_v3.1",
+      "displayName": "叶知晴",
+      "description": "女声；轻快、自然",
+      "category": "CHINESE",
+      "languages": [
+        "中文普通话"
+      ],
+      "dialects": [],
+      "scenarios": [
+        "儿童故事",
+        "客服助手",
+        "语音助手"
+      ]
+    },
+    {
+      "voiceId": "longniuniu_v3.1",
+      "displayName": "龙牛牛",
+      "description": "男声；阳光男童声",
+      "category": "OTHER_SYSTEM",
+      "languages": [],
+      "dialects": [],
+      "scenarios": [
+        "消费电子-儿童有声书"
+      ]
+    },
+    {
+      "voiceId": "longshanshan_v3.1",
+      "displayName": "龙闪闪",
+      "description": "男声；戏剧化童声",
+      "category": "OTHER_SYSTEM",
+      "languages": [],
+      "dialects": [],
+      "scenarios": [
+        "消费电子-儿童有声书"
+      ]
+    },
+    {
+      "voiceId": "longjielidou_v3.1",
+      "displayName": "龙杰力豆",
+      "description": "男声；天真男童音",
+      "category": "OTHER_SYSTEM",
+      "languages": [],
+      "dialects": [],
+      "scenarios": [
+        "儿童陪伴"
+      ]
+    },
+    {
+      "voiceId": "longpaopao_v3.1",
+      "displayName": "龙泡泡",
+      "description": "女声；飞天泡泡音",
+      "category": "OTHER_SYSTEM",
+      "languages": [],
+      "dialects": [],
+      "scenarios": [
+        "消费电子-儿童陪伴"
+      ]
+    }
+  ]
+}

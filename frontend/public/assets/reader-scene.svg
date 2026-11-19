@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" role="img" aria-label="小兔子和妈妈">
+  <path fill="#dce8d4" d="M0 0h640v420H0z"/>
+  <circle cx="515" cy="77" r="52" fill="#efd183"/>
+  <path d="M0 287Q137 200 286 278T640 244V420H0Z" fill="#94aa79"/>
+  <path d="M0 350Q178 266 370 328T640 310V420H0Z" fill="#7f9b68"/>
+  <g fill="#a9bb8c"><circle cx="96" cy="302" r="65"/><circle cx="154" cy="337" r="42"/></g>
+  <g transform="translate(265 142)">
+    <ellipse cx="61" cy="36" rx="19" ry="62" fill="#fff9ed" stroke="#ddd5c5" stroke-width="3" transform="rotate(-12 61 36)"/>
+    <ellipse cx="112" cy="35" rx="18" ry="58" fill="#fff9ed" stroke="#ddd5c5" stroke-width="3" transform="rotate(11 112 35)"/>
+    <ellipse cx="88" cy="151" rx="58" ry="72" fill="#fff9ed" stroke="#ddd5c5" stroke-width="3"/>
+    <ellipse cx="88" cy="108" rx="62" ry="58" fill="#fff9ed" stroke="#ddd5c5" stroke-width="3"/>
+    <circle cx="67" cy="106" r="5" fill="#454239"/>
+    <circle cx="109" cy="106" r="5" fill="#454239"/>
+    <path d="m82 123 6 5 7-5" fill="#c98c7a"/>
+  </g>
+  <g fill="#f0cb83">
+    <circle cx="481" cy="294" r="9"/>
+    <circle cx="469" cy="308" r="6"/>
+    <circle cx="489" cy="315" r="6"/>
+  </g>
+</svg>

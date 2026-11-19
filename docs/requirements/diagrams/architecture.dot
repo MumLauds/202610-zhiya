@@ -1,10 +1,10 @@
 digraph A {
- graph [bgcolor="transparent", rankdir=TB, splines=ortho, nodesep=0.45, ranksep=0.55, pad=0.3, fontname="Noto Sans CJK SC"];
+ graph [bgcolor="transparent", rankdir=TB, splines=polyline, nodesep=0.45, ranksep=0.55, pad=0.3, fontname="Noto Sans CJK SC"];
  node [shape=box,style="rounded,filled",color="#9DBBA8",fillcolor="#F0F8F2",fontname="Noto Sans CJK SC",fontsize=11,margin="0.23,0.16"];
  edge [color="#7C9D8A", penwidth=1.3, arrowsize=0.65];
  parent [label="家长手机/电脑 Web\n选书 · 原创/共读 · 儿童模式",fillcolor="#FFF3DF"];
- device [label="ESP32-S3 设备（可选）\n墨水屏 · 按键 · 麦克风 · 扬声器",fillcolor="#F0F0F0"];
- api [label="FastAPI 业务后端 / HTTPS\n模式授权 · 故事审核 · 会话 · 设备接口",fillcolor="#E6F4E8",fontsize=13];
+ device [label="ESP32-S3 4.3C 设备（可选）\n彩色触摸屏 · 麦克风 · 扬声器接口",fillcolor="#F0F0F0"];
+ api [label="FastAPI 业务后端 / HTTPS\n模式授权 · 故事审核 · 会话 · 设备接口（提案）",fillcolor="#E6F4E8",fontsize=13];
  db [label="业务数据库\n档案 · 绘本 · 记录 · 报告"];
  agent [label="知芽领域Agent\nRAG · 适龄生成 · 分支策略 · 安全检查",fillcolor="#EAF1FF"];
  kb [label="幼儿阅读知识库\n教育指南 · 绘本信息 · 互动策略"];

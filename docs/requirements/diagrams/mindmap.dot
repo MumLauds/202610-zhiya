@@ -1,5 +1,5 @@
 digraph G {
- graph [bgcolor="transparent", rankdir=LR, splines=polyline, nodesep=0.28, ranksep=0.62, pad=0.28, fontname="Noto Sans CJK SC"];
+ graph [bgcolor="transparent", rankdir=LR, splines=polyline, nodesep=0.19, ranksep=1.05, pad=0.28, fontname="Noto Sans CJK SC"];
  node [shape=box, style="rounded,filled", color="#B8D6C0", fillcolor="#F0F8F0", fontname="Noto Sans CJK SC", fontsize=11, margin="0.18,0.10"];
  edge [color="#93B39D", penwidth=1.5, arrowsize=0.55];
  root [label="知芽 · 原创绘本与互动阅读", shape=box, style="rounded,filled,bold", fillcolor="#236B4B", fontcolor="white", fontsize=16, margin="0.26,0.24"];
@@ -15,5 +15,5 @@ digraph G {
  a1 [label="知识库检索 RAG"];a2 [label="情境提问 / 动态引导"];a3 [label="故事草稿 / 情节状态"];a4 [label="语音问答 ASR+LLM+TTS"]; ai->{a1 a2 a3 a4};
  r1 [label="阅读记录 / 小结"];r2 [label="亲子延伸活动"]; records->{r1 r2};
  p1 [label="原创草稿家长审核"];p2 [label="内容管理 / 权限保护"];p3 [label="HTTPS 上线"];platform->{p1 p2 p3};
- h1 [label="墨水屏 / 翻页键"];h2 [label="语音输入 / 扬声器"];hardware->{h1 h2};
+ h1 [label="4.3C 彩屏 / 触摸翻页"];h2 [label="触屏录音 / 语音播放"];hardware->{h1 h2};
 }

@@ -1,0 +1,53 @@
+/*
+ * @openpageflip/core stylesheet. Import it once: `import "@openpageflip/core/styles.css"`.
+ * Pages are positioned by the library with inline styles; these rules give them their 3D
+ * stage and their resting state. Style page faces through `.opf-page--hard`, `--soft`,
+ * `--left`, `--right`, `--flat` and `--turning`. `--hard` and `--soft` say what a page is and
+ * never change during a turn; `--flat` and `--turning` say what it is doing right now.
+ */
+.opf-book {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  perspective: 2000px;
+  /* Vertical page scroll stays native; horizontal drags belong to the book. Text stays selectable:
+     a press that takes hold of a page cancels the browser's own selection itself (see input.ts). */
+  touch-action: pan-y;
+}
+
+/* A top- or bottom-bound book turns on vertical drags, so those are the book's and horizontal ones scroll. */
+.opf-book--top,
+.opf-book--bottom {
+  touch-action: pan-x;
+}
+
+/* Box sizing is left to the page's own CSS: a bordered page grows past its nominal size, as in the original. */
+.opf-page {
+  display: none;
+  position: absolute;
+  transform-style: preserve-3d;
+}
+
+/* The edge of the page in the air, so white paper reads over white paper whatever the shadows are
+   set to. An outline inside the box: it costs no layout and the fold's clip trims it to the paper's
+   real edges. Recolour it with `--opf-page-edge`; `transparent` removes it. */
+.opf-page--turning {
+  outline: 1px solid var(--opf-page-edge, rgb(0 0 0 / 0.2));
+  outline-offset: -1px;
+}
+
+/* Blank paper for the sheets under a page when a jump turns several at once, in the inner pages'
+   background colour. Recolour it with `--opf-sheet-color`. */
+.opf-sheet {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.opf-shadow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}

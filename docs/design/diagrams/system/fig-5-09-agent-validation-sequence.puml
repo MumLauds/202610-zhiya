@@ -37,7 +37,10 @@ break 缺少所需依据
 end
 A -> M : generate(受控上下文、结构)
 M --> A : 候选 / 超时 / 失败
-break 未取得候选
+break API-017模型调用明确失败（非超时）
+ A -> A : 返回依赖错误，由会话服务记录失败响应
+end
+break 超时或其他任务采用预设回退
  A -> A : 返回预设策略FALLBACK
 end
 A -> V : validate_output(候选、版本、来源)
