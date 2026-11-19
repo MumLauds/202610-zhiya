@@ -31,7 +31,7 @@ def prepare(commit, output, installed=None, offline_cache=None):
         npm = shutil.which("npm")
         if not npm:
             raise RuntimeError("npm is required to install the locked dependencies")
-        install = [npm, "ci"]
+        install = [npm, "ci", "--include=dev"]
         if offline_cache is not None or installed is not None:
             # esbuild's optional-binary postinstall has its own network fallback.
             install.extend(["--offline", "--ignore-scripts", "--no-audit", "--no-fund"])

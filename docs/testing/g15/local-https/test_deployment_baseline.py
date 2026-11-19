@@ -1,8 +1,11 @@
 import hashlib
 import json
+import os
+import signal
 import ssl
 import subprocess
 import tempfile
+import time
 from copy import deepcopy
 from datetime import datetime, timedelta
 from email.utils import format_datetime
@@ -11,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from deployment_baseline import collect, verify_browser_readback
+from evidence_io import capture_versions, publish_json
 from prepare_frontend import prepare
 
 HERE = Path(__file__).resolve().parent
@@ -27,12 +31,108 @@ def browser_evidence():
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_partial_write_can_retry_and_complete_baseline_is_exclusive(self):
+        def fail_write(pending, *_args, **_kwargs):
+            pending.write_bytes(b"{")
+            raise OSError("simulated disk full")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "deployment-result.json"
+            with patch.object(Path, "write_text", fail_write), self.assertRaises(OSError):
+                publish_json(path, {"sequence": 1})
+            self.assertFalse(path.exists())
+            publish_json(path, {"sequence": 1})
+            with self.assertRaises(FileExistsError):
+                publish_json(path, {"sequence": 2})
+            with patch.object(Path, "write_text", fail_write), self.assertRaises(OSError):
+                publish_json(path, {"sequence": 2}, replace=True)
+            self.assertEqual(json.loads(path.read_bytes()), {"sequence": 1})
+            publish_json(path, {"sequence": 2}, replace=True)
+            self.assertEqual(json.loads(path.read_bytes()), {"sequence": 2})
+
+    @unittest.skipUnless(os.name == "posix", "shell publication runs on Linux")
+    def test_interrupted_multi_file_publication_requires_a_complete_retry(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "a.json").write_text("old")
+            (root / "b.json").write_text("old")
+            command = """
+                set -eu
+                . "$1"
+                begin_capture "$2" probe-b
+                printf new > "$capture_dir/a.json"
+                printf new > "$capture_dir/b.json"
+                mv() {
+                    if [ "$FAIL" = yes ] && [ "$3" = "$capture_dir/b.json" ]; then return 1; fi
+                    command mv "$@"
+                }
+                publish_capture
+            """
+            cmd = ["sh", "-c", command, "check", HERE.parent / "evidence_stage.sh", root]
+            broken = subprocess.run(cmd, env=dict(os.environ, FAIL="yes"), capture_output=True)
+            self.assertNotEqual(broken.returncode, 0)
+            self.assertEqual((root / "a.json").read_text(), "new")
+            self.assertEqual((root / "b.json").read_text(), "old")
+            with self.assertRaisesRegex(ValueError, "Incomplete capture"):
+                capture_versions(root)
+            subprocess.run(cmd, env=dict(os.environ, FAIL="no"), check=True)
+            self.assertEqual((root / "b.json").read_text(), "new")
+            self.assertIn(".capture-status-probe-b", capture_versions(root))
+
+    @unittest.skipUnless(os.name == "posix", "stack.sh runs on the Linux Docker host")
+    def test_capture_lock_can_be_reacquired_after_sigkill(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp)
+            (state / "build-complete").write_text("project commit\n")
+            docker = state / "docker"
+            docker.write_text('#!/bin/sh\necho entered >> "$G15_STATE/calls"\n'
+                              'if [ -f "$G15_STATE/wait" ]; then exec sleep 30; fi\nexit 42\n')
+            docker.chmod(0o700)
+            wait = state / "wait"
+            wait.touch()
+            env = dict(os.environ, PATH=tmp + os.pathsep + os.environ["PATH"],
+                       G15_PROJECT="project", G15_COMMIT="commit", G15_STATE=tmp)
+            cmd = ["sh", HERE / "stack.sh", "baseline"]
+            calls = state / "calls"
+            with subprocess.Popen(cmd, env=env, start_new_session=True) as first:
+                try:
+                    deadline = time.monotonic() + 5
+                    while not calls.exists() and time.monotonic() < deadline:
+                        time.sleep(0.02)
+                    self.assertTrue(calls.exists())
+                    busy = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=5)
+                    self.assertNotEqual(busy.returncode, 0)
+                    self.assertIn("Cannot acquire capture lock", busy.stderr)
+                finally:
+                    os.killpg(first.pid, signal.SIGKILL)
+            wait.unlink()
+            retry = subprocess.run(cmd, env=env, capture_output=True, timeout=5)
+            self.assertEqual(retry.returncode, 42)
+            self.assertEqual(calls.read_text().splitlines(), ["entered", "entered"])
+
+    @unittest.skipUnless(os.name == "posix", "stack.sh runs on the Linux Docker host")
+    def test_published_baseline_is_preserved_before_contacting_docker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp)
+            (state / "build-complete").write_text("project commit\n")
+            files = ("deployment-result.json", "afterBrowserReadback-db.json", "beforeRestart-db.json")
+            for name in files:
+                (state / name).write_bytes(b"archived")
+            env = dict(os.environ, G15_PROJECT="project", G15_COMMIT="commit", G15_STATE=tmp)
+            for action in ("baseline", "restart"):
+                run = subprocess.run(["sh", HERE / "stack.sh", action], env=env, text=True, capture_output=True)
+                self.assertNotEqual(run.returncode, 0)
+                self.assertIn("Baseline already published", run.stderr)
+                self.assertFalse((state / ".capture-lock").exists())
+                for name in files:
+                    self.assertEqual((state / name).read_bytes(), b"archived")
+
     def test_failed_install_cannot_publish_existing_assets(self):
         revision = json.loads((HERE / "deployment-result.json").read_bytes())["commit"]
         actual_run = subprocess.run
 
         def fail_install(command, **kwargs):
-            if command == ["npm", "ci"]:
+            if command[:2] == ["npm", "ci"]:
                 raise subprocess.CalledProcessError(1, command)
             return actual_run(command, **kwargs)
 
@@ -70,6 +170,9 @@ class DeploymentTests(unittest.TestCase):
                     (state / f"{phase}-{name}.json").write_text(json.dumps(value))
             args = (state, browser, archive["project"], archive["commit"], PIN)
             self.assertEqual(collect(*args)["afterBrowserReadback"]["counts"]["reports"], 1)
+            for field, value in (("voice", {}), ("readerRefresh", dict(browser["readerRefresh"], status="FINISHED"))):
+                with self.subTest(browser_field=field), self.assertRaises(ValueError):
+                    collect(state, dict(browser, **{field: value}), *args[2:])
             dbfile = state / "afterBrowserReadback-db.json"
             original = dbfile.read_text()
             for key in ("loginSessions", "counts"):

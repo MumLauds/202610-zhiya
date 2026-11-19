@@ -10,14 +10,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 class Provider(BaseHTTPRequestHandler):
     def do_POST(self):
-        if self.path not in ("/asr", "/report"):
-            self.send_error(404)
-            return
+        known_route = self.path in ("/asr", "/report")
         try:
             size = int(self.headers["Content-Length"])
             if not 0 < size <= 6 * 1024 * 1024:
                 raise ValueError
-            request = json.loads(self.rfile.read(size))
+            # Consume a bounded body before closing, so the client can receive the error response.
+            payload = self.rfile.read(size)
+            if not known_route:
+                self.send_error(404)
+                return
+            request = json.loads(payload)
             messages = request["messages"]
             if self.path == "/asr":
                 item = messages[0]["content"][0]
@@ -38,7 +41,10 @@ class Provider(BaseHTTPRequestHandler):
                 content = '{"suggestionId":"NONE"}'
                 self.measurements = {"visitedPages": [1]}
         except (ValueError, TypeError, KeyError, IndexError, AttributeError, binascii.Error, wave.Error, EOFError):
-            self.send_error(422, "Unexpected rehearsal payload")
+            if known_route:
+                self.send_error(422, "Unexpected rehearsal payload")
+            else:
+                self.send_error(404)
             return
         body = json.dumps({"choices": [{"finish_reason": "stop",
                                         "message": {"role": "assistant", "content": content}}]}).encode()

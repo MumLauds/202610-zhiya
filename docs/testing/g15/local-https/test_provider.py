@@ -17,7 +17,7 @@ class SupplierLogTests(unittest.TestCase):
             ("/report", {"messages": [{"role": "user", "content": prompt}]},
              {"call": "report", "status": 200, "visitedPages": [1]}),
             ("/report", {"messages": []}, {"call": "report", "status": 422}),
-            ("/private-test-value", {}, {"call": "unknown", "status": 404}),
+            ("/private-test-value", {"unused": "x" * 512_000}, {"call": "unknown", "status": 404}),
         ]
         with HTTPServer(("127.0.0.1", 0), Provider) as server:
             for path, payload, expected in cases:

@@ -11,7 +11,8 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "local-https"))
-from verify_browser import TITLE, checked_data, choose_profile, login, match_response, read_history
+from evidence_io import publish_json
+from verify_browser import TITLE, checked_data, choose_profile, login, match_response, read_history, require
 
 
 ORIGIN = "https://127.0.0.1:18443"
@@ -21,7 +22,7 @@ IMAGE_PATH = "/api/v1/media/asset-11-page-1"
 def page_illustration(page, fixture):
     image = page.locator(f'.flipbook-book img[src="{IMAGE_PATH}"]:visible').first
     expect(image).to_be_visible()
-    assert image.get_attribute("alt") == f"{TITLE} · 第 1 页"
+    require(image.get_attribute("alt") == f"{TITLE} · 第 1 页", "Unexpected page image label")
     proof = image.evaluate("""async img => {
         await img.decode();
         const canvas = document.createElement('canvas');
@@ -40,11 +41,13 @@ def page_illustration(page, fixture):
                 naturalWidth: canvas.width, naturalHeight: canvas.height, bytes: raw.byteLength,
                 pngSha256: await digest(raw), rgbaSha256: await digest(pixels)};
     }""")
-    assert proof["http"] == 200 and proof["path"] == IMAGE_PATH
-    assert proof["mime"].split(";")[0] == "image/png" and proof["bytes"] == fixture["bytes"]
-    assert (proof["naturalWidth"], proof["naturalHeight"]) == (fixture["width"], fixture["height"])
-    assert proof["pngSha256"] == fixture["sha256"], "Page PNG differs from the fixture"
-    assert proof["rgbaSha256"] == fixture["rgbaSha256"], "Decoded pixels differ from the fixture"
+    require(proof["http"] == 200 and proof["path"] == IMAGE_PATH, "Unexpected image response")
+    require(proof["mime"].split(";")[0] == "image/png" and proof["bytes"] == fixture["bytes"],
+            "Unexpected image type or length")
+    require((proof["naturalWidth"], proof["naturalHeight"]) == (fixture["width"], fixture["height"]),
+            "Unexpected decoded image dimensions")
+    require(proof["pngSha256"] == fixture["sha256"], "Page PNG differs from the fixture")
+    require(proof["rgbaSha256"] == fixture["rgbaSha256"], "Decoded pixels differ from the fixture")
     return proof
 
 
@@ -81,23 +84,25 @@ def main():
         with page.expect_response(match_response("/reading-sessions", "POST")) as created:
             page.get_by_role("button", name="开始阅读", exact=True).click()
         sid = checked_data(created.value, 201)["readingSessionId"]
-        assert created.value.request.post_data_json["childProfileId"] == profile_id
+        require(created.value.request.post_data_json["childProfileId"] == profile_id,
+                "Selected profile differs from created session")
         session_path = f"/reading-sessions/{sid}"
         with page.expect_response(match_response(session_path + "/events", "POST")) as started:
             page.get_by_role("button", name="开始本次阅读", exact=True).click()
-        assert checked_data(started.value, 201)["revision"] == 1
+        require(checked_data(started.value, 201)["revision"] == 1, "Unexpected start revision")
         reader_hash = page.evaluate("location.hash")
-        assert reader_hash == f"#reader/{sid}"
+        require(reader_hash == f"#reader/{sid}", "Reader address differs from the created session")
         original_image = page_illustration(page, fixture)
         with page.expect_response(match_response(session_path + "/completions", "POST")) as finished:
             page.get_by_role("button", name=re.compile("完成$")).click()
-        assert checked_data(finished.value)["session"]["status"] == "FINISHED"
+        require(checked_data(finished.value)["session"]["status"] == "FINISHED",
+                "Completion did not finish the session")
         page.wait_for_function("""async path => {
             const res = await fetch(path, {cache: 'no-store'});
             return res.ok && (await res.json()).data.report?.status === 'READY';
         }""", arg="/api/v1" + session_path, polling=250, timeout=15000)
         label, original_record = read_history(page, ORIGIN, sid, reader_hash)
-        assert page_illustration(page, fixture) == original_image
+        require(page_illustration(page, fixture) == original_image, "Source image changed during history readback")
         browser.close()
 
         print(f"READY_FOR_RESTORE session={sid} profile={profile_id} report=READY", flush=True)
@@ -106,10 +111,10 @@ def main():
         target_volume = restored_volume(restored_backend_path, source_backend)
         browser = pw.chromium.launch(channel="chrome", chromium_sandbox=True, args=flags)
         page = browser.new_page(locale="zh-CN", viewport={"width": 1440, "height": 960})
-        assert not page.context.cookies()
+        require(not page.context.cookies(), "Fresh browser already has cookies")
         page.goto(ORIGIN + "/#auth")
         anonymous = page.evaluate("""async path => (await fetch(path, {cache:'no-store'})).status""", IMAGE_PATH)
-        assert anonymous == 401
+        require(anonymous == 401, "Anonymous media request was not rejected")
         with page.expect_response(match_response("/auth/sessions", "POST")) as login_response:
             after_login = login(page, ORIGIN, credentials)
         login_http_date = login_response.value.header_value("date")
@@ -117,8 +122,9 @@ def main():
             raise ValueError("Restored HTTPS login response is missing its Date header")
         restored_label, restored_record = read_history(page, ORIGIN, sid, reader_hash)
         restored_image = page_illustration(page, fixture)
-        assert before_login == after_login and label == restored_label
-        assert original_record == restored_record and original_image == restored_image
+        require(before_login == after_login and label == restored_label, "Login or history changed after restore")
+        require(original_record == restored_record and original_image == restored_image,
+                "Reading detail or image changed after restore")
         browser.close()
 
     result = {
@@ -130,7 +136,7 @@ def main():
                      "anonymousMediaHttp": anonymous, "login": after_login, "loginHttpDate": login_http_date,
                      "historyCard": restored_label, "detail": restored_record, "pageImage": restored_image},
     }
-    args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    publish_json(args.output, result, replace=True)
     print(f"Verified restored session {sid} and page PNG. Output: {args.output}", flush=True)
 
 

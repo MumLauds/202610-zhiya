@@ -1,5 +1,6 @@
 """Exercise the offline build with local packages and an empty npm cache."""
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -28,7 +29,7 @@ class OfflineDependencyTests(unittest.TestCase):
             (package / "package.json").write_text(json.dumps({"name": name, "version": "1.0.0"}))
             (package / "index.js").write_text(source)
         manifest = {"name": "fixture", "version": "1.0.0",
-                    "dependencies": {"renderer": "file:renderer", "palette": "file:palette"},
+                    "devDependencies": {"renderer": "file:renderer", "palette": "file:palette"},
                     "scripts": {"build": "node build.cjs"}}
         (cls.frontend / "package.json").write_text(json.dumps(manifest))
         (cls.frontend / "build.cjs").write_text(
@@ -59,7 +60,7 @@ class OfflineDependencyTests(unittest.TestCase):
             observed = subprocess.check_output(["node", "-p", "require('renderer')"], cwd=old, text=True)
             self.assertEqual(observed.strip(), value)
             output = test / "build"
-            with patch("prepare_frontend.__file__", str(self.script)):
+            with patch("prepare_frontend.__file__", str(self.script)), patch.dict(os.environ, NODE_ENV="production"):
                 prepare(self.commit, output, old, self.cache)
             self.assertEqual((output / "dist/index.html").read_text(), "locked")
             self.assertEqual((output / "commit").read_text().strip(), self.commit)

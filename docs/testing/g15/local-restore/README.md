@@ -43,7 +43,7 @@ B 组恢复后，用空 Cookie 的 Chrome 154.0.8037.98 访问内页图返回 40
 
 先按[本地 HTTPS 预演](../local-https/README.md)完成一次浏览器读回、采集最终基线并关闭服务。接着使用同一 Docker 引擎、该轮保留的 SQLite 卷和两个本地镜像。恢复命令和汇总脚本都从 `G15_BASELINE` 读取源卷、镜像及会话基线，每个镜像引用须与基线记录的实际镜像 ID 一致。复核 11 月 19 日保留的原卷时，可以将 `G15_BASELINE` 指向[历史部署基线](../local-https/deployment-result.json)；未设置此变量时也使用该文件。
 
-在首轮的 Linux/WSL 部署终端从仓库根目录继续。环境需有 Python 3、Docker Compose、OpenSSL 和 curl。`G15_TEST_TLS` 指向含 `cert.pem` 和 `key.pem` 的本机测试目录，证书须在有效期内并可校验 `127.0.0.1` 和 `supplier`。如使用历史卷，可在新的私有目录按[部署脚本](../local-https/stack.sh)中的 OpenSSL 参数生成证书。密钥留在测试机上。
+在首轮的 Linux/WSL 部署终端从仓库根目录继续。环境需有 Python 3、Docker Compose、OpenSSL、curl 和 flock（util-linux）。`G15_TEST_TLS` 指向含 `cert.pem` 和 `key.pem` 的本机测试目录，证书须在有效期内并可校验 `127.0.0.1` 和 `supplier`。如使用历史卷，可在新的私有目录按[部署脚本](../local-https/stack.sh)中的 OpenSSL 参数生成证书。密钥留在测试机上。
 
 ```sh
 umask 077
@@ -84,6 +84,10 @@ sh "$ops" backup-b && sh "$ops" restore-b && sh "$ops" start-b
 sh "$ops" probe-b && sh "$ops" down-b && sh "$ops" original
 python3 docs/testing/g15/local-restore/collect_restore.py "$G15_EVIDENCE" "$G15_RESTORE_RUN" "$G15_EVIDENCE/restore-result.json" --browser "$G15_EVIDENCE/browser-result.json"
 ```
+
+同一证据目录内的恢复命令串行执行。探针分别暂存 SQLite 快照和供应商日志，两条命令均成功后才发布。发布中断时，汇总会指出对应的采集步骤。重新完成该步骤再汇总；若备份步骤已经占用新卷名，用新的运行前缀和证据目录重新预演。复制新证据时请复制整个目录，包含隐藏的 `.capture-status-*` 文件。历史归档仍可按下述方式复核。
+
+`down-b` 记录恢复后端容器的实际停止时间。重复关闭已结束的项目会保留第一次的记录。汇总同时核对浏览器报告中的绘本版本、阅读记录、内页尺寸和摘要，以及原卷、备份和恢复前的固定媒体文件。
 
 复核旧证据时，如果历史浏览器报告缺少 HTTP `Date` 且配套的首轮基线早于证书指纹取证，可在汇总命令末尾加 `--legacy-browser-time`。该次复核会在结果中标记 `loginTimeSource=legacyBrowserClock`。带有 `spkiSha256` 的新基线始终要求服务端时间。
 

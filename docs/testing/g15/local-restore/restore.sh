@@ -8,8 +8,11 @@ web="$here/../local-https"
 run=${G15_RESTORE_RUN:?Set a new lowercase project prefix}
 out=${G15_EVIDENCE:?Set a private absolute directory for evidence}
 tls=${G15_TEST_TLS:?Set the previously tested local certificate directory}
+case "$out" in /*) ;; *) echo "G15_EVIDENCE must be absolute" >&2; exit 2;; esac
 case "$run" in ''|*[!a-z0-9-]*) echo 'Invalid project prefix' >&2; exit 2;; esac
 mkdir -p "$out"
+exec 9<"$out"
+flock -n 9 || { echo "Cannot acquire restore evidence lock: $out" >&2; exit 1; }
 baseline=${G15_BASELINE:-$web/deployment-result.json}
 if command -v python3 >/dev/null 2>&1; then
     set -- python3
@@ -39,8 +42,11 @@ export G15_WEB_IMAGE="$edge" G15_API_IMAGE="$api" G15_TEST_TLS="$tls"
 G15_CERTIFI=$(docker run --pull never --rm --network none "$api" python -c 'import certifi; print(certifi.where())')
 export G15_CERTIFI
 fresh() {
-    if docker volume inspect "$1" >/dev/null 2>&1; then echo "Expected a new volume: $1" >&2; exit 1; fi
-    docker volume create "$1" >/dev/null
+    # Docker returns an existing same-name volume from create. Verify this call created it.
+    creation=$(cat /proc/sys/kernel/random/uuid)
+    docker volume create --label "g15.creation=$creation" "$1" >/dev/null
+    actual=$(docker volume inspect --format '{{index .Labels "g15.creation"}}' "$1")
+    [ "$actual" = "$creation" ] || { echo "Expected a new volume: $1" >&2; exit 1; }
 }
 stopped() {
     docker volume inspect "$1" >/dev/null
@@ -63,7 +69,7 @@ run_bundle() {
 dc() { docker compose --env-file /dev/null -p "$project" -f "$web/compose.yaml" -f "$here/restore-compose.yaml" "$@"; }
 health() {
     for attempt in $(seq 1 45); do
-        if curl --noproxy '*' --silent --fail --cacert "$tls/cert.pem" https://127.0.0.1:18443/api/v1/health; then echo; return; fi
+        if response=$(curl --noproxy '*' --connect-timeout 2 --max-time 5 --silent --fail --cacert "$tls/cert.pem" https://127.0.0.1:18443/api/v1/health); then printf '%s\n' "$response"; return; fi
         sleep 1
     done
     echo 'Loopback HTTPS failed' >&2; return 1
@@ -84,6 +90,10 @@ case "$action" in
     *-b) project="$run-b-restored"; export G15_VOLUME="$run-b-restored-data" G15_MEDIA_ROOT=;;
     *) project="$run-a-restored"; export G15_VOLUME="$run-a-restored-data" G15_MEDIA_ROOT=;;
 esac
+. "$here/../evidence_stage.sh"
+begin_capture "$out" "$action"
+# Helpers and actions below write only to this invocation's staging directory.
+out=$capture_dir
 case "$action" in
     backup-a) stopped "$original"; run_bundle backup "$original" "$run-a-backup" a-backup;;
     restore-a) run_bundle restore "$run-a-backup" "$G15_VOLUME" a-restore;;
@@ -94,11 +104,21 @@ case "$action" in
         ;;
     down-a|stop-b-source) dc down;;
     down-b)
-        dc down
-        date -u '+%Y-%m-%dT%H:%M:%SZ' > "$out/b-stopped-at.txt"
+        backend_id=$(dc ps --all -q backend)
+        if [ -z "$backend_id" ]; then
+            [ -s "$capture_dest/b-stopped-at.txt" ] && [ -s "$capture_dest/b-target-after.json" ] && [ -s "$capture_dest/b-source-after.json" ] || {
+                echo 'No restored backend or completed stop evidence' >&2; exit 1;
+            }
+            dc down
+            exit 0
+        fi
+        dc stop
+        docker inspect --format '{{.State.FinishedAt}}' "$backend_id" > "$out/b-stopped-at.txt"
         stopped "$run-b-source-data"; run_bundle probe "$run-b-source-data" '' b-source-after
         stopped "$G15_VOLUME"; run_bundle probe "$G15_VOLUME" '' b-target-after
-        ;;
+        publish_capture
+        dc down
+        exit 0 ;;
     original) stopped "$original"; run_bundle probe "$original" '' original-after;;
     seed-b)
         fresh "$G15_VOLUME"
@@ -111,7 +131,8 @@ case "$action" in
     restore-b) run_bundle restore "$run-b-backup" "$G15_VOLUME" b-restore;;
     start-b)
         start_service b-restored-service
-        dc exec -T backend python -c 'import json; from pathlib import Path; from app.services.story_media import ensure_media_dependencies; root,_=ensure_media_dependencies(); evidence={"fixtureSourceExists":Path("/var/lib/zhiya/fixture-source").exists(),"imageAvailableInMediaRoot":(root/"g15-restore-paper-boat.png").exists()}; assert not any(evidence.values()), evidence; print(json.dumps(evidence))' > "$out/b-restored-origin.json"
+        dc exec -T backend python -c 'import json; from pathlib import Path; from app.services.story_media import ensure_media_dependencies; root,_=ensure_media_dependencies(); evidence={"fixtureSourceExists":Path("/var/lib/zhiya/fixture-source").exists(),"imageAvailableInMediaRoot":(root/"g15-restore-paper-boat.png").exists()}; print(json.dumps(evidence)); raise SystemExit(any(evidence.values()))' > "$out/b-restored-origin.json"
         ;;
     *) echo 'Unknown action' >&2; exit 2;;
 esac
+publish_capture

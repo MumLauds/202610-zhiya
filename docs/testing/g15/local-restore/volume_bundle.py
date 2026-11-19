@@ -10,6 +10,7 @@ from contextlib import closing
 from pathlib import Path
 
 from backup_db import snapshot as sqlite_backup
+from backup_manifest import manifest_bytes
 
 sys.path.insert(0, "/test")
 from fixture import snapshot as reading_snapshot
@@ -90,7 +91,7 @@ def main():
             raise ValueError("Pinned media copy differs from the source")
         manifest = {"files": saved, "directories": [name for name in PIN_DIRS if (SRC / name).is_dir()]}
         manifest_path = DST / MANIFEST
-        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        manifest_path.write_bytes(manifest_bytes(manifest))
         if source != gather(SRC) or source["reading"] != reading(DST):
             raise ValueError("Source changed or backup reading differs")
         return {"source": source, "backup": manifest, "manifestSha256": file_hash(manifest_path)}

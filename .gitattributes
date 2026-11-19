@@ -1,4 +1,5 @@
 # Shell verification runs in Linux/WSL even when checked out on Windows.
 infra/*.sh text eol=lf
+docs/testing/g15/evidence_stage.sh text eol=lf
 docs/testing/g15/local-https/stack.sh text eol=lf
 docs/testing/g15/local-restore/restore.sh text eol=lf

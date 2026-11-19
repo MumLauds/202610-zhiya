@@ -13,7 +13,7 @@ export G15_TEST_TLS="$state/tls"
 dc() { docker compose --env-file /dev/null -p "$project" -f "$testdir/compose.yaml" "$@"; }
 health() {
     for attempt in $(seq 1 45); do
-        if curl --noproxy '*' --silent --fail --cacert "$G15_TEST_TLS/cert.pem" https://127.0.0.1:18443/api/v1/health; then echo; return; fi
+        if response=$(curl --noproxy '*' --connect-timeout 2 --max-time 5 --silent --fail --cacert "$G15_TEST_TLS/cert.pem" https://127.0.0.1:18443/api/v1/health); then printf '%s\n' "$response"; return; fi
         sleep 1
     done
     echo 'HTTPS health did not become ready' >&2; return 1
@@ -21,10 +21,17 @@ health() {
 certificate_pin() {
     openssl x509 -pubkey -noout -in "$G15_TEST_TLS/cert.pem" | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A
 }
+case "$action" in
+    build) umask 077; mkdir -p "$state" ;;
+esac
+case "$action" in
+    build|up|start|restart|baseline|down)
+        exec 9<"$state"
+        flock -n 9 || { echo "Cannot acquire capture lock: $state" >&2; exit 1; }
+        ;;
+esac
 if [ "$action" = build ]; then
     # A Git archive supplies only the named tracked files. G15_SOURCE_TAR is useful for Windows linked worktrees.
-    umask 077
-    mkdir -p "$state"
     if [ -e "$state/build-complete" ]; then
         echo 'Choose a fresh G15_STATE for a new build' >&2; exit 1
     fi
@@ -60,19 +67,29 @@ if [ "$action" = build ]; then
     exit 0
 fi
 [ "$(cat "$state/build-complete")" = "$project $revision" ] || { echo 'No completed build for this run' >&2; exit 1; }
+case "$action" in
+    restart|baseline)
+        [ ! -e "$state/deployment-result.json" ] || { echo 'Baseline already published; use a fresh run' >&2; exit 1; }
+        ;;
+esac
 G15_CERTIFI=$(docker run --rm --network none "$G15_API_IMAGE" python -c 'import certifi; print(certifi.where())')
 export G15_CERTIFI
-capture() {
+capture() (
+    . "$testdir/../evidence_stage.sh"
+    begin_capture "$state" "$1"
     phase=$1
-    dc exec -T backend python /test/fixture.py deployment-snapshot /var/lib/zhiya/zhiya.sqlite3 > "$state/$phase-db.json"
-    dc logs --no-color --no-log-prefix provider > "$state/$phase-provider.jsonl"
+    dc exec -T backend python /test/fixture.py deployment-snapshot /var/lib/zhiya/zhiya.sqlite3 > "$capture_dir/$phase-db.json"
+    dc logs --no-color --no-log-prefix provider > "$capture_dir/$phase-provider.jsonl"
     for service in backend edge provider; do
-        docker inspect --format '{"image":{{json .Image}},"reference":{{json .Config.Image}},"started":{{json .State.StartedAt}},"revision":{{json (index .Config.Labels "org.opencontainers.image.revision")}},"volume":"{{range .Mounts}}{{if eq .Destination "/var/lib/zhiya"}}{{.Name}}{{end}}{{end}}"}' "$(dc ps -q "$service")" > "$state/$phase-$service.json"
+        id=$(dc ps -q "$service")
+        docker inspect --format '{"image":{{json .Image}},"reference":{{json .Config.Image}},"started":{{json .State.StartedAt}},"revision":{{json (index .Config.Labels "org.opencontainers.image.revision")}},"volume":"{{range .Mounts}}{{if eq .Destination "/var/lib/zhiya"}}{{.Name}}{{end}}{{end}}"}' "$id" > "$capture_dir/$phase-$service.json"
     done
-}
+    publish_capture
+)
 case "$action" in
     up)
-        if docker volume inspect "${project}_sqlite-data" >/dev/null 2>&1; then
+        existing=$(docker volume ls -q)
+        if printf '%s\n' "$existing" | grep -Fxq -- "${project}_sqlite-data"; then
             echo 'Select a fresh project for initialization; this project already has a SQLite volume' >&2; exit 1
         fi
         dc config --quiet
@@ -91,10 +108,10 @@ case "$action" in
         browser_result=$(realpath "$browser_result")
         capture afterBrowserReadback
         docker run --rm --pull never --network none --user "$(id -u):$(id -g)" \
-            --mount "type=bind,source=$testdir/deployment_baseline.py,target=/check.py,readonly" \
+            --mount "type=bind,source=$testdir,target=/check,readonly" \
             --mount "type=bind,source=$browser_result,target=/browser.json,readonly" \
             --mount "type=bind,source=$state,target=/state" "$G15_API_IMAGE" \
-            python /check.py /state /browser.json "$project" "$revision" "$(certificate_pin)"
+            python /check/deployment_baseline.py /state /browser.json "$project" "$revision" "$(certificate_pin)"
         ;;
     inspect)
         for service in edge backend provider; do

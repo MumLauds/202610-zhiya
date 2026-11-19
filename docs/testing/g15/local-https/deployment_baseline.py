@@ -7,6 +7,9 @@ from datetime import datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
+from browser_evidence import EDITED, TRANSCRIPT, check_detail, check_history, check_login
+from evidence_io import capture_versions, publish_json
+
 
 def verify_browser_readback(browser, row, spki, certificate_sha256, restarted_at, captured_at):
     if not spki or browser.get("spkiSha256") != spki or browser.get("certificateSha256") != certificate_sha256:
@@ -16,20 +19,11 @@ def verify_browser_readback(browser, row, spki, certificate_sha256, restarted_at
     if not restarted_at.replace(microsecond=0) <= login_date <= captured_at:
         raise ValueError("Browser login response falls outside this restart and final database snapshot")
     detail = browser["afterRestart"]["detail"]
-    session = detail["session"]
-    report = detail["report"]
-    if (session["readingSessionId"] != row["sessionId"] or session["storyVersionId"] != row["versionId"]
-            or session["revision"] != row["revision"] or session["status"] != row["status"]
-            or session["visitedPageNumbers"] != row["pages"] or report["readingSessionId"] != row["sessionId"]
-            or report["summary"] != row["summary"] or report["status"] != row["reportStatus"]):
-        raise ValueError("Browser reading or report differs from this database snapshot")
-    observed = [(e["interactionEventId"], e["eventType"], e["pageNumber"]) for e in detail["events"]]
-    expected = [(e["id"], e["eventType"], e["pageNumber"]) for e in row["events"]]
-    if observed != expected:
-        raise ValueError("Browser events differ from this database snapshot")
+    check_detail(detail, row, "post-restart")
 
 
 def collect(state, browser, project, revision, spki):
+    versions = capture_versions(state)
     phases = ("beforeRestart", "afterBrowserReadback")
     result = {"commit": revision, "project": project, "origin": "https://127.0.0.1:18443",
               "images": {}, "containers": {}}
@@ -52,6 +46,24 @@ def collect(state, browser, project, revision, spki):
             or browser["profileId"] != row["profileId"]
             or browser["afterRestart"]["detail"] != browser["beforeRestart"]["detail"]):
         raise ValueError("Expected a fresh browser login and the same completed reading in this database")
+    before_browser, after_browser = browser["beforeRestart"], browser["afterRestart"]
+    for record in (before_browser, after_browser):
+        check_login(record)
+        check_history(record["history"], browser["readerHash"], row["sessionId"])
+    if any(before_browser[key] != after_browser[key] for key in ("frontendAsset", "frontendSha256")):
+        raise ValueError("Frontend asset changed during restart")
+    active = browser["readerRefresh"]
+    if (active["readingSessionId"], active["storyVersionId"], active["status"], active["revision"],
+            active["visitedPageNumbers"]) != (row["sessionId"], row["versionId"], "IN_PROGRESS", 1, [1]):
+        raise ValueError("Refresh did not restore the active reading session")
+    voice = browser.get("voice", {})
+    if (voice.get("transcriptionHttp"), voice.get("recognized"), voice.get("confirmedInDialog")) != (200, TRANSCRIPT, EDITED):
+        raise ValueError("Missing successful transcription and edited confirmation")
+    asr, report = after["supplierCalls"]
+    if (asr.get("hz"), asr.get("channels"), asr.get("bits")) != (16000, 1, 16) or not isinstance(asr.get("frames"), int) or asr["frames"] <= 0:
+        raise ValueError("Unexpected ASR recording format or frame count")
+    if report.get("visitedPages") != [1]:
+        raise ValueError("Supplier report differs from the visited page")
     for service in ("backend", "edge", "provider"):
         old, new = (json.loads((state / f"{phase}-{service}.json").read_bytes()) for phase in phases)
         if (old["started"] == new["started"] or old["image"] != new["image"]
@@ -74,6 +86,8 @@ def collect(state, browser, project, revision, spki):
     result["browserReadback"] = {"completedAtUtc": browser["atUtc"], "databaseSnapshotAtUtc": captured_at.isoformat(),
                                  "loginHttpDate": browser["afterRestart"]["loginHttpDate"],
                                  "spkiSha256": spki, "certificateSha256": certificate_sha256}
+    if capture_versions(state) != versions:
+        raise ValueError("Capture changed while reading the evidence, retry the collector")
     return result
 
 
@@ -86,7 +100,5 @@ if __name__ == "__main__":
     parser.add_argument("spki", help="SHA-256 public key pin calculated from this deployment's TLS certificate")
     args = parser.parse_args()
     report = collect(args.state, json.loads(args.browser.read_bytes()), args.project, args.revision, args.spki)
-    with (args.state / "deployment-result.json").open("x", encoding="utf-8") as output:
-        json.dump(report, output, ensure_ascii=False, indent=2)
-        output.write("\n")
+    publish_json(args.state / "deployment-result.json", report)
     print("Verified post-readback deployment-result.json")

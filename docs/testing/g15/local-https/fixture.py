@@ -66,5 +66,7 @@ if __name__ == "__main__":
         if args.action == "seed":
             seed(db)
         else:
+            # Pin the database snapshot across all SELECT statements in this probe.
+            db.execute("BEGIN")
             value = deployment_snapshot(db) if args.action == "deployment-snapshot" else snapshot(db)
             print(json.dumps(value, ensure_ascii=False))
