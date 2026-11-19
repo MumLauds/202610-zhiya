@@ -63,7 +63,7 @@ sh "$ops" backup-a && sh "$ops" restore-a && sh "$ops" start-a
 sh "$ops" probe-a && sh "$ops" down-a && sh "$ops" original
 ```
 
-汇总时将停写源卷、冷恢复卷和启动后的会话与首轮 `afterBrowserReadback` 基线比对。阅读会话、事件、小结、执行记录的总数都须一致，启动后的各状态会话数也须与首轮相同。`original-after.json` 用于核对原卷的文件和业务数据。
+汇总时将停写源卷、冷恢复卷和启动后的会话与首轮 `afterBrowserReadback` 基线比对。阅读会话、事件、小结、执行记录的总数都须一致，启动后的各状态会话数也须与首轮相同。`original-after.json` 用于核对原卷的文件和业务数据。历史单页基线没有记录事件页码。用新脚本复核历史卷时，唯一的 `STARTED` 事件必须落在已读的第 1 页。
 
 **B 组。** 在同一部署终端运行 `sh "$ops" seed-b && sh "$ops" start-b-source`。另开浏览器终端，从仓库根目录运行下列命令。`PIN` 取站点公钥摘要（`openssl x509 -in "$G15_TEST_TLS/cert.pem" -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A`）。两个终端需访问同一份 `G15_EVIDENCE` 目录。Windows 上运行浏览器脚本时，将下方两个路径替换为其可访问的对应 Windows 路径。浏览器读取夹具声明的 PNG 及 RGBA 摘要，并从同目录读取恢复服务启动后记录的目标卷名。
 
@@ -78,16 +78,18 @@ sh "$ops" probe-b-source && sh "$ops" stop-b-source
 sh "$ops" backup-b && sh "$ops" restore-b && sh "$ops" start-b
 ```
 
-浏览器用例成功后，在部署终端停止服务并生成结果。停机后将再次只读检查 B 组的源卷和恢复卷。汇总要求源卷保持一次家长登录，恢复卷恰好多出本次登录，且读回前后的阅读、事件、小结数量一致。浏览器取证时间须落在该恢复实例的运行期间。源环境应只有一次成功的小结请求，恢复后任何供应商请求（包括失败请求）都会使汇总失败。应用数据和备份卷保留在本机 Docker 引擎。
+浏览器用例成功后，在部署终端采集恢复库快照，停止服务并生成结果。汇总分别将源库的 `probe-b-source.json`、恢复库的 `probe-b.json` 与各自停机后的只读快照比对。两组快照都应只有一条 `FINISHED` 会话，阅读会话、事件、小结及执行记录的表计数须逐项一致。源卷应有一次家长登录，恢复卷应有两次。汇总核对当前恢复卷名，并以重新登录成功响应的 HTTP `Date` 核对登录发生在恢复实例运行期间。浏览器本机的 `verifiedAtUtc` 仅供查看。源环境应只有一次成功的小结请求，恢复后任何供应商请求（包括失败请求）都会使汇总失败。应用数据和备份卷保留在本机 Docker 引擎。
 
 ```sh
 sh "$ops" probe-b && sh "$ops" down-b && sh "$ops" original
 python3 docs/testing/g15/local-restore/collect_restore.py "$G15_EVIDENCE" "$G15_RESTORE_RUN" "$G15_EVIDENCE/restore-result.json" --browser "$G15_EVIDENCE/browser-result.json"
 ```
 
-审查修复后从新项目串跑两轮的[脱敏实测结果](../rerun-result.json)记录了首轮基线、第二轮实际使用的卷、重新登录前后的计数及内页图摘要。
+复核旧证据时，如果历史浏览器报告缺少 HTTP `Date` 且配套的首轮基线早于证书指纹取证，可在汇总命令末尾加 `--legacy-browser-time`。该次复核会在结果中标记 `loginTimeSource=legacyBrowserClock`。带有 `spkiSha256` 的新基线始终要求服务端时间。
 
-在有 Git 和 Python Playwright 的 Linux 环境中，可从仓库根目录单独运行回归测试，覆盖构建失败、停写查询失败、恢复前后记录计数不符、错误卷、重复供应商请求和错误像素。
+第一次串联复跑的[脱敏实测结果](../rerun-result.json)记录了基线、卷名及内页图摘要。最近一次用离线构建重新部署并恢复到新卷，保留了浏览器实际证书、服务端登录时间、B 组运行中与停机后的四类计数，以及两组备份的 SHA-256。[离线构建与两轮复跑结果](../verified-rerun.json)
+
+在装有 Git、Node.js、npm 和 Python Playwright 的 Linux 环境中，可从仓库根目录运行两组回归测试，覆盖离线依赖、报告归属、事件页码、停写查询、恢复计数和内页图校验。
 
 ```sh
 python3 -B -m unittest discover -s docs/testing/g15/local-https && \

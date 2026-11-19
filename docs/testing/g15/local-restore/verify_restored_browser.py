@@ -110,7 +110,11 @@ def main():
         page.goto(ORIGIN + "/#auth")
         anonymous = page.evaluate("""async path => (await fetch(path, {cache:'no-store'})).status""", IMAGE_PATH)
         assert anonymous == 401
-        after_login = login(page, ORIGIN, credentials)
+        with page.expect_response(match_response("/auth/sessions", "POST")) as login_response:
+            after_login = login(page, ORIGIN, credentials)
+        login_http_date = login_response.value.header_value("date")
+        if not login_http_date:
+            raise ValueError("Restored HTTPS login response is missing its Date header")
         restored_label, restored_record = read_history(page, ORIGIN, sid, reader_hash)
         restored_image = page_illustration(page, fixture)
         assert before_login == after_login and label == restored_label
@@ -123,7 +127,7 @@ def main():
         "sessionId": sid, "profileId": profile_id, "readerHash": reader_hash,
         "source": {"login": before_login, "historyCard": label, "detail": original_record, "pageImage": original_image},
         "restored": {"newBrowser": True, "backendDataVolume": target_volume,
-                     "anonymousMediaHttp": anonymous, "login": after_login,
+                     "anonymousMediaHttp": anonymous, "login": after_login, "loginHttpDate": login_http_date,
                      "historyCard": restored_label, "detail": restored_record, "pageImage": restored_image},
     }
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

@@ -1,14 +1,20 @@
 """Compare snapshots bracketing the restart and fresh browser login, then publish the restore baseline."""
 import argparse
+import hashlib
 import json
-from datetime import datetime, timezone
+import ssl
+from datetime import datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 
-def verify_browser_readback(browser, row, restarted_at, captured_at):
-    completed_at = datetime.fromisoformat(browser["atUtc"])
-    if not restarted_at <= completed_at <= captured_at:
-        raise ValueError("Browser report falls outside this restart and final database snapshot")
+def verify_browser_readback(browser, row, spki, certificate_sha256, restarted_at, captured_at):
+    if not spki or browser.get("spkiSha256") != spki or browser.get("certificateSha256") != certificate_sha256:
+        raise ValueError("Browser report does not match this deployment's TLS certificate")
+    # The HTTPS server and the database snapshot use the Docker host clock. HTTP Date has second precision.
+    login_date = parsedate_to_datetime(browser["afterRestart"]["loginHttpDate"])
+    if not restarted_at.replace(microsecond=0) <= login_date <= captured_at:
+        raise ValueError("Browser login response falls outside this restart and final database snapshot")
     detail = browser["afterRestart"]["detail"]
     session = detail["session"]
     report = detail["report"]
@@ -17,13 +23,13 @@ def verify_browser_readback(browser, row, restarted_at, captured_at):
             or session["visitedPageNumbers"] != row["pages"] or report["readingSessionId"] != row["sessionId"]
             or report["summary"] != row["summary"] or report["status"] != row["reportStatus"]):
         raise ValueError("Browser reading or report differs from this database snapshot")
-    observed = [(e["interactionEventId"], e["eventType"]) for e in detail["events"]]
-    expected = [(e["id"], e["eventType"]) for e in row["events"]]
+    observed = [(e["interactionEventId"], e["eventType"], e["pageNumber"]) for e in detail["events"]]
+    expected = [(e["id"], e["eventType"], e["pageNumber"]) for e in row["events"]]
     if observed != expected:
         raise ValueError("Browser events differ from this database snapshot")
 
 
-def collect(state, browser, project, revision):
+def collect(state, browser, project, revision, spki):
     phases = ("beforeRestart", "afterBrowserReadback")
     result = {"commit": revision, "project": project, "origin": "https://127.0.0.1:18443",
               "images": {}, "containers": {}}
@@ -61,14 +67,13 @@ def collect(state, browser, project, revision):
                 raise ValueError("Unexpected source volume")
             result["containers"][service]["persistentSqliteVolume"] = new["volume"]
     restarted_at = datetime.fromisoformat(result["containers"]["backend"]["startedAtAfterRestart"].replace("Z", "+00:00"))
-    if "capturedAtUtc" in after:
-        captured_at = datetime.fromisoformat(after["capturedAtUtc"])
-    else:
-        # Older raw snapshots recorded completion only in the original Docker-host file's mtime.
-        captured_at = datetime.fromtimestamp((state / "afterBrowserReadback-db.json").stat().st_mtime, timezone.utc)
-    verify_browser_readback(browser, row, restarted_at, captured_at)
+    captured_at = datetime.fromisoformat(after["capturedAtUtc"])
+    certificate = ssl.PEM_cert_to_DER_cert((state / "tls" / "cert.pem").read_text(encoding="ascii"))
+    certificate_sha256 = hashlib.sha256(certificate).hexdigest()
+    verify_browser_readback(browser, row, spki, certificate_sha256, restarted_at, captured_at)
     result["browserReadback"] = {"completedAtUtc": browser["atUtc"], "databaseSnapshotAtUtc": captured_at.isoformat(),
-                                 "snapshotTimeSource": "capturedAtUtc" if "capturedAtUtc" in after else "originalFileMtime"}
+                                 "loginHttpDate": browser["afterRestart"]["loginHttpDate"],
+                                 "spkiSha256": spki, "certificateSha256": certificate_sha256}
     return result
 
 
@@ -78,8 +83,9 @@ if __name__ == "__main__":
     parser.add_argument("browser", type=Path)
     parser.add_argument("project")
     parser.add_argument("revision")
+    parser.add_argument("spki", help="SHA-256 public key pin calculated from this deployment's TLS certificate")
     args = parser.parse_args()
-    report = collect(args.state, json.loads(args.browser.read_bytes()), args.project, args.revision)
+    report = collect(args.state, json.loads(args.browser.read_bytes()), args.project, args.revision, args.spki)
     with (args.state / "deployment-result.json").open("x", encoding="utf-8") as output:
         json.dump(report, output, ensure_ascii=False, indent=2)
         output.write("\n")

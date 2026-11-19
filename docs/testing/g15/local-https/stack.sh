@@ -18,6 +18,9 @@ health() {
     done
     echo 'HTTPS health did not become ready' >&2; return 1
 }
+certificate_pin() {
+    openssl x509 -pubkey -noout -in "$G15_TEST_TLS/cert.pem" | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A
+}
 if [ "$action" = build ]; then
     # A Git archive supplies only the named tracked files. G15_SOURCE_TAR is useful for Windows linked worktrees.
     umask 077
@@ -47,15 +50,13 @@ if [ "$action" = build ]; then
     chmod -R a+rX "$builddir/web"
     docker build --pull=false --label "org.opencontainers.image.revision=$revision" -t "$G15_API_IMAGE" -f "$builddir/source/infra/Dockerfile" "$builddir/source"
     docker build --pull=false --label "org.opencontainers.image.revision=$revision" -t "$G15_WEB_IMAGE" -f "$builddir/web/Web.Dockerfile" "$builddir/web"
-    if [ ! -e "$G15_TEST_TLS" ]; then
-        mkdir "$G15_TEST_TLS"
-        openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=127.0.0.1 \
-            -addext 'subjectAltName=IP:127.0.0.1,DNS:supplier' -addext 'basicConstraints=critical,CA:TRUE' \
-            -keyout "$G15_TEST_TLS/key.pem" -out "$G15_TEST_TLS/cert.pem" 2>"$state/cert-build.log"
-    fi
+    mkdir "$G15_TEST_TLS"
+    openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=127.0.0.1 \
+        -addext 'subjectAltName=IP:127.0.0.1,DNS:supplier' -addext 'basicConstraints=critical,CA:TRUE' \
+        -keyout "$G15_TEST_TLS/key.pem" -out "$G15_TEST_TLS/cert.pem" 2>"$state/cert-build.log"
     chmod 644 "$G15_TEST_TLS/cert.pem"
     printf '%s\n' "$project $revision" > "$state/build-complete"
-    openssl x509 -pubkey -noout -in "$G15_TEST_TLS/cert.pem" | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A; echo
+    certificate_pin; echo
     exit 0
 fi
 [ "$(cat "$state/build-complete")" = "$project $revision" ] || { echo 'No completed build for this run' >&2; exit 1; }
@@ -93,7 +94,7 @@ case "$action" in
             --mount "type=bind,source=$testdir/deployment_baseline.py,target=/check.py,readonly" \
             --mount "type=bind,source=$browser_result,target=/browser.json,readonly" \
             --mount "type=bind,source=$state,target=/state" "$G15_API_IMAGE" \
-            python /check.py /state /browser.json "$project" "$revision"
+            python /check.py /state /browser.json "$project" "$revision" "$(certificate_pin)"
         ;;
     inspect)
         for service in edge backend provider; do

@@ -2,11 +2,13 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
-from collect_restore import check_first_round, check_restored_family
+from collect_restore import check_family_probes, check_first_round, check_restored_family, check_restored_login_time
 
 
 HERE = Path(__file__).resolve().parent
@@ -51,10 +53,69 @@ class RestoreChecks(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "guardian login"):
                     self.check()
 
+    def test_archived_first_round_can_verify_its_known_start_page_on_a_new_probe(self):
+        baseline = json.loads((HERE.parent / "local-https/deployment-result.json").read_bytes())["afterBrowserReadback"]
+        cold = json.loads((HERE / "restore-result.json").read_bytes())["previousTestVolume"]["restoredReading"]
+        event = cold["session"]["events"][0]
+        for page in (1, 2):
+            session = dict(cold["session"], events=[dict(event, pageNumber=page)])
+            running = {"database": session, "counts": baseline["counts"]}
+            with self.subTest(page=page):
+                if page == 1:
+                    check_first_round(baseline, dict(cold, session=session), running, legacy_event_page=True)
+                else:
+                    with self.assertRaisesRegex(ValueError, "Restored session"):
+                        check_first_round(baseline, dict(cold, session=session), running, legacy_event_page=True)
+                with self.assertRaisesRegex(ValueError, "Restored session"):
+                    check_first_round(baseline, dict(cold, session=session), running)
+
+    def test_family_source_and_restored_live_counts_must_match_each_stopped_volume(self):
+        counts = {"sessionsByStatus": {"FINISHED": 1}, "reports": 1, "events": 1, "executions": 2}
+        probes = [{"database": cold["session"], "counts": counts, "loginSessions": cold["guardianLogins"]}
+                  for cold in (self.source, self.target)]
+        check_family_probes(self.source, self.target, *probes)
+        for index, label in enumerate(("source", "restored")):
+            for key, value in (("reports", 2), ("events", 2), ("executions", 3),
+                               ("sessionsByStatus", {"FINISHED": 2}), ("sessionsByStatus", {"CREATED": 1})):
+                with self.subTest(probe=label, counts={key: value}):
+                    changed = probes.copy()
+                    changed[index] = dict(probes[index], counts=dict(counts, **{key: value}))
+                    with self.assertRaisesRegex(ValueError, f"{label} family's live reading counts"):
+                        check_family_probes(self.source, self.target, *changed)
+
     def test_any_restored_supplier_request_fails(self):
         for attempt in [self.report, {"call": "report", "status": 422}]:
             with self.subTest(status=attempt["status"]), self.assertRaisesRegex(ValueError, "supplier requests"):
                 self.check([attempt])
+
+    def test_restored_login_uses_server_date_even_when_the_browser_clock_is_wrong(self):
+        start = datetime(2026, 11, 19, 13, 0, 0, 720000, timezone.utc)
+        stop = start.replace(minute=2, microsecond=0)
+        self.browser["verifiedAtUtc"] = "2026-11-20T13:01:00+00:00"
+        self.browser["restored"]["loginHttpDate"] = "Thu, 19 Nov 2026 13:00:00 GMT"
+        self.assertEqual(check_restored_login_time(self.browser, start, stop), "loginHttpDate")
+        self.browser["verifiedAtUtc"] = "2026-11-19T13:01:00+00:00"
+        for wrong in ("Thu, 19 Nov 2026 12:59:59 GMT", "Thu, 19 Nov 2026 13:02:01 GMT"):
+            with self.subTest(date=wrong), self.assertRaisesRegex(ValueError, "during"):
+                self.browser["restored"]["loginHttpDate"] = wrong
+                check_restored_login_time(self.browser, start, stop)
+        del self.browser["restored"]["loginHttpDate"]
+        with self.assertRaisesRegex(ValueError, "missing"):
+            check_restored_login_time(self.browser, start, stop)
+        self.assertEqual(check_restored_login_time(self.browser, start, stop, legacy_browser_time=True),
+                         "legacyBrowserClock")
+
+    def test_new_baseline_rejects_legacy_browser_clock_override(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            baseline = root / "deployment-result.json"
+            baseline.write_text(json.dumps({"browserReadback": {"spkiSha256": "current-run-pin"}}))
+            result = subprocess.run([sys.executable, "-B", HERE / "collect_restore.py", root, "run", root / "out.json",
+                                     "--browser", root / "browser.json", "--baseline", baseline, "--legacy-browser-time"],
+                                    text=True, capture_output=True)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn("only applies to archived baselines", result.stderr)
+            self.assertFalse((root / "out.json").exists())
 
     def test_matching_incorrect_pixels_do_not_pass(self):
         for stage in ("source", "restored"):

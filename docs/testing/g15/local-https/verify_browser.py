@@ -1,5 +1,7 @@
 """Drive a local HTTPS deployment. Restart the stack at the terminal prompt."""
 import argparse
+import base64
+import hashlib
 import json
 import re
 import secrets
@@ -114,7 +116,7 @@ def read_history(page, origin, sid, reader_hash):
     detail = body["data"]
     assert detail["session"]["readingSessionId"] == sid and detail["session"]["status"] == "FINISHED"
     assert detail["session"]["visitedPageNumbers"] == [1] and detail["session"]["revision"] == 2
-    assert [event["eventType"] for event in detail["events"]] == ["STARTED"]
+    assert [(event["eventType"], event["pageNumber"]) for event in detail["events"]] == [("STARTED", 1)]
     assert detail["report"] == {"readingSessionId": sid, "status": "READY", "summary": SUMMARY, "activities": []}
     return label, detail
 
@@ -176,15 +178,26 @@ def main():
         context = browser.new_context(locale="zh-CN")
         page = context.new_page()
         assert not context.cookies()
-        after = login(page, origin, credentials)
+        cdp = context.new_cdp_session(page)
+        cdp.send("Network.enable")
+        with page.expect_response(match_response("/auth/sessions", "POST")) as login_response:
+            after = login(page, origin, credentials)
         new_label, reloaded = read_history(page, origin, sid, reader_hash)
         assert label == new_label and original == reloaded and before == after
+        # CDP returns the DER certificate chain for the origin Chrome actually visited.
+        certificates = cdp.send("Network.getCertificate", {"origin": origin})["tableNames"]
+        if not certificates:
+            raise ValueError("Chrome did not report the local HTTPS certificate")
+        certificate_sha256 = hashlib.sha256(base64.b64decode(certificates[0], validate=True)).hexdigest()
+        login_http_date = login_response.value.header_value("date")
         browser.close()
     result = {"atUtc": datetime.now(timezone.utc).isoformat(),
+              "spkiSha256": args.spki, "certificateSha256": certificate_sha256,
               "origin": origin, "browser": "Chrome " + browser_version, "playwright": version("playwright"),
               "profileId": profile_id, "sessionId": sid, "readerHash": reader_hash, "readerRefresh": active,
               "voice": voice, "beforeRestart": {**before, "history": label, "detail": original},
-              "afterRestart": {**after, "history": new_label, "detail": reloaded, "freshLogin": True}}
+              "afterRestart": {**after, "history": new_label, "detail": reloaded, "freshLogin": True,
+                               "loginHttpDate": login_http_date}}
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Verified persisted session {sid}. Result: {args.output}", flush=True)
 

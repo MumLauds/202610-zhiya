@@ -34,7 +34,7 @@ def snapshot(db):
         raise ValueError("Expected exactly one finished rehearsal session and report")
     row = dict(rows[0])
     row["pages"] = json.loads(row["pages"])
-    row["events"] = [dict(e) for e in db.execute("""SELECT id, event_type AS eventType, revision_after AS revision
+    row["events"] = [dict(e) for e in db.execute("""SELECT id, event_type AS eventType, revision_after AS revision, page_no AS pageNumber
         FROM interaction_events WHERE session_id=? ORDER BY id""", (row["sessionId"],))]
     if (row["endReason"] != "USER_FINISH" or row["reportStatus"] != "READY" or row["pages"] != [1]
             or row["summary"] != "本次共读阅读了第 1 页。"):

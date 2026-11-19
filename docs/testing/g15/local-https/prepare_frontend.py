@@ -9,32 +9,7 @@ import zipfile
 from pathlib import Path
 
 
-def verify_reused_dependencies(frontend, installed):
-    manifest = json.loads((frontend / "package.json").read_bytes())
-    lock = json.loads((frontend / "package-lock.json").read_bytes())
-    if (manifest != json.loads((installed / "package.json").read_bytes())
-            or lock != json.loads((installed / "package-lock.json").read_bytes())):
-        raise ValueError("Dependency manifests differ from the requested commit")
-
-    # npm's hidden lock lists the packages installed on this platform.
-    installed_packages = json.loads((installed / "node_modules/.package-lock.json").read_bytes())["packages"]
-    locked_packages = lock["packages"]
-    if installed_packages.keys() - locked_packages.keys():
-        raise ValueError("The npm installation contains packages outside the requested lockfile")
-    for path, expected in locked_packages.items():
-        if not path:  # Project itself.
-            continue
-        receipt = installed_packages.get(path)
-        package = installed / path / "package.json"
-        if receipt is None and expected.get("optional") and not package.exists():
-            continue
-        if receipt is None or any(receipt.get(key) != expected.get(key) for key in ("version", "resolved", "integrity")):
-            raise ValueError(f"npm installation and requested lockfile differ for {path}")
-        if json.loads(package.read_bytes())["version"] != expected["version"]:
-            raise ValueError(f"Installed version differs from the requested lockfile for {path}")
-
-
-def prepare(commit, output, installed):
+def prepare(commit, output, installed=None, offline_cache=None):
     repo = Path(__file__).resolve().parents[4]
     git = ["git", "-c", f"safe.directory={repo.as_posix()}", "-C", str(repo)]
     actual = subprocess.check_output([*git, "rev-parse", "--verify", commit + "^{commit}"], text=True).strip()
@@ -42,8 +17,7 @@ def prepare(commit, output, installed):
         raise ValueError("Specify the full commit ID")
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=False)
-    # Node resolves imports from ancestor node_modules when reusing a local installation.
-    with tempfile.TemporaryDirectory(prefix="g15-frontend-", dir=installed) as workspace:
+    with tempfile.TemporaryDirectory(prefix="g15-frontend-") as workspace:
         stage = Path(workspace)
         archive = stage / "source.zip"
         subprocess.run([*git, "archive", "--format=zip", "-o", archive, commit, "--", "frontend"], check=True)
@@ -51,16 +25,20 @@ def prepare(commit, output, installed):
             source.extractall(stage)
         frontend = stage / "frontend"
         if installed:
-            verify_reused_dependencies(frontend, installed)
-            vite = installed / "node_modules/vite/bin/vite.js"
-            build = ["node", str(vite), "build"]
-        else:
-            npm = shutil.which("npm")
-            if not npm:
-                raise RuntimeError("npm is required to install the locked dependencies")
-            subprocess.run([npm, "ci"], cwd=frontend, check=True)
-            build = [npm, "run", "build", "--"]
-        subprocess.run([*build, "--outDir", str(output / "dist")], cwd=frontend, check=True)
+            for name in ("package.json", "package-lock.json"):
+                if json.loads((frontend / name).read_bytes()) != json.loads((installed / name).read_bytes()):
+                    raise ValueError(f"{name} differs from the requested commit")
+        npm = shutil.which("npm")
+        if not npm:
+            raise RuntimeError("npm is required to install the locked dependencies")
+        install = [npm, "ci"]
+        if offline_cache is not None or installed is not None:
+            # esbuild's optional-binary postinstall has its own network fallback.
+            install.extend(["--offline", "--ignore-scripts", "--no-audit", "--no-fund"])
+        if offline_cache is not None:
+            install.extend(["--cache", str(offline_cache.resolve())])
+        subprocess.run(install, cwd=frontend, check=True)
+        subprocess.run([npm, "run", "build", "--", "--outDir", str(output / "dist")], cwd=frontend, check=True)
     if not (output / "dist/index.html").is_file():
         raise ValueError("The current build did not produce index.html")
     checksums = []
@@ -77,6 +55,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("commit")
     parser.add_argument("output", type=Path, help="New directory for this run")
-    parser.add_argument("--reuse-deps", type=Path, help="Optional frontend with matching manifests and node_modules")
+    parser.add_argument("--offline-cache", type=Path, help="Install the locked packages offline from this npm cache")
+    parser.add_argument("--reuse-deps", type=Path, help="Legacy offline option: check this frontend's manifests and use npm's cache")
     args = parser.parse_args()
-    prepare(args.commit, args.output, args.reuse_deps.resolve() if args.reuse_deps else None)
+    prepare(args.commit, args.output, args.reuse_deps, args.offline_cache)
