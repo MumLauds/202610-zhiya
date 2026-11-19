@@ -9,7 +9,9 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from collect_restore import check_family_probes, check_first_round, check_restored_family, check_restored_login_time
+from collect_restore import (
+    check_family_probes, check_first_round, check_pinned_media, check_restored_family, check_restored_login_time,
+)
 
 
 HERE = Path(__file__).resolve().parent
@@ -79,10 +81,27 @@ class RestoreChecks(unittest.TestCase):
                     run = subprocess.run([sys.executable, "-O", "-B", HERE / "collect_restore.py", root, "run", out,
                                           "--browser", HERE / "browser-result.json",
                                           "--baseline", HERE.parent / "local-https/deployment-result.json"],
-                                         capture_output=True, text=True)
+                                         capture_output=True)
                     self.assertNotEqual(run.returncode, 0)
-                    self.assertIn("zhiya.sqlite3 SHA-256", run.stderr)
+                    self.assertIn(b"zhiya.sqlite3 SHA-256", run.stderr)
                     self.assertFalse(out.exists())
+
+    def test_stopped_volume_keeps_all_pinned_files_after_login(self):
+        backup = json.loads((HERE / "restore-result.json").read_bytes())["independentFamily"]["backupFileSha256"]
+        stopped = dict(backup, **{"zhiya.sqlite3": "0" * 64})
+        check_pinned_media(backup, stopped, "final")
+        for path in backup:
+            if path == "zhiya.sqlite3":
+                continue
+            for change in ("missing", "changed"):
+                with self.subTest(path=path, change=change):
+                    files = stopped.copy()
+                    if change == "missing":
+                        del files[path]
+                    else:
+                        files[path] = "f" * 64
+                    with self.assertRaisesRegex(ValueError, "final: pinned media"):
+                        check_pinned_media(backup, files, "final")
 
     def test_wrong_restored_digest_fails_in_normal_and_optimized_python(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -96,9 +115,9 @@ class RestoreChecks(unittest.TestCase):
                     result = subprocess.run([sys.executable, *flags, "-B", HERE / "collect_restore.py", root,
                                              "run", output, "--browser", HERE / "browser-result.json",
                                              "--baseline", HERE.parent / "local-https/deployment-result.json"],
-                                            text=True, capture_output=True)
+                                            capture_output=True)
                     self.assertNotEqual(result.returncode, 0)
-                    self.assertIn("restored file SHA-256", result.stderr)
+                    self.assertIn(b"restored file SHA-256", result.stderr)
                     self.assertFalse(output.exists())
 
     def test_matching_file_digests_must_match_recorded_manifest(self):
@@ -115,9 +134,9 @@ class RestoreChecks(unittest.TestCase):
                     result = subprocess.run([sys.executable, *flags, "-B", HERE / "collect_restore.py", root,
                                              "run", output, "--browser", HERE / "browser-result.json",
                                              "--baseline", HERE.parent / "local-https/deployment-result.json"],
-                                            text=True, capture_output=True)
+                                            capture_output=True)
                     self.assertNotEqual(result.returncode, 0)
-                    self.assertIn("manifest contents", result.stderr)
+                    self.assertIn(b"manifest contents", result.stderr)
                     self.assertFalse(output.exists())
 
     def test_first_round_counts_match_cold_and_running_volumes(self):
@@ -206,9 +225,9 @@ class RestoreChecks(unittest.TestCase):
             baseline.write_text(json.dumps({"browserReadback": {"spkiSha256": "current-run-pin"}}))
             result = subprocess.run([sys.executable, "-B", HERE / "collect_restore.py", root, "run", root / "out.json",
                                      "--browser", root / "browser.json", "--baseline", baseline, "--legacy-browser-time"],
-                                    text=True, capture_output=True)
+                                    capture_output=True)
             self.assertEqual(result.returncode, 2, result.stderr)
-            self.assertIn("only applies to archived baselines", result.stderr)
+            self.assertIn(b"only applies to archived baselines", result.stderr)
             self.assertFalse((root / "out.json").exists())
 
     def test_matching_incorrect_pixels_do_not_pass(self):

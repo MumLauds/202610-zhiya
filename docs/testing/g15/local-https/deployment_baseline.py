@@ -64,10 +64,15 @@ def collect(state, browser, project, revision, spki):
         raise ValueError("Unexpected ASR recording format or frame count")
     if report.get("visitedPages") != [1]:
         raise ValueError("Supplier report differs from the visited page")
+    before_capture = datetime.fromisoformat(before["capturedAtUtc"])
+    after_capture = datetime.fromisoformat(after["capturedAtUtc"])
     for service in ("backend", "edge", "provider"):
         old, new = (json.loads((state / f"{phase}-{service}.json").read_bytes()) for phase in phases)
-        if (old["started"] == new["started"] or old["image"] != new["image"]
-                or new["revision"] != revision or old["volume"] != new["volume"]):
+        old_start = datetime.fromisoformat(old["started"].replace("Z", "+00:00"))
+        new_start = datetime.fromisoformat(new["started"].replace("Z", "+00:00"))
+        if not old_start <= before_capture < new_start <= after_capture:
+            raise ValueError(f"{service} restart is outside the database capture window")
+        if old["image"] != new["image"] or new["revision"] != revision or old["volume"] != new["volume"]:
             raise ValueError(f"{service} did not restart with the same image and volume")
         result["containers"][service] = {"image": new["image"], "startedAtBeforeRestart": old["started"],
                                          "startedAtAfterRestart": new["started"]}
@@ -79,11 +84,10 @@ def collect(state, browser, project, revision, spki):
                 raise ValueError("Unexpected source volume")
             result["containers"][service]["persistentSqliteVolume"] = new["volume"]
     restarted_at = datetime.fromisoformat(result["containers"]["backend"]["startedAtAfterRestart"].replace("Z", "+00:00"))
-    captured_at = datetime.fromisoformat(after["capturedAtUtc"])
     certificate = ssl.PEM_cert_to_DER_cert((state / "tls" / "cert.pem").read_text(encoding="ascii"))
     certificate_sha256 = hashlib.sha256(certificate).hexdigest()
-    verify_browser_readback(browser, row, spki, certificate_sha256, restarted_at, captured_at)
-    result["browserReadback"] = {"completedAtUtc": browser["atUtc"], "databaseSnapshotAtUtc": captured_at.isoformat(),
+    verify_browser_readback(browser, row, spki, certificate_sha256, restarted_at, after_capture)
+    result["browserReadback"] = {"completedAtUtc": browser["atUtc"], "databaseSnapshotAtUtc": after_capture.isoformat(),
                                  "loginHttpDate": browser["afterRestart"]["loginHttpDate"],
                                  "spkiSha256": spki, "certificateSha256": certificate_sha256}
     if capture_versions(state) != versions:

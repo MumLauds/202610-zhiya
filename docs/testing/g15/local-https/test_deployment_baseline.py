@@ -155,21 +155,39 @@ class DeploymentTests(unittest.TestCase):
             state = Path(tmp)
             (state / "tls").mkdir()
             (state / "tls/cert.pem").write_text(ssl.DER_cert_to_PEM_cert(CERTIFICATE), encoding="ascii")
+            login_at = datetime.fromisoformat(browser["atUtc"])
+            before_capture = login_at - timedelta(minutes=2)
+            after_capture = login_at + timedelta(seconds=1)
             for index, phase in enumerate(("beforeRestart", "afterBrowserReadback")):
                 record = archive[phase]
                 record["database"]["events"][0]["pageNumber"] = 1
                 probe = {"database": record["database"], "counts": record["counts"], "loginSessions": 1 + index,
-                         "capturedAtUtc": (datetime.fromisoformat(browser["atUtc"]) + timedelta(seconds=index)).isoformat()}
+                         "capturedAtUtc": (before_capture if index == 0 else after_capture).isoformat()}
                 (state / f"{phase}-db.json").write_text(json.dumps(probe))
                 calls = [dict(call, status=200) for call in record["supplierCalls"]]
                 (state / f"{phase}-provider.jsonl").write_text("\n".join(json.dumps(call) for call in calls) + "\n")
                 for name, container in archive["containers"].items():
-                    started = container["startedAtBeforeRestart" if index == 0 else "startedAtAfterRestart"]
-                    value = {"image": container["image"], "reference": "fixture:" + name, "started": started,
+                    started = (before_capture if index == 0 else login_at) - timedelta(seconds=1)
+                    value = {"image": container["image"], "reference": "fixture:" + name, "started": started.isoformat(),
                              "revision": archive["commit"], "volume": container.get("persistentSqliteVolume", "")}
                     (state / f"{phase}-{name}.json").write_text(json.dumps(value))
             args = (state, browser, archive["project"], archive["commit"], PIN)
             self.assertEqual(collect(*args)["afterBrowserReadback"]["counts"]["reports"], 1)
+            for service in ("backend", "edge", "provider"):
+                old, new = (state / f"{phase}-{service}.json" for phase in ("beforeRestart", "afterBrowserReadback"))
+                old_bytes, new_bytes = old.read_bytes(), new.read_bytes()
+                with self.subTest(service=service, change="swapped"):
+                    old.write_bytes(new_bytes)
+                    new.write_bytes(old_bytes)
+                    with self.assertRaisesRegex(ValueError, f"{service} restart"):
+                        collect(*args)
+                old.write_bytes(old_bytes)
+                for invalid in (before_capture, after_capture + timedelta(seconds=1)):
+                    with self.subTest(service=service, new_start=invalid):
+                        new.write_text(json.dumps(dict(json.loads(new_bytes), started=invalid.isoformat())))
+                        with self.assertRaisesRegex(ValueError, f"{service} restart"):
+                            collect(*args)
+                new.write_bytes(new_bytes)
             for field, value in (("voice", {}), ("readerRefresh", dict(browser["readerRefresh"], status="FINISHED"))):
                 with self.subTest(browser_field=field), self.assertRaises(ValueError):
                     collect(state, dict(browser, **{field: value}), *args[2:])

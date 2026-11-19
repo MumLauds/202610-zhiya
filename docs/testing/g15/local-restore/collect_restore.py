@@ -16,6 +16,14 @@ from browser_evidence import check_detail, check_history, check_login
 from evidence_io import capture_versions, publish_json
 
 
+def check_pinned_media(expected, observed, stage):
+    prefixes = (".zhiya.sqlite3.media_pins/", ".zhiya.sqlite3.media_pins.bindings/")
+    expected_pins = {path: digest for path, digest in expected.items() if path.startswith(prefixes)}
+    observed_pins = {path: digest for path, digest in observed.items() if path.startswith(prefixes)}
+    if observed_pins != expected_pins:
+        raise ValueError(f"{stage}: pinned media files or SHA-256 digests differ")
+
+
 def table_counts(counts):
     return {"reading_sessions": sum(counts["sessionsByStatus"].values()),
             "reading_reports": counts["reports"], "interaction_events": counts["events"],
@@ -167,11 +175,7 @@ def main():
         original_files = backup["source"]["files"]
         if not re.fullmatch(r"[0-9a-fA-F]{64}", original_files.get("zhiya.sqlite3") or ""):
             raise ValueError(f"{letter}: missing or invalid original zhiya.sqlite3 SHA-256")
-        for directory in (".zhiya.sqlite3.media_pins/", ".zhiya.sqlite3.media_pins.bindings/"):
-            original_pins = {k: v for k, v in original_files.items() if k.startswith(directory)}
-            saved_pins = {k: v for k, v in restored["files"].items() if k.startswith(directory)}
-            if original_pins != saved_pins:
-                raise ValueError(f"{letter}: archived media differs from the original volume")
+        check_pinned_media(original_files, restored["files"], f"{letter} cold restore")
         source = backup["source"]["reading"]
         if source != restored["reading"]:
             raise ValueError(f"Restored reading snapshot differs from the cold source for {letter}")
@@ -219,7 +223,9 @@ def main():
     if load("b-source-after") != load("b-backup")["source"]:
         raise ValueError("Source volume changed after backup")
     source = b["restoredReading"]
-    target = load("b-target-after")["reading"]
+    stopped_target = load("b-target-after")
+    check_pinned_media(b["backupFileSha256"], stopped_target["files"], "b stopped restored volume")
+    target = stopped_target["reading"]
     source_probe = load("probe-b-source")
     check_family_probes(source, target, source_probe, load("probe-b"))
     browser = json.loads(parsed.browser.read_bytes())

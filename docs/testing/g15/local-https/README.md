@@ -58,7 +58,7 @@ Windows/WSL 分开运行时，在 Windows 用相同的 Python 命令准备前端
 python docs/testing/g15/local-https/verify_browser.py --spki PIN --output g15-browser-result.json
 ```
 
-浏览器脚本输出 `READY_FOR_RESTART` 后，在部署终端执行下列命令。`restart` 先采集数据库计数、已完成的会话、供应商日志及容器启动时间。健康检查返回 200 后，到浏览器终端按回车，在新 Chrome 中重新登录并读回历史。
+浏览器脚本输出 `READY_FOR_RESTART` 后，在部署终端执行下列命令。`restart` 先采集数据库计数、已完成的会话、供应商日志及容器启动时间。健康检查返回 200 后，到浏览器终端按回车，在新 Chrome 中重新登录并读回历史。生成基线时逐个检查三个服务：旧实例须已在重启前采集时启动，新实例须在该次采集之后、读回后的采集结束前启动。
 
 ```sh
 sh "$g15/stack.sh" restart && sh "$g15/stack.sh" inspect
