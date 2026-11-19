@@ -5,6 +5,7 @@ import hashlib
 import json
 import secrets
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -108,8 +109,9 @@ def start_reading(page, origin):
     button("开始阅读").click()
     with page.expect_response(lambda r: r.url.endswith("/events") and r.request.method == "POST") as started:
         button("开始本次阅读").click()
-    assert started.value.status == 201 and started.value.request.post_data_json["eventType"] == "STARTED"
-    return int(started.value.url.split("/")[-2])
+    started_payload = started.value.request.post_data_json
+    assert started.value.status == 201 and started_payload["eventType"] == "STARTED"
+    return int(started.value.url.split("/")[-2]), started_payload["clientEventId"]
 
 
 def database_state(path, sid):
@@ -117,13 +119,13 @@ def database_state(path, sid):
         revision, = db.execute("SELECT revision FROM reading_sessions WHERE id=?", (sid,)).fetchone()
         events = db.execute("""SELECT id,event_type,revision_after FROM interaction_events
                             WHERE session_id=? ORDER BY id""", (sid,)).fetchall()
-        executions = db.execute("""SELECT client_request_id,status FROM request_executions
-                                WHERE scope_type='SESSION_EVENT' AND scope_id=?
-                                AND client_request_id IN ('g13-initial','g13-feedback') ORDER BY id""",
-                                (sid,)).fetchall()
         evidence = db.execute("""SELECT e.event_id,e.knowledge_item_id FROM event_evidence e
                               JOIN interaction_events i ON i.id=e.event_id
                               WHERE i.session_id=? ORDER BY e.event_id,e.rank_no""", (sid,)).fetchall()
+        db.row_factory = sqlite3.Row
+        executions = [dict(row) for row in db.execute("""
+            SELECT * FROM request_executions WHERE scope_type='SESSION_EVENT' AND scope_id=? ORDER BY id
+        """, (sid,))]
         assert not db.execute("PRAGMA foreign_key_check").fetchall()
         return {"revision": revision, "events": events, "executions": executions, "evidence": evidence}
 
@@ -132,13 +134,13 @@ def test_guidance_replay_and_browser_refresh(tmp_path, monkeypatch):
     path = tmp_path / "fixture.sqlite3"
     monkeypatch.setenv("ZHIYA_DB_PATH", str(path))
     seed_fixture(path)
-    prompts = []
+    model_calls = []
 
     def provider(request):
         assert str(request.url) == "https://fixture.invalid/model"
         context = json.loads(request.content)["messages"][1]["content"]
-        prompts.append(context)
         selected = context.split("候选问句：\n", 1)[1].splitlines()[0]
+        model_calls.append({"prompt": context, "question": selected})
         return httpx.Response(200, json={"choices": [{"finish_reason": "stop",
                                     "message": {"role": "assistant", "content": selected}}]})
 
@@ -148,10 +150,12 @@ def test_guidance_replay_and_browser_refresh(tmp_path, monkeypatch):
                                              args=["--ignore-certificate-errors-spki-list=" + pin])
         context = browser.new_context(locale="zh-CN")
         page = context.new_page()
-        sid = start_reading(page, origin)
+        sid, start_key = start_reading(page, origin)
         url = f"/api/v1/reading-sessions/{sid}"
-        initial_state = database_state(path, sid)
-        assert initial_state["revision"] == 1 and [e[1] for e in initial_state["events"]] == ["STARTED"]
+        state = database_state(path, sid)
+        assert state["revision"] == 1 and [e[1] for e in state["events"]] == ["STARTED"]
+        baseline_executions = state["executions"]
+        assert [(row["client_request_id"], row["status"]) for row in baseline_executions] == [(start_key, "SUCCEEDED")]
         commit = subprocess.check_output(["git", "-c", f"safe.directory={ROOT.as_posix()}", "-C", str(ROOT),
                                           "rev-parse", "HEAD"], text=True).strip()
         summary = {"commit": commit, "atUtc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -173,8 +177,9 @@ def test_guidance_replay_and_browser_refresh(tmp_path, monkeypatch):
                                       "expectedRevision": payload["expectedRevision"], "http": status,
                                       "eventId": data["interactionEventId"], "replyRevision": data["revision"],
                                       "dbRevision": snapshot["revision"], "eventCount": len(snapshot["events"]),
-                                      "guidanceExecutions": len(snapshot["executions"]),
-                                      "evidenceRows": len(snapshot["evidence"]), "modelCalls": len(prompts)})
+                                      "sessionExecutions": len(snapshot["executions"]),
+                                      "guidanceExecutions": len(snapshot["executions"]) - len(baseline_executions),
+                                      "evidenceRows": len(snapshot["evidence"]), "modelCalls": len(model_calls)})
             return status, data
 
         first_payload = {"clientEventId": "g13-initial", "expectedRevision": 1, "pageNumber": 1, "feedback": "INITIAL"}
@@ -189,20 +194,26 @@ def test_guidance_replay_and_browser_refresh(tmp_path, monkeypatch):
                 payload["expectedRevision"] = replies[-1]["revision"]
             status, reply = send(payload)
             assert status == 201 and reply["status"] == "GENERATED" and reply["sources"] == [SOURCE]
-            assert reply["strategyType"] == strategy and reply["revision"] == count + 1 and reply["outputText"]
+            assert reply["strategyType"] == strategy and reply["revision"] == count + 1
+            assert len(model_calls) == count
+            assert reply["outputText"] and reply["outputText"] == model_calls[-1]["question"]
+            previous_executions = state["executions"]
             state = database_state(path, sid)
             event_id = reply["interactionEventId"]
             assert len(state["events"]) == count + 1 and state["events"][-1] == (event_id, event_type, count + 1)
-            assert len(state["executions"]) == count and state["executions"][-1] == (payload["clientEventId"], "SUCCEEDED")
+            executions = state["executions"]
+            assert executions[:-1] == previous_executions
+            assert executions[-1]["client_request_id"] == payload["clientEventId"] and executions[-1]["status"] == "SUCCEEDED"
             assert len(state["evidence"]) == count and state["evidence"][-1] == (event_id, SOURCE["knowledgeItemId"])
-            assert state["revision"] == reply["revision"] and len(prompts) == count
+            assert state["revision"] == reply["revision"]
             assert send(payload) == (200, reply)
-            assert database_state(path, sid) == state and len(prompts) == count
+            assert database_state(path, sid) == state and len(model_calls) == count
             replies.append(reply)
 
-        assert replies[0]["outputText"] in prompts[1]
+        assert replies[0]["outputText"] in model_calls[1]["prompt"]
+        assert replies[1]["outputText"] != replies[0]["outputText"]
         assert send(first_payload) == (200, replies[0])
-        assert database_state(path, sid) == state and len(prompts) == 2
+        assert database_state(path, sid) == state and len(model_calls) == 2
         with page.expect_response(lambda r: r.url == origin + url and r.request.method == "GET") as restored:
             page.reload()
         assert restored.value.status == 200
@@ -213,10 +224,12 @@ def test_guidance_replay_and_browser_refresh(tmp_path, monkeypatch):
         expected[1]["feedback"] = "NOT_UNDERSTOOD"
         assert data["session"]["readingSessionId"] == sid and data["session"]["revision"] == 3
         assert data["events"][0]["eventType"] == "STARTED" and data["events"][1:] == expected
-        assert database_state(path, sid) == state and len(prompts) == 2
+        assert database_state(path, sid) == state and len(model_calls) == 2
         summary["refresh"] = {"http": 200, "revision": 3, "events": data["events"]}
-        summary["database"] = state
-        summary["provider"] = {"mode": "httpx.MockTransport", "calls": len(prompts)}
+        summary["database"] = {**state, "executions": [(row["client_request_id"], row["status"])
+                                                     for row in state["executions"]]}
+        summary["provider"] = {"mode": "httpx.MockTransport", "calls": len(model_calls),
+                               "selectedQuestions": [call["question"] for call in model_calls]}
         context.close()
         browser.close()
     output = tmp_path / "result.json"
