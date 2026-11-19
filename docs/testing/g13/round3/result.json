@@ -1,6 +1,6 @@
 {
-  "commit": "0fd880e421b533529cf800a22f71863eb8dbc47f",
-  "atUtc": "2026-11-19T09:49:47+00:00",
+  "commit": "2c2715a0057a1257c53a4de4c02117c86fd2cc08",
+  "atUtc": "2026-11-19T10:26:20+00:00",
   "browser": "Chrome 154.0.8037.98",
   "sessionId": 1,
   "writes": [
@@ -18,6 +18,7 @@
       "revision": 2,
       "status": "GENERATED",
       "strategyType": "CONTEXT_QUESTION",
+      "outputText": "读到“小园把一只纸船放进水里”时，图里有你认识的东西吗？",
       "answerOptions": [
         "是",
         "不是",
@@ -52,6 +53,7 @@
       "revision": 4,
       "status": "GENERATED",
       "strategyType": "CONTEXT_QUESTION",
+      "outputText": "读到“小园把一只纸船放进水里”时，你觉得下一页还会看到刚才的东西吗？",
       "answerOptions": [
         "是",
         "不是",
@@ -66,6 +68,7 @@
       "revision": 5,
       "status": "FALLBACK",
       "strategyType": "SKIP",
+      "outputText": "",
       "modelCalls": 2
     },
     {
@@ -162,6 +165,7 @@
   },
   "databaseEvents": [
     {
+      "interactionEventId": 1,
       "type": "STARTED",
       "key": "child-start",
       "input": null,
@@ -169,6 +173,7 @@
       "revision": 1
     },
     {
+      "interactionEventId": 2,
       "type": "QUESTION",
       "key": "child-initial",
       "input": null,
@@ -176,6 +181,7 @@
       "revision": 2
     },
     {
+      "interactionEventId": 3,
       "type": "ANSWER",
       "key": "child-answer",
       "input": "是",
@@ -183,6 +189,7 @@
       "revision": 3
     },
     {
+      "interactionEventId": 4,
       "type": "FEEDBACK",
       "key": "child-understood",
       "input": null,
@@ -190,6 +197,7 @@
       "revision": 4
     },
     {
+      "interactionEventId": 5,
       "type": "FEEDBACK",
       "key": "child-skip",
       "input": null,
@@ -197,10 +205,6 @@
       "revision": 5
     }
   ],
-  "provider": {
-    "mode": "httpx.MockTransport",
-    "calls": 2
-  },
   "ui": [
     "guardian login and profile",
     "shelf open",
@@ -217,5 +221,13 @@
     "UNDERSTOOD",
     "SKIPPED",
     "guardian session check"
-  ]
+  ],
+  "provider": {
+    "mode": "httpx.MockTransport",
+    "calls": 2,
+    "selectedQuestions": [
+      "读到“小园把一只纸船放进水里”时，图里有你认识的东西吗？",
+      "读到“小园把一只纸船放进水里”时，你觉得下一页还会看到刚才的东西吗？"
+    ]
+  }
 }

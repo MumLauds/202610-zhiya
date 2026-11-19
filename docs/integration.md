@@ -7,7 +7,7 @@
 | 基础共读、历史与小结（首轮） | [`6e04a14`](https://github.com/MumLauds/202610-zhiya/commit/6e04a14292c801f72e14247dfb73b89642d0de85) | Chrome 完成登录、建档、开读、录音确认、结束和重新登录后读回小结。Firefox 录音上传返回 422，改走手动输入后也读回了小结。[首轮记录](testing/g13/round1/README.md) |
 | Firefox 录音修复（FR-08、AC-07 的录音确认环节） | [`ce8b2a2`](https://github.com/MumLauds/202610-zhiya/commit/ce8b2a25b8253550e3e51cd494a18f2e3ec70854) 复现，[`9be5439`](https://github.com/MumLauds/202610-zhiya/commit/9be54399bf41ca2f09eb1680456a009ffdd1f169) 复测 | 修复前，Firefox 的 Ogg 音频以 WebM 上传；修复后 Firefox 用 Ogg、Chrome 用 WebM，均返回 200，解码为 16 kHz 单声道，转写可以编辑并确认。实测提交与 [#51](https://github.com/MumLauds/202610-zhiya/pull/51) 合入后的 `a09f9b6` 代码树一致。[双浏览器实测数据](testing/g13/voice-51.json) |
 | 首题、未理解反馈和刷新恢复（第二轮，FR-06、FR-07） | 业务基线 [`a09f9b6`](https://github.com/MumLauds/202610-zhiya/commit/a09f9b669762d3d957be1db8ff70a17e01bc9692)，复测脚本 [`2863223`](https://github.com/MumLauds/202610-zhiya/commit/286322304c276b7a2bcedf879000757f1d067d1c) | 同一会话内新增两条引导事件，刷新后可按序读回。三次原请求重放均未增加写入或模型调用。[第二轮实测数据](testing/g13/round2/result.json) |
-| 儿童授权、选项作答与家长解锁（第三轮，FR-06、FR-07、FR-16） | [`0fd880e`](https://github.com/MumLauds/202610-zhiya/commit/0fd880e421b533529cf800a22f71863eb8dbc47f) | 作答重放两次，数据库仍只有一条作答。家长解锁后授权撤销，会话转为 `INTERRUPTED`。[第三轮报告与复跑步骤](testing/g13/round3/README.md) |
+| 儿童授权、选项作答与家长解锁（第三轮，FR-06、FR-07、FR-16） | 业务基线 [`0fd880e`](https://github.com/MumLauds/202610-zhiya/commit/0fd880e421b533529cf800a22f71863eb8dbc47f)，复测脚本 [`2c2715a`](https://github.com/MumLauds/202610-zhiya/commit/2c2715a0057a1257c53a4de4c02117c86fd2cc08) | 首次作答和两次重放均指向数据库中的同一条作答。家长解锁后授权撤销，会话转为 `INTERRUPTED`。[第三轮报告与复跑步骤](testing/g13/round3/README.md) |
 
 首轮和 #51 均使用真实浏览器、本机 HTTPS、FastAPI、SQLite 和 FFmpeg。浏览器录音来自虚拟麦克风，ASR 供应商响应由本地模拟。首轮的 TTS 和小结模型也使用本地模拟，绘本、家长和孩子档案均为测试样例。首轮报告中的“阻塞”描述的是当时的提交。
 
