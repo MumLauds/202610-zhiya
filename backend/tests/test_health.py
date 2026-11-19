@@ -43,11 +43,17 @@ def test_voice_routes_fail_closed_without_business_authentication():
         "/api/v1/auth/registrations", "/api/v1/auth/sessions", "/api/v1/auth/sessions/current",
         "/api/v1/auth/parent-unlocks",
         "/api/v1/child-profiles", "/api/v1/child-profiles/{profile_id}",
-        "/api/v1/storybooks", "/api/v1/story-versions/{version_id}",
+        "/api/v1/storybooks", "/api/v1/story-versions/{version_id}", "/api/v1/recommendations",
         "/api/v1/reading-sessions", "/api/v1/reading-sessions/{session_id}",
         "/api/v1/reading-sessions/{session_id}/mode-settings",
+ HEAD
         "/api/v1/reading-sessions/{session_id}/events", "/api/v1/reading-sessions/{session_id}/completions",
         "/api/v1/reading-sessions/{session_id}/guidance"}
+
+        "/api/v1/reading-sessions/{session_id}/events",
+        "/api/v1/reading-sessions/{session_id}/branches",
+        "/api/v1/reading-sessions/{session_id}/completions"}
+ main
     for method, path in (("POST", "/api/v1/voice/transcriptions"), ("POST", "/api/v1/voice/syntheses"),
                          ("GET", "/api/v1/media/audio-unknown")):
         response = client.request(method, path)

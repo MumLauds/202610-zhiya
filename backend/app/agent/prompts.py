@@ -42,6 +42,11 @@ def _age_label(age_band: str | None) -> str:
     return AGE_LABELS.get(age_band, age_band)
 
 
+def select_knowledge_items(items: list[KnowledgeItem], max_items: int) -> list[KnowledgeItem]:
+    """Use the same bounded set for prompt context, model eligibility and citations."""
+    return items[:max(0, max_items)]
+
+
 def build_prompt(
     task: ContentTask,
     *,
@@ -58,10 +63,9 @@ def build_prompt(
     if not instruction or len(instruction) > 200:
         raise ValueError("user_input must be non-empty and at most 200 characters")
 
-    selected = items[:max_items]
     knowledge_lines = [
         f"- [{item.item_key}] {item.content}（来源：{item.source_title}）"
-        for item in selected
+        for item in select_knowledge_items(items, max_items)
     ]
     if knowledge_lines:
         knowledge_block = "\n".join(knowledge_lines)

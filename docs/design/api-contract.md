@@ -117,6 +117,10 @@ JSON 错误统一使用 `{error: {code, message, retryable}, requestId}`。前�
 
 会话对象包含 `readingSessionId`、`storyVersionId`、`currentPage`、`visitedPageNumbers`、`mode`、`status`、`revision`、`expiresAt`（UTC ISO 8601 字符串或 null）。断线恢复以 API-013 返回的固定版本、当前页、状态及修订号为准。首阶段开始和翻页的 `events` 示例使用 `interactionEventId`、`eventType`、`pageNumber`。家长可查看含 `readingSessionId`、`summary`、`activities`、`status` 的小结。儿童只接收授权范围内的必要交互和进度，API-013 及 API-019 的 `report` 均建议为 null，重放前仍校验调用者权限并按当前角色投影。客户端下一次新写入使用服务端修订号。网络失联或返回 `REQUEST_IN_PROGRESS` 时，可使用原键和原请求体查询式重发。收到明确的 504 后先读取 API-013，由用户根据会话状态决定下一步。
 
+儿童在进行中的会话读取 API-013 时，`data.answerOptions` 列出当前页可以提交的作答文案。取当前会话、绘本版本和页面上最近一条正文非空且结果为 `SUCCESS` 或 `FALLBACK` 的 `QUESTION`。服务端可在该问题的最终响应 `data.answerOptions` 中保存已核验的字符串选项。旧问题省略该字段时提供“是”“不是”“不知道”。页面尚无可展示的问题时，沿用该页已审核的分支选项文案。返回空数组表示当前没有可提交的选项。
+
+API-015 在同一写事务内重新计算允许的选项。儿童的 `ANSWER.inputText` 去除两端空白后须精确匹配其中一项，超出范围返回 `422 VALIDATION_ERROR`。家长在亲子共读时可提交 1～200 字符的文本。成功作答会记录事件并增加修订号，跳转剧情分支使用 API-018。
+
 ## 本期有限续写范围
 
 用户确认本期纳入有限续写；范围限亲子模式、固定源快照、审核新版本和原子切换，整本及各阅读路径仍为4～6页。

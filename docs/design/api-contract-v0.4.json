@@ -1508,7 +1508,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
+      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。儿童在 IN_PROGRESS 时另收到 data.answerOptions 字符串数组，供 API-015 作答。该数组按当前页最近一个可展示的 QUESTION 计算。服务端可在该提问的最终响应 data.answerOptions 中保存已核验的选项。旧提问未带此字段时使用固定短答“是”“不是”“不知道”。当前页尚无可展示提问时沿用已审核的分支选项文案。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
       "interfaceId": "API-013",
       "uniqueKey": "GET /api/v1/reading-sessions/{session_id}",
       "additionalExamples": [
@@ -1620,7 +1620,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "类型STARTED/PAGE_CHANGED/ANSWER/FEEDBACK；SKIPPED是feedback取值，不是eventType。QUESTION、ASK、BRANCH_CHOSEN由对应服务写入；同键先重放，新键检查revision。",
+      "constraints": "类型STARTED/PAGE_CHANGED/ANSWER/FEEDBACK；SKIPPED是feedback取值，不是eventType。儿童 ANSWER 的 inputText 去除两端空白后须精确匹配服务端按 API-013 data.answerOptions 计算的当前选项，否则返回 422 VALIDATION_ERROR 并保持进度。家长共读仍可提交文本。QUESTION、ASK、BRANCH_CHOSEN由对应服务写入；同键先重放，新键检查revision。",
       "interfaceId": "API-015",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/events"
     },
@@ -1757,7 +1757,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "分支属于当前故事和当前节点且已审核；原子提交进度及事件。重复相同请求200；标识复用且内容不同409。",
+      "constraints": "分支属于当前故事和当前节点且已审核；原子提交进度及事件。重复相同请求时，复核该正文版本的API-009读取权限，通过后返回200；正文不可读返回404。标识复用且内容不同409。",
       "interfaceId": "API-018",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/branches"
     },

@@ -97,8 +97,8 @@ draft = await service.generate(
 
 PR #32 review 后的三项修复（G10 需知）：
 
-1. **无可用知识时短路**：检索为空（无 APPROVED / 全部 DRAFT / 缺库）时 `generate()` 在调用模型前直接返回 `ContentDraft(text="", sources=[], has_knowledge=False, model_error_code=None)`，模型调用次数为 0。G10 据此构造 `NO_KNOWLEDGE_FALLBACK`，不必等到模型超时。
-2. **来源与上下文一致**：`build_prompt` 与 `sources` 使用同一份经 `max_items` 截断的知识集合（`_selected_items`）。检索命中数大于 `max_items` 时，`sources` 只列出真正进入模型上下文的条目，不会引用被截断的知识。
+1. **无可用知识时短路**：检索为空（无 APPROVED / 全部 DRAFT / 缺库），或 `max_items <= 0` 使上下文为空时 `generate()` 在调用模型前直接返回 `ContentDraft(text="", sources=[], has_knowledge=False, model_error_code=None)`，模型调用次数为 0。G10 据此构造 `NO_KNOWLEDGE_FALLBACK`，不必等到模型超时。
+2. **来源与上下文一致**：`build_prompt` 与 `sources` 使用同一份经 `max_items` 截断的知识集合（`select_knowledge_items`）。检索命中数大于 `max_items` 时，`sources` 只列出真正进入模型上下文的条目，不会引用被截断的知识。
 3. **连续中文匹配**：见检索规则第 8 条。
 
 G10 判断优先级：`has_knowledge=False` → 无知识降级（此时不应有 `model_error_code`）；`has_knowledge=True` 且 `model_error_code` 非空 → 模型失败降级；其余为成功草稿。

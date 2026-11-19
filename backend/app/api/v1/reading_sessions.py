@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Path, Query, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.api.v1.auth import (
     Principal,
@@ -21,7 +21,7 @@ from app.api.v1.auth import (
     set_session_cookies,
     token_digest,
 )
-from app.api.v1.storybooks import VISIBLE
+from app.api.v1.storybooks import VISIBLE, page_object, readable_story_version
 from app.services.cleanup import delete_session_rows, purge_voice_media
 from app.services.reading_reports import (
     fact_summary,
@@ -31,6 +31,8 @@ from app.services.reading_reports import (
 
 router = APIRouter(prefix="/api/v1/reading-sessions")
 MAX_ID = 9007199254740991
+MAX_ANSWER_LENGTH = 200
+CHILD_SHORT_ANSWERS = ("是", "不是", "不知道")
 
 
 class SessionCreate(BaseModel):
@@ -50,8 +52,34 @@ class Completion(BaseModel):
 
 class ReadingEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    eventType: Literal["STARTED", "PAGE_CHANGED"]
+    eventType: Literal["STARTED", "PAGE_CHANGED", "ANSWER", "FEEDBACK"]
     pageNumber: int = Field(ge=1, le=MAX_ID, strict=True)
+    expectedRevision: int = Field(ge=0, le=MAX_ID, strict=True)
+    clientEventId: str = Field(min_length=1, max_length=64)
+    inputText: str | None = None
+    feedback: Literal["UNDERSTOOD", "NOT_UNDERSTOOD", "SKIPPED"] | None = None
+
+    @field_validator("inputText", mode="before")
+    @classmethod
+    def clean_input(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def validate_event_fields(self):
+        if self.eventType == "ANSWER":
+            if self.inputText is None or not 1 <= len(self.inputText) <= MAX_ANSWER_LENGTH or self.feedback is not None:
+                raise ValueError("ANSWER 事件需要 1～200 字符 inputText 且不可携带 feedback")
+        elif self.eventType == "FEEDBACK":
+            if self.feedback is None or self.inputText is not None:
+                raise ValueError("FEEDBACK 事件需要 feedback 且不可携带 inputText")
+        elif self.inputText is not None or self.feedback is not None:
+            raise ValueError("当前事件类型不支持 inputText 或 feedback")
+        return self
+
+
+class BranchChoice(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    branchId: int = Field(ge=1, le=MAX_ID, strict=True)
     expectedRevision: int = Field(ge=0, le=MAX_ID, strict=True)
     clientEventId: str = Field(min_length=1, max_length=64)
 
@@ -61,6 +89,37 @@ class ModeSettings(BaseModel):
     mode: Literal["CHILD_SOLO"]
     allowedStoryVersionIds: list[Annotated[int, Field(ge=1, le=MAX_ID, strict=True)]] = Field(min_length=1, max_length=100)
     timeLimitSeconds: int = Field(ge=60, le=1800, strict=True)
+
+
+def current_question(db: sqlite3.Connection, session: sqlite3.Row) -> sqlite3.Row | None:
+    questions = db.execute(
+        """SELECT output_text, response_json FROM interaction_events
+           WHERE session_id = ? AND version_id = ? AND page_no = ? AND event_type = 'QUESTION'
+             AND result_status IN ('SUCCESS', 'FALLBACK') AND output_text IS NOT NULL
+           ORDER BY id DESC""",
+        (session["id"], session["version_id"], session["current_page_no"]),
+    )
+    return next((question for question in questions if question["output_text"].strip()), None)
+
+
+def child_answer_options(db: sqlite3.Connection, session: sqlite3.Row) -> list[str]:
+    question = current_question(db, session)
+    if question is None:
+        choices = db.execute(
+            """SELECT choice_label FROM story_branches
+               WHERE version_id = ? AND from_page_no = ? AND review_status = 'APPROVED' ORDER BY id""",
+            (session["version_id"], session["current_page_no"]),
+        )
+        options = (choice["choice_label"] for choice in choices)
+    else:
+        data = json.loads(question["response_json"]).get("data")
+        if not isinstance(data, dict) or "answerOptions" not in data:
+            return list(CHILD_SHORT_ANSWERS)
+        options = data["answerOptions"]
+        if not isinstance(options, list):
+            return []
+    labels = (option.strip() for option in options if isinstance(option, str))
+    return list(dict.fromkeys(label for label in labels if 1 <= len(label) <= MAX_ANSWER_LENGTH))
 
 
 def session_object(row):
@@ -156,10 +215,13 @@ def get_session(request: Request, session_id: int = Path(ge=1, le=MAX_ID)):
             if principal.role == "GUARDIAN":
                 report_row = db.execute("SELECT * FROM reading_reports WHERE session_id = ?", (session_id,)).fetchone()
                 report = report_object(session_id, report_row)
-            return {"data": {"session": session_object(row),
-                             "events": [{"interactionEventId": e["id"], "eventType": e["event_type"],
-                                         "pageNumber": e["page_no"]} for e in events],
-                             "report": report}, "requestId": request.state.request_id}
+            data = {"session": session_object(row),
+                    "events": [{"interactionEventId": e["id"], "eventType": e["event_type"],
+                                "pageNumber": e["page_no"]} for e in events],
+                    "report": report}
+            if principal.role == "CHILD" and row["status"] == "IN_PROGRESS":
+                data["answerOptions"] = child_answer_options(db, row)
+            return {"data": data, "requestId": request.state.request_id}
     except sqlite3.Error:
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用", retryable=True)
 
@@ -326,7 +388,7 @@ def owned_session(db, session_id: int, principal: Principal):
 
 
 def replay_session_event(db, request: Request, session_id: int, client_event_id: str, digest: str,
-                         principal: Principal | None = None):
+                         principal: Principal | None = None, *, page_version_id: int | None = None):
     """Shared SESSION_EVENT lookup for events/completions (and later questions/guidance/branches).
 
     Returns a response when the key was already used, otherwise None.
@@ -352,6 +414,9 @@ def replay_session_event(db, request: Request, session_id: int, client_event_id:
         return error(request, 409, "REQUEST_IN_PROGRESS", "请求正在处理", retryable=True, headers={"Retry-After": "1"})
     if previous["status"] == "UNKNOWN":
         return error(request, 504, "REQUEST_OUTCOME_UNKNOWN", "请求结果未知，请先查询会话")
+    if (previous["status"] == "SUCCEEDED" and page_version_id is not None
+            and readable_story_version(db, principal, page_version_id) is None):
+        return error(request, 404, "RESOURCE_NOT_FOUND", "绘本不可用")
     body = json.loads(previous["response_body"])
     body["requestId"] = request.state.request_id
     if principal is not None and principal.role == "CHILD" and isinstance(body.get("data"), dict) and "report" in body["data"]:
@@ -383,7 +448,7 @@ def fail_session_event(db, request: Request, owner: int, session_id: int, client
 
 @router.post("/{session_id}/events", status_code=201)
 def add_reading_event(payload: ReadingEvent, request: Request, session_id: int = Path(ge=1, le=MAX_ID)):
-    digest = request_digest(f"/api/v1/reading-sessions/{session_id}/events", payload.model_dump())
+    digest = request_digest(f"/api/v1/reading-sessions/{session_id}/events", payload.model_dump(exclude_none=True))
     try:
         with authorized_db(request, write=True) as (db, principal, failure):
             if failure:
@@ -397,28 +462,118 @@ def add_reading_event(payload: ReadingEvent, request: Request, session_id: int =
             if row["revision"] != payload.expectedRevision:
                 return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
                                           digest, 409, "SESSION_CONFLICT", "会话状态已变化")
+            now = int(time.time() * 1000)
+            visited = json.loads(row["visited_pages_json"])
             if payload.eventType == "STARTED":
                 valid = row["status"] == "CREATED" and payload.pageNumber == row["start_page_number"]
-            else:
+                next_page_no = payload.pageNumber
+                if valid:
+                    visited.append(payload.pageNumber)
+            elif payload.eventType == "PAGE_CHANGED":
                 page = db.execute("SELECT default_next_page_number FROM story_pages WHERE version_id = ? AND page_no = ?",
                                   (row["version_id"], row["current_page_no"])).fetchone()
                 valid = row["status"] == "IN_PROGRESS" and page and page[0] == payload.pageNumber
+                next_page_no = payload.pageNumber
+                if valid:
+                    visited.append(payload.pageNumber)
+            elif payload.eventType == "ANSWER":
+                valid = row["status"] == "IN_PROGRESS" and payload.pageNumber == row["current_page_no"]
+                next_page_no = row["current_page_no"]
+                if valid and principal.role == "CHILD" and payload.inputText not in child_answer_options(db, row):
+                    return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
+                                              digest, 422, "VALIDATION_ERROR", "请选择当前页已审核的回答选项")
+            else:  # FEEDBACK
+                valid = row["status"] == "IN_PROGRESS" and payload.pageNumber == row["current_page_no"]
+                next_page_no = row["current_page_no"]
+                if valid and current_question(db, row) is None:
+                    return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
+                                              digest, 409, "PROMPT_REQUIRED", "当前页尚未有引导问题，无法提交反馈")
             if not valid:
                 return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
                                           digest, 409, "SESSION_CONFLICT", "当前状态或页面不允许此操作")
+            revision = row["revision"] + 1
+            db.execute("""UPDATE reading_sessions SET status = 'IN_PROGRESS', current_page_no = ?,
+                       started_at = COALESCE(started_at, ?), revision = ?, visited_pages_json = ? WHERE id = ?""",
+                       (next_page_no, now, revision, json.dumps(visited), session_id))
+            cursor = db.execute("""INSERT INTO interaction_events
+                (session_id, version_id, request_key, request_digest, response_json, page_no, event_type,
+                 feedback, input_text, result_status, revision_after, created_at)
+                VALUES (?, ?, ?, ?, '{}', ?, ?, ?, ?, 'SUCCESS', ?, ?)""",
+                (session_id, row["version_id"], payload.clientEventId, digest, payload.pageNumber,
+                 payload.eventType, payload.feedback, payload.inputText, revision, now))
+            response = {"data": {"interactionEventId": cursor.lastrowid, "revision": revision}, "requestId": request.state.request_id}
+            db.execute("UPDATE interaction_events SET response_json = ? WHERE id = ?",
+                       (json.dumps(response, ensure_ascii=False), cursor.lastrowid))
+            record_session_event(db, principal.guardian_id, session_id, payload.clientEventId, digest, now, 201, response)
+            return JSONResponse(status_code=201, content=response)
+    except sqlite3.Error:
+        return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用")
+
+
+@router.post("/{session_id}/branches", status_code=201)
+def choose_branch(payload: BranchChoice, request: Request, session_id: int = Path(ge=1, le=MAX_ID)):
+    """API-018: select an APPROVED branch from the current page and advance the reading session."""
+    digest = request_digest(f"/api/v1/reading-sessions/{session_id}/branches", payload.model_dump())
+    try:
+        with authorized_db(request, write=True) as (db, principal, failure):
+            if failure:
+                return failure
+            row = owned_session(db, session_id, principal)
+            if not row:
+                return error(request, 404, "RESOURCE_NOT_FOUND", "会话不可用")
+            replay = replay_session_event(db, request, session_id, payload.clientEventId, digest, principal,
+                                          page_version_id=row["version_id"])
+            if replay is not None:
+                return replay
+            if row["status"] != "IN_PROGRESS" or row["revision"] != payload.expectedRevision:
+                return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
+                                          digest, 409, "SESSION_CONFLICT", "会话状态或进度已变化")
+            branch = db.execute(
+                """SELECT from_page_no, next_page_no, review_status FROM story_branches
+                   WHERE id = ? AND version_id = ?""",
+                (payload.branchId, row["version_id"]),
+            ).fetchone()
+            if not branch:
+                return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
+                                          digest, 404, "RESOURCE_NOT_FOUND", "分支不存在")
+            if branch["from_page_no"] != row["current_page_no"] or branch["review_status"] != "APPROVED":
+                return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
+                                          digest, 409, "SESSION_CONFLICT", "当前页面或审核状态不允许选择该分支")
+            next_page = db.execute(
+                "SELECT * FROM story_pages WHERE version_id = ? AND page_no = ?",
+                (row["version_id"], branch["next_page_no"]),
+            ).fetchone()
+            if not next_page:
+                return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
+                                          digest, 404, "RESOURCE_NOT_FOUND", "目标页面不可用")
             now = int(time.time() * 1000)
             revision = row["revision"] + 1
             visited = json.loads(row["visited_pages_json"])
-            visited.append(payload.pageNumber)
-            db.execute("""UPDATE reading_sessions SET status = 'IN_PROGRESS', current_page_no = ?,
-                       started_at = COALESCE(started_at, ?), revision = ?, visited_pages_json = ? WHERE id = ?""",
-                       (payload.pageNumber, now, revision, json.dumps(visited), session_id))
-            cursor = db.execute("""INSERT INTO interaction_events
-                (session_id, version_id, request_key, request_digest, response_json, page_no, event_type,
-                 result_status, revision_after, created_at) VALUES (?, ?, ?, ?, '{}', ?, ?, 'SUCCESS', ?, ?)""",
-                (session_id, row["version_id"], payload.clientEventId, digest, payload.pageNumber,
-                 payload.eventType, revision, now))
-            response = {"data": {"interactionEventId": cursor.lastrowid, "revision": revision}, "requestId": request.state.request_id}
+            visited.append(next_page["page_no"])
+            db.execute(
+                "UPDATE reading_sessions SET current_page_no = ?, revision = ?, visited_pages_json = ? WHERE id = ?",
+                (next_page["page_no"], revision, json.dumps(visited), session_id),
+            )
+            cursor = db.execute(
+                """INSERT INTO interaction_events
+                (session_id, version_id, request_key, request_digest, response_json, page_no, branch_id,
+                 event_type, result_status, revision_after, created_at)
+                VALUES (?, ?, ?, ?, '{}', ?, ?, 'BRANCH_CHOSEN', 'SUCCESS', ?, ?)""",
+                (session_id, row["version_id"], payload.clientEventId, digest, branch["from_page_no"],
+                 payload.branchId, revision, now),
+            )
+            response = {
+                "data": {
+                    "readingSessionId": session_id,
+                    "branchId": payload.branchId,
+                    "currentPage": next_page["page_no"],
+                    "revision": revision,
+                    "interactionEventId": cursor.lastrowid,
+                    "nextPage": page_object(next_page),
+                    "visitedPageNumbers": visited,
+                },
+                "requestId": request.state.request_id,
+            }
             db.execute("UPDATE interaction_events SET response_json = ? WHERE id = ?",
                        (json.dumps(response, ensure_ascii=False), cursor.lastrowid))
             record_session_event(db, principal.guardian_id, session_id, payload.clientEventId, digest, now, 201, response)
