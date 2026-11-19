@@ -17,6 +17,8 @@ class ModelAdapter:
                 context_text=request.context_text,
             )
         except ServiceError as exc:
+            # 恢复原注释：保留非法输入和无关错误给调用方
+            # Keep invalid input and unrelated errors visible to the caller.
             if not exc.code.startswith("MODEL_"):
                 raise
             return ModelGenerateResult(

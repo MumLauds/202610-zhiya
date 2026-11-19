@@ -6,7 +6,7 @@ async def run_agent(
     page_text: str, 
     user_input: str, 
     feedback_type: str, 
-    knowledge: dict  # 改为接收查好的知识，不在这里查库
+    knowledge: dict
 ) -> dict:
     
     # 1. 跳过逻辑
@@ -18,8 +18,8 @@ async def run_agent(
             "sources": []
         }
 
-    # 2. 简易安全拦截
-    dangerous_words = ["火", "电", "刀", "打"]
+    # 2. 简易安全拦截（对齐 G05 降级契约及审查意见）
+    dangerous_words = ["火", "电", "刀", "打", "死", "血", "疼"]
     if any(word in user_input for word in dangerous_words):
         return {
             "status": "BLOCKED",
@@ -74,17 +74,16 @@ async def run_agent(
             "sources": []
         }
 
-    # 8. 补全最后的返回（根据反馈动态判断 strategyType）
+    # 8. 补全最后的返回（严格对齐契约枚举，移除违规的 DEEPEN_QUESTION）
     if feedback_type == "NOT_UNDERSTOOD":
         strategy = "CONCRETE_RECALL"
-    elif feedback_type == "UNDERSTOOD":
-        strategy = "DEEPEN_QUESTION" # 契约里暂未定义，你可以自己定一个合理的，或者沿用 CONTEXT_QUESTION
     else:
-        strategy = "CONTEXT_QUESTION"
+        # UNDERSTOOD 和 INITIAL 统一使用 CONTEXT_QUESTION，符合契约
+        strategy = "CONTEXT_QUESTION" 
 
     return {
         "status": "GENERATED",
         "outputText": result.text,
-        "strategyType": strategy,  # 这里使用动态判断的变量
+        "strategyType": strategy,
         "sources": [{"knowledgeItemId": k["knowledge_item_id"], "sourceTitle": k["source_title"]} for k in knowledge["items"]]
     }
