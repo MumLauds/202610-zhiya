@@ -1,5 +1,7 @@
 # G08 后端部署初稿
 
+同一提交构建前后端、本机 HTTPS 共读流程及服务重启后的历史读回，见 [G15 本地部署预演](../docs/testing/g15/local-https/README.md)。
+
 | 缩写 | 中文名称（英文全称） |
 | --- | --- |
 | API | 应用程序编程接口（Application Programming Interface） |

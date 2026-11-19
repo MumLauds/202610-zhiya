@@ -1,0 +1,23 @@
+{
+	admin off
+	default_sni 127.0.0.1
+	auto_https disable_redirects
+}
+
+https://127.0.0.1:8443 {
+	tls /test-tls/cert.pem /test-tls/key.pem
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy backend:8000
+	}
+	handle {
+		root * /srv/www
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+https://supplier:9443 {
+	tls /test-tls/cert.pem /test-tls/key.pem
+	reverse_proxy provider:9080
+}
