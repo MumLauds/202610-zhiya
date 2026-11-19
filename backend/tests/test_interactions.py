@@ -1,15 +1,24 @@
-"""Tests for API-010 recommendations, API-015 ANSWER/FEEDBACK events, and API-018 branch selection."""
+"""Tests for API-010 recommendations, API-015 ANSWER/FEEDBACK events, API-017 guidance, and API-018 branch selection."""
 
+import asyncio
 import json
 import sqlite3
+import time
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.v1 import guidance as guidance_api
 from app.api.v1.auth import _login_attempts
-from app.main import app
+from app.config import Settings
+from app.main import app, create_app
+from app.model_gateway import ModelGateway
+from app.schemas.agent import ModelGenerateResult
+from app.services import reading_agent
 
 SCHEMA = Path(__file__).resolve().parents[2] / "database" / "schema.sql"
 
@@ -387,3 +396,288 @@ def test_child_can_answer_a_question_on_a_linear_page(env):
         **current, "clientEventId": "short", "inputText": " 不知道 "
     })
     assert short_answer.status_code == 201 and short_answer.json()["data"]["revision"] == revision + 1
+
+
+def guidance(client, headers, session_id, key, *, feedback="INITIAL", page=1, revision=1):
+    return client.post(f"/api/v1/reading-sessions/{session_id}/guidance", headers=headers, json={
+        "pageNumber": page, "feedback": feedback, "expectedRevision": revision, "clientEventId": key,
+    })
+
+
+@pytest.fixture
+def guidance_knowledge(started_session):
+    _, _, path, _ = started_session
+    page = "小兔打开雨伞，走到小熊身边。"
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET body_text=? WHERE version_id=11 AND page_no=1", (page,))
+        for item_id, topic, age, content in (
+            (81, "互助", "AGE_3_4", "观察雨伞，聊聊怎样关心朋友。"),
+            (82, "节奏", "AGE_3_4", page),
+            (83, "互助", "AGE_5_6", page),
+        ):
+            db.execute("""INSERT INTO knowledge_items
+                (id, version_no, item_key, title, source_title, source_ref, locator, age_band,
+                 topics_json, task_types_json, content, status, reviewed_at, created_at)
+                VALUES (?, 1, ?, '观察', '共读手册', 'fixture', 'p1', ?, ?, '["GUIDANCE"]', ?, 'APPROVED', 1, 1)""",
+                       (item_id, f"fixture-{item_id}", age, json.dumps([topic], ensure_ascii=False), content))
+
+
+@pytest.fixture
+def guidance_model(guidance_knowledge, monkeypatch):
+    model = AsyncMock(return_value=ModelGenerateResult(success=True, text="小兔打开雨伞了吗？"))
+    monkeypatch.setattr(app.state.model_adapter, "generate", model)
+    return model
+
+
+def test_guidance_gateway_request_and_replay(started_session, guidance_knowledge, monkeypatch):
+    existing, headers, _, sid = started_session
+    requests = []
+
+    def provider(request):
+        payload = json.loads(request.content)
+        requests.append(payload)
+        context = payload["messages"][1]["content"]
+        selected = context.split("候选问句：\n", 1)[1].splitlines()[0]
+        return httpx.Response(200, json={"choices": [
+            {"finish_reason": "stop", "message": {"role": "assistant", "content": selected}},
+        ]})
+
+    def gateway(settings):
+        return ModelGateway(settings, transport=httpx.MockTransport(provider))
+
+    monkeypatch.setattr("app.main.ModelGateway", gateway)
+    with TestClient(create_app(Settings(model_api_key="test-only")), base_url="https://testserver") as client:
+        client.cookies.update(existing.cookies)
+        first = guidance(client, headers, sid, "wire")
+        replay = guidance(client, headers, sid, "wire")
+        assert first.status_code == 201 and replay.status_code == 200
+        data = first.json()["data"]
+        assert replay.json()["data"] == data
+        assert data["status"] == "GENERATED" and "小兔打开雨伞" in data["outputText"]
+        assert data["sources"] == [{"knowledgeItemId": 81, "sourceTitle": "共读手册"}]
+        assert len(requests) == 1
+        assert requests[0]["thinking"] == {"type": "disabled"}
+        prompt = requests[0]["messages"][1]["content"]
+        assert "3～4岁" in prompt and "怎样关心朋友" in prompt
+
+        follow = guidance(client, headers, sid, "wire-feedback", feedback="NOT_UNDERSTOOD", revision=2)
+        assert follow.status_code == 201 and follow.json()["data"]["strategyType"] == "CONCRETE_RECALL"
+        assert len(requests) == 2
+        assert "当前页已保存的问题（仅作参考）：" + data["outputText"] in requests[1]["messages"][1]["content"]
+
+
+def test_guidance_persistence_feedback_skip_and_replay(started_session, guidance_model, monkeypatch):
+    client, headers, path, sid = started_session
+    first = guidance(client, headers, sid, "initial")
+    assert first.status_code == 201
+    question = first.json()["data"]
+    assert question["status"] == "GENERATED" and "小兔" in question["outputText"]
+    assert question["sources"] == [{"knowledgeItemId": 81, "sourceTitle": "共读手册"}]
+    assert "3～4岁" in guidance_model.await_args.args[0].context_text
+
+    other_replies = []
+    for rev, feedback, strategy in [(2, "UNDERSTOOD", "CONTEXT_QUESTION"), (3, "NOT_UNDERSTOOD", "CONCRETE_RECALL")]:
+        reply = guidance(client, headers, sid, feedback, feedback=feedback, revision=rev)
+        assert reply.status_code == 201 and reply.json()["data"]["strategyType"] == strategy
+        assert question["outputText"] in guidance_model.await_args.args[0].context_text
+        other_replies.append(reply)
+    assert other_replies[0].json()["data"]["outputText"] != other_replies[1].json()["data"]["outputText"]
+
+    def unexpected_lookup(*args, **kwargs):
+        pytest.fail("SKIPPED or a replay tried to retrieve knowledge")
+
+    monkeypatch.setattr(reading_agent, "retrieve_knowledge", unexpected_lookup)
+    skipped = guidance(client, headers, sid, "skip", feedback="SKIPPED", revision=4)
+    assert skipped.status_code == 201
+    assert skipped.json()["data"]["outputText"] == "" and skipped.json()["data"]["sources"] == []
+    refreshed = client.get(f"/api/v1/reading-sessions/{sid}").json()["data"]
+    by_id = {event["interactionEventId"]: event for event in refreshed["events"]}
+    assert by_id[question["interactionEventId"]]["outputText"] == question["outputText"]
+    saved_skip = by_id[skipped.json()["data"]["interactionEventId"]]
+    assert (saved_skip["strategyType"], saved_skip["feedback"], saved_skip["outputText"]) == ("SKIP", "SKIPPED", "")
+    assert client.post(f"/api/v1/reading-sessions/{sid}/completions", headers=headers, json={
+        "reason": "USER_FINISH", "expectedRevision": 5, "clientEventId": "finish",
+    }).status_code == 200
+    # Finishing can generate a separate report. Replaying guidance adds no model calls.
+    calls = guidance_model.await_count
+    replay = guidance(client, headers, sid, "initial")
+    assert replay.status_code == 200 and replay.json()["data"] == question
+    changed = guidance(client, headers, sid, "initial", revision=6)
+    assert changed.status_code == 409 and changed.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+    finished = guidance(client, headers, sid, "after-finish", revision=6)
+    assert finished.status_code == 409 and finished.json()["error"]["code"] == "SESSION_CONFLICT"
+    assert guidance_model.await_count == calls
+
+    with closing(sqlite3.connect(path)) as db:
+        events = db.execute("""SELECT id, feedback, output_text, strategy_type, result_status, response_json
+                               FROM interaction_events WHERE event_type IN ('QUESTION', 'FEEDBACK') ORDER BY id""").fetchall()
+        assert len(events) == 4
+        for row, reply, feedback in zip(events, [first, *other_replies, skipped], [None, "UNDERSTOOD", "NOT_UNDERSTOOD", "SKIPPED"]):
+            data = reply.json()["data"]
+            assert row[:4] == (data["interactionEventId"], feedback, data["outputText"], data["strategyType"])
+            assert row[4] == ("FALLBACK" if feedback == "SKIPPED" else "SUCCESS")
+            assert json.loads(row[5]) == reply.json()
+            evidence = list(db.execute("SELECT knowledge_item_id, rank_no FROM event_evidence WHERE event_id=?", (row[0],)))
+            assert evidence == ([] if feedback == "SKIPPED" else [(81, 1)])
+
+
+def test_guidance_refresh_respects_child_current_page(env):
+    client, other_guardian, _ = env
+    sid, _, headers = enter_child_mode(client, 11)
+    url = f"/api/v1/reading-sessions/{sid}"
+    assert client.post(url + "/events", headers=headers, json={
+        "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "start",
+    }).status_code == 201
+    first = guidance(client, headers, sid, "child-question")
+    assert first.status_code == 201
+    question = first.json()["data"]
+    refreshed = client.get(url).json()["data"]
+    assert refreshed["events"][-1]["outputText"] == question["outputText"]
+    assert refreshed["report"] is None
+    assert other_guardian.get(url).status_code == 404
+
+    assert client.post(url + "/events", headers=headers, json={
+        "eventType": "PAGE_CHANGED", "pageNumber": 2, "expectedRevision": 2, "clientEventId": "turn",
+    }).status_code == 201
+    events = client.get(url).json()["data"]["events"]
+    assert all(event["pageNumber"] == 2 for event in events)
+    assert all(event["interactionEventId"] != question["interactionEventId"] for event in events)
+
+
+def test_guidance_new_keys_require_started_session_current_page_and_question(started_session):
+    client, headers, path, sid = started_session
+    with closing(sqlite3.connect(path)) as db:
+        profile_id = db.execute("SELECT profile_id FROM reading_sessions WHERE id=?", (sid,)).fetchone()[0]
+    created_id = client.post("/api/v1/reading-sessions", headers=headers, json={
+        "childProfileId": profile_id, "storyVersionId": 11, "mode": "PARENT_CHILD",
+    }).json()["data"]["readingSessionId"]
+    premature = guidance(client, headers, created_id, "premature", revision=0)
+    wrong_page = guidance(client, headers, sid, "other-page", page=2)
+    for reply in (premature, wrong_page):
+        assert reply.status_code == 409 and reply.json()["error"]["code"] == "SESSION_CONFLICT"
+    for feedback in ("UNDERSTOOD", "NOT_UNDERSTOOD", "SKIPPED"):
+        reply = guidance(client, headers, sid, feedback, feedback=feedback)
+        assert reply.status_code == 409 and reply.json()["error"]["code"] == "PROMPT_REQUIRED"
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT revision FROM reading_sessions WHERE id=?", (sid,)).fetchone()[0] == 1
+        assert db.execute("SELECT revision FROM reading_sessions WHERE id=?", (created_id,)).fetchone()[0] == 0
+
+
+@pytest.mark.parametrize(("text", "status", "stored"), [
+    ("小兔打开雨伞了吗？", "GENERATED", "SUCCESS"),
+    ("我确定你有阅读障碍。", "BLOCKED", "FAILED"),
+    ("你有阅读障碍吗？", "BLOCKED", "FAILED"),
+    ("你家在哪里？", "BLOCKED", "FAILED"),
+    ("能告诉我你的家庭地址吗？", "BLOCKED", "FAILED"),
+])
+def test_guidance_validates_child_facing_output(started_session, guidance_model, text, status, stored):
+    client, headers, path, sid = started_session
+    guidance_model.return_value = ModelGenerateResult(success=True, text=text)
+    reply = guidance(client, headers, sid, "checked")
+    assert reply.status_code == 201
+    data = reply.json()["data"]
+    assert data["status"] == status
+    if status == "BLOCKED":
+        assert (data["strategyType"], data["outputText"], data["sources"]) == (
+            "SAFETY_BLOCK", "这个问题我们请爸爸妈妈来一起说好吗？", [],
+        )
+        after_block = guidance(client, headers, sid, "follow", feedback="UNDERSTOOD", revision=2)
+        assert after_block.json()["error"]["code"] == "PROMPT_REQUIRED"
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT result_status FROM interaction_events WHERE id=?",
+                          (data["interactionEventId"],)).fetchone()[0] == stored
+
+
+def test_guidance_no_knowledge_and_model_timeout(started_session, guidance_model):
+    client, headers, path, sid = started_session
+    guidance_model.return_value = ModelGenerateResult(success=False, error_code="TIMEOUT")
+    first = guidance(client, headers, sid, "timeout")
+    assert first.status_code == 201 and first.json()["data"]["strategyType"] == "TIMEOUT_FALLBACK"
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE knowledge_items SET status='RETIRED' WHERE id=81")
+    reply = guidance(client, headers, sid, "no-knowledge", revision=2)
+    assert reply.status_code == 201 and reply.json()["data"]["strategyType"] == "NO_KNOWLEDGE_FALLBACK"
+    assert reply.json()["data"]["sources"] == []
+    guidance_model.assert_awaited_once()
+
+
+def test_guidance_late_model_cannot_overwrite_terminal_outcome(started_session, guidance_model, monkeypatch):
+    client, headers, path, sid = started_session
+    real_time = time.time
+    offset = 0
+    monkeypatch.setattr(time, "time", lambda: real_time() + offset)
+
+    async def delayed(_request):
+        nonlocal offset
+        running = await asyncio.to_thread(guidance, client, headers, sid, "same")
+        assert running.status_code == 409 and running.json()["error"]["code"] == "REQUEST_IN_PROGRESS"
+        assert running.headers["Retry-After"] == "1"
+        offset = 26
+        expired = await asyncio.to_thread(guidance, client, headers, sid, "same")
+        assert expired.status_code == 504
+        return ModelGenerateResult(success=True, text="谁打开了雨伞？")
+
+    guidance_model.side_effect = delayed
+    late = guidance(client, headers, sid, "same")
+    assert late.status_code == 504 and late.json()["error"]["code"] == "REQUEST_OUTCOME_UNKNOWN"
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT status FROM request_executions WHERE client_request_id='same'").fetchone() == ("UNKNOWN",)
+        assert db.execute("SELECT COUNT(*) FROM interaction_events WHERE request_key='same'").fetchone() == (0,)
+    guidance_model.assert_awaited_once()
+
+
+def test_guidance_stale_execution_token_cannot_finish(started_session, guidance_model):
+    client, headers, path, sid = started_session
+
+    async def replaced_attempt(_request):
+        with closing(sqlite3.connect(path)) as db, db:
+            db.execute("UPDATE request_executions SET execution_token='replacement' WHERE client_request_id='token'")
+        return ModelGenerateResult(success=True, text="谁打开了雨伞？")
+
+    guidance_model.side_effect = replaced_attempt
+    late = guidance(client, headers, sid, "token")
+    assert late.status_code == 504 and late.json()["error"]["code"] == "REQUEST_OUTCOME_UNKNOWN"
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT status, execution_token FROM request_executions WHERE client_request_id='token'").fetchone() == ("RUNNING", "replacement")
+        assert db.execute("SELECT 1 FROM interaction_events WHERE request_key='token'").fetchone() is None
+        assert db.execute("SELECT revision FROM reading_sessions WHERE id=?", (sid,)).fetchone() == (1,)
+    guidance_model.assert_awaited_once()
+
+
+def test_guidance_page_change_records_replayable_failure(started_session, guidance_model):
+    client, headers, path, sid = started_session
+
+    async def turn_page(_request):
+        reply = await asyncio.to_thread(client.post, f"/api/v1/reading-sessions/{sid}/events", headers=headers, json={
+            "eventType": "PAGE_CHANGED", "pageNumber": 2, "expectedRevision": 1, "clientEventId": "turn",
+        })
+        assert reply.status_code == 201
+        return ModelGenerateResult(success=True, text="谁打开了雨伞？")
+
+    guidance_model.side_effect = turn_page
+    for _ in range(2):
+        reply = guidance(client, headers, sid, "old-page")
+        assert reply.status_code == 409 and reply.json()["error"]["code"] == "SESSION_CONFLICT"
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT status FROM request_executions WHERE client_request_id='old-page'").fetchone() == ("FAILED",)
+    guidance_model.assert_awaited_once()
+
+
+def test_guidance_retries_only_persistence(started_session, guidance_model, monkeypatch):
+    client, headers, path, sid = started_session
+    real_save = guidance_api.save_event
+    attempts = []
+
+    def uncertain_save(*args):
+        response = real_save(*args)
+        attempts.append(response)
+        if len(attempts) == 1:
+            raise sqlite3.OperationalError("temporary transaction failure")
+        return response
+
+    monkeypatch.setattr(guidance_api, "save_event", uncertain_save)
+    reply = guidance(client, headers, sid, "save-once")
+    assert reply.status_code == 201 and len(attempts) == 2
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT COUNT(*) FROM interaction_events WHERE request_key='save-once'").fetchone() == (1,)
+    guidance_model.assert_awaited_once()

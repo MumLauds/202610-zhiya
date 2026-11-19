@@ -52,7 +52,7 @@ X-Request-ID 响应头与响应体一致。/docs 可查看健康、账号、档�
 
 ## 模型环境变量
 
-用户于 2026-11-11 将文本改为 DeepSeek 官方服务，语音继续使用百炼。文本默认 deepseek-flash，固定 thinking.type=disabled；识别使用北京地域 Qwen-ASR，合成使用支持模型语速的 Qwen-Audio-3.1-TTS-Flash。新合成接口须填写本人业务空间地址，声线与语速配置见[交接说明](../docs/design/speech-preferences-handoff.md)。详见[文本与语音接入说明](bailian.md)。两个供应商的密钥分别配置；切换语音地域须同步核对密钥、端点与音频下载白名单。
+用户于 2026-11-11 将文本改为 DeepSeek 官方服务，语音继续使用百炼。文本默认 deepseek-flash，默认发送 thinking.type=disabled；识别使用北京地域 Qwen-ASR，合成使用支持模型语速的 Qwen-Audio-3.1-TTS-Flash。新合成接口须填写本人业务空间地址，声线与语速配置见[交接说明](../docs/design/speech-preferences-handoff.md)。详见[文本与语音接入说明](bailian.md)。两个供应商的密钥分别配置；切换语音地域须同步核对密钥、端点与音频下载白名单。
 
 | 环境变量 | 默认值 | 含义 |
 | --- | --- | --- |
@@ -61,6 +61,7 @@ X-Request-ID 响应头与响应体一致。/docs 可查看健康、账号、档�
 | MODEL_API_KEY | 空 | DeepSeek 官方文本凭证；空时禁用文本调用，绝不回退到百炼密钥。 |
 | MODEL_NAME | deepseek-flash | DeepSeek 实际支持的模型标识，必须能编码为 UTF-8。 |
 | MODEL_TIMEOUT_SECONDS | 20 | 请求及响应读取的总预算，必须大于 0 且不超过 20 秒。 |
+| MODEL_SEND_THINKING | true | 默认发送 `thinking.type=disabled`。兼容端点明确拒绝该字段时设为 `false`。 |
 | MODEL_MAX_TOKENS | 512 | 最大输出令牌数，整数 1～4096；供应商需支持 max_tokens。 |
 
 .env 由 Uvicorn 的 --env-file 或本地连通性脚本加载，已有进程环境变量优先；Settings.from_env 本身只读取进程环境。仓库已有规则忽略 .env，保留 .env.example。配置值不出现在健康检查或 OpenAPI 中。此适配器关闭环境代理读取，避免无意将凭证交给本机代理；如运行环境必须经代理，应另行明确配置与信任边界。
@@ -85,7 +86,7 @@ input_text 去除首尾空白后为 1～200 字符，与契约中的用户文本
 | Settings.model_name | 请求 model |
 | system_prompt / input_text | 请求 messages 中 system / user 消息的 content |
 | Settings.model_max_tokens | 请求 max_tokens；stream 固定为 false |
-| 固定非思考模式 | 请求 thinking.type=disabled；不发送百炼的 enable_thinking 字段 |
+| Settings.model_send_thinking | 默认为 true 时发送 `thinking.type=disabled`，设为 false 时省略该字段。 |
 | 响应 choices[0].message.content | 校验后作为字符串返回；本地脚本使用知芽 camelCase 字段 outputText，不透传供应商完整对象 |
 
 适配器仅返回完整的 assistant 文本，不创建业务事件、不生成知识引用、不执行工具。调用方仍需完成领域结果校验和安全回退，写入最终事实记录后才向用户展示。校验 finish_reason、文本结构或供应商 refusal 并不能证明内容适龄或安全。
@@ -176,6 +177,8 @@ HTTP 错误沿用契约 envelope：error.code、error.message、error.retryable�
 ```
 
 测试使用 pytest 运行主分支测试及 unittest 用例，使用 TestClient、MockTransport、临时数据库和虚构测试数据，不读取 .env、不访问真实模型。依赖版本及初版验证限制见[骨架检查记录](../docs/testing/backend-bootstrap-checks.md)，当前回归见[文本与语音检查](../docs/testing/bailian-checks.md)。容器基础验证见 [infra](../infra/README.md)，真实供应商短句联调另行记录。
+
+API-017 的回归使用已开始的会话、临时 SQLite 和模拟模型。从项目根目录运行 `python -m pytest -q backend/tests/test_interactions.py -k guidance`，可验证首次提问、两种理解反馈、跳过后刷新、跨页和到期重放、输出安全与证据保存。引导会复用 G09 的主题和年龄筛选。[G05 引导约定](../docs/design/agent-degradation.md)
 
 ## 设计与实现参考
 

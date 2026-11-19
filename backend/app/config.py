@@ -51,6 +51,7 @@ class Settings:
     model_name: str = "deepseek-flash"
     model_timeout_seconds: float = 20.0
     model_max_tokens: int = 512
+    model_send_thinking: bool = True
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.model_timeout_seconds) or not 0 < self.model_timeout_seconds <= 20:
@@ -68,12 +69,16 @@ class Settings:
             max_tokens = int(os.getenv("MODEL_MAX_TOKENS", "512"))
         except ValueError:
             raise ValueError("MODEL_TIMEOUT_SECONDS and MODEL_MAX_TOKENS must be valid numbers") from None
+        send_thinking = os.getenv("MODEL_SEND_THINKING", "true").strip().lower()
+        if send_thinking not in ("true", "false"):
+            raise ValueError("MODEL_SEND_THINKING must be true or false")
         return cls(
             model_api_url=os.getenv("MODEL_API_URL", DEEPSEEK_CHAT_URL),
             model_api_key=os.getenv("MODEL_API_KEY", ""),
             model_name=os.getenv("MODEL_NAME", "deepseek-flash").strip(),
             model_timeout_seconds=timeout,
             model_max_tokens=max_tokens,
+            model_send_thinking=send_thinking == "true",
         )
 
     @property
