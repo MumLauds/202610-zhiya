@@ -1,0 +1,83 @@
+{
+  "commit": "0fd880e421b533529cf800a22f71863eb8dbc47f",
+  "atUtc": "2026-11-19T10:09:50+00:00",
+  "browser": "Chrome 154.0.8037.98",
+  "pytest": "9.2.0",
+  "playwright": "1.65.2",
+  "modelTransport": "httpx.MockTransport",
+  "modelCalls": 2,
+  "routes": [
+    {
+      "sessionId": 1,
+      "guardianId": 9001,
+      "profileId": 1,
+      "storyVersionId": 11,
+      "branchId": 502,
+      "label": "到芦苇旁",
+      "path": [
+        1,
+        2
+      ],
+      "branchHttp": [
+        201,
+        200
+      ],
+      "branchEventId": 2,
+      "branchEventSourcePage": 1,
+      "revisionAfterReplay": 2,
+      "eventsAfterReplay": 2,
+      "executionsAfterReplay": 2,
+      "finishHttp": 200,
+      "endReason": "USER_FINISH",
+      "finalRevision": 3,
+      "reportStates": [
+        "PENDING",
+        "READY"
+      ],
+      "summary": "本次共读阅读了第 1、2 页。可以和孩子再看一页已读内容，由孩子自愿选择是否聊一聊。",
+      "promptContainedPageBodies": [
+        1,
+        2
+      ],
+      "dbEventsAfterFinish": 2,
+      "dbReports": 1,
+      "visibleHistoryRows": 1
+    },
+    {
+      "sessionId": 2,
+      "guardianId": 9001,
+      "profileId": 1,
+      "storyVersionId": 11,
+      "branchId": 503,
+      "label": "去石桥边",
+      "path": [
+        1,
+        3
+      ],
+      "branchHttp": [
+        201,
+        200
+      ],
+      "branchEventId": 4,
+      "branchEventSourcePage": 1,
+      "revisionAfterReplay": 2,
+      "eventsAfterReplay": 2,
+      "executionsAfterReplay": 2,
+      "finishHttp": 200,
+      "endReason": "USER_FINISH",
+      "finalRevision": 3,
+      "reportStates": [
+        "PENDING",
+        "READY"
+      ],
+      "summary": "本次共读阅读了第 1、3 页。可以和孩子再看一页已读内容，由孩子自愿选择是否聊一聊。",
+      "promptContainedPageBodies": [
+        1,
+        3
+      ],
+      "dbEventsAfterFinish": 2,
+      "dbReports": 1,
+      "visibleHistoryRows": 2
+    }
+  ]
+}
