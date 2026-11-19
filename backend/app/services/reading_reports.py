@@ -26,6 +26,8 @@ REPORT_SUGGESTIONS = {
     "NONE": "",
     "REVISIT_PAGE": "可以和孩子再看一页已读内容，由孩子自愿选择是否聊一聊。",
     "TALK_ABOUT_STORY": "可以邀请孩子聊聊故事中喜欢的部分，不必要求回答正确。",
+    "DRAW_PICTURE": "可以请孩子画一画今天最喜欢的一页，不用要求画得像。",
+    "FIND_IN_HOME": "可以和孩子在家里找一找和故事里一样的东西。",
 }
 SUMMARY_PROMPT = (
     "你是儿童绘本共读助手。阅读事实由服务端生成，不需要改写。"
@@ -57,12 +59,7 @@ def report_object(session_id: int, row) -> dict | None:
             "activities": activities, "status": row["status"]}
 
 
-def validated_summary(text: str, facts: str, has_pages: bool) -> str | None:
-    """Only server facts and fixed suggestions can reach a READY report (AI-06).
-
-    Free-form model prose cannot be reliably grounded by a keyword denylist.
-    The model selects a suggestion; it never supplies child-performance claims.
-    """
+def validated_summary(text: str, facts: str, has_pages: bool) -> tuple[str, str] | None:
     if not text or len(text) > MAX_SUMMARY_CHARS:
         return None
     try:
@@ -77,12 +74,11 @@ def validated_summary(text: str, facts: str, has_pages: bool) -> str | None:
     if not has_pages and suggestion_id != "NONE":
         return None
     summary = facts + REPORT_SUGGESTIONS[suggestion_id]
-    return summary if len(summary) <= MAX_SUMMARY_CHARS else None
+    return (summary, suggestion_id) if len(summary) <= MAX_SUMMARY_CHARS else None
 
 
-def _settle(session_id: int, status: str, summary: str | None = None,
+def _settle(session_id: int, status: str, summary: str | None = None, activities: list[str] | None = None,
             *, generation_token: str | None = None) -> bool:
-    """Conditionally move a PENDING report; never overrides READY/FAILED or a recreated session."""
     now = int(time.time() * 1000)
     token_clause = (
         " AND EXISTS (SELECT 1 FROM request_executions WHERE session_id = ? AND execution_token = ?)"
@@ -92,9 +88,9 @@ def _settle(session_id: int, status: str, summary: str | None = None,
     with closing(connect()) as db, db:
         if status == "READY":
             cursor = db.execute(
-                f"""UPDATE reading_reports SET status = 'READY', summary = ?, activities_json = '[]',
+                f"""UPDATE reading_reports SET status = 'READY', summary = ?, activities_json = ?,
                    updated_at = ? WHERE session_id = ? AND status = 'PENDING'{token_clause}""",
-                (summary, now, session_id, *token_params))
+                (summary, json.dumps(activities or [], ensure_ascii=False), now, session_id, *token_params))
         else:
             cursor = db.execute(
                 f"""UPDATE reading_reports SET status = 'FAILED', activities_json = '[]', updated_at = ?
@@ -121,9 +117,11 @@ async def generate_report(session_id: int, facts: str, page_texts: list[str], ad
             logger.warning("report_generation_failed session_id=%s", session_id)
             text = ""
     try:
-        summary = validated_summary(text, facts, bool(page_texts))
-        if summary is not None:
-            _settle(session_id, "READY", summary, generation_token=generation_token)
+        summary_result = validated_summary(text, facts, bool(page_texts))
+        if summary_result is not None:
+            summary, suggestion_id = summary_result
+            activities = [REPORT_SUGGESTIONS[suggestion_id]] if suggestion_id != "NONE" else []
+            _settle(session_id, "READY", summary, activities, generation_token=generation_token)
         else:
             _settle(session_id, "FAILED", generation_token=generation_token)
     except sqlite3.Error:
