@@ -405,8 +405,8 @@ def guidance(client, headers, session_id, key, *, feedback="INITIAL", page=1, re
 
 
 @pytest.fixture
-def guidance_knowledge(started_session):
-    _, _, path, _ = started_session
+def guidance_knowledge(env):
+    _, _, path = env
     page = "小兔打开雨伞，走到小熊身边。"
     with closing(sqlite3.connect(path)) as db, db:
         db.execute("UPDATE story_pages SET body_text=? WHERE version_id=11 AND page_no=1", (page,))
@@ -476,10 +476,13 @@ def test_guidance_persistence_feedback_skip_and_replay(started_session, guidance
     assert "3～4岁" in guidance_model.await_args.args[0].context_text
 
     other_replies = []
+    previous_text = question["outputText"]
     for rev, feedback, strategy in [(2, "UNDERSTOOD", "CONTEXT_QUESTION"), (3, "NOT_UNDERSTOOD", "CONCRETE_RECALL")]:
         reply = guidance(client, headers, sid, feedback, feedback=feedback, revision=rev)
         assert reply.status_code == 201 and reply.json()["data"]["strategyType"] == strategy
-        assert question["outputText"] in guidance_model.await_args.args[0].context_text
+        context = guidance_model.await_args.args[0].context_text
+        assert "当前页已保存的问题（仅作参考）：" + previous_text in context.splitlines()
+        previous_text = reply.json()["data"]["outputText"]
         other_replies.append(reply)
     assert other_replies[0].json()["data"]["outputText"] != other_replies[1].json()["data"]["outputText"]
 
@@ -521,13 +524,67 @@ def test_guidance_persistence_feedback_skip_and_replay(started_session, guidance
             assert evidence == ([] if feedback == "SKIPPED" else [(81, 1)])
 
 
-def test_guidance_refresh_respects_child_current_page(env):
-    client, other_guardian, _ = env
+@pytest.fixture
+def child_guidance_session(env):
+    client, other_guardian, path = env
     sid, _, headers = enter_child_mode(client, 11)
     url = f"/api/v1/reading-sessions/{sid}"
     assert client.post(url + "/events", headers=headers, json={
         "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "start",
     }).status_code == 201
+    return client, other_guardian, path, sid, headers
+
+
+@pytest.mark.parametrize("result", ["GENERATED", "NO_KNOWLEDGE_FALLBACK", "TIMEOUT_FALLBACK"])
+def test_guidance_child_can_answer_each_displayed_question(child_guidance_session, guidance_model, result):
+    client, _, path, sid, headers = child_guidance_session
+    url = f"/api/v1/reading-sessions/{sid}"
+    if result == "NO_KNOWLEDGE_FALLBACK":
+        with closing(sqlite3.connect(path)) as db, db:
+            db.execute("UPDATE knowledge_items SET status='RETIRED' WHERE id=81")
+    if result == "TIMEOUT_FALLBACK":
+        guidance_model.return_value = ModelGenerateResult(success=False, error_code="TIMEOUT")
+
+    revision = 1
+    for feedback, answer in [("INITIAL", "是"), ("UNDERSTOOD", "不是"), ("NOT_UNDERSTOOD", "不知道")]:
+        reply = guidance(client, headers, sid, feedback, feedback=feedback, revision=revision)
+        assert reply.status_code == 201
+        data = reply.json()["data"]
+        assert data["status"] == ("GENERATED" if result == "GENERATED" else "FALLBACK")
+        if result != "GENERATED":
+            assert data["strategyType"] == result
+        assert data["outputText"].endswith("吗？")
+        assert data["answerOptions"] == ["是", "不是", "不知道"]
+        assert client.get(url).json()["data"]["answerOptions"] == data["answerOptions"]
+        replay = guidance(client, headers, sid, feedback, feedback=feedback, revision=revision)
+        assert replay.status_code == 200 and replay.json()["data"] == data
+        accepted = client.post(url + "/events", headers=headers, json={
+            "eventType": "ANSWER", "pageNumber": 1, "expectedRevision": data["revision"],
+            "clientEventId": "answer-" + feedback, "inputText": answer,
+        })
+        assert accepted.status_code == 201
+        revision = accepted.json()["data"]["revision"]
+    assert guidance_model.await_count == (0 if result == "NO_KNOWLEDGE_FALLBACK" else 3)
+
+
+def test_guidance_child_options_follow_the_latest_question(child_guidance_session, guidance_model):
+    client, _, path, sid, headers = child_guidance_session
+    url = f"/api/v1/reading-sessions/{sid}"
+    revision = save_question(path, sid, {"answerOptions": ["风声", "雨声"]}, text="你听到了什么？")
+    assert client.get(url).json()["data"]["answerOptions"] == ["风声", "雨声"]
+    reply = guidance(client, headers, sid, "follow", feedback="UNDERSTOOD", revision=revision)
+    assert reply.status_code == 201
+    assert client.get(url).json()["data"]["answerOptions"] == reply.json()["data"]["answerOptions"]
+    invalid = client.post(url + "/events", headers=headers, json={
+        "eventType": "ANSWER", "pageNumber": 1, "expectedRevision": reply.json()["data"]["revision"],
+        "clientEventId": "old-option", "inputText": "风声",
+    })
+    assert invalid.status_code == 422
+
+
+def test_guidance_refresh_respects_child_current_page(child_guidance_session):
+    client, other_guardian, _, sid, headers = child_guidance_session
+    url = f"/api/v1/reading-sessions/{sid}"
     first = guidance(client, headers, sid, "child-question")
     assert first.status_code == 201
     question = first.json()["data"]
@@ -555,7 +612,7 @@ def test_guidance_new_keys_require_started_session_current_page_and_question(sta
     wrong_page = guidance(client, headers, sid, "other-page", page=2)
     for reply in (premature, wrong_page):
         assert reply.status_code == 409 and reply.json()["error"]["code"] == "SESSION_CONFLICT"
-    for feedback in ("UNDERSTOOD", "NOT_UNDERSTOOD", "SKIPPED"):
+    for feedback in ("UNDERSTOOD", "NOT_UNDERSTOOD"):
         reply = guidance(client, headers, sid, feedback, feedback=feedback)
         assert reply.status_code == 409 and reply.json()["error"]["code"] == "PROMPT_REQUIRED"
     with closing(sqlite3.connect(path)) as db:
@@ -599,6 +656,81 @@ def test_guidance_no_knowledge_and_model_timeout(started_session, guidance_model
     assert reply.status_code == 201 and reply.json()["data"]["strategyType"] == "NO_KNOWLEDGE_FALLBACK"
     assert reply.json()["data"]["sources"] == []
     guidance_model.assert_awaited_once()
+
+
+def test_guidance_feedback_ignores_skipped_and_blocked_events(started_session, guidance_model):
+    client, headers, path, sid = started_session
+    assert guidance(client, headers, sid, "initial").status_code == 201
+    follow = guidance(client, headers, sid, "follow", feedback="UNDERSTOOD", revision=2).json()["data"]
+    assert guidance(client, headers, sid, "skip", feedback="SKIPPED", revision=3).status_code == 201
+    guidance_model.return_value = ModelGenerateResult(success=True, text="这不是一道问题。")
+    blocked = guidance(client, headers, sid, "blocked", feedback="NOT_UNDERSTOOD", revision=4)
+    assert blocked.json()["data"]["status"] == "BLOCKED"
+    # Older records could store a safety handoff under FALLBACK, with its strategy only in JSON.
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE interaction_events SET result_status='FALLBACK', strategy_type=NULL WHERE id=?",
+                   (blocked.json()["data"]["interactionEventId"],))
+    guidance_model.return_value = ModelGenerateResult(success=True, text="谁打开了雨伞？")
+    next_reply = guidance(client, headers, sid, "next", feedback="NOT_UNDERSTOOD", revision=5)
+    assert next_reply.status_code == 201
+    context = guidance_model.await_args.args[0].context_text
+    assert "当前页已保存的问题（仅作参考）：" + follow["outputText"] in context.splitlines()
+
+
+def test_guidance_skip_while_first_question_is_pending(started_session, guidance_model):
+    client, headers, path, sid = started_session
+    skips = []
+
+    async def delayed(_request):
+        for _ in range(2):
+            skips.append(await asyncio.to_thread(guidance, client, headers, sid, "skip", feedback="SKIPPED"))
+        return ModelGenerateResult(success=True, text="谁打开了雨伞？")
+
+    guidance_model.side_effect = delayed
+    late = guidance(client, headers, sid, "pending")
+    assert [reply.status_code for reply in skips] == [201, 200]
+    assert skips[0].json()["data"] == skips[1].json()["data"]
+    assert skips[0].json()["data"]["strategyType"] == "SKIP"
+    replay = guidance(client, headers, sid, "pending")
+    assert late.status_code == replay.status_code == 409
+    assert late.json()["error"]["code"] == replay.json()["error"]["code"] == "SESSION_CONFLICT"
+    with closing(sqlite3.connect(path)) as db:
+        events = db.execute("SELECT event_type, feedback FROM interaction_events WHERE request_key IN ('pending','skip')")
+        assert events.fetchall() == [("FEEDBACK", "SKIPPED")]
+        assert db.execute("SELECT revision FROM reading_sessions WHERE id=?", (sid,)).fetchone() == (2,)
+    guidance_model.assert_awaited_once()
+
+
+@pytest.mark.parametrize("provider_status", [None, 401, 429])
+def test_guidance_provider_error_is_saved_as_a_failure(started_session, guidance_knowledge, monkeypatch, provider_status):
+    existing, headers, path, sid = started_session
+    calls = []
+
+    def provider(request):
+        calls.append(request.method)
+        return httpx.Response(provider_status, json={})
+
+    def gateway(settings):
+        return ModelGateway(settings, transport=httpx.MockTransport(provider))
+
+    monkeypatch.setattr("app.main.ModelGateway", gateway)
+    settings = Settings(model_api_key="" if provider_status is None else "test-only")
+    with TestClient(create_app(settings), base_url="https://testserver") as client:
+        client.cookies.update(existing.cookies)
+        first = guidance(client, headers, sid, "provider")
+        replay = guidance(client, headers, sid, "provider")
+        assert first.status_code == replay.status_code == 503
+        assert first.json()["error"] == replay.json()["error"]
+        assert first.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+        assert first.json()["error"]["retryable"] is False
+        assert calls == ([] if provider_status is None else ["POST"])
+        with closing(sqlite3.connect(path)) as db:
+            execution = db.execute("SELECT status FROM request_executions WHERE client_request_id='provider'").fetchone()
+            assert execution == ("FAILED",)
+            assert db.execute("SELECT 1 FROM interaction_events WHERE request_key='provider'").fetchone() is None
+            assert db.execute("SELECT revision FROM reading_sessions WHERE id=?", (sid,)).fetchone() == (1,)
+        skipped = guidance(client, headers, sid, "skip-after-error", feedback="SKIPPED")
+        assert skipped.status_code == 201 and skipped.json()["data"]["revision"] == 2
 
 
 def test_guidance_late_model_cannot_overwrite_terminal_outcome(started_session, guidance_model, monkeypatch):

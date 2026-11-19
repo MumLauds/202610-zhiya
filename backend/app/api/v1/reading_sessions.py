@@ -94,8 +94,12 @@ class ModeSettings(BaseModel):
 def current_question(db: sqlite3.Connection, session: sqlite3.Row) -> sqlite3.Row | None:
     questions = db.execute(
         """SELECT output_text, response_json FROM interaction_events
-           WHERE session_id = ? AND version_id = ? AND page_no = ? AND event_type = 'QUESTION'
+           WHERE session_id = ? AND version_id = ? AND page_no = ?
+             AND (event_type = 'QUESTION' OR
+                  (event_type = 'FEEDBACK' AND feedback IN ('UNDERSTOOD', 'NOT_UNDERSTOOD')))
              AND result_status IN ('SUCCESS', 'FALLBACK') AND output_text IS NOT NULL
+             AND COALESCE(strategy_type, json_extract(response_json, '$.data.strategyType'), '')
+                 NOT IN ('SKIP', 'SAFETY_BLOCK')
            ORDER BY id DESC""",
         (session["id"], session["version_id"], session["current_page_no"]),
     )

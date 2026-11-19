@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.auth import authorized_db, error
 from app.api.v1.reading_sessions import (
-    MAX_ID, current_question, fail_session_event, owned_session, record_session_event,
+    CHILD_SHORT_ANSWERS, MAX_ID, current_question, fail_session_event, owned_session, record_session_event,
     replay_session_event, request_digest,
 )
 from app.schemas.agent import AgentResult
@@ -53,6 +53,8 @@ def save_event(db, request, session, payload, digest, result: AgentResult, now):
     event_id = cursor.lastrowid
     response = {"data": {**result.model_dump(), "interactionEventId": event_id, "revision": revision},
                 "requestId": request.state.request_id}
+    if session["mode"] == "CHILD_SOLO" and result.status != "BLOCKED" and result.outputText:
+        response["data"]["answerOptions"] = list(CHILD_SHORT_ANSWERS)
     db.execute("UPDATE interaction_events SET response_json = ? WHERE id = ?",
                (json.dumps(response, ensure_ascii=False), event_id))
     db.executemany("INSERT INTO event_evidence (event_id, knowledge_item_id, rank_no) VALUES (?, ?, ?)",
@@ -61,7 +63,7 @@ def save_event(db, request, session, payload, digest, result: AgentResult, now):
     return response
 
 
-def finish_guidance(request, session_id, payload, digest, token, result):
+def finish_guidance(request, session_id, payload, digest, token, result: AgentResult | None):
     with authorized_db(request, write=True) as (db, principal, failure):
         session = None if failure else owned_session(db, session_id, principal)
         if not failure:
@@ -70,7 +72,7 @@ def finish_guidance(request, session_id, payload, digest, token, result):
             elif not matches_page(session, payload):
                 failure = error(request, 409, "SESSION_CONFLICT", "当前状态或页面不允许此操作")
             elif result is None:
-                failure = error(request, 503, "DEPENDENCY_UNAVAILABLE", "引导服务暂不可用", retryable=True)
+                failure = error(request, 503, "DEPENDENCY_UNAVAILABLE", "引导服务暂不可用，可以继续阅读或跳过本页")
 
         # Only this attempt may finish. Its response, event, evidence and revision commit together.
         now = int(time.time() * 1000)
@@ -121,7 +123,7 @@ async def get_guidance(payload: GuidanceRequest, request: Request, session_id: i
                 return fail_session_event(db, request, owner, session_id, key, digest, 409,
                                           "SESSION_CONFLICT", "当前状态或页面不允许此操作")
             previous_question = ""
-            if payload.feedback != "INITIAL":
+            if payload.feedback in ("UNDERSTOOD", "NOT_UNDERSTOOD"):
                 question = current_question(db, session)
                 if question is None:
                     return fail_session_event(db, request, owner, session_id, key, digest, 409,
@@ -158,7 +160,8 @@ async def get_guidance(payload: GuidanceRequest, request: Request, session_id: i
     try:
         result = await run_agent(request.app.state.model_adapter, feedback=payload.feedback,
                                  age_band=context["age_band"], topics=json.loads(context["topics_json"]),
-                                 page_text=context["body_text"], previous_question=previous_question)
+                                 page_text=context["body_text"], previous_question=previous_question,
+                                 child_mode=session["mode"] == "CHILD_SOLO")
     except Exception as exc:
         # Keep private prompts and provider messages out of logs; record a definite failure for this key.
         logger.warning("guidance generation failed request_id=%s error=%s", request.state.request_id, type(exc).__name__)

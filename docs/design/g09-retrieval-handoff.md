@@ -107,9 +107,9 @@ G10 判断优先级：`has_knowledge=False` → 无知识降级（此时不应�
 
 | 对象 | 需要确认 |
 | --- | --- |
-| 陈烨婷（G10） | 模块目录 `backend/app/agent/` 是否采用；INITIAL 指令写法；`API_ERROR` 最终降级策略；`ContentDraft` 字段是否满足工作流组装 |
+| 陈烨婷（G10） | API-017 已接入 G09 检索并分别处理 `TIMEOUT` 与 `API_ERROR`。其他工作流按任务确认 `ContentDraft` 的使用方式 |
 | 林鑫（G08） | `context_text` / `user_input` 分区是否满足生成效果；无需重复接入供应商 |
-| 姚华俊（G07） | PR #31 中 API-016 questions / API-017 guidance 何时落地，G09 通过哪个入口被 G10 调用 |
+| 姚华俊（G07） | API-017 从 G10 调用 G09 检索及提示词构造。API-016 questions 的接入另行确认 |
 | 团队 | 当前种子 `knowledge_items` 全部为 `DRAFT`；按 DCL-003 检索只认 `APPROVED`，需通过 API-030/031 审核发布，或联调时注入已批准数据 |
 
 ## 5. 验证

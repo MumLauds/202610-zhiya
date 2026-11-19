@@ -7,6 +7,7 @@ from difflib import SequenceMatcher
 from app.adapters.model import ModelAdapter
 from app.agent import build_prompt, retrieve_knowledge
 from app.agent.prompts import select_knowledge_items
+from app.errors import ServiceError
 from app.schemas.agent import AgentResult, AgentSource, KnowledgeQuery
 
 HANDOFF = "这个问题我们请爸爸妈妈来一起说好吗？"
@@ -20,6 +21,12 @@ QUESTION_FORMS = {
     "INITIAL": ("你看见了谁？", "角色在做什么？", "角色现在是什么心情？"),
     "UNDERSTOOD": ("你从哪里看出了角色的想法？", "你猜接下来会发生什么？", "你为什么觉得角色会这样想？"),
     "NOT_UNDERSTOOD": ("你能指一指画面里的角色吗？", "角色手里有什么？", "角色的表情是什么样的？"),
+}
+# These polar questions can all be answered with the approved child-mode buttons.
+CHILD_QUESTION_FORMS = {
+    "INITIAL": ("图里有你认识的东西吗？", "图里也发生了这件事吗？", "你喜欢这一幕吗？"),
+    "UNDERSTOOD": ("你觉得下一页还会看到刚才的东西吗？", "你猜下一页会有变化吗？", "你觉得下一页会让你开心吗？"),
+    "NOT_UNDERSTOOD": ("你在画里找到了刚才读到的东西吗？", "你想再看看这里发生的事吗？", "你能找到喜欢的颜色吗？"),
 }
 FOCUS_CUES = (
     ("谁", "哪里", "哪个", "哪一个", "指一指"),
@@ -37,7 +44,7 @@ SHORT_QUESTION = re.compile(r"[\u3400-\u9fff，、, ]{2,72}\?")
 PAGE_CLAUSE = re.compile(r"[\u3400-\u9fffA-Za-z0-9 ]+")
 
 
-def question_options(page_text: str, feedback: str) -> dict[str, list[str]]:
+def question_options(page_text: str, forms: tuple[str, ...]) -> dict[str, list[str]]:
     # Quote only short excerpts of the already published page. Never quote model or user prose.
     excerpts = []
     for clause in re.split(r"[，。！？；：、‘’“”「」\n,.!?;:]", page_text):
@@ -49,7 +56,7 @@ def question_options(page_text: str, feedback: str) -> dict[str, list[str]]:
     options = {}
     for excerpt in excerpts or [""]:
         lead = f"读到“{excerpt}”时，" if excerpt else "看看这一页，"
-        options[excerpt] = [lead + form for form in QUESTION_FORMS[feedback]]
+        options[excerpt] = [lead + form for form in forms]
     return options
 
 
@@ -68,16 +75,19 @@ def selected_question(text: str, options: dict[str, list[str]]) -> str | None:
 
 
 async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str | None,
-                    topics: list[str], page_text: str, previous_question: str) -> AgentResult:
+                    topics: list[str], page_text: str, previous_question: str, child_mode: bool) -> AgentResult:
+    """Return a displayable result or raise a dependency error for the event ledger."""
     if previous_question and SENSITIVE.search(unicodedata.normalize("NFKC", previous_question)):
         return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)
     knowledge = retrieve_knowledge(KnowledgeQuery(age_band=age_band, topics=topics,
                                                   task_type="GUIDANCE", query_text=page_text))
     selected = select_knowledge_items(knowledge.items, 5)
     if not selected:
-        return AgentResult(status="FALLBACK", strategyType="NO_KNOWLEDGE_FALLBACK", outputText="这个故事里，你最喜欢谁呀？")
+        question = "你喜欢这一页吗？" if child_mode else "这个故事里，你最喜欢谁呀？"
+        return AgentResult(status="FALLBACK", strategyType="NO_KNOWLEDGE_FALLBACK", outputText=question)
 
-    options = question_options(page_text, feedback)
+    forms = CHILD_QUESTION_FORMS if child_mode else QUESTION_FORMS
+    options = question_options(page_text, forms[feedback])
     request = build_prompt("CONTEXT_QUESTION", age_band=age_band, page_text=page_text, items=selected,
                            user_input=INSTRUCTIONS[feedback])
     request.system_prompt += "根据年龄、页面和反馈，从候选问句中选最合适的一句，原样返回。"
@@ -86,7 +96,10 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
     request.context_text += "\n候选问句：\n" + "\n".join(option for group in options.values() for option in group)
     result = await model_adapter.generate(request)
     if not result.success:
-        return AgentResult(status="FALLBACK", strategyType="TIMEOUT_FALLBACK", outputText="我们先看看画面上有什么吧？")
+        if result.error_code != "TIMEOUT":
+            raise ServiceError("DEPENDENCY_UNAVAILABLE", "文本模型未能生成引导问题")
+        question = "你想再看看这一页吗？" if child_mode else "我们先看看画面上有什么吧？"
+        return AgentResult(status="FALLBACK", strategyType="TIMEOUT_FALLBACK", outputText=question)
     question = selected_question(result.text, options)
     if question is None:
         return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)

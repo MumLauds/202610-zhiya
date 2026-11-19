@@ -141,9 +141,9 @@ result = await request.app.state.model_adapter.generate(ModelGenerateRequest(
 
 示例成功结果为 `{"success": true, "text": "小兔子把雨伞借给了谁？", "error_code": null}`，仅用于说明结构，不代表真实模型输出或适龄验收。ModelGenerateRequest 没有任务类型，适配器无法从空串判断 INITIAL；空白/空 user_input 继续抛出 `INVALID_INPUT`（422），不调用供应商，不自动补默认话。非空指令仍遵守 1～200 字符限制。
 
-**API_ERROR 调用约定：** 供应商鉴权、限流、网络、响应异常或模型未配置时，适配器返回 `{"success": false, "text": "", "error_code": "API_ERROR"}`，符合 #27 Schema；超时返回同结构的 `TIMEOUT`。工作流须先判断 success，失败时不把空 text 当作成功回答保存或合成；API_ERROR 最终映射到何种 AgentResult、策略及提示由工作流负责人决定并确认，G08 不新增枚举或自动重试。真实供应商失败至多调用一次，未配置及非法输入不发出请求。
+**API_ERROR 调用约定：** 供应商鉴权、限流、网络、响应异常或模型未配置时，适配器返回 `{"success": false, "text": "", "error_code": "API_ERROR"}`，符合 #27 Schema；超时返回同结构的 `TIMEOUT`。API-017 对 `TIMEOUT` 保存安全回退，对 `API_ERROR` 返回 503 `DEPENDENCY_UNAVAILABLE` 并记录可重放的失败，保留原修订号。真实供应商失败至多调用一次，未配置及非法输入不发出请求。
 
-上述结构和调用次数已有 `test_model_adapter.py` 中的成功映射、失败映射、未配置与非法输入测试覆盖；测试使用模拟供应商。双方尚未确认 INITIAL 指令与 API_ERROR 最终工作流降级，本说明不将其记为已完成联调。
+上述结构和调用次数已有 `test_model_adapter.py` 中的成功映射、失败映射、未配置与非法输入测试覆盖；测试使用模拟供应商。API-017 的正式 HTTP 入口另有离线测试，验证 INITIAL 指令、非超时错误重放和儿童可选回答。
 
 ## 超时、错误与日志
 
@@ -178,7 +178,7 @@ HTTP 错误沿用契约 envelope：error.code、error.message、error.retryable�
 
 测试使用 pytest 运行主分支测试及 unittest 用例，使用 TestClient、MockTransport、临时数据库和虚构测试数据，不读取 .env、不访问真实模型。依赖版本及初版验证限制见[骨架检查记录](../docs/testing/backend-bootstrap-checks.md)，当前回归见[文本与语音检查](../docs/testing/bailian-checks.md)。容器基础验证见 [infra](../infra/README.md)，真实供应商短句联调另行记录。
 
-API-017 的回归使用已开始的会话、临时 SQLite 和模拟模型。从项目根目录运行 `python -m pytest -q backend/tests/test_interactions.py -k guidance`，可验证首次提问、两种理解反馈、跳过后刷新、跨页和到期重放、输出安全与证据保存。引导会复用 G09 的主题和年龄筛选。[G05 引导约定](../docs/design/agent-degradation.md)
+API-017 的回归使用已开始的会话、临时 SQLite 和模拟模型。从项目根目录运行 `python -m pytest -q backend/tests/test_interactions.py -k guidance`，可验证儿童答题与刷新、连续两轮理解反馈、等待首题时跳过、跨页和到期重放、供应商失败、输出安全与证据保存。引导会复用 G09 的主题和年龄筛选。[G05 引导约定](../docs/design/agent-degradation.md)
 
 ## 设计与实现参考
 
