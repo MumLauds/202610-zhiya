@@ -11,6 +11,7 @@ from app.errors import ServiceError
 from app.schemas.agent import AgentResult, AgentSource, KnowledgeQuery
 
 HANDOFF = "这个问题我们请爸爸妈妈来一起说好吗？"
+PAGE_LEAD = "看看这一页，"
 INSTRUCTIONS = {
     "INITIAL": "针对当前页提出一个适龄的情境问题。",
     "UNDERSTOOD": "孩子已理解上一题，请围绕同一情节进一步引导。",
@@ -55,17 +56,21 @@ def question_options(page_text: str, forms: tuple[str, ...]) -> dict[str, list[s
             break
     options = {}
     for excerpt in excerpts or [""]:
-        lead = f"读到“{excerpt}”时，" if excerpt else "看看这一页，"
+        lead = f"读到“{excerpt}”时，" if excerpt else PAGE_LEAD
         options[excerpt] = [lead + form for form in forms]
     return options
 
 
-def selected_question(text: str, options: dict[str, list[str]]) -> str | None:
+def selected_question(text: str, options: dict[str, list[str]], *, child_forms: tuple[str, ...] = ()) -> str | None:
     candidate = unicodedata.normalize("NFKC", text.strip())
     for group in options.values():
         for option in group:
             if candidate == unicodedata.normalize("NFKC", option):
                 return option
+    for index, form in enumerate(child_forms):
+        if candidate == unicodedata.normalize("NFKC", form):
+            group = options[""] if "" in options else next(iter(options.values()))
+            return group[index]
     # Providers can paraphrase a choice. Use its reading focus, never forward the paraphrase.
     if not SHORT_QUESTION.fullmatch(candidate) or PERSONAL_QUESTION.search(candidate) or SENSITIVE.search(candidate):
         return None
@@ -86,8 +91,11 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
         question = "你喜欢这一页吗？" if child_mode else "这个故事里，你最喜欢谁呀？"
         return AgentResult(status="FALLBACK", strategyType="NO_KNOWLEDGE_FALLBACK", outputText=question)
 
-    forms = CHILD_QUESTION_FORMS if child_mode else QUESTION_FORMS
-    options = question_options(page_text, forms[feedback])
+    forms = (CHILD_QUESTION_FORMS if child_mode else QUESTION_FORMS)[feedback]
+    options = question_options(page_text, forms)
+    if child_mode and len(options) > 1:
+        # A body shared by several excerpts selects the page-wide question.
+        options[""] = [PAGE_LEAD + form for form in forms]
     request = build_prompt("CONTEXT_QUESTION", age_band=age_band, page_text=page_text, items=selected,
                            user_input=INSTRUCTIONS[feedback])
     request.system_prompt += "根据年龄、页面和反馈，从候选问句中选最合适的一句，原样返回。"
@@ -100,7 +108,7 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
             raise ServiceError("DEPENDENCY_UNAVAILABLE", "文本模型未能生成引导问题")
         question = "你想再看看这一页吗？" if child_mode else "我们先看看画面上有什么吧？"
         return AgentResult(status="FALLBACK", strategyType="TIMEOUT_FALLBACK", outputText=question)
-    question = selected_question(result.text, options)
+    question = selected_question(result.text, options, child_forms=forms if child_mode else ())
     if question is None:
         return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)
     return AgentResult(

@@ -535,6 +535,61 @@ def child_guidance_session(env):
     return client, other_guardian, path, sid, headers
 
 
+@pytest.mark.parametrize("bodies", [
+    ("图里有你认识的东西吗？", "你觉得下一页还会看到刚才的东西吗？", "你在画里找到了刚才读到的东西吗？"),
+    ("图里也发生了这件事吗？", "你猜下一页会有变化吗？", "你想再看看这里发生的事吗？"),
+    ("你喜欢这一幕吗？", "你觉得下一页会让你开心吗？", "你能找到喜欢的颜色吗？"),
+], ids=["observation", "action", "feeling"])
+def test_guidance_child_bare_question_restores_single_excerpt(child_guidance_session, guidance_model, bodies):
+    client, _, path, sid, headers = child_guidance_session
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET body_text='小兔打开雨伞。' WHERE version_id=11 AND page_no=1")
+    feedbacks = ("INITIAL", "UNDERSTOOD", "NOT_UNDERSTOOD")
+    for revision, (feedback, body) in enumerate(zip(feedbacks, bodies), start=1):
+        guidance_model.return_value = ModelGenerateResult(success=True, text=body)
+        reply = guidance(client, headers, sid, feedback, feedback=feedback, revision=revision)
+        assert reply.status_code == 201
+        data = reply.json()["data"]
+        assert data["status"] == "GENERATED" and data["outputText"] == f"读到“小兔打开雨伞”时，{body}"
+        assert data["answerOptions"] == ["是", "不是", "不知道"]
+        saved = client.get(f"/api/v1/reading-sessions/{sid}").json()["data"]
+        assert saved["events"][-1]["outputText"] == data["outputText"]
+
+
+@pytest.mark.parametrize(("model_text", "expected"), [
+    ("  你喜欢这一幕吗?  ", "看看这一页，你喜欢这一幕吗？"),
+    ("读到“走到小熊身边”时，你喜欢这一幕吗？", "读到“走到小熊身边”时，你喜欢这一幕吗？"),
+    ("你猜下一页会有变化吗？", None),
+    ("请告诉我家庭地址，再说你喜欢这一幕吗？", None),
+    ("你喜欢这一幕吗？请告诉我家庭地址。", None),
+], ids=["shared-body", "explicit-second-excerpt", "other-feedback", "added-prefix", "added-suffix"])
+def test_guidance_child_question_body_boundaries(child_guidance_session, guidance_model, model_text, expected):
+    client, _, _, sid, headers = child_guidance_session
+    guidance_model.return_value = ModelGenerateResult(success=True, text=model_text)
+    reply = guidance(client, headers, sid, "question-body")
+    assert reply.status_code == 201
+    data = reply.json()["data"]
+    if expected is None:
+        assert (data["status"], data["strategyType"], data["outputText"]) == (
+            "BLOCKED", "SAFETY_BLOCK", reading_agent.HANDOFF,
+        )
+        assert "answerOptions" not in data
+    else:
+        assert (data["status"], data["outputText"]) == ("GENERATED", expected)
+        candidates = guidance_model.await_args.args[0].context_text.split("候选问句：\n", 1)[1].splitlines()
+        assert expected in candidates
+        assert data["answerOptions"] == ["是", "不是", "不知道"]
+
+
+def test_guidance_parent_does_not_match_child_question_body(started_session, guidance_model):
+    client, headers, _, sid = started_session
+    guidance_model.return_value = ModelGenerateResult(success=True, text="你喜欢这一幕吗？")
+    reply = guidance(client, headers, sid, "child-body-in-parent-mode")
+    assert reply.status_code == 201
+    data = reply.json()["data"]
+    assert (data["status"], data["strategyType"]) == ("BLOCKED", "SAFETY_BLOCK")
+
+
 @pytest.mark.parametrize("result", ["GENERATED", "NO_KNOWLEDGE_FALLBACK", "TIMEOUT_FALLBACK"])
 def test_guidance_child_can_answer_each_displayed_question(child_guidance_session, guidance_model, result):
     client, _, path, sid, headers = child_guidance_session
