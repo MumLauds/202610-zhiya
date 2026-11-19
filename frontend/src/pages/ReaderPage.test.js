@@ -45,7 +45,13 @@ beforeEach(() => {
     mimeType = 'audio/webm'
     constructor() { recorders.push(this) }
     start() { this.state = 'recording' }
-    stop() { this.state = 'inactive'; this.ondataavailable?.({ data: new Blob(['voice']) }); this.onstop?.() }
+    stop() {
+      const data = new Blob(['voice'], { type: this.mimeType })
+      this.state = 'inactive'
+      this.mimeType = ''
+      this.ondataavailable?.({ data })
+      this.onstop?.()
+    }
   })
   vi.stubGlobal('Audio', class {
     constructor(url) { this.url = url; audios.push(this) }
@@ -61,6 +67,20 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount(); wrapper = null; vi.unstubAllGlobals() })
 
 describe('recording lifecycle', () => {
+  it.each(['audio/ogg; codecs=opus', 'audio/webm;codecs=opus'])(
+    'uploads %s when the recorder clears its MIME type on stop',
+    async (mimeType) => {
+      render()
+      await startRecording()
+      recorders[0].mimeType = mimeType
+      await wrapper.get('.mic-button').trigger('click')
+      await flushPromises()
+
+      expect(transcribe).toHaveBeenCalledTimes(1)
+      expect(transcribe.mock.calls[0][0].type).toBe(mimeType)
+    },
+  )
+
   it('cancels without upload and stops all microphone tracks', async () => {
     render()
     await startRecording()

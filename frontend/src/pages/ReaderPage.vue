@@ -250,7 +250,8 @@ async function toggleRecording() {
         voiceError.value = '没有录到声音，请重新录制。'
         return
       }
-      const blob = new Blob(chunks, { type: activeRecorder.mimeType || 'audio/webm' })
+      const mimeType = chunks.find((chunk) => chunk.type)?.type || activeRecorder.mimeType || 'audio/webm'
+      const blob = new Blob(chunks, { type: mimeType })
       voiceState.value = 'processing'
       try {
         recognitionRequest = new AbortController()
