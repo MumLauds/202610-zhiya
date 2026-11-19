@@ -1,0 +1,221 @@
+{
+  "commit": "0fd880e421b533529cf800a22f71863eb8dbc47f",
+  "atUtc": "2026-11-19T09:49:47+00:00",
+  "browser": "Chrome 154.0.8037.98",
+  "sessionId": 1,
+  "writes": [
+    {
+      "clientEventId": "child-start",
+      "http": 201,
+      "interactionEventId": 1,
+      "revision": 1,
+      "modelCalls": 0
+    },
+    {
+      "clientEventId": "child-initial",
+      "http": 201,
+      "interactionEventId": 2,
+      "revision": 2,
+      "status": "GENERATED",
+      "strategyType": "CONTEXT_QUESTION",
+      "answerOptions": [
+        "是",
+        "不是",
+        "不知道"
+      ],
+      "modelCalls": 1
+    },
+    {
+      "clientEventId": "child-invalid",
+      "http": 422,
+      "code": "VALIDATION_ERROR",
+      "modelCalls": 1
+    },
+    {
+      "clientEventId": "child-answer",
+      "http": 201,
+      "interactionEventId": 3,
+      "revision": 3,
+      "modelCalls": 1
+    },
+    {
+      "clientEventId": "child-answer",
+      "http": 200,
+      "interactionEventId": 3,
+      "revision": 3,
+      "modelCalls": 1
+    },
+    {
+      "clientEventId": "child-understood",
+      "http": 201,
+      "interactionEventId": 4,
+      "revision": 4,
+      "status": "GENERATED",
+      "strategyType": "CONTEXT_QUESTION",
+      "answerOptions": [
+        "是",
+        "不是",
+        "不知道"
+      ],
+      "modelCalls": 2
+    },
+    {
+      "clientEventId": "child-skip",
+      "http": 201,
+      "interactionEventId": 5,
+      "revision": 5,
+      "status": "FALLBACK",
+      "strategyType": "SKIP",
+      "modelCalls": 2
+    },
+    {
+      "clientEventId": "child-answer",
+      "http": 200,
+      "interactionEventId": 3,
+      "revision": 3,
+      "modelCalls": 2
+    }
+  ],
+  "reloads": [
+    {
+      "http": 200,
+      "revision": 2,
+      "answerOptions": [
+        "是",
+        "不是",
+        "不知道"
+      ],
+      "report": null,
+      "events": [
+        {
+          "interactionEventId": 1,
+          "eventType": "STARTED",
+          "pageNumber": 1
+        },
+        {
+          "interactionEventId": 2,
+          "eventType": "QUESTION",
+          "pageNumber": 1,
+          "outputText": "读到“小园把一只纸船放进水里”时，图里有你认识的东西吗？",
+          "strategyType": "CONTEXT_QUESTION"
+        }
+      ]
+    },
+    {
+      "http": 200,
+      "revision": 5,
+      "answerOptions": [
+        "是",
+        "不是",
+        "不知道"
+      ],
+      "report": null,
+      "events": [
+        {
+          "interactionEventId": 1,
+          "eventType": "STARTED",
+          "pageNumber": 1
+        },
+        {
+          "interactionEventId": 2,
+          "eventType": "QUESTION",
+          "pageNumber": 1,
+          "outputText": "读到“小园把一只纸船放进水里”时，图里有你认识的东西吗？",
+          "strategyType": "CONTEXT_QUESTION"
+        },
+        {
+          "interactionEventId": 3,
+          "eventType": "ANSWER",
+          "pageNumber": 1
+        },
+        {
+          "interactionEventId": 4,
+          "eventType": "FEEDBACK",
+          "pageNumber": 1,
+          "outputText": "读到“小园把一只纸船放进水里”时，你觉得下一页还会看到刚才的东西吗？",
+          "strategyType": "CONTEXT_QUESTION",
+          "feedback": "UNDERSTOOD"
+        },
+        {
+          "interactionEventId": 5,
+          "eventType": "FEEDBACK",
+          "pageNumber": 1,
+          "outputText": "",
+          "strategyType": "SKIP",
+          "feedback": "SKIPPED"
+        }
+      ]
+    }
+  ],
+  "childProfilesBeforeUnlock": {
+    "http": 403,
+    "code": "FORBIDDEN"
+  },
+  "guardianUnlock": {
+    "http": 200,
+    "guardianProfilesHttp": 200,
+    "view": "account/overview",
+    "sessionStatus": "INTERRUPTED",
+    "endReason": "GRANT_REVOKED",
+    "finalRevision": 6,
+    "grantRevoked": true
+  },
+  "databaseEvents": [
+    {
+      "type": "STARTED",
+      "key": "child-start",
+      "input": null,
+      "feedback": null,
+      "revision": 1
+    },
+    {
+      "type": "QUESTION",
+      "key": "child-initial",
+      "input": null,
+      "feedback": null,
+      "revision": 2
+    },
+    {
+      "type": "ANSWER",
+      "key": "child-answer",
+      "input": "是",
+      "feedback": null,
+      "revision": 3
+    },
+    {
+      "type": "FEEDBACK",
+      "key": "child-understood",
+      "input": null,
+      "feedback": "UNDERSTOOD",
+      "revision": 4
+    },
+    {
+      "type": "FEEDBACK",
+      "key": "child-skip",
+      "input": null,
+      "feedback": "SKIPPED",
+      "revision": 5
+    }
+  ],
+  "provider": {
+    "mode": "httpx.MockTransport",
+    "calls": 2
+  },
+  "ui": [
+    "guardian login and profile",
+    "shelf open",
+    "child mode handoff",
+    "reload handoff",
+    "parent unlock"
+  ],
+  "sameOriginRequests": [
+    "registration",
+    "child profiles permission",
+    "STARTED",
+    "INITIAL",
+    "ANSWER",
+    "UNDERSTOOD",
+    "SKIPPED",
+    "guardian session check"
+  ]
+}
