@@ -47,7 +47,12 @@ def reading(root):
         row = reading_snapshot(db)
         counts = {name: db.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
                   for name in ("reading_sessions", "interaction_events", "request_executions", "reading_reports")}
-    return {"session": row, "counts": counts, "integrityCheck": "ok", "foreignKeyViolations": 0}
+        guardian_logins = db.execute(
+            "SELECT COUNT(*) FROM auth_sessions WHERE account_id = "
+            "(SELECT guardian_id FROM child_profiles WHERE id = ?)", (row["profileId"],)
+        ).fetchone()[0]
+    return {"session": row, "counts": counts, "guardianLogins": guardian_logins,
+            "integrityCheck": "ok", "foreignKeyViolations": 0}
 
 
 def gather(root):

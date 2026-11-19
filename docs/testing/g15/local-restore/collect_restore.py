@@ -1,8 +1,37 @@
 """Check the cold restore evidence against the original G15 deployment and archive a summary."""
 import argparse
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def check_restored_family(source, target, browser, fixture, source_calls, restored_calls):
+    if source_calls != [{"call": "report", "status": 200, "visitedPages": [1]}] or restored_calls:
+        raise ValueError("Expected one successful source report and no restored supplier requests")
+    if (source["guardianLogins"], target["guardianLogins"]) != (1, 2):
+        raise ValueError("Expected one source guardian login and a second login on the restored volume")
+    if target["session"] != source["session"] or target["counts"] != source["counts"]:
+        raise ValueError("Reading history changed during restored browser readback")
+    session = target["session"]
+    restored = browser["restored"]
+    if not restored["newBrowser"] or restored["anonymousMediaHttp"] != 401 or restored["login"]["loginHttp"] != 201:
+        raise ValueError("Missing anonymous media check or fresh browser login")
+    if browser["profileId"] != session["profileId"] or browser["sessionId"] != session["sessionId"]:
+        raise ValueError("Browser and database refer to different reading records")
+    for key, value in browser["source"].items():
+        if restored[key] != value:
+            raise ValueError(f"Browser readback differs for {key}")
+    detail = restored["detail"]
+    if (detail["session"]["readingSessionId"] != session["sessionId"]
+            or detail["session"]["visitedPageNumbers"] != session["pages"]
+            or detail["report"]["summary"] != session["summary"]
+            or detail["report"]["status"] != session["reportStatus"]):
+        raise ValueError("Browser readback does not match the restored reading record")
+    image = restored["pageImage"]
+    if (image["http"] != 200 or image["pngSha256"] != fixture["sha256"]
+            or image["rgbaSha256"] != fixture["rgbaSha256"]):
+        raise ValueError("Browser image does not match the fixture")
 
 
 def main():
@@ -10,14 +39,16 @@ def main():
     args.add_argument("evidence", type=Path)
     args.add_argument("run")
     args.add_argument("output", type=Path)
+    args.add_argument("--browser", type=Path, required=True, help="This run's restored Chrome result")
+    args.add_argument("--baseline", type=Path, default=os.environ.get("G15_BASELINE") or
+                      Path(__file__).resolve().parents[1] / "local-https/deployment-result.json")
     parsed = args.parse_args()
     run = parsed.run
 
     def load(name):
         return json.loads((parsed.evidence / (name + ".json")).read_bytes())
 
-    previous = json.loads((Path(__file__).resolve().parents[1] /
-                           "local-https/deployment-result.json").read_bytes())
+    previous = json.loads(parsed.baseline.read_bytes())
     original = previous["containers"]["backend"]["persistentSqliteVolume"]
     image_ids = {role: v["id"] for role, v in previous["images"].items()}
 
@@ -41,7 +72,7 @@ def main():
         assert backup["backup"]["files"] == restored["files"]
         source = backup["source"]["reading"]
         assert source == restored["reading"]
-        assert source["session"] == load("probe-" + letter)
+        assert source["session"] == load("probe-" + letter)["database"]
         assert source["integrityCheck"] == "ok" and source["foreignKeyViolations"] == 0
         dest = run + "-" + letter + "-restored-data"
         return {"sourceVolume": source_volume, "backupVolume": run + "-" + letter + "-backup",
@@ -57,7 +88,7 @@ def main():
     a.update(sourceRecheckedUnchanged=True, matchesPreviousDeployment=True)
 
     b = case("b", run + "-b-source-data", "b-restored-service")
-    assert b["restoredReading"]["session"] == load("probe-b-source")
+    assert b["restoredReading"]["session"] == load("probe-b-source")["database"]
     b["sourceService"] = service("b-source-service", b["sourceVolume"])
     b["restoredSourceLookup"] = load("b-restored-origin")
     assert set(b["restoredSourceLookup"].values()) == {False}
@@ -72,6 +103,28 @@ def main():
                                 (parsed.evidence / "probe-b-source-supplier.txt").read_text().splitlines() if line]
     b["restoredSupplierCalls"] = [json.loads(line) for line in
                                   (parsed.evidence / "probe-b-supplier.txt").read_text().splitlines() if line]
+    if load("b-source-after") != load("b-backup")["source"]:
+        raise ValueError("Source volume changed after backup")
+    source = b["restoredReading"]
+    target = load("b-target-after")["reading"]
+    before_stop = load("probe-b-source")["loginSessions"]
+    after_readback = load("probe-b")["loginSessions"]
+    if before_stop != source["guardianLogins"] or after_readback != target["guardianLogins"]:
+        raise ValueError("Live and stopped volumes disagree on the independent family's login counts")
+    browser = json.loads(parsed.browser.read_bytes())
+    if browser["origin"] != previous["origin"]:
+        raise ValueError("Browser origin differs from the deployment")
+    if browser["restored"]["backendDataVolume"] != b["restoredVolume"]:
+        raise ValueError("Browser and backend refer to different restored volumes")
+    started = datetime.fromisoformat(load("b-restored-service-backend")["startedAt"].replace("Z", "+00:00"))
+    stopped = datetime.fromisoformat((parsed.evidence / "b-stopped-at.txt").read_text().strip().replace("Z", "+00:00"))
+    verified = datetime.fromisoformat(browser["verifiedAtUtc"])
+    if not started.replace(microsecond=0) <= verified <= stopped:
+        raise ValueError("Browser result was not recorded during this restored deployment")
+    check_restored_family(source, target, browser, b["illustration"], b["sourceSupplierCalls"], b["restoredSupplierCalls"])
+    b["browserReadback"] = {"verifiedAtUtc": browser["verifiedAtUtc"], "historyCard": browser["restored"]["historyCard"],
+                            "sourceLoginsBeforeStop": before_stop, "backupGuardianLogins": source["guardianLogins"],
+                            "restoredGuardianLogins": target["guardianLogins"]}
     result = {"atUtc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "applicationCommit": previous["commit"],
               "origin": previous["origin"], "images": image_ids, "previousTestVolume": a, "independentFamily": b}
     with parsed.output.open("x", encoding="utf-8") as handle:

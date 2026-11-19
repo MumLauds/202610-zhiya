@@ -21,7 +21,7 @@
 | 前端生产文件与 Caddy | `395a083a33eda10662c6e42c8ca814ce3a4b8bd68d977e6ff869080375b0b940` |
 | 后端 FastAPI 与 FFmpeg | `7e52987d8476043ac3e7270326b8579910173c444712d1daa0d8cd131e0b1bfc` |
 
-Docker Engine 29.9.2、Compose 5.6.1 记录了 `edge`、`backend` 和 `provider` 各自新的启动时间。重启前和新浏览器读回后，SQLite 都有 1 条 `FINISHED / USER_FINISH` 会话、1 条互动事件、2 条执行记录和 1 份 `READY` 小结，结束时间与小结更新时间逐毫秒相同。本地 ASR 收到 1 次经 FFmpeg 转换的 16 kHz、16 位、单声道 WAV，共 26,880 帧；小结服务收到 1 次针对第 1 页的请求。重启和再次读回未增加供应商调用。
+Docker Engine 29.9.2、Compose 5.6.1 记录了 `edge`、`backend` 和 `provider` 各自新的启动时间。重启前和新浏览器读回后，SQLite 都有 1 条 `FINISHED / USER_FINISH` 会话、1 条互动事件、2 条执行记录和 1 份 `READY` 小结，结束时间与小结更新时间逐毫秒相同。本地 ASR 收到 1 次经 FFmpeg 转换的 16 kHz、16 位、单声道 WAV，共 26,880 帧；小结服务收到 1 次针对第 1 页的请求。历史模拟服务仅记录成功请求，重启及再次读回期间未记录到新增的成功调用。
 
 结束后已关闭预演容器并移除其网络，Windows 回环端口 `18443` 拒绝连接。隔离测试卷保留在本机，最终取证卷为 `g15-local-e5f32cd-20261119-verified_sqlite-data`。本轮未部署公网。
 
@@ -37,32 +37,38 @@ Docker Engine 29.9.2、Compose 5.6.1 记录了 `edge`、`backend` 和 `provider`
 
 ## 命令行复跑
 
-需要 Docker Compose、Git、OpenSSL、curl、Node.js 及安装了 Python Playwright 1.65.2 的 Chrome 测试环境。在包含本目录的检出中操作，前端源码及锁文件须与受测提交一致。本轮使用 WSL 运行 Docker，Windows 上的 Chrome 通过回环地址访问；以下构建命令适用于 Linux 原生检出。
+需要 Docker Compose、Git、OpenSSL、curl、Python 3、Node.js、npm 和安装了 Python Playwright 的 Chrome。以下命令从包含本目录的仓库根目录运行。将首轮状态目录和项目名留给同一轮的后续命令。两个镜像按本轮的项目名打标签，均从 `G15_COMMIT` 的源码构建。
 
 ```sh
 export G15_COMMIT=e5f32cd9d645c75e03814af55ba5aa531442c8a6
 export G15_PROJECT="zhiya-g15-$(date +%s)"
 export G15_STATE="$(mktemp -d)"
 g15=docs/testing/g15/local-https
-git diff --exit-code "$G15_COMMIT" -- frontend && npm --prefix frontend ci && npm --prefix frontend run build
-sh "$g15/stack.sh" build
-sh "$g15/stack.sh" up
-sh "$g15/stack.sh" inspect
+python3 "$g15/prepare_frontend.py" "$G15_COMMIT" "$G15_STATE/frontend-build" && \
+  sh "$g15/stack.sh" build && sh "$g15/stack.sh" up && sh "$g15/stack.sh" inspect
 ```
 
-`build` 最后一行输出本次证书的公钥摘要。Windows 链接工作树可用 Windows Git 对受测提交执行 `git archive`，把 tar 的 WSL 路径设为 `G15_SOURCE_TAR` 供脚本核验。浏览器终端在仓库根目录执行以下命令，将 `PIN` 换成本轮输出，将结果写到一个新文件。
+前端脚本从 Git 归档解出指定提交的前端，在新的输出目录执行 Vite 构建。离线复用本机相同平台的已有依赖时，可追加 `--reuse-deps /path/to/frontend`。脚本比对该目录的两份包清单，构建成功后写入提交号及逐文件 SHA-256。Docker 构建检查这些摘要，读取本轮产物。
+
+Windows/WSL 分开运行时，在 Windows 用相同的 Python 命令准备前端，再在 WSL 设置 `G15_FRONTEND_BUILD` 指向该新目录的 WSL 路径。Docker 引擎中没有 Git 时，在 Windows 以 `git archive -o <new.tar> <完整受测提交> -- backend/app backend/requirements.txt backend/smoke_model.py backend/smoke_voice.py database data/seed knowledge-base_v2.5/图片 infra/Dockerfile` 创建源码包，将 tar 的 WSL 路径设为 `G15_SOURCE_TAR`。前端准备成功后，在部署终端执行上面的 `build && up && inspect`。
+
+`build` 输出本次证书的公钥摘要。在另一个终端从仓库根目录运行以下命令，将 `PIN` 换成本次输出，结果写到一个新文件。
 
 ```sh
 python docs/testing/g15/local-https/verify_browser.py --spki PIN --output g15-browser-result.json
 ```
 
-浏览器脚本输出 `READY_FOR_RESTART` 后，在保留前述环境变量的部署终端执行下列命令。重启前后比较会话及小结快照、各容器启动时间和 SQLite 卷名。待 `/api/v1/health` 返回 200，再到浏览器终端按回车，脚本会新开 Chrome 登录并核对原记录。
+浏览器脚本输出 `READY_FOR_RESTART` 后，在部署终端执行下列命令。`restart` 先采集数据库计数、已完成的会话、供应商日志及容器启动时间。健康检查返回 200 后，到浏览器终端按回车，在新 Chrome 中重新登录并读回历史。
 
 ```sh
-sh "$g15/stack.sh" snapshot
-sh "$g15/stack.sh" restart
-sh "$g15/stack.sh" inspect
-sh "$g15/stack.sh" snapshot
+sh "$g15/stack.sh" restart && sh "$g15/stack.sh" inspect
 ```
 
-读回成功后运行 `sh "$g15/stack.sh" down`，关闭本轮服务并保留本轮独立数据卷。
+等浏览器进程成功退出并写出 `g15-browser-result.json`，再采集读回后的快照并停止服务。将浏览器结果路径换成部署终端可读的实际路径。
+
+```sh
+sh "$g15/stack.sh" baseline ./g15-browser-result.json && sh "$g15/stack.sh" down
+export G15_BASELINE="$G15_STATE/deployment-result.json"
+```
+
+`baseline` 比较两次采集到的阅读会话、事件、小结、执行记录和供应商请求，并检查新登录使库内登录会话数增加 1。成功后写出本轮独有的卷名、镜像引用及 ID、会话和毫秒时间戳。保留该文件、数据卷、本轮 TLS 目录和镜像，可接着执行[备份恢复预演](../local-restore/README.md)。

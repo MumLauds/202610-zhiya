@@ -43,9 +43,18 @@ def snapshot(db):
     return row
 
 
+def deployment_snapshot(db):
+    counts = {key: db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+              for key, table in (("reports", "reading_reports"), ("events", "interaction_events"),
+                                 ("executions", "request_executions"))}
+    counts["sessionsByStatus"] = dict(db.execute("SELECT status, COUNT(*) FROM reading_sessions GROUP BY status"))
+    return {"database": snapshot(db), "counts": counts,
+            "loginSessions": db.execute("SELECT COUNT(*) FROM auth_sessions").fetchone()[0]}
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["seed", "snapshot"])
+    parser.add_argument("action", choices=["seed", "snapshot", "deployment-snapshot"])
     parser.add_argument("database", type=Path)
     args = parser.parse_args()
     mode = "rw" if args.action == "seed" else "ro"
@@ -55,4 +64,5 @@ if __name__ == "__main__":
         if args.action == "seed":
             seed(db)
         else:
-            print(json.dumps(snapshot(db), ensure_ascii=False))
+            value = deployment_snapshot(db) if args.action == "deployment-snapshot" else snapshot(db)
+            print(json.dumps(value, ensure_ascii=False))

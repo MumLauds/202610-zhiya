@@ -10,9 +10,31 @@ out=${G15_EVIDENCE:?Set a private absolute directory for evidence}
 tls=${G15_TEST_TLS:?Set the previously tested local certificate directory}
 case "$run" in ''|*[!a-z0-9-]*) echo 'Invalid project prefix' >&2; exit 2;; esac
 mkdir -p "$out"
-api='g15-backend@sha256:7e52987d8476043ac3e7270326b8579910173c444712d1daa0d8cd131e0b1bfc'
-edge='g15-web@sha256:395a083a33eda10662c6e42c8ca814ce3a4b8bd68d977e6ff869080375b0b940'
-original='g15-local-e5f32cd-20261119-verified_sqlite-data'
+baseline=${G15_BASELINE:-$web/deployment-result.json}
+if command -v python3 >/dev/null 2>&1; then
+    set -- python3
+else
+    reader=${G15_BASELINE_READER:?Set the local backend image to read the baseline without host Python}
+    set -- docker run --pull never --rm --read-only --network none -i --entrypoint python "$reader"
+fi
+inputs=$("$@" -c '
+import json, sys
+
+record = json.load(sys.stdin)
+fields = [record["containers"]["backend"]["persistentSqliteVolume"]]
+for role in ("backend", "web"):
+    image = record["images"][role]
+    reference = image.get("reference") or next(iter(image.get("repoDigests") or ()), image["id"])
+    fields.extend((reference, image["id"]))
+if any(not field or any(c.isspace() for c in field) for field in fields):
+    raise ValueError("Invalid volume or image reference in deployment baseline")
+print(*fields)
+' < "$baseline")
+read -r original api api_id edge edge_id <<EOF
+$inputs
+EOF
+[ "$(docker image inspect --format '{{.Id}}' "$api")" = "$api_id" ] || { echo 'Backend image differs from baseline' >&2; exit 1; }
+[ "$(docker image inspect --format '{{.Id}}' "$edge")" = "$edge_id" ] || { echo 'Web image differs from baseline' >&2; exit 1; }
 export G15_WEB_IMAGE="$edge" G15_API_IMAGE="$api" G15_TEST_TLS="$tls"
 G15_CERTIFI=$(docker run --pull never --rm --network none "$api" python -c 'import certifi; print(certifi.where())')
 export G15_CERTIFI
@@ -22,7 +44,8 @@ fresh() {
 }
 stopped() {
     docker volume inspect "$1" >/dev/null
-    [ -z "$(docker ps -q --filter "volume=$1")" ] || { echo "Stop the writer before backup: $1" >&2; exit 1; }
+    writers=$(docker ps -q --filter "volume=$1") || { echo "Cannot check writers for $1" >&2; exit 1; }
+    [ -z "$writers" ] || { echo "Stop the writer before backup: $1" >&2; exit 1; }
 }
 run_bundle() {
     operation=$1; source=$2; destination=$3; output=$4
@@ -66,10 +89,16 @@ case "$action" in
     restore-a) run_bundle restore "$run-a-backup" "$G15_VOLUME" a-restore;;
     start-a) start_service a-service;;
     probe-a|probe-b|probe-b-source)
-        dc exec -T backend python /test/fixture.py snapshot /var/lib/zhiya/zhiya.sqlite3 > "$out/$action.json"
+        dc exec -T backend python /test/fixture.py deployment-snapshot /var/lib/zhiya/zhiya.sqlite3 > "$out/$action.json"
         dc logs --no-log-prefix provider > "$out/$action-supplier.txt"
         ;;
-    down-a|down-b|stop-b-source) dc down;;
+    down-a|stop-b-source) dc down;;
+    down-b)
+        dc down
+        date -u '+%Y-%m-%dT%H:%M:%SZ' > "$out/b-stopped-at.txt"
+        stopped "$run-b-source-data"; run_bundle probe "$run-b-source-data" '' b-source-after
+        stopped "$G15_VOLUME"; run_bundle probe "$G15_VOLUME" '' b-target-after
+        ;;
     original) stopped "$original"; run_bundle probe "$original" '' original-after;;
     seed-b)
         fresh "$G15_VOLUME"
