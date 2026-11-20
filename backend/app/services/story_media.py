@@ -323,22 +323,68 @@ def _pin_page_asset(store_root: Path, root: Path, raw_ref: str) -> dict | None:
     return asset
 
 
-def freeze_approval_page_media(db: sqlite3.Connection, version: sqlite3.Row) -> str:
-    """The approval transaction publishes the page map. Files contain only immutable blobs."""
+def _previously_returned_image_pages(db: sqlite3.Connection, version: sqlite3.Row | dict) -> set[int]:
+    """Legacy drafts recorded their image keys in the successful API-025 response."""
+    receipt = db.execute(
+        """SELECT json_extract(response_body, '$.data.pages') FROM request_executions
+           WHERE scope_type = 'STORY_GENERATION' AND scope_id = (
+               SELECT owner_guardian_id FROM storybooks WHERE id = ?)
+             AND status = 'SUCCEEDED' AND json_extract(response_body, '$.data.storyVersionId') = ?""",
+        (version["storybook_id"], version["id"]),
+    ).fetchone()
+    if not receipt or receipt[0] is None:
+        return set()
+    return {page["pageNumber"] for page in json.loads(receipt[0]) if page["imageRef"] is not None}
+
+
+def freeze_approval_page_media(db: sqlite3.Connection, version: sqlite3.Row | dict, *,
+                              promised_pages: set[int] | None = None, preview_page_no: int | None = None) -> str:
+    """Keep previewed bytes and leave temporarily missing, promised images available for retry."""
     root, _ = ensure_media_dependencies()
+    previous = version["approved_page_media_json"]
+    entries = json.loads(previous or "{}")
+    pages = db.execute("SELECT page_no, image_ref FROM story_pages WHERE version_id = ?",
+                       (version["id"],)).fetchall()
+    if promised_pages is None:
+        promised_pages = set()
+        if len(entries) < len(pages) or None in entries.values():
+            promised_pages = _previously_returned_image_pages(db, version)
+    unbound = [(page, ref) for page, ref in pages if str(page) not in entries
+               or (page in promised_pages and entries[str(page)] is None)]
+    if unbound:
+        for page, entry in _review_page_entries(db, version, root, unbound).items():
+            if entry is None and page in promised_pages:
+                if preview_page_no is None or page == preview_page_no:
+                    raise MediaDependencyError("Promised page image is unavailable")
+                # An absent key can be bound later. An explicit null is a permanent placeholder.
+                entries.pop(str(page), None)
+            else:
+                entries[str(page)] = entry
+    checked = entries.values() if preview_page_no is None else (entries.get(str(preview_page_no)),)
+    if any(not _pinned_blob_is_readable(entry) for entry in checked if entry is not None):
+        raise MediaDependencyError("Review page image is unavailable")
+    frozen = json.dumps(entries, ensure_ascii=False)
+    if frozen != previous:
+        db.execute("UPDATE story_versions SET approved_page_media_json = ? WHERE id = ?",
+                   (frozen, version["id"]))
+    return frozen
+
+
+def _review_page_entries(db: sqlite3.Connection, version: sqlite3.Row | dict,
+                         root: Path, pages: list[tuple[int, str]]) -> dict:
     store = _pin_store_root()
     entries = {}
-    if version["source_session_id"] is not None:
+    prefix = json.loads(version["source_visited_pages_json"]) if version["source_session_id"] is not None else []
+    inherited = {page: prefix[page - 1] for page, _ in pages if page <= len(prefix)}
+    if inherited:
         source = db.execute("SELECT * FROM story_versions WHERE id = ?", (version["source_version_id"],)).fetchone()
         frozen_pages = pin_version_media(db, source)["pages"]
-        for page, source_page in enumerate(json.loads(version["source_visited_pages_json"]), start=1):
-            entries[str(page)] = frozen_pages.get(str(source_page))
+        entries = {page: frozen_pages.get(str(source_page)) for page, source_page in inherited.items()}
     try:
-        for page, raw_ref in db.execute("SELECT page_no, image_ref FROM story_pages WHERE version_id = ?",
-                                        (version["id"],)):
-            if str(page) not in entries:
-                entries[str(page)] = _pin_page_asset(store, root, raw_ref)
-        return json.dumps(entries, ensure_ascii=False)
+        for page, raw_ref in pages:
+            if page not in entries:
+                entries[page] = _pin_page_asset(store, root, raw_ref)
+        return entries
     except OSError as exc:
         raise MediaDependencyError("Page image storage is unavailable") from exc
 
@@ -533,14 +579,16 @@ def select_template_illustrations(age_band: str, topic: str, page_count: int) ->
         catalog = _template_catalog()
     except (KeyError, TypeError, ValueError, OverflowError) as exc:
         raise MediaDependencyError("Template illustration catalog is invalid") from exc
-    candidates = [entry for entry in catalog if len(entry["assets"]) >= page_count]
+    candidates = [
+        entry for entry in catalog
+        if entry["age_min"] <= low and entry["age_max"] >= high and len(entry["assets"]) >= page_count
+    ]
     if not candidates:
-        raise MediaDependencyError("No template illustration set matches the requested page count")
+        raise MediaDependencyError("No template illustration set matches the age band and page count")
     best = max(
         candidates,
         key=lambda entry: (
             topic in entry["topics"],
-            entry["age_min"] <= high and entry["age_max"] >= low,
             -entry["version_id"],
         ),
     )
@@ -567,9 +615,11 @@ def resolve_optional_template_illustrations(
     if not os.environ.get("ZHIYA_MEDIA_ROOT", "").strip():
         return list(verify_template_illustrations(selected))
     root, _ = ensure_media_dependencies()
-    if all(note == TEMPLATE_PAGE_LICENSE and _resolve_verified_source(ref, root) is not None for ref, note in selected):
-        return list(selected)
-    return [("none", None)] * needed
+    return [
+        (ref, note) if note == TEMPLATE_PAGE_LICENSE and _resolve_verified_source(ref, root) is not None
+        else ("none", None)
+        for ref, note in selected
+    ]
 
 
 def cover_ref_from_manifest(version_id: int, manifest: dict) -> str | None:

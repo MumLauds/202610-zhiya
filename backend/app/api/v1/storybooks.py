@@ -176,6 +176,21 @@ def list_storybooks(request: Request, age_band: AgeBand | None = Query(default=N
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用", retryable=True)
 
 
+def owned_generation_version(db, guardian_id: int, version_id: int):
+    """Versions whose generated content this guardian may still review or replay."""
+    return db.execute(
+        """SELECT v.*, b.source_type AS storybook_source_type FROM story_versions v
+           JOIN storybooks b ON b.id = v.storybook_id
+           WHERE v.id = ? AND b.owner_guardian_id = ? AND b.source_type = 'ORIGINAL'
+             AND (v.status = 'APPROVED_PRIVATE'
+                  OR (v.status = 'RETIRED' AND v.reviewed_by_id IS NOT NULL AND v.reviewed_at IS NOT NULL)
+                  OR (v.status = 'PENDING_REVIEW' AND (v.source_version_id IS NULL OR EXISTS (
+                      SELECT 1 FROM story_versions src WHERE src.id = v.source_version_id
+                        AND src.storybook_id = v.storybook_id AND src.status <> 'WITHDRAWN'))))""",
+        (version_id, guardian_id),
+    ).fetchone()
+
+
 def readable_story_version(db, principal: Principal, version_id: int):
     """Apply the same live content permissions to detail, media, and cached page responses."""
     guardian = principal.guardian_id
@@ -441,7 +456,7 @@ def approve_story_version(payload: VersionApproval, request: Request,
             reason = _verify_version_for_approval(db, row, owner)
             if reason is not None:
                 return error(request, 422, "VALIDATION_ERROR", reason)
-            page_media = freeze_approval_page_media(db, row)
+            freeze_approval_page_media(db, row)
             now = int(time.time() * 1000)
             db.execute(
                 """UPDATE story_versions SET status = 'RETIRED'
@@ -453,10 +468,9 @@ def approve_story_version(payload: VersionApproval, request: Request,
                 (version_id,),
             )
             db.execute(
-                """UPDATE story_versions SET status = 'APPROVED_PRIVATE', reviewed_by_id = ?, reviewed_at = ?,
-                   approved_page_media_json = ?
+                """UPDATE story_versions SET status = 'APPROVED_PRIVATE', reviewed_by_id = ?, reviewed_at = ?
                    WHERE id = ? AND status = 'PENDING_REVIEW'""",
-                (owner, now, page_media, version_id),
+                (owner, now, version_id),
             )
             updated = db.execute(
                 """SELECT v.*, b.source_type AS storybook_source_type FROM story_versions v

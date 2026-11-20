@@ -106,6 +106,7 @@
       "repeat": "同键重放原结束响应，可能仍含PENDING；新键重复结束只返回既有终态及当前小结，不再次调用模型。本阶段不提供失败小结重新生成入口。"
     },
     "versionAccess": {
+      "draftPreview": "API-024 允许已认证家长预览本人 PENDING_REVIEW 原创草稿的内页。API-026 批准时使用同一份图片。旧草稿已分配的插画暂时缺失时，该页预览和整本批准返回可重试的 503，其他可用页仍可预览。API-025 成功重放仍须核验目标版本的归属和状态，已撤回时返回 404 RESOURCE_NOT_FOUND。",
       "current": "默认书架及推荐仅选择有权访问的当前PUBLISHED或APPROVED_PRIVATE版本。每个storybookId至多一个当前生效版本，不限制本人可复读的已审核私有历史版本数。",
       "privateHistory": "RETIRED退出当前默认列表；只有storybooks.source_type=ORIGINAL、owner_guardian_id等于当前家长账号且story_versions.reviewed_by_id和reviewed_at均非空的本人私有历史版本，才允许从scope=mine读取并创建新会话。",
       "libraryHistory": "LIBRARY的RETIRED版本不允许新建会话；仍有权访问的既有有效会话可以继续读取。",

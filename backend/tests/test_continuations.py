@@ -49,6 +49,7 @@ def cont_env(tmp_path, monkeypatch):
 @pytest.mark.parametrize("advance_source", [False, True], ids=["switch", "stale-source"])
 def test_generation_approval_and_continuation_switch(cont_env, monkeypatch, tmp_path, advance_source):
     from PIL import Image
+    from app.services import story_media
 
     client, other, db_path, profile = cont_env
     headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
@@ -66,6 +67,11 @@ def test_generation_approval_and_continuation_switch(cont_env, monkeypatch, tmp_
     cover = tmp_path / "first.png"
     Image.new("RGB", (2, 2), "green").save(cover)
     original_image = cover.read_bytes()
+    templates = story_media.select_template_illustrations("AGE_4_5", "互助", 4)
+    third_image = tmp_path.joinpath(*story_media._image_path_parts(templates[2][0]))
+    third_image.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (2, 2), "blue").save(third_image)
+    preview_bytes = third_image.read_bytes()
     with closing(sqlite3.connect(db_path)) as db, db:
         db.execute("UPDATE story_pages SET image_ref = 'first.png' WHERE version_id = 301 AND page_no = 1")
     created = client.post("/api/v1/reading-sessions", headers=headers, json={
@@ -91,6 +97,11 @@ def test_generation_approval_and_continuation_switch(cont_env, monkeypatch, tmp_
     assert data["continuation"]["resumePageNumber"] == 3
     assert data["continuation"]["sourceVisitedPageNumbers"] == [1, 2]
     assert data["pages"][0]["imageRef"] == "asset-301-page-1"
+    assert [p["imageRef"] for p in data["pages"][2:]] == [f"asset-{version}-page-3", None]
+    preview_url = f"/api/v1/media/asset-{version}-page-3"
+    Image.new("RGB", (2, 2), "red").save(third_image)
+    assert client.get(preview_url).content == preview_bytes
+    assert other.get(preview_url).status_code == 404
     assert model_contexts[0]["previousPages"] == ["v1第1页", "v1第2页"]
     assert model_contexts[0]["ageBand"] == "AGE_4_5"
     replay = client.post("/api/v1/story-generations", headers=headers, json=payload)
@@ -105,6 +116,7 @@ def test_generation_approval_and_continuation_switch(cont_env, monkeypatch, tmp_
                            json={"versionNumber": data["versionNumber"], "reviewedAllBranches": True})
     assert approved.status_code == 200, approved.text
     assert client.get(f"/api/v1/media/asset-{version}-page-1").content == original_image
+    assert client.get(preview_url).content == preview_bytes
     if advance_source:
         assert client.post(f"{path}/events", headers=headers, json={
             "eventType": "PAGE_CHANGED", "pageNumber": 3, "expectedRevision": 2, "clientEventId": "read-3",
@@ -123,6 +135,12 @@ def test_generation_approval_and_continuation_switch(cont_env, monkeypatch, tmp_
         assert switched.status_code == 201, switched.text
         assert switched.json()["data"]["currentPage"] == 3
         assert client.get(path).json()["data"]["session"]["status"] == "FINISHED"
+
+    with closing(sqlite3.connect(db_path)) as db, db:
+        db.execute("UPDATE story_versions SET status = 'WITHDRAWN' WHERE id = ?", (version,))
+    revoked = client.post("/api/v1/story-generations", headers=headers, json=payload)
+    assert revoked.status_code == 404 and "data" not in revoked.json()
+    assert len(model_contexts) == 1
 
 
 def test_original_generation_checks_and_persists_only_valid_drafts(cont_env, monkeypatch):
@@ -150,15 +168,20 @@ def test_original_generation_checks_and_persists_only_valid_drafts(cont_env, mon
     with closing(sqlite3.connect(db_path)) as db:
         assert db.execute("SELECT COUNT(*) FROM storybooks").fetchone() == (1,)
         assert db.execute("SELECT COUNT(*) FROM story_versions").fetchone() == (1,)
-    accepted = client.post("/api/v1/story-generations", headers=headers,
-                           json={**payload, "clientRequestId": "valid-story"})
+    valid = {**payload, "clientRequestId": "valid-story"}
+    accepted = client.post("/api/v1/story-generations", headers=headers, json=valid)
     assert accepted.status_code == 201, accepted.text
     data = accepted.json()["data"]
     vid = data["storyVersionId"]
     assert [page["text"] for page in data["pages"]] == texts
     assert [page["imageRef"] for page in data["pages"]] == [f"asset-{vid}-page-{p}" for p in range(1, 6)]
     assert [(branch["fromPageNumber"], branch["nextPageNumber"]) for branch in data["branches"]] == [(2, 3), (2, 4)]
-    assert client.get(f"/api/v1/media/asset-{vid}-page-1").status_code == 404
+    image_url = f"/api/v1/media/asset-{vid}-page-1"
+    preview = client.get(image_url)
+    assert preview.status_code == 200 and preview.headers["content-type"] == "image/png"
+    assert other.get(image_url).status_code == 404
+    assert client.get(f"/api/v1/story-versions/{vid}").status_code == 404
+    assert client.post("/api/v1/story-generations", headers=headers, json=valid).status_code == 200
     with closing(sqlite3.connect(db_path)) as db:
         stored_pages = db.execute(
             "SELECT page_no, image_ref, image_license_note FROM story_pages WHERE version_id = ? ORDER BY page_no",
@@ -174,6 +197,79 @@ def test_original_generation_checks_and_persists_only_valid_drafts(cont_env, mon
         img = client.get(url)
         assert img.status_code == 200 and img.headers["content-type"] == "image/png" and len(img.content) > 0
         assert other.get(url).status_code == 404
+
+    with closing(sqlite3.connect(db_path)) as db, db:
+        db.execute("UPDATE story_versions SET status = 'WITHDRAWN' WHERE id = ?", (vid,))
+    revoked = client.post("/api/v1/story-generations", headers=headers, json=valid)
+    assert revoked.status_code == 404 and revoked.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+    assert "data" not in revoked.json() and client.get(image_url).status_code == 404
+    assert len(contexts) == 2
+
+
+def test_legacy_draft_retries_missing_promised_image_before_preview_or_approval(cont_env, monkeypatch, tmp_path):
+    from PIL import Image
+    from app.services import story_media
+
+    client, _, db_path, _ = cont_env
+    headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
+    monkeypatch.setenv("ZHIYA_MEDIA_ROOT", str(tmp_path))
+    paths = []
+    for ref, _ in story_media.select_template_illustrations("AGE_3_4", "互助", 4):
+        path = tmp_path.joinpath(*story_media._image_path_parts(ref))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (2, 2), "green").save(path, format="PNG")
+        paths.append(path)
+
+    class StoryModel:
+        async def generate(self, request):
+            return ModelGenerateResult(success=True, text=json.dumps({
+                "title": "一起散步", "pages": ["小兔出门。", "小兔遇见小熊。", "他们一起散步。", "小兔回家。"],
+                "choices": [],
+            }))
+
+    monkeypatch.setattr(client.app.state, "model_adapter", StoryModel())
+    created = client.post("/api/v1/story-generations", headers=headers, json={
+        "ageBand": "AGE_3_4", "topic": "互助", "characters": ["小兔"], "scene": "森林",
+        "branching": False, "clientRequestId": "legacy-promised-images",
+    })
+    assert created.status_code == 201, created.text
+    draft = created.json()["data"]
+    version = draft["storyVersionId"]
+    urls = [f"/api/v1/media/{page['imageRef']}" for page in draft["pages"]]
+    # The merged API stored the generation response before it supported draft image snapshots.
+    with closing(sqlite3.connect(db_path)) as db, db:
+        db.execute("UPDATE story_versions SET approved_page_media_json = NULL WHERE id = ?", (version,))
+    unavailable_file = paths[-1]
+    saved_image = unavailable_file.read_bytes()
+    unavailable_file.unlink()
+    approval_url = f"/api/v1/story-versions/{version}/approvals"
+    approval = {"versionNumber": 1, "reviewedAllBranches": True}
+    first_png = paths[0].read_bytes()
+    assert client.get(urls[0]).content == first_png
+    for response in (client.get(urls[-1]), client.post(approval_url, json=approval, headers=headers)):
+        assert response.status_code == 503
+        assert response.json()["error"]["retryable"] is True
+    with closing(sqlite3.connect(db_path)) as db:
+        assert db.execute("SELECT status FROM story_versions WHERE id = ?", (version,)).fetchone() == ("PENDING_REVIEW",)
+
+    unavailable_file.write_bytes(saved_image)
+    Image.new("RGB", (2, 2), "red").save(paths[0], format="PNG")
+    assert client.get(urls[-1]).content == saved_image
+    assert client.post(approval_url, json=approval, headers=headers).status_code == 200
+    assert client.get(urls[0]).content == first_png
+    assert client.get(urls[-1]).content == saved_image
+
+
+@pytest.mark.parametrize(("band", "topic"), [("AGE_3_4", "时间认知"), ("AGE_4_5", "互助")])
+def test_template_selection_prefers_topic_within_requested_age_band(band, topic):
+    from app.services import story_media
+
+    low, high = story_media.AGE_BAND_BOUNDS[band]
+    eligible = [entry for entry in story_media._template_catalog()
+                if entry["age_min"] <= low and entry["age_max"] >= high and len(entry["assets"]) >= 4]
+    matching = [entry for entry in eligible if topic in entry["topics"]]
+    selected = story_media.select_template_illustrations(band, topic, 4)
+    assert selected in [entry["assets"][:4] for entry in matching or eligible]
 
 
 def test_story_generation_validation_limits_and_mode_guards(cont_env, monkeypatch):
@@ -285,20 +381,20 @@ def test_story_generation_validation_limits_and_mode_guards(cont_env, monkeypatc
     assert limit_linear.status_code == 422 and limit_linear.json()["error"]["code"] == "CONTINUATION_LIMIT"
     assert len(calls) == 1
 
-    # Child-mode device cannot call API-025 (403 FORBIDDEN).
+    # The same family's child device cannot preview the guardian's pending draft.
+    preview_url = f"/api/v1/media/{ok_branch.json()['data']['pages'][-1]['imageRef']}"
+    assert client.get(preview_url).status_code == 200
     with TestClient(app, base_url="https://testserver") as child_client:
-        creds = {"account": "guardian-child-check", "password": "strong-pass-123"}
-        assert child_client.post("/api/v1/auth/registrations", json=creds).status_code == 201
+        creds = {"account": "guardian-one", "password": "strong-pass-123"}
         assert child_client.post("/api/v1/auth/sessions", json=creds).status_code == 201
         ch = {"X-CSRF-Token": child_client.cookies["zhiya_csrf"]}
-        cpid = child_client.post("/api/v1/child-profiles", headers=ch,
-                                 json={"ageBand": "AGE_4_5", "preferredMinutes": 10}).json()["data"]["childProfileId"]
         csid = child_client.post("/api/v1/reading-sessions", headers=ch, json={
-            "childProfileId": cpid, "storyVersionId": 399, "mode": "PARENT_CHILD",
+            "childProfileId": profile, "storyVersionId": 399, "mode": "PARENT_CHILD",
         }).json()["data"]["readingSessionId"]
         assert child_client.put(f"/api/v1/reading-sessions/{csid}/mode-settings", headers=ch, json={
             "mode": "CHILD_SOLO", "allowedStoryVersionIds": [399], "timeLimitSeconds": 300,
         }).status_code == 200
+        assert child_client.get(preview_url).status_code == 404
         child_csrf = {"X-CSRF-Token": child_client.cookies["zhiya_csrf"]}
         forbidden = child_client.post("/api/v1/story-generations", headers=child_csrf, json={
             "ageBand": "AGE_4_5", "topic": "互助", "characters": ["小兔"], "scene": "森林",
@@ -1213,6 +1309,14 @@ def test_approval_enforces_backend_safety_freezes_media_and_handles_dependency_r
     with closing(sqlite3.connect(db_path)) as db, db:
         db.execute("UPDATE story_branches SET choice_label = '去森林' WHERE id = 901")
 
+    # A pending draft from an existing database binds its preview on the owner's first read.
+    preview_url = "/api/v1/media/asset-307-page-3"
+    assert second.get(preview_url).status_code == 404
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        reads = [pool.submit(first.get, preview_url) for _ in range(2)]
+        assert [read.result().content for read in reads] == [green_png, green_png]
+    (media_root / "resume.png").write_bytes(red_png)
+
     # Missing media root during API-026 returns retryable 503 and rolls back status/retirement.
     offline_root = tmp_path / "media-offline"
     media_root.rename(offline_root)
@@ -1230,8 +1334,7 @@ def test_approval_enforces_backend_safety_freezes_media_and_handles_dependency_r
     p3 = next(p for p in approved.json()["data"]["pages"] if p["pageNumber"] == 3)
     assert p3["imageRef"] == "asset-307-page-3"
 
-    # Mutate source image file after approval: pinned snapshot keeps original green PNG bytes.
-    (media_root / "resume.png").write_bytes(red_png)
+    # Approval uses the previously reviewed green image after the template was replaced.
     assert first.get("/api/v1/media/asset-307-page-3").content == green_png
     assert second.get("/api/v1/media/asset-307-page-3").status_code == 404
 

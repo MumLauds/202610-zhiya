@@ -21,7 +21,7 @@ from app.api.v1.auth import (
     set_session_cookies,
     token_digest,
 )
-from app.api.v1.storybooks import VISIBLE, page_object, readable_story_version
+from app.api.v1.storybooks import VISIBLE, owned_generation_version, page_object, readable_story_version
 from app.services.cleanup import delete_session_rows, purge_voice_media
 from app.services.reading_reports import (
     fact_summary,
@@ -579,6 +579,10 @@ def replay_execution(db, request: Request, scope_type: str, scope_id: int, clien
             and readable_story_version(db, principal, page_version_id) is None):
         return error(request, 404, "RESOURCE_NOT_FOUND", "绘本不可用")
     body = json.loads(previous["response_body"])
+    if previous["status"] == "SUCCEEDED" and scope_type == "STORY_GENERATION":
+        target = body.get("data", {}).get("storyVersionId")
+        if target is None or owned_generation_version(db, scope_id, target) is None:
+            return error(request, 404, "RESOURCE_NOT_FOUND", "生成的绘本不可用")
     body["requestId"] = request.state.request_id
     if principal is not None and principal.role == "CHILD" and isinstance(body.get("data"), dict) and "report" in body["data"]:
         body["data"]["report"] = None

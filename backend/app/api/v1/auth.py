@@ -141,15 +141,19 @@ def _identify(db, request: Request, *, csrf: bool, now: int, allow_admin: bool =
 @contextmanager
 def authorized_db(request: Request, *, write: bool = False, csrf: bool = False,
                   guardian_only: bool = False, allow_expired_child: bool = False,
-                  settle_guardian: bool = True, allow_admin: bool = False):
+                  settle_guardian: bool = True, allow_admin: bool = False, cache_write: bool = False):
     """Keep authorization and business data in one snapshot; publish report jobs after commit."""
     pending = []
     with closing(connect()) as db, db:
         db.execute("BEGIN")
         now = int(time.time() * 1000)
         principal, failure = _identify(db, request, csrf=write or csrf, now=now, allow_admin=allow_admin)
-        if principal and (write or (principal.role != "ADMIN" and
-                                    unsettled_sessions(db, principal.guardian_id, principal.grant_id, now).fetchone())):
+        if principal and (
+            write or cache_write or (
+                principal.role != "ADMIN"
+                and unsettled_sessions(db, principal.guardian_id, principal.grant_id, now).fetchone()
+            )
+        ):
             # Release the read snapshot before recovery acquires its own write lock.
             db.rollback()
             if not ensure_startup_recovered():
@@ -159,7 +163,7 @@ def authorized_db(request: Request, *, write: bool = False, csrf: bool = False,
             principal, failure = _identify(db, request, csrf=write or csrf, now=now, allow_admin=allow_admin)
             if principal and principal.role != "ADMIN" and (settle_guardian or principal.role == "CHILD"):
                 pending = settle_grant_sessions(db, principal.guardian_id, principal.grant_id, now)
-            if not write:
+            if not write and not cache_write:
                 # A bookshelf or history read can be long. Only settlement needs the write lock.
                 db.commit()
                 queue_deferred_reports(request, pending)

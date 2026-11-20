@@ -22,6 +22,7 @@ from app.services.story_media import (
     TEMPLATE_VERSION_LICENSE_NOTE,
     MediaDependencyError,
     ensure_version_pages_media,
+    freeze_approval_page_media,
     page_image_ref_from_manifest,
     resolve_optional_template_illustrations,
     select_template_illustrations,
@@ -215,7 +216,7 @@ def save_draft(db, request, payload, owner, source, carried_pages, total, decisi
         continuation = {}
         source_manifest = None
         license_note = TEMPLATE_VERSION_LICENSE_NOTE
-        new_assets = verify_template_illustrations(select_template_illustrations(age_band, payload.topic, total))
+        new_assets = select_template_illustrations(age_band, payload.topic, total)
     else:
         book_id = source["storybook_id"]
         number = db.execute(
@@ -276,6 +277,8 @@ def save_draft(db, request, payload, owner, source, carried_pages, total, decisi
     reason = _verify_version_for_approval(db, row, owner)
     if reason is not None:
         return error(request, 422, "VALIDATION_ERROR", reason)
+    promised_pages = {page["pageNumber"] for page in pages if page["imageRef"] is not None}
+    freeze_approval_page_media(db, row, promised_pages=promised_pages)
     return JSONResponse(status_code=201, content={"data": {
         "storybookId": book_id, "storyVersionId": version_id, "versionNumber": number, "title": draft.title,
         "status": "PENDING_REVIEW", "pages": pages, "branches": branches, **continuation,

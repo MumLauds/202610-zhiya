@@ -275,7 +275,7 @@ def test_approval_requires_matching_prefix_image_and_reuses_frozen_source(cont_e
 
 
 def test_approval_commit_failure_keeps_previous_version_and_retry_uses_current_image(cont_env, illustrated_draft):
-    client, _, db_path, _ = cont_env
+    client, other, db_path, _ = cont_env
     media_root, original_png = illustrated_draft
     (media_root / "resume.png").write_bytes(_png("red"))
     with closing(sqlite3.connect(db_path)) as db, db:
@@ -293,9 +293,10 @@ def test_approval_commit_failure_keeps_previous_version_and_retry_uses_current_i
     assert failed.status_code == 503, failed.text
     assert failed.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
     assert _version_states(db_path) == [(301, "APPROVED_PRIVATE"), (302, "PENDING_REVIEW")]
-    assert client.get("/api/v1/media/asset-302-page-3").status_code == 404
+    assert other.get("/api/v1/media/asset-302-page-3").status_code == 404
     with closing(sqlite3.connect(db_path)) as db, db:
         assert db.execute("SELECT COUNT(*) FROM approval_commit_fault").fetchone() == (0,)
+        assert db.execute("SELECT approved_page_media_json FROM story_versions WHERE id = 302").fetchone() == (None,)
         db.execute("DROP TRIGGER fail_approval_commit")
 
     current_png = _png("blue")
