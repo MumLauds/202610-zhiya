@@ -172,4 +172,83 @@ describe('mobile live mode', () => {
     expect(fetch.mock.calls.filter(([path]) => path === '/api/v1/reading-sessions/73')).toHaveLength(1)
     expect(fetch.mock.calls.some(([path]) => path.startsWith('/api/v1/story-versions/'))).toBe(false)
   })
+
+  it('refreshes a pending history report until its activity is ready using only the same session GET', async () => {
+    const finished = { ...session(73, 700), status: 'FINISHED' }
+    const pending = { status: 'PENDING', summary: '本次共读访问了一页。', activities: [] }
+    const activity = { name: '画出纸船', materials: ['纸', '彩笔'], steps: ['找出纸船停靠的地方。', '一起画出那处场景。'] }
+    const ready = { status: 'READY', summary: '已生成最终小结。', activities: [activity] }
+    let latest = pending
+    login('guardian-a')
+    const fetch = mountApp(async (path) => {
+      if (path === '/api/v1/reading-sessions/73') return json({ session: finished, events: [], report: latest })
+      if (path === '/api/v1/reading-sessions?page=1&pageSize=20') return json({ items: [finished] })
+      return json({ items: [] })
+    })
+    await wrapper.get('.mode-mini').trigger('click')
+    await wrapper.findAll('.bottom-nav button')[3].trigger('click')
+    await flushPromises()
+    fetch.mockClear()
+    await wrapper.get('.record-card button').trigger('click')
+    await flushPromises()
+
+    const refresh = () => wrapper.get('.summary-panel').findAll('button').find(button => button.text() === '刷新小结')
+    expect(refresh()).toBeDefined()
+    await refresh().trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.summary-panel').text()).toContain(pending.summary)
+    latest = ready
+    await refresh().trigger('click')
+    await flushPromises()
+    const panel = wrapper.get('.summary-panel')
+    expect(panel.findAll('h3').map(heading => heading.text())).toContain(`亲子活动 · ${activity.name}`)
+    expect(panel.text()).toContain('准备材料：纸、彩笔')
+    expect(panel.findAll('ol li').map(step => step.text())).toEqual(activity.steps)
+    expect(refresh()).toBeUndefined()
+    expect(fetch.mock.calls.map(([path, options]) => [options.method, path])).toEqual([
+      ['GET', '/api/v1/reading-sessions/73'],
+      ['GET', '/api/v1/reading-sessions/73'],
+      ['GET', '/api/v1/reading-sessions/73'],
+    ])
+  })
+
+  it('keeps the new account’s history report after the previous account’s refresh returns late', async () => {
+    const finished = (id) => ({ ...session(id, 700), status: 'FINISHED' })
+    const first = { session: finished(73), events: [], report: { status: 'PENDING', summary: '第一份记录' } }
+    const second = { session: finished(84), events: [], report: {
+      status: 'READY', summary: '第二份记录', activities: ['旧版活动说明', null, { name: '格式错误的活动', steps: 42 }],
+    } }
+    let lateReply
+    let firstRequests = 0
+    login('guardian-a')
+    const fetch = mountApp(async (path) => {
+      if (path === '/api/v1/reading-sessions/73') {
+        if (++firstRequests === 1) return json(first)
+        return new Promise(resolve => { lateReply = resolve })
+      }
+      if (path === '/api/v1/reading-sessions/84') return json(second)
+      if (path.includes('/reading-sessions?')) return json({ items: [document.cookie.includes('guardian-a') ? first.session : second.session] })
+      return json({ items: [] })
+    })
+    const openHistory = async () => {
+      await wrapper.findAll('.bottom-nav button')[3].trigger('click')
+      await flushPromises()
+      await wrapper.get('.record-card button').trigger('click')
+      await flushPromises()
+    }
+    await wrapper.get('.mode-mini').trigger('click')
+    await openHistory()
+    await wrapper.findAll('button').find(button => button.text() === '刷新小结').trigger('click')
+    const signal = fetch.mock.calls.at(-1)[1].signal
+    login('guardian-b')
+    await flushPromises()
+    await openHistory()
+    lateReply(json({ ...first, report: { status: 'READY', summary: '第一份记录的迟到结果' } }))
+    await flushPromises()
+    const panel = wrapper.get('.summary-panel')
+    expect(signal.aborted).toBe(true)
+    expect(panel.text()).toContain('第二份记录')
+    expect(panel.text()).toContain('旧版活动说明')
+    expect(panel.text()).not.toMatch(/第一份记录|格式错误的活动|\[object Object\]/)
+  })
 })

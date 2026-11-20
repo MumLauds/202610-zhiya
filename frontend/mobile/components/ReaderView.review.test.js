@@ -93,6 +93,40 @@ describe('ReaderView session recovery and interaction', () => {
     expect(api.addEvent).not.toHaveBeenCalled()
   })
 
+  it('keeps the finished facts after a failed summary refresh and retries with GET only', async () => {
+    const lastPage = { ...inProgress, currentPage: 3, revision: 3, visitedPageNumbers: [1, 2, 3] }
+    const finished = { ...lastPage, status: 'FINISHED', revision: 4 }
+    const pending = { status: 'PENDING', summary: '本次共读访问了三页。', activities: [] }
+    const ready = { ...pending, status: 'READY', summary: '最终小结' }
+    const reply = (report) => new Response(JSON.stringify({ data: { session: finished, events: [], report } }))
+    const fetch = vi.fn().mockResolvedValueOnce(reply(pending))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(reply(ready))
+    vi.stubGlobal('fetch', fetch)
+    const api = new ReadingSessionsApi()
+    const writes = await openReader({ snapshot: lastPage, sessionApi: { finish: api.finish.bind(api), get: api.get.bind(api) } })
+    await clickButton('完成阅读')
+    const facts = () => wrapper.get('.summary-facts').findAll('dd').map(item => item.text())
+    expect(facts()).toEqual(['3', '4', 'PENDING'])
+
+    await clickButton('刷新小结')
+    expect(facts()).toEqual(['3', '4', 'PENDING'])
+    expect(wrapper.get('.summary-panel').text()).toContain(pending.summary)
+    expect(wrapper.get('.summary-panel [role="alert"]').text()).toContain('503')
+    await clickButton('刷新小结')
+    expect(facts()).toEqual(['3', '4', 'READY'])
+    expect(wrapper.get('.summary-panel').text()).toContain(ready.summary)
+    expect(wrapper.findAll('button').some(button => button.text() === '刷新小结')).toBe(false)
+    expect(fetch.mock.calls.map(([path, options]) => [options.method, path])).toEqual([
+      ['POST', '/api/v1/reading-sessions/42/completions'],
+      ['GET', '/api/v1/reading-sessions/42'],
+      ['GET', '/api/v1/reading-sessions/42'],
+    ])
+    expect(writes.addEvent).not.toHaveBeenCalled()
+    expect(writes.submitGuidance).not.toHaveBeenCalled()
+    expect(wrapper.emitted('finished')).toHaveLength(1)
+  })
+
   it('rechecks and starts the existing CREATED session after a failed STARTED write', async () => {
     const created = { ...inProgress, status: 'CREATED', revision: 0, visitedPageNumbers: [] }
     const api = await openReader({

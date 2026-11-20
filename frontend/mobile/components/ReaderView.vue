@@ -397,9 +397,10 @@ function exitReading() {
       </section>
       <ReadingSummary
         v-else-if="isFinished"
+        v-model:report="session.state.report"
         :book="book"
         :session="session.state.session"
-        :report="session.state.report"
+        :session-api="mode === 'live' ? sessionApi : null"
         @exit="exitReading"
       />
 
