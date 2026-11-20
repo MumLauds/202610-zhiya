@@ -17,7 +17,7 @@ const props = defineProps({
   recommendationsError: { type: String, default: '' },
 })
 
-const emit = defineEmits(['select', 'detail', 'start', 'filter', 'login', 'more', 'recommend'])
+const emit = defineEmits(['select', 'detail', 'start', 'filter', 'login', 'more', 'recommend', 'workshop'])
 const category = ref('')
 
 const ageOptions = [
@@ -81,9 +81,12 @@ function chooseFilter(value) {
               <button v-for="[value, label] in options" :key="value" class="library-option-chip" type="button" @click="chooseFilter(value)">{{ label }}</button>
             </div>
           </div>
-          <p v-if="source === 'preview'" class="filter-api-note">
-            {{ error || '登录并后端返回可见绘本后，这里会自动切换为真实数据。' }}
-          </p>
+          <section class="library-workshop-entry" aria-labelledby="library-workshop-title">
+            <strong id="library-workshop-title">没找到想要的？<span>试试自己生成。</span></strong>
+            <button class="secondary library-workshop-button" type="button" @click="emit('workshop')">
+              去创作工坊 →
+            </button>
+          </section>
         </aside>
 
         <div v-if="loading && (nextPage === null || !selected)" class="library-feature-card">

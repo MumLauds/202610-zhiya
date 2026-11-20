@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import FlipBook from '../components/FlipBook.vue'
 import { synthesize, transcribe } from '../api/voice'
 import { describeApiError } from '../api/client'
+import { canContinueStory } from '../data/readingProgress'
 
 const props = defineProps({
   book: { type: Object, default: null },
@@ -24,7 +25,7 @@ const props = defineProps({
   enterChildModeAction: { type: Function, default: async () => false },
 })
 
-const emit = defineEmits(['back', 'library', 'start-session', 'retry-load'])
+const emit = defineEmits(['back', 'library', 'start-session', 'retry-load', 'continue-story'])
 const flipBook = ref(null)
 const pageIndex = ref(0)
 const turnBusy = ref(false)
@@ -542,6 +543,12 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
         <button v-if="syncRequired" class="secondary" type="button" :disabled="turnBusy" @click="refreshProgress">确认并同步进度</button>
         <button v-else-if="session.status === 'CREATED'" class="primary" type="button" @click="emit('start-session')">开始本次阅读</button>
         <button v-if="!showDockFinish && session.status === 'IN_PROGRESS'" class="secondary" type="button" :disabled="!canFinish" @click="finishReading">结束本次阅读</button>
+        <button
+          v-if="authenticated && !session.preview && canContinueStory(session, book)"
+          class="secondary"
+          type="button"
+          @click="emit('continue-story')"
+        >续写这个故事</button>
       </div>
       <span class="pill">{{ report ? '本次阅读已完成' : '亲子共读模式' }}</span>
     </div>

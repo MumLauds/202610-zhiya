@@ -135,7 +135,8 @@ def test_reading_session_create_recovery_and_isolation(bookshelf):
     session_id = session["readingSessionId"]
     assert (session["currentPage"], session["visitedPageNumbers"], session["status"], session["revision"]) == (1, [], "CREATED", 0)
     assert first.get(f"/api/v1/reading-sessions/{session_id}").json()["data"] == {
-        "session": session, "events": [], "report": None}
+        "session": {**session, "childProfileId": profile["childProfileId"], "sourceType": "LIBRARY"},
+        "events": [], "report": None}
     assert second.get(f"/api/v1/reading-sessions/{session_id}").status_code == 404
     assert second.get("/api/v1/reading-sessions").json()["data"]["items"] == []
     assert first.get("/api/v1/reading-sessions").json()["data"]["items"] == [session]
@@ -567,6 +568,8 @@ def test_retired_library_version_allows_active_content_and_finished_history_repl
     }).status_code == 404
     assert 11 not in [item["storyVersionId"] for item in first.get("/api/v1/storybooks").json()["data"]["items"]]
     assert 11 not in [item["storyVersionId"] for item in first.get("/api/v1/storybooks", params={"scope": "mine"}).json()["data"]["items"]]
+    detail = first.get(f"/api/v1/reading-sessions/{session}").json()["data"]["session"]
+    assert detail["sourceType"] == "LIBRARY" and detail["childProfileId"] == profile_id
     assert first.get("/api/v1/story-versions/11").status_code == 200  # active session can still read story pages
     assert first.post(events, headers=headers, json={
         "eventType": "PAGE_CHANGED", "pageNumber": 2, "expectedRevision": 1, "clientEventId": "page2"

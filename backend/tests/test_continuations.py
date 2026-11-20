@@ -1094,6 +1094,9 @@ def test_continuation_metadata_is_omitted_from_granted_child_books(cont_env):
     shelf = guardian.get(shelf_url, params={"scope": "mine"})
     detail = guardian.get(detail_url)
     assert approved.status_code == shelf.status_code == detail.status_code == 200
+    source_detail = guardian.get(f"{sessions_url}/{source_id}").json()["data"]["session"]
+    assert source_detail["childProfileId"] == profile_id
+    assert source_detail["sourceType"] == "ORIGINAL"
     parent_detail = detail.json()["data"]
     for book in (approved.json()["data"], shelf.json()["data"]["items"][0], parent_detail):
         assert book["storyVersionId"] == 302
@@ -1116,6 +1119,8 @@ def test_continuation_metadata_is_omitted_from_granted_child_books(cont_env):
     assert grant.status_code == 200
     assert grant.json()["data"]["allowedStoryVersionIds"] == [302]
 
+    child_session = guardian.get(f"{sessions_url}/{session_id}").json()["data"]["session"]
+    assert "childProfileId" not in child_session and "sourceType" not in child_session
     child_shelf = guardian.get(shelf_url)
     child_detail = guardian.get(detail_url)
     assert child_shelf.status_code == child_detail.status_code == 200

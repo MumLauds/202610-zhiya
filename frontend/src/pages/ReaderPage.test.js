@@ -84,6 +84,14 @@ beforeEach(() => {
 })
 afterEach(() => { wrapper?.unmount(); wrapper = null; vi.unstubAllGlobals() })
 
+it('offers continuation only for the private original when reading retired versions', async () => {
+  render({ session: { ...initialSession, sourceType: 'ORIGINAL' }, book: { ...book, status: 'RETIRED' } })
+  await button('续写这个故事').trigger('click')
+  expect(wrapper.emitted('continue-story')).toHaveLength(1)
+  await wrapper.setProps({ session: { ...initialSession, sourceType: 'LIBRARY' } })
+  expect(button('续写这个故事')).toBeUndefined()
+})
+
 describe('recording lifecycle', () => {
   it.each(['audio/ogg; codecs=opus', 'audio/webm;codecs=opus'])(
     'uploads %s when the recorder clears its MIME type on stop',

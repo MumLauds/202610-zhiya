@@ -368,10 +368,12 @@ def get_session(request: Request, session_id: int = Path(ge=1, le=MAX_ID),
                 event_params.append(row["current_page_no"])
             events = db.execute(event_query + " ORDER BY id", event_params).fetchall()
             report = None
+            session = session_object(row)
             if principal.role == "GUARDIAN":
+                session.update(childProfileId=row["profile_id"], sourceType=row["source_type"])
                 report_row = db.execute("SELECT * FROM reading_reports WHERE session_id = ?", (session_id,)).fetchone()
                 report = report_object(session_id, report_row)
-            data = {"session": session_object(row),
+            data = {"session": session,
                     "events": [session_event_object(event) for event in events],
                     "report": report}
             if principal.role == "CHILD" and row["status"] == "IN_PROGRESS":
@@ -535,7 +537,7 @@ def owned_session(db, session_id: int, principal: Principal):
              principal.guardian_id, principal.guardian_id),
         ).fetchone()
     return db.execute(
-        """SELECT s.*, g.expires_at AS grant_expires_at FROM reading_sessions s
+        """SELECT s.*, g.expires_at AS grant_expires_at, b.source_type FROM reading_sessions s
         LEFT JOIN child_grants g ON g.id = s.grant_id
         JOIN child_profiles p ON p.id = s.profile_id
         JOIN story_versions v ON v.id = s.version_id

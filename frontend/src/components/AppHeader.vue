@@ -11,6 +11,7 @@ const emit = defineEmits(['navigate'])
 const readerItems = [
   { label: '首页', path: 'home', icon: '/assets/figma-prototype/icon-house.svg' },
   { label: '绘本馆', path: 'library', icon: '/assets/figma-prototype/icon-bookmark.svg' },
+  { label: '创作工坊', path: 'workshop', icon: '/assets/figma-prototype/icon-spark.svg' },
   { label: '成长记录', path: 'account/growth', icon: '/assets/figma-prototype/icon-clock.svg' },
   { label: '个人中心', path: 'account/overview', icon: '/assets/figma-prototype/icon-users.svg' },
 ]
@@ -25,6 +26,7 @@ function current(path) {
   if (path === 'home') return ['home'].includes(props.route.name)
   if (path.startsWith('admin')) return props.route.name === 'admin'
   if (path === 'library') return ['library', 'detail', 'reader'].includes(props.route.name)
+  if (path === 'workshop') return props.route.name === 'workshop'
   if (path === 'account/growth') return props.route.name === 'account' && props.route.section === 'growth'
   return props.route.name === 'account' && props.route.section !== 'growth'
 }

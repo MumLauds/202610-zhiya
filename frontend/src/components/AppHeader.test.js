@@ -24,4 +24,11 @@ describe('primary navigation state', () => {
     expect(active).toHaveLength(1)
     expect(active[0].text()).toBe('成长记录')
   })
+
+  it('opens the workshop as a primary guardian destination', () => {
+    const wrapper = render({ name: 'workshop', sourceSessionId: 55 })
+    const active = wrapper.findAll('.nav-button.active')
+    expect(active).toHaveLength(1)
+    expect(active[0].text()).toBe('创作工坊')
+  })
 })

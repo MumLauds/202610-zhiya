@@ -1,12 +1,11 @@
 import { apiRequest } from './client'
 
-export async function createReadingSession({ childProfileId, storyVersionId }) {
+export async function createReadingSession(payload) {
   const result = await apiRequest('/reading-sessions', {
     method: 'POST',
     body: {
-      childProfileId,
-      storyVersionId,
       mode: 'PARENT_CHILD',
+      ...payload,
     },
   })
   return result.data

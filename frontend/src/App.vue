@@ -8,8 +8,10 @@ import BookDetailPage from './pages/BookDetailPage.vue'
 import ReaderPage from './pages/ReaderPage.vue'
 import AccountPage from './pages/AccountPage.vue'
 import AdminPage from './pages/AdminPage.vue'
+import WorkshopPage from './pages/WorkshopPage.vue'
 import ChildModePage from './pages/ChildModePage.vue'
 import { activeProfile, totals, zhiya, zhiyaActions } from './stores/useZhiya'
+import { mapApiBook } from './data/preview'
 
 const state = zhiya
 const publicSite = import.meta.env.MODE === 'public'
@@ -31,6 +33,10 @@ async function startBook(book) {
   } catch (error) {
     zhiyaActions.setToast(error.message || '无法开始阅读', 'error')
   }
+}
+
+async function startWorkshopBook(version) {
+  return startBook(mapApiBook(version))
 }
 
 function onHashChange() {
@@ -73,7 +79,7 @@ onBeforeUnmount(() => {
     />
 
     <AuthPage
-      v-if="state.route.name === 'auth' || (!state.auth.authenticated && (publicSite || ['account', 'admin'].includes(state.route.name)))"
+      v-if="state.route.name === 'auth' || (!state.auth.authenticated && (publicSite || ['account', 'admin', 'workshop'].includes(state.route.name)))"
       :health="state.health"
       :login="zhiyaActions.signIn"
       :register="zhiyaActions.signUp"
@@ -112,6 +118,22 @@ onBeforeUnmount(() => {
       @more="zhiyaActions.loadMoreBooks"
       @login="zhiyaActions.navigate('auth')"
       @recommend="zhiyaActions.loadRecommendations"
+      @workshop="zhiyaActions.navigate('workshop')"
+    />
+    <WorkshopPage
+      v-else-if="state.route.name === 'workshop'"
+      :workshop="state.workshop"
+      :auth="state.auth"
+      :active-profile="activeProfile()"
+      :source-session-id="state.route.sourceSessionId"
+      :generate-action="zhiyaActions.generateWorkshopDraft"
+      :retry-generation-action="zhiyaActions.retryWorkshopGeneration"
+      :reset-action="zhiyaActions.resetWorkshopDraft"
+      :approve-action="zhiyaActions.approveWorkshopDraft"
+      :open-shelf-action="zhiyaActions.openApprovedPrivateShelf"
+      :continue-reading-action="zhiyaActions.switchWorkshopContinuation"
+      @start-story="startWorkshopBook"
+      @navigate="zhiyaActions.navigate"
     />
     <BookDetailPage
       v-else-if="state.route.name === 'detail'"
@@ -142,6 +164,7 @@ onBeforeUnmount(() => {
       :refresh-reading="zhiyaActions.refreshReading"
       :available-books="state.books.filter((book) => book.source === 'api')"
       :enter-child-mode-action="zhiyaActions.enterChildMode"
+      @continue-story="state.currentSession?.readingSessionId && zhiyaActions.navigate(`workshop/continue/${state.currentSession.readingSessionId}`)"
       @back="zhiyaActions.openDetail"
       @library="zhiyaActions.navigate('library')"
       @start-session="zhiyaActions.startCurrentReading"

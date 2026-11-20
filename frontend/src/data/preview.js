@@ -139,6 +139,7 @@ export function mapApiBook(version) {
     source: 'api',
     storyVersionId: version.storyVersionId,
     storybookId: version.storybookId,
+    versionNumber: version.versionNumber,
     title: version.title,
     author: version.author || '作者信息暂缺',
     ageBand: version.ageBand || '',
@@ -152,6 +153,8 @@ export function mapApiBook(version) {
     pages,
     branches: version.branches || [],
     status: version.status,
+    sourceStoryVersionId: version.sourceStoryVersionId || null,
+    continuation: version.continuation || null,
   }
 }
 

@@ -56,11 +56,18 @@
         url("/assets/figma-prototype/library-background.png");
     }
     body[data-view="reader"],
-    body[data-view="account"] {
+    body[data-view="account"],
+    body[data-view="workshop"] {
       background-color: #f6efe4;
       background-image:
         radial-gradient(circle at 82% 5%, rgba(241, 203, 130, .18), transparent 28rem),
         linear-gradient(rgba(255, 251, 244, .74), rgba(247, 239, 227, .9));
+    }
+    body[data-view="workshop"] {
+      background-image:
+        radial-gradient(circle at 14% 8%, rgba(219, 230, 213, .58), transparent 25rem),
+        radial-gradient(circle at 86% 18%, rgba(241, 203, 130, .2), transparent 28rem),
+        linear-gradient(rgba(255, 251, 244, .82), rgba(247, 239, 227, .92));
     }
     button, input, textarea, select { font: inherit; }
     button { cursor: pointer; }
@@ -365,6 +372,7 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      transform: translateY(-20px);
     }
     .home-hero {
       flex: 0 0 calc(48vh + 24px);
@@ -700,7 +708,7 @@
     .home-plan .primary { width: 100%; margin-top: 11px; }
     .home-plan-note { margin-top: 8px; color: var(--muted); font-size: 9px; line-height: 15px; text-align: center; }
 
-    .library-page { padding-top: 78px; }
+    .library-page { padding-top: 42px; }
     .library-content {
       width: min(100%, 1262px);
       margin: 0 auto;
@@ -807,9 +815,34 @@
     }
     .filter-chip:hover { background: #ead3b8; transform: translateY(-1px); }
     .filter-chip.active { color: #fff; background: var(--leaf); }
+    .library-workshop-entry {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #ead8bd;
+    }
+    .library-workshop-entry strong {
+      min-width: 0;
+      color: var(--brown-soft);
+      font-family: var(--font-story);
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 18px;
+    }
+    .library-workshop-entry strong span { color: var(--brown); }
+    .library-workshop-button {
+      min-height: 30px;
+      padding-inline: 10px;
+      border-radius: 999px;
+      white-space: nowrap;
+      font-size: 10px;
+    }
     .library-stage {
       min-width: 0;
-      height: clamp(470px, 39vw, 500px);
+      height: clamp(520px, 42vw, 540px);
       position: relative;
       z-index: 2;
       margin-top: 0;
@@ -908,7 +941,7 @@
       overflow-x: auto;
       scrollbar-width: thin;
       left: 50%;
-      bottom: 16px;
+      bottom: 0;
       z-index: 6;
       display: flex;
       align-items: center;
@@ -1611,7 +1644,7 @@
       .home-copy { padding-left: 0; }
       .home-copy h1 { white-space: normal; }
       .home-info-card { max-width: none; justify-self: stretch; }
-      .home-page { height: auto; min-height: 0; display: block; overflow: visible; padding-bottom: 28px; }
+      .home-page { height: auto; min-height: 0; display: block; overflow: visible; padding-bottom: 28px; transform: none; }
       .home-hero { min-height: 0; padding: 20px 0 0; }
       .home-bottom { height: auto; min-height: 0; margin-top: 22px; padding-bottom: 24px; display: flex; flex-direction: column; }
       .home-plan { height: auto; min-height: 352px; transform: none; }
@@ -1621,7 +1654,7 @@
       .library-feature-card { height: auto; min-height: 255px; }
       .library-feature-card { grid-template-columns: 140px minmax(0, 1fr); }
       .wheel-controls { inset: auto 18px 48px; transform: none; }
-      .carousel-dots { bottom: 12px; }
+      .carousel-dots { bottom: 3px; }
       .reader-layout { grid-template-columns: 1fr; }
       .reader-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .question-card { grid-column: 1 / -1; }
@@ -1651,7 +1684,7 @@
       .library-stage { height: 400px; }
       .wheel-book { width: 170px; }
       .wheel-controls { inset: auto 14px 54px; transform: none; }
-      .carousel-dots { bottom: 13px; }
+      .carousel-dots { bottom: 3px; }
       .library-feature-card { grid-template-columns: 105px minmax(0, 1fr); gap: 15px; padding: 14px; }
       .library-feature-cover { min-height: 155px; }
       .library-feature-copy h2 { font-size: 23px; line-height: 31px; }

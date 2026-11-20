@@ -297,6 +297,16 @@ describe('recommendations and content workspace', () => {
     expect(wrapper.emitted('filter').at(-1)).toEqual([{ ageBand: '', topic: '友谊' }])
   })
 
+  it('offers the original story workshop beneath the library filters', async () => {
+    const wrapper = render(LibraryPage, {})
+    expect(wrapper.get('.library-workshop-entry').text()).toContain('没找到想要的？')
+    expect(wrapper.get('.library-workshop-entry').text()).toContain('试试自己生成。')
+    expect(wrapper.text()).not.toContain('登录并后端返回可见绘本')
+    expect(wrapper.text()).not.toContain('后端当前没有可见的已发布绘本')
+    await wrapper.get('.library-workshop-button').trigger('click')
+    expect(wrapper.emitted('workshop')).toHaveLength(1)
+  })
+
   it.each(['collapse', 'age'])('clears the recommendation topic on %s', async (action) => {
     const wrapper = render(LibraryPage, {})
     const click = (label) => wrapper.findAll('button').find((item) => item.text() === label).trigger('click')

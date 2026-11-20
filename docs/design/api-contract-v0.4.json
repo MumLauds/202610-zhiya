@@ -1513,6 +1513,8 @@
           "session": {
             "readingSessionId": 401,
             "storyVersionId": 301,
+            "childProfileId": 101,
+            "sourceType": "ORIGINAL",
             "currentPage": 1,
             "visitedPageNumbers": [],
             "mode": "PARENT_CHILD",
@@ -1526,7 +1528,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。已保存完整响应的 API-017 引导事件还返回 outputText、strategyType 和事件写入后的 revision，实际反馈事件另含 feedback，供刷新后恢复。儿童在 IN_PROGRESS 时另收到 data.answerOptions 字符串数组，供 API-015 作答。该数组取自当前页最近一道可展示的问题，包括首次 QUESTION 和理解反馈 FEEDBACK 中保存的追问。跳过、拦截及空正文不算作问题。API-017 的儿童问题及回退均可用固定短答作答，最终响应 data.answerOptions 保存实际选项。旧提问未带此字段时使用固定短答“是”“不是”“不知道”。当前页尚无可展示提问时沿用已审核的分支选项文案。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
+      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。已保存完整响应的 API-017 引导事件还返回 outputText、strategyType 和事件写入后的 revision，实际反馈事件另含 feedback，供刷新后恢复。儿童在 IN_PROGRESS 时另收到 data.answerOptions 字符串数组，供 API-015 作答。该数组取自当前页最近一道可展示的问题，包括首次 QUESTION 和理解反馈 FEEDBACK 中保存的追问。跳过、拦截及空正文不算作问题。API-017 的儿童问题及回退均可用固定短答作答，最终响应 data.answerOptions 保存实际选项。旧提问未带此字段时使用固定短答“是”“不是”“不知道”。当前页尚无可展示提问时沿用已审核的分支选项文案。默认阅读详情仅向家长返回 data.session.childProfileId 和 data.session.sourceType（ORIGINAL 或 LIBRARY），用于确认续写来源和切换档案。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
       "interfaceId": "API-013",
       "uniqueKey": "GET /api/v1/reading-sessions/{session_id}",
       "additionalExamples": [
