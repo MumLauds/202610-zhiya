@@ -19,7 +19,7 @@ from app.audio_conversion import MAX_UPLOAD_BYTES, normalize_recording
 from app.errors import ServiceError
 from app.schemas.voice import PageVoiceRequest, SynthesisRequest
 from app.services.story_media import (
-    MediaDependencyError, freeze_approval_page_media, parse_asset_key, read_pinned_asset_bytes,
+    ImageVariant, MediaDependencyError, delivery_image, freeze_approval_page_media, parse_asset_key, read_pinned_asset_bytes,
 )
 from app.services.voice_access import VoicePrincipal, read_voice_source, recheck_source
 
@@ -163,7 +163,7 @@ def _unavailable_read() -> ServiceError:
     return exc
 
 
-def _read_story_image(request: Request, version_id: int, page_no: int | None) -> Response:
+def _read_story_image(request: Request, version_id: int, page_no: int | None, variant: ImageVariant | None) -> Response:
     try:
         for cache_write in (False, True):
             with authorized_db(request, cache_write=cache_write, allow_admin=True) as (db, principal, failure):
@@ -195,11 +195,17 @@ def _read_story_image(request: Request, version_id: int, page_no: int | None) ->
                 asset = read_pinned_asset_bytes(db, version, page_no)
                 if asset is None:
                     raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
-                data, media_type = asset
-                return Response(data, media_type=media_type, headers={
-                    "Cache-Control": "private, no-store",
-                    "X-Content-Type-Options": "nosniff",
-                })
+                break
+        data, media_type = asset
+        try:
+            data, media_type = delivery_image(data, media_type, variant)
+        except (OSError, ValueError):
+            # Encoding failures do not prevent the already verified original from loading.
+            pass
+        return Response(data, media_type=media_type, headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        })
     except (sqlite3.Error, MediaDependencyError):
         raise _unavailable_read() from None
 
@@ -209,10 +215,10 @@ def _read_story_image(request: Request, version_id: int, page_no: int | None) ->
                                          "image/png": {"schema": {"type": "string", "format": "binary"}},
                                          "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
                                          "image/webp": {"schema": {"type": "string", "format": "binary"}}}}})
-async def media(request: Request, resource_key: str):
+async def media(request: Request, resource_key: str, variant: ImageVariant | None = None):
     asset_target = parse_asset_key(resource_key)
     if asset_target is not None:
-        return await run_in_threadpool(_read_story_image, request, *asset_target)
+        return await run_in_threadpool(_read_story_image, request, *asset_target, variant)
     try:
         principal = await authenticate(request, write=False)
         store = request.app.state.voice_media

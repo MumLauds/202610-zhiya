@@ -22,7 +22,9 @@ const windowStart = computed(() => Math.max(0, Math.min(
 const visiblePages = computed(() => props.pages.slice(windowStart.value, windowStart.value + SPREADS_PER_WINDOW))
 const dotPages = computed(() => props.visitPages ?? props.bookPages ?? props.pages)
 const container = ref(null)
+const settledImages = ref(new Set())
 const imageErrors = ref(new Set())
+const currentImage = computed(() => props.pages[props.startPage]?.imageRef)
 let book = null
 let syncing = false
 
@@ -35,8 +37,29 @@ function showPage(storyIndex) {
 
 watch([() => props.startPage, windowStart], ([index]) => showPage(index), { flush: 'post' })
 
-function markImageError(pageNumber) {
-  imageErrors.value = new Set([...imageErrors.value, pageNumber])
+watch([() => props.startPage, windowStart], ([index, start], [, previousStart]) => {
+  if (start !== previousStart || !settledImages.value.has(currentImage.value)) {
+    settledImages.value.clear()
+    return
+  }
+  const nearby = props.pages.slice(Math.max(0, index - 1), index + 2).map((page) => page.imageRef)
+  for (const imageRef of settledImages.value) {
+    if (!nearby.includes(imageRef)) settledImages.value.delete(imageRef)
+  }
+})
+
+function shouldLoadImage(index) {
+  const distance = Math.abs(windowStart.value + index - props.startPage)
+  return distance === 0 || (
+    distance === 1 && (
+      !currentImage.value || settledImages.value.has(currentImage.value) || imageErrors.value.has(currentImage.value)
+    )
+  )
+}
+
+function settleImage(imageRef, failed = false) {
+  settledImages.value.add(imageRef)
+  if (failed) imageErrors.value.add(imageRef)
 }
 
 function mountBook() {
@@ -95,10 +118,19 @@ defineExpose({
   <div ref="container" class="flipbook-book" :inert="disabled" :aria-label="`${title}软页绘本`">
     <template v-for="(page, index) in visiblePages" :key="index">
       <section class="flip-page flip-page--illustration" data-density="soft" :aria-label="`第 ${page.pageNumber} 页插图`">
-        <div v-if="!page.imageRef || imageErrors.has(page.pageNumber)" class="flip-page-empty">
+        <div v-if="!page.imageRef || imageErrors.has(page.imageRef)" class="flip-page-empty">
           <div><h2>{{ page.imageRef ? '插图暂时无法显示' : '本页暂无插图' }}</h2><p>文字内容仍可继续阅读。</p></div>
         </div>
-        <img v-else :src="mediaUrl(page.imageRef)" :alt="`${title} · 第 ${page.pageNumber} 页`" draggable="false" @error="markImageError(page.pageNumber)">
+        <img
+          v-else-if="shouldLoadImage(index)"
+          :key="page.imageRef"
+          :src="mediaUrl(page.imageRef, 'reading')"
+          :alt="`${title} · 第 ${page.pageNumber} 页`"
+          :fetchpriority="windowStart + index === startPage ? 'high' : 'low'"
+          draggable="false"
+          @load="settleImage(page.imageRef)"
+          @error="settleImage(page.imageRef, true)"
+        >
       </section>
       <section class="flip-page flip-page--text" data-density="soft" :aria-label="`第 ${page.pageNumber} 页文字`">
         <div class="flip-page-inner flip-page-inner--text">

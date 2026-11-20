@@ -1958,7 +1958,9 @@
       "permission": "有效会话且拥有资源访问权；内容管理员可核对资料库草稿、待审核和已发布版本的内页图",
       "ownerRole": "业务后端与语音接入",
       "requestContentType": null,
-      "queryExample": null,
+      "queryExample": {
+        "variant": "thumbnail"
+      },
       "requestExample": null,
       "successStatus": 200,
       "responseExample": {
@@ -1966,7 +1968,7 @@
         "contentType": "按资源实际类型"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "资源二进制响应不使用JSON包；逐次校验有效会话、资源所属版本、common.versionAccess及短期授权，不长期公开私有地址。WITHDRAWN正文与媒体立即阻断，不能凭历史会话或旧资源地址访问。",
+      "constraints": "资源二进制响应不使用JSON包。逐次校验有效会话、资源所属版本、common.versionAccess及短期授权，不长期公开私有地址。WITHDRAWN正文与媒体立即阻断，不能凭历史会话或旧资源地址访问。图片可选variant=thumbnail（480像素）或reading（1280像素），按最长边缩小，不放大。仅在转码后更小时返回WebP，否则返回原图。省略参数、动图或转码失败时返回原图。响应沿用private, no-store，音频行为不变。",
       "interfaceId": "API-024",
       "uniqueKey": "GET /api/v1/media/{resource_key}"
     },

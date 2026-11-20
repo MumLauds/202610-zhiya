@@ -56,9 +56,9 @@ describe('mobile live mode', () => {
     expect(reader.props('initialSnapshot')).toEqual(snapshot)
     expect(reader.props('storyVersionId')).toBe(700)
     expect(reader.props('book')).toMatchObject({
-      title: story.title, cover: '/api/v1/media/asset-700-cover',
+      title: story.title, cover: '/api/v1/media/asset-700-cover?variant=thumbnail',
       pages: [
-        { page: 4, text: '第一幕。', image: '/api/v1/media/asset-700-page-4', defaultNextPageNumber: 9 },
+        { page: 4, text: '第一幕。', image: '/api/v1/media/asset-700-page-4?variant=reading', defaultNextPageNumber: 9 },
         { page: 9, image: expect.stringContaining('image-placeholder.svg'), defaultNextPageNumber: null },
       ],
     })

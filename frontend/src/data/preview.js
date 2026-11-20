@@ -145,7 +145,7 @@ export function mapApiBook(version) {
     ageBand: version.ageBand || '',
     ageLabel: ageLabels[version.ageBand] || '适龄信息暂缺',
     topics: version.topics || [],
-    cover: mediaUrl(version.coverRef) || '/assets/image-placeholder.svg',
+    cover: mediaUrl(version.coverRef, 'thumbnail') || '/assets/image-placeholder.svg',
     coverRef: version.coverRef,
     summary: version.summary || pages[0]?.text || '内容简介暂缺',
     quote: '',

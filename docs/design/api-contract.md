@@ -70,7 +70,7 @@
 | API-013 读取或恢复会话 | 路径 `session_id`。可选查询 `view` 默认为 `reading`。家长可选 `deletion-status` 核对删除结果 | 默认返回 200 及 `session`、`events`、`report`，未生成小结时 `report=null`。删除核对返回 200 及布尔值 `data.exists`，响应带 `Cache-Control: no-store` |
 | API-015 开始与翻页 | 路径 `session_id`。必填 `eventType=STARTED/PAGE_CHANGED`、`pageNumber`、`expectedRevision`、`clientEventId`（1～64 字符） | 首次 201，`interactionEventId`、更新后的 `revision`。同键成功重放 200 |
 | API-019 结束 | 路径 `session_id`。必填 `reason=USER_FINISH`、`expectedRevision`、`clientEventId`（1～64 字符） | 首次和成功重放均为 200，`session`、`report` |
-| API-024 媒体 | 路径 `resource_key`，无请求体 | 200，资源二进制及实际 `Content-Type` |
+| API-024 媒体 | 路径 `resource_key`，可选查询参数 `variant=thumbnail` 或 `variant=reading`，无请求体 | 200，资源二进制及实际 `Content-Type` |
 
 API-013 的 `view=deletion-status` 按 API-014 的家长归属规则查询。本人名下仍存在的记录返回 `exists=true`，包括绘本已撤回的记录。记录已删除或不属于当前家长时统一返回 `exists=false`。该视图仅返回布尔值。未认证请求返回 401，有效儿童凭证返回 403。普通会话读取继续按版本可见范围返回内容。
 
@@ -79,6 +79,8 @@ API-013 的 `view=deletion-status` 按 API-014 的家长归属规则查询。本
 API-008/009 保留现有版本对象字段 `storybookId`、`storyVersionId`、`versionNumber`、`title`、`status`、`pages`、`branches`。建议新增 `coverRef`（字符串或 null）。`pages` 项包含 `pageNumber`、`text`、`imageRef`、`defaultNextPageNumber`，后继页为空时为 null。封面或内页缺图时对应字段返回 null，前端显示本地占位图。有素材时返回服务端分配、绑定该版本的资源键，由 API-024 读取。封面导入可按[封面映射](../../data/seed/cover_mapping.json)的 `storybook_id` 找到素材，仓库路径和种子占位值仅用于导入。素材可用性、授权和发布仍按 DCL-002。
 
 数据库的 `story_pages.image_ref` 保持 `TEXT NOT NULL`。API-008/009 校验版本访问权后，按版本和页号解析该字段。仅当引用能解析为该版本中已核验可用的图片时，`imageRef` 才返回受控媒体键。种子中的 `/assets/placeholder.png`、旧版页面的画面描述，以及确认缺少素材的引用，都序列化为 `imageRef=null`。解析依赖暂不可用时返回下表的 503。API-024 仍逐次核验版本和资源访问权，过期或不可访问的资源键按现有规则处理。
+
+API-024 处理图片时，`thumbnail` 和 `reading` 分别尝试生成最长边不超过 480 和 1280 像素的 WebP，保持宽高比且不放大。服务端仅在转码后更小时发送派生图。省略参数、动图或转码失败时返回原图。响应沿用 `private, no-store`，音频响应沿用现有规则。
 
 ### DCL-006 结束并发与幂等
 

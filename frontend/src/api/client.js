@@ -88,8 +88,10 @@ export function describeApiError(error) {
   return error.message || '操作失败，请稍后再试。'
 }
 
-export function mediaUrl(resourceKey) {
-  return resourceKey ? `${API_ROOT}/media/${encodeURIComponent(resourceKey)}` : ''
+export function mediaUrl(resourceKey, variant) {
+  if (!resourceKey) return ''
+  const url = `${API_ROOT}/media/${encodeURIComponent(resourceKey)}`
+  return variant ? `${url}?variant=${encodeURIComponent(variant)}` : url
 }
 
 export function createClientEventId(prefix = 'evt') {

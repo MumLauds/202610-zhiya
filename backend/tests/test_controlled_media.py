@@ -224,6 +224,47 @@ def test_page_image_refs_access_control_child_scope_withdrawn_and_traversal(medi
     assert second.get("/api/v1/media/asset-100-page-1").status_code == 404
 
 
+def test_media_image_variants_preserve_original_and_recheck_access(media_env, monkeypatch):
+    owner, other_guardian, db_path, tmp_path = media_env
+    original = _make_png(width=1600, height=800)
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    (media_root / "large.png").write_bytes(original)
+    monkeypatch.setenv("ZHIYA_MEDIA_ROOT", str(media_root))
+    _library_book(db_path, 20, 2, 1, ["large.png"], status="APPROVED_PRIVATE", seed_cover=False)
+    with closing(sqlite3.connect(db_path)) as db, db:
+        db.execute("UPDATE storybooks SET source_type='ORIGINAL', owner_guardian_id=1 WHERE id=2")
+
+    url = "/api/v1/media/asset-20-page-1"
+    variants = {"thumbnail": (480, 240), "reading": (1280, 640)}
+    response = owner.get(url)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.content == original
+
+    for variant, size in variants.items():
+        response = owner.get(url, params={"variant": variant})
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/webp"
+        assert response.headers["cache-control"] == "private, no-store"
+        assert len(response.content) < len(original)
+        with Image.open(BytesIO(response.content)) as image:
+            image.load()
+            assert image.format == "WEBP"
+            assert image.size == size
+
+    with TestClient(app, base_url="https://testserver") as anonymous:
+        for variant in variants:
+            assert anonymous.get(url, params={"variant": variant}).status_code == 401
+            assert other_guardian.get(url, params={"variant": variant}).status_code == 404
+
+    with closing(sqlite3.connect(db_path)) as db, db:
+        db.execute("UPDATE story_versions SET status='WITHDRAWN' WHERE id=20")
+    for variant in variants:
+        assert owner.get(url, params={"variant": variant}).status_code == 404
+
+
 def test_media_dependency_unavailable_returns_retryable_503(media_env, monkeypatch):
     first, _, db_path, tmp_path = media_env
     _library_book(db_path, 2, 2, 1, ["p1.png"])

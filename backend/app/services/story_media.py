@@ -6,12 +6,14 @@ import os
 import re
 import sqlite3
 import threading
+from collections import OrderedDict
 from collections.abc import Iterator
 from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path, PurePosixPath
+from typing import Literal
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MEDIA_DIR_PREFIX = ("knowledge-base_v2.5", "图片")
@@ -40,11 +42,16 @@ BLOB_NAME_RE = re.compile(r"^[0-9a-f]{64}\.(png|jpg|webp)$")
 MAX_ID = 9007199254740991
 DEFAULT_DB_PATH = REPO_ROOT / "database" / "instance" / "zhiya.sqlite3"
 VerifiedSource = tuple[Path, str, str, bytes]
+ImageVariant = Literal["thumbnail", "reading"]
+IMAGE_VARIANT_EDGE = {"thumbnail": 480, "reading": 1280}
+IMAGE_VARIANT_CACHE_SIZE = 64
+IMAGE_VARIANT_CACHE_MAX_BYTES = 512 * 1024
 
 _PIN_LOCK = threading.RLock()
 _DIGEST_LOCK = threading.Lock()
 _VERIFIED_DIGESTS: dict[str, str] = {}
 _VERIFIED_FILES: dict[tuple[str, str], tuple[int, ...]] = {}
+_IMAGE_VARIANTS: OrderedDict[tuple[str, ImageVariant], bytes] = OrderedDict()
 
 
 class MediaDependencyError(RuntimeError):
@@ -72,6 +79,39 @@ def verify_and_detect_image(data: bytes) -> str | None:
         return Image.MIME[fmt]
     except (OSError, SyntaxError, ValueError, EOFError, Image.DecompressionBombError):
         return None
+
+
+def delivery_image(data: bytes, media_type: str, variant: ImageVariant | None) -> tuple[bytes, str]:
+    """Derive a smaller response from verified bytes, without changing the pinned asset."""
+    if variant is None:
+        return data, media_type
+    key = (hashlib.sha256(data).hexdigest(), variant)
+    with _DIGEST_LOCK:
+        cached = _IMAGE_VARIANTS.get(key)
+        if cached is not None:
+            _IMAGE_VARIANTS.move_to_end(key)
+            return cached, "image/webp"
+
+    with Image.open(BytesIO(data), formats=IMAGE_FORMATS) as source:
+        if getattr(source, "is_animated", False):
+            return data, media_type
+        image = ImageOps.exif_transpose(source)
+        edge = IMAGE_VARIANT_EDGE[variant]
+        if media_type == "image/webp" and max(image.size) <= edge:
+            return data, media_type
+        image.thumbnail((edge, edge), Image.Resampling.LANCZOS)
+        output = BytesIO()
+        image.convert("RGBA" if image.has_transparency_data else "RGB").save(output, "WEBP", quality=80)
+    webp = output.getvalue()
+    if len(webp) >= len(data):
+        return data, media_type
+    if len(webp) <= IMAGE_VARIANT_CACHE_MAX_BYTES:
+        with _DIGEST_LOCK:
+            _IMAGE_VARIANTS[key] = webp
+            _IMAGE_VARIANTS.move_to_end(key)
+            if len(_IMAGE_VARIANTS) > IMAGE_VARIANT_CACHE_SIZE:
+                _IMAGE_VARIANTS.popitem(last=False)
+    return webp, "image/webp"
 
 
 def _media_root() -> Path:

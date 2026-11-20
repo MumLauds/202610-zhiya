@@ -418,7 +418,7 @@ function exitReading() {
       <template v-else>
         <article class="page-card">
           <div class="page-visual">
-            <img :src="currentPage.image || book.cover" :alt="`${book.title} 第 ${currentPageIndex + 1} 页`" />
+            <img :src="currentPage.image || book.cover" :alt="`${book.title} 第 ${currentPageIndex + 1} 页`" fetchpriority="high" />
             <span class="page-scene">{{ currentPage.scene || `第 ${currentPageIndex + 1} 幕` }}</span>
           </div>
           <div class="page-reading">

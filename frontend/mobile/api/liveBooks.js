@@ -1,15 +1,14 @@
 import { ApiError, requestJson } from './client'
-
-const mediaUrl = (ref, placeholder) => ref ? `/api/v1/media/${encodeURIComponent(ref)}` : placeholder
+import { mediaUrl } from '../../src/api/client'
 
 function toBook(version, placeholder) {
   return {
     ...version,
-    cover: mediaUrl(version.coverRef, placeholder),
+    cover: mediaUrl(version.coverRef, 'thumbnail') || placeholder,
     pages: version.pages.map((page) => ({
       page: page.pageNumber,
       text: page.text,
-      image: mediaUrl(page.imageRef, placeholder),
+      image: mediaUrl(page.imageRef, 'reading') || placeholder,
       defaultNextPageNumber: page.defaultNextPageNumber,
       tokens: Array.from(page.text, (char, index) => ({ char, index })),
     })),
