@@ -336,6 +336,75 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
     assert image_calls == [(title, original_pages), (title, continued_pages)]
 
 
+@pytest.mark.parametrize("generate_illustrations", [False, True], ids=["template", "ai"])
+def test_generated_cover_matches_the_first_illustration_before_and_after_approval(
+    cont_env, monkeypatch, tmp_path, generate_illustrations,
+):
+    from io import BytesIO
+
+    from PIL import Image
+
+    from app.services import story_media
+
+    client, other, _, _ = cont_env
+    headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
+    monkeypatch.setenv("ZHIYA_MEDIA_ROOT", str(tmp_path))
+    monkeypatch.setenv("IMAGE_API_URL", "https://images.test/generate")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-image-api-key")
+    templates = next(story_media._template_candidates("AGE_4_5", "互助", 4))
+    illustration_bytes = []
+    for (ref, _), color in zip(templates, ("red", "green", "blue", "yellow"), strict=True):
+        output = BytesIO()
+        Image.new("RGB", (2, 2), color).save(output, format="PNG")
+        image = output.getvalue()
+        illustration_bytes.append(image)
+        if not generate_illustrations:
+            path = tmp_path.joinpath(*story_media._image_path_parts(ref))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(image)
+
+    class StoryModel:
+        async def generate(self, request):
+            return ModelGenerateResult(success=True, text=json.dumps({
+                "title": "森林里的朋友",
+                "pages": ["兔子到森林散步。", "兔子遇见了松鼠。", "他们一起找松果。", "他们带着松果回家。"],
+            }))
+
+    async def generate_images(settings, title, pages):
+        assert generate_illustrations
+        return story_media.pin_generated_illustrations(illustration_bytes)
+
+    monkeypatch.setattr(client.app.state, "model_adapter", StoryModel())
+    monkeypatch.setattr("app.api.v1.story_generations.generate_story_illustrations", generate_images)
+    generated = client.post("/api/v1/story-generations", headers=headers, json={
+        "ageBand": "AGE_4_5", "topic": "互助", "characters": ["小兔子"], "scene": "森林",
+        "branching": False, "generateIllustrations": generate_illustrations, "clientRequestId": "workshop-cover",
+    })
+    assert generated.status_code == 201, generated.text
+    draft = generated.json()["data"]
+    version = draft["storyVersionId"]
+    cover_ref = f"asset-{version}-page-1"
+    assert draft["coverRef"] == draft["pages"][0]["imageRef"] == cover_ref
+    cover_url = f"/api/v1/media/{cover_ref}"
+    preview = client.get(cover_url)
+    assert preview.status_code == 200 and preview.content == illustration_bytes[0]
+    assert other.get(cover_url).status_code == 404
+
+    detail_url = f"/api/v1/story-versions/{version}"
+    approved = client.post(f"{detail_url}/approvals", headers=headers, json={
+        "versionNumber": draft["versionNumber"], "reviewedAllBranches": True,
+    })
+    detail = client.get(detail_url)
+    shelf = client.get("/api/v1/storybooks", params={"scope": "mine"})
+    assert approved.status_code == detail.status_code == shelf.status_code == 200
+    entry = next(item for item in shelf.json()["data"]["items"] if item["storyVersionId"] == version)
+    for story in (approved.json()["data"], detail.json()["data"], entry):
+        assert story["coverRef"] == story["pages"][0]["imageRef"] == cover_ref
+    cover = client.get(cover_url)
+    assert cover.status_code == 200 and cover.content == preview.content
+    assert other.get(cover_url).status_code == 404
+
+
 def test_ai_illustration_failure_replays_without_creating_a_draft(cont_env, monkeypatch):
     from app.services.image_generation import ImageGenerationError
 

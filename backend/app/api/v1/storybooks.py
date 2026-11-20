@@ -55,11 +55,15 @@ def version_object(db, row, principal: Principal):
         db.execute("SELECT source_type FROM storybooks WHERE id = ?", (row["storybook_id"],)).fetchone()["source_type"]
     )
     manifest = pin_version_media(db, row, source_type=source_type, pages=pages)
+    page_items = [page_object(db, p, manifest=manifest) for p in pages]
+    cover = cover_ref_from_manifest(row["id"], manifest)
+    if cover is None and source_type == "ORIGINAL":
+        cover = next((page["imageRef"] for page in page_items if page["imageRef"]), None)
     data = {
         "storybookId": row["storybook_id"], "storyVersionId": row["id"],
         "versionNumber": row["version_no"], "title": row["title"], "status": row["status"],
-        "coverRef": cover_ref_from_manifest(row["id"], manifest),
-        "pages": [page_object(db, p, manifest=manifest) for p in pages],
+        "coverRef": cover,
+        "pages": page_items,
         "branches": [{"branchId": b["id"], "fromPageNumber": b["from_page_no"],
                       "nextPageNumber": b["next_page_no"], "choiceLabel": b["choice_label"],
                       "reviewStatus": b["review_status"]} for b in branches],

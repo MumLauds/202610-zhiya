@@ -63,7 +63,7 @@ const continuationPageCount = computed(() => continuation.value?.session?.visite
 const continuationCanBranch = computed(() => !isContinuation.value || continuationPageCount.value <= 3)
 const continuationCanGenerate = computed(() => !isContinuation.value || continuationPageCount.value <= 5)
 const resumePageNumber = computed(() => continuation.value?.resumePageNumber || 1)
-const firstIllustration = computed(() => props.workshop.draft?.pages?.find((page) => page.imageRef)?.imageRef || '')
+const draftCover = computed(() => draft.value?.coverRef || draft.value?.pages?.find((page) => page.imageRef)?.imageRef)
 const pageByNumber = computed(() => new Map((draft.value?.pages || []).map((page) => [page.pageNumber, page])))
 const branchesByPage = computed(() => {
   const groups = new Map()
@@ -403,12 +403,15 @@ function branchTarget(branch) {
 
         <article v-else-if="reviewVisible" class="draft-review">
           <header class="draft-heading">
-            <div>
-              <span class="pill" :class="{ warm: props.workshop.generationStatus === 'approved' }">
-                {{ props.workshop.generationStatus === 'approved' ? '已审核私人绘本' : '待家长审核' }}
-              </span>
-              <h2>{{ draft.title }}</h2>
-              <p>第 {{ draft.versionNumber }} 版 · {{ pageLabel }} · {{ selectedAge }}</p>
+            <div class="draft-heading-book">
+              <img v-if="draftCover" class="draft-cover" :src="mediaUrl(draftCover, 'thumbnail')" :alt="`${draft.title}封面`">
+              <div>
+                <span class="pill" :class="{ warm: props.workshop.generationStatus === 'approved' }">
+                  {{ props.workshop.generationStatus === 'approved' ? '已审核私人绘本' : '待家长审核' }}
+                </span>
+                <h2>{{ draft.title }}</h2>
+                <p>第 {{ draft.versionNumber }} 版 · {{ pageLabel }} · {{ selectedAge }}</p>
+              </div>
             </div>
             <div class="draft-heading-actions">
               <span v-if="isContinuation" class="draft-continuation-badge">从第 {{ resumePageNumber }} 页续写</span>
@@ -1312,6 +1315,21 @@ function branchTarget(branch) {
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
+}
+
+.draft-heading-book {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.draft-cover {
+  flex: none;
+  width: clamp(50px, 9vw, 84px);
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 8px;
 }
 
 .draft-heading h2 {

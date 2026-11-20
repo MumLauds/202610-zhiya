@@ -1264,7 +1264,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "默认返回有权访问的当前PUBLISHED/APPROVED_PRIVATE版本。scope=mine仅限已认证家长，另包含本人已审核私有RETIRED历史版本；各项以storyVersionId区分，遵守common.versionAccess，不返回WITHDRAWN内容。仅家长的续写版本对象包含sourceStoryVersionId和continuation。",
+      "constraints": "默认返回有权访问的当前PUBLISHED/APPROVED_PRIVATE版本。scope=mine仅限已认证家长，另包含本人已审核私有RETIRED历史版本；各项以storyVersionId区分，遵守common.versionAccess，不返回WITHDRAWN内容。没有专用封面的原创版本使用第一张可用内页的受控资源键作为coverRef，无可用图片时为null。仅家长的续写版本对象包含sourceStoryVersionId和continuation。",
       "interfaceId": "API-008",
       "uniqueKey": "GET /api/v1/storybooks",
       "additionalExamples": [
@@ -1346,7 +1346,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "仅家长的续写版本对象包含sourceStoryVersionId和continuation。儿童只接收已授权的阅读内容。正文和媒体均遵守common.versionAccess；本人已审核私有RETIRED版本可从历史入口复读，LIBRARY退休版本仅限既有有效会话；WITHDRAWN立即拒绝。",
+      "constraints": "仅家长的续写版本对象包含sourceStoryVersionId和continuation。儿童只接收已授权的阅读内容。正文和媒体均遵守common.versionAccess；本人已审核私有RETIRED版本可从历史入口复读，LIBRARY退休版本仅限既有有效会话；WITHDRAWN立即拒绝。没有专用封面的原创版本使用第一张可用内页作为coverRef。",
       "interfaceId": "API-009",
       "uniqueKey": "GET /api/v1/story-versions/{version_id}"
     },
@@ -2060,7 +2060,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "4～6个页面节点；branching=true时1～2决策节点，每节点至少两选项；branching=false时无决策节点且branches为空；所有路径4～6页且无环；响应含checkResults。续写另带sourceReadingSessionId，固定前文，按新增页数选择适龄授权插画。自定义媒体目录中缺少或暂不可读的可选模板插画按页返回imageRef=null。可选布尔字段generateIllustrations为true时启用FR-19可选扩展，逐页生成新增正文的AI插画，服务端固定图片并在AI页返回imageSource=AI_GENERATED，经API-024预览，API-026审核沿用同一张图。false或省略沿用模板及原幂等摘要。生图预算45秒，整次请求占位115秒；未配置或生成失败返回可重试503，不创建草稿，已开始的原请求只重放其结果。续写请求同时提交expectedRevision，年龄由源会话档案确定而无需传ageBand；服务端短事务固定源版本、当前路径和revision，已读前缀按阅读顺序映射为新版本1..k页且保留文字与配图，resumePageNumber=k+1。整本仍为4～6个节点，不能满足范围时422 CONTINUATION_LIMIT。返回不可由客户端改写的continuation对象，家长同时预览继续点。生成及批准不结束旧会话。调用前按STORY_GENERATION范围占位。有限续写属于本期FR-17 P1验收范围；经API-026审核后由API-011原子切换，覆盖TC-FR17-04/05，审批状态见common.deliveryScope。普通原创及阅读主链路无需触发续写。",
+      "constraints": "4～6个页面节点；branching=true时1～2决策节点，每节点至少两选项；branching=false时无决策节点且branches为空；所有路径4～6页且无环；响应含checkResults。新草稿coverRef取第一张可用的内页资源键，无可用图片时为null。续写另带sourceReadingSessionId，固定前文，按新增页数选择适龄授权插画。自定义媒体目录中缺少或暂不可读的可选模板插画按页返回imageRef=null。可选布尔字段generateIllustrations为true时启用FR-19可选扩展，逐页生成新增正文的AI插画，服务端固定图片并在AI页返回imageSource=AI_GENERATED，经API-024预览，API-026审核沿用同一张图。false或省略沿用模板及原幂等摘要。生图预算45秒，整次请求占位115秒；未配置或生成失败返回可重试503，不创建草稿，已开始的原请求只重放其结果。续写请求同时提交expectedRevision，年龄由源会话档案确定而无需传ageBand；服务端短事务固定源版本、当前路径和revision，已读前缀按阅读顺序映射为新版本1..k页且保留文字与配图，resumePageNumber=k+1。整本仍为4～6个节点，不能满足范围时422 CONTINUATION_LIMIT。返回不可由客户端改写的continuation对象，家长同时预览继续点。生成及批准不结束旧会话。调用前按STORY_GENERATION范围占位。有限续写属于本期FR-17 P1验收范围；经API-026审核后由API-011原子切换，覆盖TC-FR17-04/05，审批状态见common.deliveryScope。普通原创及阅读主链路无需触发续写。",
       "interfaceId": "API-025",
       "uniqueKey": "POST /api/v1/story-generations",
       "additionalExamples": [

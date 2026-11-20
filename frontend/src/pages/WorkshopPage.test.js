@@ -91,6 +91,15 @@ describe('original story workshop', () => {
     expect(templatePage.text()).not.toContain('AI 插画')
   })
 
+  it('shows the draft cover thumbnail and falls back to the first page image for legacy drafts', async () => {
+    const wrapper = render({ draft: { ...draft, coverRef: 'asset-31-cover' }, generationStatus: 'review' })
+
+    expect(wrapper.get('.draft-cover').attributes('src')).toBe('/api/v1/media/asset-31-cover?variant=thumbnail')
+
+    await wrapper.setProps({ workshop: workshop({ draft, generationStatus: 'review' }) })
+    expect(wrapper.get('.draft-cover').attributes('src')).toBe('/api/v1/media/asset-31-page-1?variant=thumbnail')
+  })
+
   it('previews every page and branch, then enables approval after the parent confirmation', async () => {
     const approveAction = vi.fn(async () => true)
     const wrapper = render({ draft, generationStatus: 'review' }, { approveAction })

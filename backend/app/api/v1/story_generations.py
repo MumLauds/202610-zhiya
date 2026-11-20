@@ -304,7 +304,9 @@ def save_draft(db, request, payload, owner, source, carried_pages, total, decisi
         return error(request, 422, "VALIDATION_ERROR", reason)
     return JSONResponse(status_code=201, content={"data": {
         "storybookId": book_id, "storyVersionId": version_id, "versionNumber": number, "title": draft.title,
-        "status": "PENDING_REVIEW", "pages": pages, "branches": branches, **continuation,
+        "status": "PENDING_REVIEW",
+        "coverRef": next((page["imageRef"] for page in pages if page["imageRef"]), None),
+        "pages": pages, "branches": branches, **continuation,
         "checkResults": {"structurePassed": True, "safetyPassed": True, "licensePassed": True},
     }, "requestId": request.state.request_id})
 

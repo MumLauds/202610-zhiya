@@ -76,7 +76,7 @@ API-013 的 `view=deletion-status` 按 API-014 的家长归属规则查询。本
 
 ### DCL-005 封面与媒体
 
-API-008/009 保留现有版本对象字段 `storybookId`、`storyVersionId`、`versionNumber`、`title`、`status`、`pages`、`branches`。建议新增 `coverRef`（字符串或 null）。`pages` 项包含 `pageNumber`、`text`、`imageRef`、`defaultNextPageNumber`，后继页为空时为 null。封面或内页缺图时对应字段返回 null，前端显示本地占位图。有素材时返回服务端分配、绑定该版本的资源键，由 API-024 读取。封面导入可按[封面映射](../../data/seed/cover_mapping.json)的 `storybook_id` 找到素材，仓库路径和种子占位值仅用于导入。素材可用性、授权和发布仍按 DCL-002。
+API-008/009 保留现有版本对象字段 `storybookId`、`storyVersionId`、`versionNumber`、`title`、`status`、`pages`、`branches`。`coverRef` 为受控资源键或 null。原创绘本没有专用封面时，取按页码顺序第一张可用的内页资源键作为封面。馆藏封面沿用原映射。`pages` 项包含 `pageNumber`、`text`、`imageRef`、`defaultNextPageNumber`，后继页为空时为 null。封面或内页缺图时对应字段返回 null，前端显示本地占位图。有素材时返回服务端分配、绑定该版本的资源键，由 API-024 读取。封面导入可按[封面映射](../../data/seed/cover_mapping.json)的 `storybook_id` 找到素材，仓库路径和种子占位值仅用于导入。素材可用性、授权和发布仍按 DCL-002。
 
 数据库的 `story_pages.image_ref` 保持 `TEXT NOT NULL`。API-008/009 校验版本访问权后，按版本和页号解析该字段。仅当引用能解析为该版本中已核验可用的图片时，`imageRef` 才返回受控媒体键。种子中的 `/assets/placeholder.png`、旧版页面的画面描述，以及确认缺少素材的引用，都序列化为 `imageRef=null`。解析依赖暂不可用时返回下表的 503。API-024 仍逐次核验版本和资源访问权，过期或不可访问的资源键按现有规则处理。
 
@@ -152,7 +152,7 @@ API-013 默认阅读详情仅向家长返回 `data.session.childProfileId`（源
 
 API-008/009 返回已授权的续写版本时，儿童可以读取页面和已审核分支。只有家长的版本对象包含 `sourceStoryVersionId` 和 `continuation` 源进度快照。
 
-API-025 默认选择覆盖整个请求年龄段的授权模板，按新增页数配图，可提供相同数量插画的模板优先匹配主题。使用自定义媒体目录时，续写遇到模板不足或单张文件暂不可读，对应新增页的 `imageRef` 返回 null，其余可用插画保留。生成时固定图片内容，家长可通过 API-024 预览本人待审核原创草稿的内页，API-026 批准时沿用同一份图片。旧草稿首次预览某页时固定该页插画，批准时核对整本并固定其余页。若生成时已返回资源键的插画暂时缺失，该页预览和整本批准返回可重试的 503，其他可用页仍可预览。素材恢复后可重试原操作。成功生成请求的同键重放也会检查目标版本，已撤回时返回 404 `RESOURCE_NOT_FOUND`。
+API-025 默认选择覆盖整个请求年龄段的授权模板，按新增页数配图，可提供相同数量插画的模板优先匹配主题。使用自定义媒体目录时，续写遇到模板不足或单张文件暂不可读，对应新增页的 `imageRef` 返回 null，其余可用插画保留。生成时固定图片内容，API-025 新草稿的 `coverRef` 指向第一张可用的内页资源键，无可用图片时为 null。家长可通过 API-024 预览本人待审核原创草稿的封面和内页，API-026 批准时沿用固定图片。续写草稿的封面可能引用已冻结的前文图，批准后返回目标版本的资源键。旧草稿首次预览某页时固定该页插画，批准时核对整本并固定其余页。若生成时已返回资源键的插画暂时缺失，该页预览和整本批准返回可重试的 503，其他可用页仍可预览。素材恢复后可重试原操作。成功生成请求的同键重放也会检查目标版本，已撤回时返回 404 `RESOURCE_NOT_FOUND`。
 
 已确认的 FR-19 可选扩展见 [DCL-033](../standards/design-change-log.md)。家长可在 API-025 提交可选布尔字段 `generateIllustrations: true`，为新增正文逐页生成 AI 插画。省略或传 false 时使用授权模板，同键摘要与历史模板请求保持兼容。续写前文的配图始终沿用已冻结的内容。
 
