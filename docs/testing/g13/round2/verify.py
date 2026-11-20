@@ -143,7 +143,7 @@ def test_guidance_replay_and_browser_refresh(tmp_path, monkeypatch):
     def provider(request):
         assert str(request.url) == "https://fixture.invalid/model"
         context = json.loads(request.content)["messages"][1]["content"]
-        selected = context.split("候选问句：\n", 1)[1].splitlines()[0]
+        selected = context.split("候选问句：\n", 1)[1].splitlines()[0].removeprefix("1. ")
         model_calls.append({"prompt": context, "question": selected})
         return httpx.Response(200, json={"choices": [{"finish_reason": "stop",
                                     "message": {"role": "assistant", "content": selected}}]})

@@ -516,9 +516,9 @@ def test_guidance_gateway_request_and_replay(started_session, guidance_knowledge
         payload = json.loads(request.content)
         requests.append(payload)
         context = payload["messages"][1]["content"]
-        selected = context.split("候选问句：\n", 1)[1].splitlines()[0]
+        assert context.split("候选问句：\n", 1)[1].startswith("1. ")
         return httpx.Response(200, json={"choices": [
-            {"finish_reason": "stop", "message": {"role": "assistant", "content": selected}},
+            {"finish_reason": "stop", "message": {"role": "assistant", "content": "1"}},
         ]})
 
     def gateway(settings):
@@ -543,6 +543,27 @@ def test_guidance_gateway_request_and_replay(started_session, guidance_knowledge
         assert follow.status_code == 201 and follow.json()["data"]["strategyType"] == "CONCRETE_RECALL"
         assert len(requests) == 2
         assert "当前页已保存的问题（仅作参考）：" + data["outputText"] in requests[1]["messages"][1]["content"]
+
+
+def test_guidance_fox_page_feedback_and_refresh(started_session, guidance_model):
+    client, headers, path, sid = started_session
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET body_text=? WHERE version_id=11 AND page_no=1",
+                   ("下雨了。小狐狸站在门口，看着外面的雨。",))
+    guidance_model.side_effect = [
+        ModelGenerateResult(success=True, text="2"),
+        ModelGenerateResult(success=True, text="读到“小狐狸站在门口”时，你能指一指画面里的小狐狸吗？"),
+    ]
+    first = guidance(client, headers, sid, "fox-initial").json()["data"]
+    assert first["outputText"] == "读到“下雨了”时，角色在做什么？"
+    feedback = guidance(client, headers, sid, "fox-feedback", feedback="NOT_UNDERSTOOD", revision=2).json()["data"]
+    assert (feedback["status"], feedback["strategyType"], feedback["outputText"]) == (
+        "GENERATED", "CONCRETE_RECALL", "读到“小狐狸站在门口”时，你能指一指画面里的角色吗？")
+    for _ in range(2):
+        data = client.get(f"/api/v1/reading-sessions/{sid}").json()["data"]
+        assert data["session"]["currentPage"] == 1 and data["session"]["revision"] == 3
+        events = [e for e in data["events"] if e.get("feedback") == "NOT_UNDERSTOOD"]
+        assert len(events) == 1 and events[0]["outputText"] == feedback["outputText"]
 
 
 def test_guidance_persistence_feedback_skip_and_replay(started_session, guidance_model, monkeypatch):
@@ -656,7 +677,7 @@ def test_guidance_child_question_body_boundaries(child_guidance_session, guidanc
     else:
         assert (data["status"], data["outputText"]) == ("GENERATED", expected)
         candidates = guidance_model.await_args.args[0].context_text.split("候选问句：\n", 1)[1].splitlines()
-        assert expected in candidates
+        assert expected in [line.split(". ", 1)[1] for line in candidates]
         assert data["answerOptions"] == ["是", "不是", "不知道"]
 
 
@@ -783,6 +804,9 @@ def test_guidance_new_keys_require_started_session_current_page_and_question(sta
     ("你有阅读障碍吗？", "BLOCKED", "FAILED"),
     ("你家在哪里？", "BLOCKED", "FAILED"),
     ("能告诉我你的家庭地址吗？", "BLOCKED", "FAILED"),
+    ("读到“小兔打开雨伞”时，你家在哪里？", "BLOCKED", "FAILED"),
+    ("1 请告诉我家庭地址", "BLOCKED", "FAILED"),
+    ("99", "BLOCKED", "FAILED"),
 ])
 def test_guidance_validates_child_facing_output(started_session, guidance_model, text, status, stored):
     client, headers, path, sid = started_session

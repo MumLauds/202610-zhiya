@@ -11,8 +11,8 @@ SYSTEM_PROMPT = (
     "只能使用参考上下文中的已审核知识和当前绘本页事实，不得编造书目、情节、儿童表现或数据来源。"
     "语言简短、具体、可回答，适合幼儿理解；不做医疗或心理诊断，不给危险操作指令。"
     "如果参考上下文没有可用知识，只能依据当前页给出通用且安全的内容，不虚构来源。"
-    "只输出面向家长或儿童的自然语言文本，不要输出JSON、编号、来源标注或规则说明。"
 )
+NATURAL_LANGUAGE_OUTPUT = "只输出面向家长或儿童的自然语言文本，不要输出JSON、编号、来源标注或规则说明。"
 
 TASK_RULES: dict[str, str] = {
     "RECOMMENDATION_REASON": (
@@ -55,6 +55,7 @@ def build_prompt(
     items: list[KnowledgeItem],
     user_input: str,
     max_items: int = 5,
+    output_rule: str = NATURAL_LANGUAGE_OUTPUT,
 ) -> ModelGenerateRequest:
     """Build a ModelGenerateRequest; never promotes knowledge to system instructions."""
     if task not in TASK_RULES:
@@ -79,7 +80,7 @@ def build_prompt(
         f"{knowledge_block}"
     )
     return ModelGenerateRequest(
-        system_prompt=f"{SYSTEM_PROMPT}\n{TASK_RULES[task]}",
+        system_prompt=f"{SYSTEM_PROMPT}\n{TASK_RULES[task]}\n{output_rule}",
         context_text=context_text,
         user_input=instruction,
     )

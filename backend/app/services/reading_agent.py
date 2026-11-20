@@ -110,10 +110,20 @@ def selected_question(text: str, options: dict[str, list[str]], *, child_forms: 
             group = options[""] if "" in options else next(iter(options.values()))
             return group[index]
     # Providers can paraphrase a choice. Use its reading focus, never forward the paraphrase.
+    group = None
+    if not child_forms:
+        for excerpt, page_options in options.items():
+            lead = unicodedata.normalize("NFKC", f"读到“{excerpt}”时，" if excerpt else PAGE_LEAD)
+            if candidate.startswith(lead):
+                candidate = candidate[len(lead):]
+                group = page_options
+                break
     if not SHORT_QUESTION.fullmatch(candidate) or PERSONAL_QUESTION.search(candidate) or SENSITIVE.search(candidate):
         return None
-    excerpt = max(options, key=lambda part: SequenceMatcher(None, part, candidate).find_longest_match().size)
-    return next((option for option, cues in zip(options[excerpt], FOCUS_CUES)
+    if group is None:
+        excerpt = max(options, key=lambda part: SequenceMatcher(None, part, candidate).find_longest_match().size)
+        group = options[excerpt]
+    return next((option for option, cues in zip(group, FOCUS_CUES)
                  if any(cue in candidate for cue in cues)), None)
 
 
@@ -134,19 +144,21 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
     if child_mode and len(options) > 1:
         # A body shared by several excerpts selects the page-wide question.
         options[""] = [PAGE_LEAD + form for form in forms]
+    candidates = [option for group in options.values() for option in group]
+    choices = {str(i): option for i, option in enumerate(candidates, start=1)}
     request = build_prompt("CONTEXT_QUESTION", age_band=age_band, page_text=page_text, items=selected,
-                           user_input=INSTRUCTIONS[feedback])
-    request.system_prompt += "根据年龄、页面和反馈，从候选问句中选最合适的一句，原样返回。"
+                           user_input=INSTRUCTIONS[feedback],
+                           output_rule="从本次候选问句中选一句最适合当前页和反馈的问题。只返回它的阿拉伯数字编号。")
     if previous_question:
         request.context_text += "\n当前页已保存的问题（仅作参考）：" + previous_question
-    request.context_text += "\n候选问句：\n" + "\n".join(option for group in options.values() for option in group)
+    request.context_text += "\n候选问句：\n" + "\n".join(f"{key}. {value}" for key, value in choices.items())
     result = await model_adapter.generate(request)
     if not result.success:
         if result.error_code != "TIMEOUT":
             raise ServiceError("DEPENDENCY_UNAVAILABLE", "文本模型未能生成引导问题")
         question = "你想再看看这一页吗？" if child_mode else "我们先看看画面上有什么吧？"
         return AgentResult(status="FALLBACK", strategyType="TIMEOUT_FALLBACK", outputText=question)
-    question = selected_question(result.text, options, child_forms=forms if child_mode else ())
+    question = choices.get(result.text.strip()) or selected_question(result.text, options, child_forms=forms if child_mode else ())
     if question is None:
         return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)
     return AgentResult(

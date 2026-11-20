@@ -69,7 +69,7 @@ def test_child_handoff_and_answer(tmp_path, monkeypatch):
     def provider(req):
         assert str(req.url) == "https://fixture.invalid/model"
         prompt = json.loads(req.content)["messages"][1]["content"]
-        question = prompt.split("候选问句：\n", 1)[1].splitlines()[0]
+        question = prompt.split("候选问句：\n", 1)[1].splitlines()[0].removeprefix("1. ")
         model_calls.append({"prompt": prompt, "question": question})
         return httpx.Response(200, json={"choices": [{"finish_reason": "stop",
                                           "message": {"role": "assistant", "content": question}}]})
