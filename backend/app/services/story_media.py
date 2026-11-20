@@ -628,9 +628,13 @@ def pin_generation_illustrations(age_band: str, topic: str, new_page_count: int,
         images = [_pin_verified_asset(store, source, raw_ref=ref) for ref, source in selected]
     except OSError as exc:
         raise MediaDependencyError("Page image storage is unavailable") from exc
+    ensure_generation_illustrations_readable(images)
+    return images + [None] * (new_page_count - len(images))
+
+
+def ensure_generation_illustrations_readable(images: list[dict | None]) -> None:
     if any(not _pinned_blob_is_readable(image) for image in images if image is not None):
         raise MediaDependencyError("Pinned template illustration is unavailable")
-    return images + [None] * (new_page_count - len(images))
 
 
 def cover_ref_from_manifest(version_id: int, manifest: dict) -> str | None:

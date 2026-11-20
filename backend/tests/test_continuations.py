@@ -809,6 +809,60 @@ def test_original_generation_rejects_invalid_catalog_before_model_call(cont_env,
         assert db.execute("SELECT COUNT(*) FROM story_versions").fetchone()[0] == 1
 
 
+@pytest.mark.parametrize("failure", ["original-pin-store", "continuation-templates"])
+def test_required_new_images_recover_with_same_generation_key(cont_env, monkeypatch, tmp_path, failure):
+    from unittest.mock import AsyncMock
+    from app.services import story_media
+
+    client, _, db_path, profile = cont_env
+    headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
+    payload = {"topic": "互助", "characters": ["小兔"], "scene": "森林", "branching": False,
+               "clientRequestId": "recover-new-images"}
+    monkeypatch.delenv("ZHIYA_MEDIA_ROOT", raising=False)
+    if failure == "continuation-templates":
+        session = client.post("/api/v1/reading-sessions", headers=headers, json={
+            "childProfileId": profile, "storyVersionId": 301, "mode": "PARENT_CHILD",
+        }).json()["data"]["readingSessionId"]
+        assert client.post(f"/api/v1/reading-sessions/{session}/events", headers=headers, json={
+            "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "read-1",
+        }).status_code == 201
+        payload.update(sourceReadingSessionId=session, expectedRevision=1)
+    else:
+        payload["ageBand"] = "AGE_4_5"
+
+    async def generate(request):
+        # The source templates go offline during generation. The draft must reuse its pinned images.
+        monkeypatch.setattr(story_media, "DEFAULT_MEDIA_ROOT", tmp_path)
+        count = json.loads(request.context_text)["newPageCount"]
+        return ModelGenerateResult(success=True, text=json.dumps({"title": "森林", "pages": ["小兔向前走。"] * count}))
+
+    model = AsyncMock()
+    model.generate.side_effect = generate
+    monkeypatch.setattr(client.app.state, "model_adapter", model)
+    url = "/api/v1/story-generations"
+    with monkeypatch.context() as offline:
+        if failure == "continuation-templates":
+            offline.setattr(story_media, "DEFAULT_MEDIA_ROOT", tmp_path)
+        else:
+            blobs = db_path.parent / f".{db_path.name}.media_pins" / "blobs"
+            blobs.parent.mkdir(exist_ok=True)
+            blobs.touch()
+        unavailable = client.post(url, headers=headers, json=payload)
+        assert unavailable.status_code == 503
+        assert unavailable.json()["error"]["retryable"] is True
+        model.generate.assert_not_awaited()
+    if failure == "original-pin-store":
+        blobs.unlink()
+
+    recovered = client.post(url, headers=headers, json=payload)
+    assert recovered.status_code == 201, recovered.text
+    data = recovered.json()["data"]
+    assert client.get(f"/api/v1/media/{data['pages'][-1]['imageRef']}").status_code == 200
+    replay = client.post(url, headers=headers, json=payload)
+    assert replay.status_code == 200 and replay.json()["data"] == data
+    model.generate.assert_awaited_once()
+
+
 def test_continuation_preflight_carried_blob_missing_and_save_retry_once(cont_env, monkeypatch, tmp_path):
     from PIL import Image
     import app.api.v1.story_generations as sg
