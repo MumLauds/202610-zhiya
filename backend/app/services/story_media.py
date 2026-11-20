@@ -334,10 +334,24 @@ def freeze_approval_page_media(db: sqlite3.Connection, version: sqlite3.Row) -> 
         for page, source_page in enumerate(json.loads(version["source_visited_pages_json"]), start=1):
             entries[str(page)] = frozen_pages.get(str(source_page))
     try:
+        # Preserve images promised by generation. Older hand-authored drafts can use placeholders.
+        generated_images = {row[0] for row in db.execute(
+            """SELECT json_extract(page.value, '$.pageNumber')
+               FROM request_executions e, json_each(e.response_body, '$.data.pages') page
+               WHERE e.scope_type = 'STORY_GENERATION' AND e.status = 'SUCCEEDED'
+                 AND e.scope_id = (SELECT owner_guardian_id FROM storybooks WHERE id = ?)
+                 AND json_extract(e.response_body, '$.data.storyVersionId') = ?
+                 AND json_extract(page.value, '$.imageRef') IS NOT NULL""",
+            (version["storybook_id"], version["id"]),
+        )}
         for page, raw_ref in db.execute("SELECT page_no, image_ref FROM story_pages WHERE version_id = ?",
                                         (version["id"],)):
-            if str(page) not in entries:
-                entries[str(page)] = _pin_page_asset(store, root, raw_ref)
+            if str(page) in entries:
+                continue
+            asset = _pin_page_asset(store, root, raw_ref)
+            if asset is None and page in generated_images:
+                raise MediaDependencyError("Template illustration is unavailable")
+            entries[str(page)] = asset
         return json.dumps(entries, ensure_ascii=False)
     except OSError as exc:
         raise MediaDependencyError("Page image storage is unavailable") from exc
