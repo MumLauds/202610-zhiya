@@ -1122,7 +1122,7 @@ async function writeReading(operation) {
     } else {
       const session = state.currentSession
       session.currentPage = operation.payload.pageNumber
-      session.visitedPageNumbers = [...new Set([...session.visitedPageNumbers, operation.payload.pageNumber])]
+      session.visitedPageNumbers = [...session.visitedPageNumbers, operation.payload.pageNumber]
       session.status = 'IN_PROGRESS'
       session.revision = result.revision
     }
@@ -1202,7 +1202,7 @@ async function recordPageChange(pageNumber) {
   if (pageNumber !== currentPage?.defaultNextPageNumber) return false
   if (session.preview) {
     session.currentPage = pageNumber
-    session.visitedPageNumbers = [...new Set([...session.visitedPageNumbers, pageNumber])]
+    session.visitedPageNumbers = [...session.visitedPageNumbers, pageNumber]
     session.revision += 1
     return true
   }

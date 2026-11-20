@@ -385,6 +385,39 @@ describe('reader state and visual progress', () => {
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
   })
 
+  it.each([{ visits: [1, 3] }, { visits: [1, 3, 1, 3] }])('returns to live progress through the same branch visits $visits', async ({ visits }) => {
+    const branchedBook = { ...book, pageCount: 4, pages: [
+      { ...book.pages[0], defaultNextPageNumber: 2 },
+      { pageNumber: 2, text: '二', defaultNextPageNumber: 3 },
+      ...book.pages.slice(1),
+    ] }
+    render({ book: branchedBook, session: { ...initialSession, currentPage: 3, visitedPageNumbers: visits } })
+
+    for (let i = visits.length - 2; i >= 0; i--) {
+      await button('上一页').trigger('click')
+      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${visits[i]} 页 ·`)
+      expect(button('朗读').element.disabled).toBe(true)
+    }
+    expect(button('上一页').element.disabled).toBe(true)
+    for (let i = 1; i < visits.length; i++) {
+      await button('下一页').trigger('click')
+      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${visits[i]} 页 ·`)
+      expect(button('朗读').element.disabled).toBe(i < visits.length - 1)
+    }
+
+    // The physical neighbor between pages 1 and 3 is the skipped page 2 in both directions.
+    const flipBook = wrapper.findComponent({ name: 'FlipBook' })
+    flipBook.vm.$emit('page-change', { storyIndex: 1 })
+    await flushPromises()
+    expect(wrapper.get('.reader-heading p').text()).toContain('第 1 页 ·')
+    flipBook.vm.$emit('page-change', { storyIndex: 1 })
+    await flushPromises()
+    expect(wrapper.get('.reader-heading p').text()).toContain('第 3 页 ·')
+    expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
+    await button('下一页').trigger('click')
+    expect(wrapper.props('recordPage')).toHaveBeenCalledExactlyOnceWith(7)
+  })
+
   it.each([12, 13, 200])('bounds review dots while preserving all %i visits in order', (count) => {
     const visits = Array.from({ length: count }, (_, index) => index % 2 === 0 ? 1 : 3)
     vi.stubGlobal('OpenPageFlip', { createBook: () => ({ on: vi.fn(), turnTo: vi.fn(), destroy: vi.fn() }) })
@@ -416,6 +449,12 @@ describe('reader state and visual progress', () => {
     expect(wrapper.get('.reader-heading p').text()).toContain('第 1 页')
     expect(button('下一页').element.disabled).toBe(true)
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
+  })
+
+  it('records a default next page that was visited before a branch returned to the current page', async () => {
+    render({ session: { ...initialSession, visitedPageNumbers: [1, 3, 1] } })
+    await button('下一页').trigger('click')
+    expect(wrapper.props('recordPage')).toHaveBeenCalledExactlyOnceWith(3)
   })
 
   it('finishes while reviewing an earlier page without changing the saved progress', async () => {
@@ -456,6 +495,30 @@ describe('reader state and visual progress', () => {
     await button('刷新小结').trigger('click')
     await flushPromises()
     expect(showPage).toHaveBeenLastCalledWith(0)
+  })
+
+  it('shows the activity, materials and ordered steps only when the summary is ready', async () => {
+    const activity = { name: '画出故事中的一幕', materials: ['纸', '彩笔'], steps: ['翻开第 3 页。', '画一画喜欢的角色。'] }
+    const report = { summary: '本次共读阅读了第 1、3 页。', activities: [activity] }
+    render({ session: { ...initialSession, status: 'FINISHED' }, report: { ...report, status: 'PENDING' } })
+    expect(wrapper.text()).not.toContain(activity.name)
+
+    await wrapper.setProps({ report: { ...report, status: 'READY' } })
+    const section = wrapper.get('.report-activity')
+    expect(section.get('h3').text()).toContain(activity.name)
+    expect(section.text()).toContain('纸、彩笔')
+    expect(section.findAll('ol li').map(step => step.text())).toEqual(activity.steps)
+    expect(wrapper.text()).toContain(report.summary)
+
+    await wrapper.setProps({ report: { ...report, status: 'FAILED' } })
+    expect(wrapper.find('.report-activity').exists()).toBe(false)
+    expect(wrapper.text()).toContain(report.summary)
+  })
+
+  it.each([{}, { activities: [] }, { activities: [{ name: '旧活动' }] }])('keeps a ready summary without structured activities readable', (legacy) => {
+    render({ session: { ...initialSession, status: 'FINISHED' }, report: { status: 'READY', summary: '已保存的小结', ...legacy } })
+    expect(wrapper.text()).toContain('已保存的小结')
+    expect(wrapper.find('.report-activity').exists()).toBe(false)
   })
 
   it('waits for a confirmed page and rejects a second gesture during the write', async () => {
