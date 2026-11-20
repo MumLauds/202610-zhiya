@@ -567,6 +567,20 @@ def test_guidance_fox_page_feedback_and_refresh(started_session, guidance_model)
         assert len(events) == 1 and events[0]["outputText"] == feedback["outputText"]
 
 
+def test_guidance_parent_paraphrase_uses_page_wide_question_without_excerpt(started_session, guidance_model):
+    client, headers, path, sid = started_session
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET body_text=? WHERE version_id=11 AND page_no=1", ("嘘！啊！",))
+    guidance_model.return_value = ModelGenerateResult(success=True, text="看看这一页，图里有什么？")
+
+    response = guidance(client, headers, sid, "page-wide-paraphrase")
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert (data["status"], data["strategyType"], data["outputText"]) == (
+        "GENERATED", "CONTEXT_QUESTION", "看看这一页，角色在做什么？"
+    )
+
+
 def test_guidance_persistence_feedback_skip_and_replay(started_session, guidance_model, monkeypatch):
     client, headers, path, sid = started_session
     first = guidance(client, headers, sid, "initial")

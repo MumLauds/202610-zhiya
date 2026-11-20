@@ -112,7 +112,9 @@ def selected_question(text: str, options: dict[str, list[str]], *, child_forms: 
     # With a quoted lead, only accept a template whose role is named in that excerpt.
     if not child_forms:
         for excerpt, page_options in options.items():
-            lead = unicodedata.normalize("NFKC", f"读到“{excerpt}”时，" if excerpt else PAGE_LEAD)
+            if not excerpt:
+                continue
+            lead = unicodedata.normalize("NFKC", f"读到“{excerpt}”时，")
             if not candidate.startswith(lead):
                 continue
             body = candidate[len(lead):]
