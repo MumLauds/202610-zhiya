@@ -3,12 +3,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "board_4_3c.h"
 #include "esp_chip_info.h"
 #include "esp_err.h"
 #include "esp_flash.h"
 #include "esp_log.h"
 #include "esp_psram.h"
 #include "esp_system.h"
+#include "h02_test_ui.h"
 
 #define EXPECTED_FLASH_BYTES (16U * 1024U * 1024U)
 #define EXPECTED_PSRAM_BYTES (8U * 1024U * 1024U)
@@ -87,5 +89,13 @@ void app_main(void)
         ESP_LOGI(TAG, "H01 startup checks passed");
     } else {
         ESP_LOGE(TAG, "H01 startup checks failed");
+        return;
+    }
+
+    ESP_LOGI(TAG, "Starting H02 display and touch");
+    const esp_err_t err = board_4_3c_init(h02_test_ui_create);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "H02 board initialization failed: %s. Check the bring-up guide.",
+                 esp_err_to_name(err));
     }
 }
