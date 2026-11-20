@@ -57,6 +57,35 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         async with VoiceGateway(SETTINGS, transport=httpx.MockTransport(handler)) as gateway:
             self.assertEqual(await gateway.synthesize(text="测试"), audio)
 
+    async def test_streamed_wav_stops_before_open_connection_reaches_eof(self):
+        audio = wav(24000)
+        events = [
+            {"output": {"finish_reason": None, "audio": {"data": base64.b64encode(part).decode()}}}
+            for part in (audio[:71], audio[71:])
+        ]
+        wire = stream_response(*events, tts()).content
+        cuts = (0, wire.index(b"\r\n\r\n") + 1, wire.index(b'"stop"') + 3, len(wire) - 1, len(wire))
+        tail_requested, closed = asyncio.Event(), asyncio.Event()
+
+        class OpenStream(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                for start, end in zip(cuts, cuts[1:]):
+                    yield wire[start:end]
+                tail_requested.set()
+                await asyncio.Future()
+
+            async def aclose(self):
+                closed.set()
+
+        def handler(request):
+            self.assertEqual(request.method, "POST")
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=OpenStream())
+
+        async with VoiceGateway(replace(SETTINGS, timeout_seconds=0.1), transport=httpx.MockTransport(handler)) as gateway:
+            self.assertEqual(await gateway.synthesize(text="测试"), audio)
+            self.assertTrue(closed.is_set())
+            self.assertFalse(tail_requested.is_set())
+
     async def test_url_only_stream_uses_existing_download(self):
         def handler(request):
             if request.method == "POST":
@@ -71,7 +100,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         encoded = base64.b64encode(wav(24000)).decode()
         chunk = {"output": {"finish_reason": None, "audio": {"data": encoded}}}
         bad = {"output": {"finish_reason": None, "audio": {"data": "!!"}}}
-        for events in ([chunk], [chunk, {"code": "Failed"}], [bad, tts()], [chunk, tts(), chunk]):
+        for events in ([chunk], [chunk, {"code": "Failed"}], [bad, tts()]):
             def handler(request):
                 self.assertEqual(request.method, "POST")
                 return stream_response(*events)

@@ -70,38 +70,48 @@ async def _bounded_body(response, kind, limit):
     return bytes(body)
 
 
-def _tts_events(body):
-    """Read DashScope SSE data records; require a successful terminal event."""
+async def _tts_events(response):
+    """Read bounded DashScope SSE records until the successful terminal event."""
     audio = bytearray()
+    pending = bytearray()
     data_lines = []
-    final = None
+    received = 0
+    # Base64 expansion and event metadata count toward this separate wire limit.
+    limit = 2 * MAX_DOWNLOAD_BYTES + MAX_RESPONSE_BYTES
     try:
-        for line in io.BytesIO(body):
-            line = line.rstrip(b"\r\n")
-            if line.startswith(b"data:"):
-                data_lines.append(line[5:].lstrip(b" "))
-            elif not line and data_lines:
-                event = json.loads(b"\n".join(data_lines))
-                data_lines.clear()
-                if final is not None or event.get("code") or event.get("status_code", 200) != 200:
-                    raise ValueError
-                output = event["output"]
-                reason = output["finish_reason"]
-                if reason not in (None, "null", "stop"):
-                    raise ValueError
-                data = output["audio"].get("data")
-                if data:
-                    chunk = base64.b64decode(data, validate=True)
-                    if len(audio) + len(chunk) > MAX_DOWNLOAD_BYTES:
+        async for chunk in response.aiter_bytes():
+            received += len(chunk)
+            if received > limit:
+                raise ValueError
+            search_from = len(pending)
+            pending.extend(chunk)
+            start = 0
+            while (end := pending.find(b"\n", search_from)) != -1:
+                line = pending[start:end].removesuffix(b"\r")
+                start = search_from = end + 1
+                if line.startswith(b"data:"):
+                    data_lines.append(line[5:].lstrip(b" "))
+                elif not line and data_lines:
+                    event = json.loads(b"\n".join(data_lines))
+                    data_lines.clear()
+                    if event.get("code") or event.get("status_code", 200) != 200:
                         raise ValueError
-                    audio.extend(chunk)
-                if reason == "stop":
-                    final = event
-        if final is None or data_lines:
-            raise ValueError
+                    output = event["output"]
+                    reason = output["finish_reason"]
+                    if reason not in (None, "null", "stop"):
+                        raise ValueError
+                    data = output["audio"].get("data")
+                    if data:
+                        decoded = base64.b64decode(data, validate=True)
+                        if len(audio) + len(decoded) > MAX_DOWNLOAD_BYTES:
+                            raise ValueError
+                        audio.extend(decoded)
+                    if reason == "stop":
+                        return bytes(audio), event
+            del pending[:start]
+        raise ValueError
     except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
         raise _error("TTS", "INVALID_RESPONSE") from None
-    return bytes(audio), final
 
 
 class VoiceGateway:
@@ -225,9 +235,7 @@ class VoiceGateway:
         try:
             async with self._response("TTS", "POST", self._settings.tts_api_url, payload=request) as response:
                 if response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() == "text/event-stream":
-                    # Allow for base64 expansion plus event metadata. Decoded audio has its own limit.
-                    body = await _bounded_body(response, "TTS", 2 * MAX_DOWNLOAD_BYTES + MAX_RESPONSE_BYTES)
-                    audio, payload = _tts_events(body)
+                    audio, payload = await _tts_events(response)
                 else:
                     payload = json.loads(await _bounded_body(response, "TTS", MAX_RESPONSE_BYTES))
         except (ValueError, RecursionError):
