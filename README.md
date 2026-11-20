@@ -2,44 +2,35 @@
 
 **基于领域知识增强的 AI 亲子绘本共读与阅读启蒙系统**
 
-2026年软件工程实践课程团队项目，面向3～6岁幼儿及其家长，以家长陪伴下的绘本共读为主要使用场景。
+2026 年软件工程实践课程项目，面向 3～6 岁幼儿及其家长。家长可以为孩子选择绘本，一起翻页、听朗读、围绕当前画面提问，读完后查看本次共读的小结与延伸活动。
 
-## 当前状态
+## 在线体验
 
-家长可登录、选档、共读、主动提问并读回小结。内容管理员可维护资料库绘本与知识。G13 历轮联调覆盖儿童授权到期与分支阅读，G15 已完成本机 HTTPS 部署、重启和备份恢复预演。香港站已运行过早期版本；候选版的公网电脑与手机结果须按实际部署提交单独记录。[候选版演示与验收](docs/testing/p6/课程候选版演示.md) · [G13 联调记录](docs/integration.md) · [G15 部署预演](docs/testing/g15/local-https/README.md) · [G15 恢复预演](docs/testing/g15/local-restore/README.md)
+| 入口 | 使用方式 |
+| --- | --- |
+| [知芽主站](https://zhiya.47-238-246-210.sslip.io/) | 注册或登录家长账号，创建儿童档案，浏览绘本、开始阅读或查看成长记录。内容管理员使用自己的账号登录工作台。 |
+| [手机亲子共读](https://zhiya.47-238-246-210.sslip.io/mobile.html) | 用手机浏览器打开。家长登录后会回到移动首页；只有一个儿童档案时自动选中，多个档案可按昵称选择。点绘本封面即可开始共读。 |
 
-原“知构”项目的代码与功能不作为本项目成果。
+首个正式版本 **v0.1.0** 对应提交 `5c15440`。该版本已通过主线测试和香港站公网部署验收。线上站点随 `main` 更新，可在部署回执中核对当前提交号 `revision` 和 Actions 运行号 `run`。[版本说明](https://github.com/MumLauds/202610-zhiya/releases/tag/v0.1.0) · [本版验收记录](https://github.com/MumLauds/202610-zhiya/actions/runs/44756429704) · [当前部署回执](https://zhiya.47-238-246-210.sslip.io/_deployment/current.json)
 
-## 项目定位
+## 主要功能
 
-以可独立公网使用的响应式Web软件为主体，以幼儿早期阅读领域智能体为技术重点。AI辅助家长选择绘本、开展互动和获得阅读反馈，不替代亲子陪伴。可选硬件扩展采用 Waveshare ESP32-S3-Touch-LCD-4.3C（SKU 33799，无外壳版），作为独立样机开发与验收，软件核心流程可独立运行。
+- **家长与儿童档案**　按年龄、兴趣和主题选书，查看推荐理由、历史阅读和成长记录。家长可以开启限时儿童阅读，之后用家长密码解锁。
+- **绘本共读**　支持图文翻页、语音朗读、主动问答和分支选择。阅读引导结合当前页和孩子的回答调整，结束会话后可查看小结与亲子延伸活动。
+- **家庭创作与内容管理**　家长可以生成原创或续写草稿并审核自己的作品。内容管理员维护资料库绘本、绘本版本和带来源的领域知识。
+- **课程绘本**　新库首次导入后，书架上有 20 本团队原创绘本，共 104 页，供非商业课程学习与演示。《逃家小兔》及 20 条知识种子保留为草稿。[种子与许可说明](data/seed/README.md)
 
-## 规划功能
+软件可独立运行。可选硬件使用 Waveshare ESP32-S3-Touch-LCD-4.3C（SKU 33799，无外壳版），按独立样机验收。课程交付范围沿用选题报告，原“知构”项目的代码与功能不计入本项目成果。[硬件工程说明](hardware/README.md)
 
-以下均为计划需求，具体边界与验收标准由团队在需求分析中确认：
+## 技术与部署
 
-1. 家长账号与幼儿阅读档案管理。
-2. 根据年龄、兴趣与主题推荐绘本并说明理由。
-3. 绘本图文展示、翻页与语音朗读。
-4. 结合当前情节生成适龄互动问题。
-5. 根据孩子回答或家长反馈调整阅读引导。
-6. 录音、语音识别、故事问答与语音播放。
-7. 阅读记录与本次活动小结。
-8. 亲子延伸活动推荐。
-9. 绘本与领域知识内容管理。
-
-## 初步技术方案
-
-- 前端：Vue 3、Vite，移动端优先的响应式Web。
-- 后端：Python、FastAPI。
-- 数据库：SQLite起步，后续按需要评估PostgreSQL。
-- 智能体：领域知识检索增强生成（RAG）、专业提示词、工具调用与工作流。
-- 模型与语音：文本使用 DeepSeek，ASR 和 TTS 使用阿里云百炼。两套密钥独立，真实供应商已通过短句联调。G13 和 G15 各轮使用的模拟依赖见对应记录。[短句联调记录](docs/testing/live-provider-checks.md)
-- 部署：本机预演使用 Docker Compose 和同源 HTTPS，公网环境待验收。
+- **应用**　桌面端和移动端使用 Vue 3、Vite；FastAPI 提供账号、档案、绘本、阅读会话和受控媒体接口，业务数据保存在 SQLite 中。[前端说明](frontend/README.md) · [后端说明](backend/README.md)
+- **模型与语音**　阅读引导结合领域知识检索与 DeepSeek 文本模型，语音识别和合成使用阿里云百炼。两套服务分别配置密钥。供应商短句实测和各轮联调的依赖配置记录在相应测试文档中。[供应商联调记录](docs/testing/live-provider-checks.md) · [系统联调记录](docs/integration.md)
+- **自动部署**　面向 `main` 的 PR 运行测试和公开版构建。合并后，香港 ECS 定时检查已通过验证的主线提交，备份 SQLite、切换应用镜像并生成回执。GitHub Actions 从公网核对版本、健康接口和匿名后台访问权限。[部署与恢复说明](infra/hk/README.md) · [工作流](.github/workflows/deploy-hk.yml)
 
 ## 本地启动
 
-使用 Python 3.12（SQLite 3.38+）和 Node.js 20.19+（20.x）或 22.12+。在仓库根目录启动后端：
+以下命令使用 Windows PowerShell、Python 3.12（SQLite 3.38+）和 Node.js 22.12+（22.x）。先在仓库根目录初始化数据库、导入种子并启动后端。
 
 ```powershell
 py -3.12 -m venv .venv
@@ -58,18 +49,23 @@ npm ci
 npm run dev
 ```
 
-页面默认在 http://127.0.0.1:5173，通过 Vite 代理读取 API-032 的就绪状态。带凭据的浏览器联调使用 HTTPS，因为认证 Cookie 带有 Secure 属性。儿童独立阅读支持限时授权和家长密码解锁。后端已接入自适应引导、分支选择、绘本草稿生成与家长审批。主动问答（API-016）和管理员绘本、知识管理（API-027～031）仍待实现。[后端说明](backend/README.md)
+默认开发地址为 `http://127.0.0.1:5173/`，Vite 将 `/api` 代理到本机 8000 端口。移动端开发入口为 `/mobile.html`，默认显示演示内容。要在本机使用与公网一致的移动首页，把上述 `npm run dev` 换成 `npm run dev -- --mode public`。涉及登录 Cookie、手机麦克风和同源 HTTPS 的联调，可按本机预演步骤启动环境。[HTTPS 部署预演](docs/testing/g15/local-https/README.md)
 
-数据库默认位于 `database/instance/zhiya.sqlite3`，可在运行命令前设置 `ZHIYA_DB_PATH`。空种子表会导入数据，种子键齐全时会按规则回填符合条件的旧草稿配图，表非空且种子键不完整时退出。首次导入后，家长书架可读 20 本团队原创课程绘本；联调用《逃家小兔》和 20 条知识保留为 `DRAFT`。[种子导入说明](data/seed/README.md)
+数据库默认位于 `database/instance/zhiya.sqlite3`。需要独立数据库时，在初始化、导入和启动后端前将 `ZHIYA_DB_PATH` 设为同一绝对路径。调用真实模型和语音服务前，按示例填写本机 `backend/.env`。[配置示例](backend/.env.example)
 
-在根目录检查数据库及运行测试：
+## 测试与构建
+
+完成依赖安装后，在仓库根目录运行以下检查。公开版构建产物位于 `frontend/dist/`，包含主站和移动端两个入口。
 
 ```powershell
 .\.venv\Scripts\python.exe database/init_db.py --check
-.\.venv\Scripts\python.exe -m unittest discover -s database/tests -v
-.\.venv\Scripts\python.exe -m pytest backend/tests -q
-npm --prefix frontend run build
+.\.venv\Scripts\python.exe -m pytest -q -c backend/pytest.ini backend/tests database/tests
+npm --prefix frontend test -- --maxWorkers=2
+npm --prefix frontend run test:mobile
+npm --prefix frontend run build -- --mode public
 ```
+
+课程演示中的手机实测、业务流程验收及数据库冷恢复各有单独记录。[课程候选版演示与验收步骤](docs/testing/p6/课程候选版演示.md) · [G15 恢复预演](docs/testing/g15/local-restore/README.md)
 
 ## 项目资料
 
@@ -103,6 +99,11 @@ npm --prefix frontend run build
 
 ```text
 202610-zhiya/
+├── frontend/            # Vue 主站（src/）和手机共读入口（mobile/）
+├── backend/             # FastAPI、阅读服务与后端测试
+├── database/            # SQLite 结构、初始化与种子导入
+├── infra/               # 容器、本地部署及香港站发布脚本
+├── qa/                  # 课程验收程序
 ├── docs/
 │   ├── 知芽-软件工程团队项目选题报告.docx
 │   ├── requirements/     # 需求说明、图源与图片
