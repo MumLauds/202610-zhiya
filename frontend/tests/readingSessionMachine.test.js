@@ -199,3 +199,54 @@ test('INITIAL retains its original key after transport loss and a SKIPPED 503', 
   assert.equal(machine.snapshot().session.revision, 2)
   assert.equal(machine.snapshot().syncRequired, false)
 })
+
+for (const retryable of [true, false]) {
+  test('INITIAL recovery handles dependency 503 with retryable=' + retryable, async () => {
+    const snapshot = session({ status: 'IN_PROGRESS', revision: 1, visitedPageNumbers: [1] })
+    const writes = []
+    const question = { interactionEventId: 901, revision: 2, outputText: '你看到了什么？' }
+    const failure = new ApiError('依赖暂不可用', {
+      status: 503, code: 'DEPENDENCY_UNAVAILABLE', retryable,
+      payload: { error: { code: 'DEPENDENCY_UNAVAILABLE', retryable } },
+    })
+    const api = fakeApi({
+      async get() {
+        return { data: { session: snapshot, events: [], report: null } }
+      },
+      async submitGuidance(_sessionId, payload) {
+        writes.push(payload)
+        if (writes.length === 1) throw new ApiError('写入结果尚未确认', { code: 'REQUEST_OUTCOME_UNKNOWN' })
+        if (writes.length <= (retryable ? 3 : 2)) throw failure
+        return { data: question }
+      },
+    })
+    let key = 0
+    const machine = new ReadingSessionMachine({
+      api, initialSnapshot: { session: snapshot }, keyFactory: (prefix) => prefix + '-' + ++key,
+    })
+    await assert.rejects(() => machine.guidance('INITIAL'), { code: 'REQUEST_OUTCOME_UNKNOWN' })
+    const original = { pageNumber: 1, feedback: 'INITIAL', expectedRevision: 1, clientEventId: 'initial-1' }
+
+    for (let attempt = 0; attempt < (retryable ? 2 : 1); attempt += 1) {
+      await assert.rejects(() => machine.reconcile(), { code: 'DEPENDENCY_UNAVAILABLE', retryable })
+      assert.equal(machine.snapshot().pending, false)
+      assert.equal(machine.snapshot().syncRequired, retryable)
+      assert.deepEqual(writes.at(-1), original)
+      if (retryable) {
+        await assert.rejects(() => machine.guidance('INITIAL'), /请先重新核对/)
+        assert.equal(writes.length, attempt + 2)
+      }
+    }
+
+    if (retryable) {
+      const recovered = await machine.reconcile()
+      assert.deepEqual(recovered.result, question)
+      assert.deepEqual(writes, [original, original, original, original])
+    } else {
+      await machine.guidance('INITIAL')
+      assert.deepEqual(writes, [original, original, { ...original, clientEventId: 'initial-2' }])
+    }
+    assert.equal(machine.snapshot().session.revision, 2)
+    assert.equal(machine.snapshot().syncRequired, false)
+  })
+}

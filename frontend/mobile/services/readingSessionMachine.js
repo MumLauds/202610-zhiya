@@ -229,8 +229,10 @@ export class ReadingSessionMachine {
       const recovered = await this._runMutation(retry.operation)
       return { ...recovered, confirmedAnswer: answer?.pageNumber === this.session.currentPage ? answer.inputText : undefined }
     } catch (error) {
-      // An unavailable receipt store cannot tell us whether the original answer was committed.
-      if (answer && !this.unconfirmed && error instanceof ApiError && (error.status === 0 || error.status >= 500)) {
+      if (!(error instanceof ApiError) || this.unconfirmed) throw error
+      // A retryable 503 during INITIAL replay does not settle the original request.
+      const retryInitial = retry.operation.feedback === 'INITIAL' && error.status === 503 && error.retryable
+      if (retryInitial || (answer && (error.status === 0 || error.status >= 500))) {
         this.unconfirmed = retry
         this.syncRequired = true
         this._emit()
