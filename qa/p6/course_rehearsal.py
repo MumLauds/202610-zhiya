@@ -90,7 +90,7 @@ def exercise(page, origin, browser_version, report):
     assert ask.value.status == 201
     answer = ask.value.json()["data"]
     report["answer"] = {k: answer[k] for k in ("interactionEventId","status","outputText","sources","revision")}
-    assert answer["status"] == "GENERATED" and answer["sources"], report["answer"]
+    assert answer["status"] == "GENERATED" and answer["sources"] and "门口" in answer["outputText"], report["answer"]
     replay = page.evaluate("""async ([path, body]) => {
       const csrf = document.cookie.split('; ').find(c => c.startsWith('zhiya_csrf=')).slice(11);
       const r = await fetch(path + '/questions',{method:'POST',headers:{'Content-Type':'application/json',

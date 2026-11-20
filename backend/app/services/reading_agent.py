@@ -78,16 +78,20 @@ async def answer_question(model_adapter: ModelAdapter, *, input_text: str, age_b
                if 1 <= len(sentence.strip()) <= 100 and not SENSITIVE.search(sentence)]
     request = build_prompt("STORY_ANSWER", age_band=age_band, page_text=page_text, items=selected,
                            user_input=input_text)
-    request.system_prompt += "请从候选答案中选择能回答所问的一句，逐字返回。如果无法回答，选择最后的提示。"
-    request.context_text += "\n候选答案：\n" + "\n".join([*answers, fallback])
+    request.system_prompt += ("\n本次为后台选句任务。根据当前页和提问选择最能直接回答的一句，"
+                              "只返回该句的阿拉伯数字编号。如果这些句子不能回答，只返回0。")
+    choices = {str(index): sentence for index, sentence in enumerate(answers, start=1)}
+    request.context_text += "\n可选编号与原文：\n0. 无法从当页回答\n" + "\n".join(
+        f"{key}. {value}" for key, value in choices.items())
     result = await model_adapter.generate(request)
     if not result.success:
         if result.error_code == "TIMEOUT":
             return AgentResult(status="FALLBACK", strategyType="TIMEOUT_FALLBACK", outputText=fallback)
         raise ServiceError("DEPENDENCY_UNAVAILABLE", "暂时无法回答问题")
     answer = result.text.strip()
-    if answer == fallback:
+    if answer == "0" or answer == fallback:
         return AgentResult(status="FALLBACK", strategyType="CONCRETE_RECALL", outputText=fallback)
+    answer = choices.get(answer, answer)
     if answer not in answers:
         return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)
     return AgentResult(status="GENERATED", strategyType="CONCRETE_RECALL", outputText=answer,

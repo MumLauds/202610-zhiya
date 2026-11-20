@@ -420,7 +420,8 @@ def test_story_question_replay_readback_and_answer_audio(started_session, guidan
         assert request.user_input == payload["inputText"] and page_text in request.context_text
         ongoing = await asyncio.to_thread(client.post, url + "/questions", headers=headers, json=payload)
         assert ongoing.status_code == 409 and ongoing.json()["error"]["code"] == "REQUEST_IN_PROGRESS"
-        return ModelGenerateResult(success=True, text=page_text)
+        assert "1. " + page_text in request.context_text
+        return ModelGenerateResult(success=True, text="1")
 
     guidance_model.side_effect = model
     response = client.post(url + "/questions", headers=headers, json=payload)
