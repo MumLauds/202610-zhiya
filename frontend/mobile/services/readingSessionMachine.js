@@ -76,7 +76,10 @@ export class ReadingSessionMachine {
     this._emit()
     try {
       const result = await this.api.get(sessionId, { signal })
-      if (result.data.session.revision !== this.unconfirmed?.revision) this.unconfirmed = null
+      // A newer revision may belong to another device. Only the original ANSWER key proves receipt.
+      if (!this.unconfirmed?.operation.answer && result.data.session.revision !== this.unconfirmed?.revision) {
+        this.unconfirmed = null
+      }
       this.syncRequired = Boolean(this.unconfirmed)
       this._setSnapshot(result.data, result.requestId)
       return this.snapshot()
@@ -158,9 +161,9 @@ export class ReadingSessionMachine {
       expectedRevision: this.session.revision, clientEventId: this.keyFactory('answer'),
     }
     return this._runMutation({
-      answerText: text,
+      answer: payload,
       request: () => this.api.addEvent(this.session.readingSessionId, payload),
-      apply: (data) => { this.session = { ...this.session, revision: data.revision } },
+      apply: (data) => { this.session = { ...this.session, revision: Math.max(this.session.revision, data.revision) } },
     })
   }
 
@@ -181,6 +184,9 @@ export class ReadingSessionMachine {
       }, { signal }),
       apply: (data) => {
         this.session = { ...this.session, revision: data.revision }
+        this.events = [...this.events, {
+          ...data, pageNumber, feedback, eventType: feedback === 'INITIAL' ? 'QUESTION' : 'FEEDBACK',
+        }]
       },
       result: true,
     })
@@ -215,8 +221,19 @@ export class ReadingSessionMachine {
     if (Date.now() < retry.retryAt) throw new Error('原请求仍在处理，请稍后再核对。')
     this.unconfirmed = null
     this.syncRequired = false
-    const recovered = await this._runMutation(retry.operation)
-    return { ...recovered, confirmedAnswer: retry.operation.answerText }
+    const answer = retry.operation.answer
+    try {
+      const recovered = await this._runMutation(retry.operation)
+      return { ...recovered, confirmedAnswer: answer?.pageNumber === this.session.currentPage ? answer.inputText : undefined }
+    } catch (error) {
+      // An unavailable receipt store cannot tell us whether the original answer was committed.
+      if (answer && !this.unconfirmed && error instanceof ApiError && (error.status === 0 || error.status >= 500)) {
+        this.unconfirmed = retry
+        this.syncRequired = true
+        this._emit()
+      }
+      throw error
+    }
   }
 
   async _runMutation(operation) {

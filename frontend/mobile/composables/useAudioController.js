@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 
-export function useAudioController() {
+export function useAudioController(onMediaError) {
   const playing = ref(false)
   const currentTime = ref(0)
   const duration = ref(0)
@@ -8,6 +8,7 @@ export function useAudioController() {
   const activeSource = ref('')
   const error = ref('')
   let audio = null
+  let sourceUrl = ''
   let generation = 0
 
   function ensureAudio() {
@@ -18,6 +19,7 @@ export function useAudioController() {
     audio.addEventListener('pause', () => { playing.value = false })
     audio.addEventListener('ended', () => {
       playing.value = false
+      activeSource.value = ''
       currentTime.value = duration.value
       progress.value = 1
     })
@@ -30,8 +32,11 @@ export function useAudioController() {
       duration.value = Number.isFinite(audio.duration) ? audio.duration : 0
     })
     audio.addEventListener('error', () => {
+      if (!sourceUrl) return
       error.value = '音频加载失败'
       playing.value = false
+      activeSource.value = ''
+      onMediaError?.(sourceUrl)
     })
     return audio
   }
@@ -46,6 +51,7 @@ export function useAudioController() {
     error.value = ''
     const element = ensureAudio()
     activeSource.value = source
+    sourceUrl = url
     element.src = url
     element.currentTime = 0
     try {
@@ -72,6 +78,7 @@ export function useAudioController() {
 
   function stopInternal(resetSource = true) {
     generation += 1
+    sourceUrl = ''
     if (audio) {
       audio.pause()
       try { audio.currentTime = 0 } catch { /* no source */ }

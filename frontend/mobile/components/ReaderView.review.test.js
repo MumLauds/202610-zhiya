@@ -336,4 +336,87 @@ describe('ReaderView session recovery and interaction', () => {
     expect(wrapper.get('.answer-confirmation').text()).toContain('小兔子在草地上')
     expect(wrapper.text()).not.toContain('重新核对进度')
   })
+
+  it.each([1, 2])('PR41 final recovery replays a committed answer without regressing the snapshot on page %i', async (currentPage) => {
+    const text = '小兔子在草地上'
+    const latest = { ...inProgress, currentPage, revision: 5, visitedPageNumbers: currentPage === 1 ? [1] : [1, 2] }
+    const committed = new Map()
+    const posts = []
+    const fetch = vi.fn(async (path, options) => {
+      if (path === '/api/v1/reading-sessions/42') {
+        return new Response(JSON.stringify({
+          data: {
+            session: latest,
+            events: [
+              { ...initialQuestion, eventType: 'QUESTION', pageNumber: 1 },
+              ...[...committed.values()].map(({ event }) => event),
+            ],
+            report: null,
+          },
+        }))
+      }
+      if (path !== '/api/v1/reading-sessions/42/events') return new Response(null, { status: 404 })
+
+      const payload = JSON.parse(options.body)
+      posts.push(payload)
+      const cached = committed.get(payload.clientEventId)
+      if (cached) return new Response(JSON.stringify({ data: cached.receipt }), { status: 201 })
+
+      const receipt = { interactionEventId: 23, revision: 3 }
+      const event = { ...payload, interactionEventId: receipt.interactionEventId }
+      committed.set(payload.clientEventId, { event, receipt })
+      return new Response('<h1>Gateway Timeout</h1>', { status: 504 })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const api = new ReadingSessionsApi()
+    await openReader({ sessionApi: { get: api.get.bind(api), addEvent: api.addEvent.bind(api) } })
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue(text)
+    await clickButton('确认回答')
+
+    expect(posts).toHaveLength(1)
+    expect(wrapper.find('.answer-confirmation').exists()).toBe(false)
+    await clickButton('重新核对进度')
+
+    expect(committed.size).toBe(1)
+    expect(posts).toHaveLength(2)
+    expect(posts[0]).toMatchObject({
+      eventType: 'ANSWER', inputText: text, pageNumber: 1,
+      expectedRevision: 2, clientEventId: expect.any(String),
+    })
+    expect(posts[1]).toEqual(posts[0])
+    expect(wrapper.get('.revision-tag').text()).toBe('rev 5')
+    expect(wrapper.get('.page-scene').text()).toBe(currentPage === 1 ? '第一页' : '第二页')
+    expect(wrapper.text()).not.toContain('重新核对进度')
+    if (currentPage === 1) {
+      expect(wrapper.get('.answer-confirmation').text()).toContain(text)
+      await clickButton('孩子回答')
+      await clickButton('改用文字输入')
+      expect(wrapper.get('textarea').element.value).toBe('')
+    } else {
+      expect(wrapper.find('.answer-confirmation').exists()).toBe(false)
+    }
+  })
+
+  it('PR41 final recovery reuses a newly generated question after revisiting a read page', async () => {
+    const submitGuidance = vi.fn().mockResolvedValue({ data: { ...initialQuestion, revision: 3 } })
+    const api = await openReader({ snapshot: pageTwo, sessionApi: { submitGuidance } })
+    await clickButton('生成本页共读问题')
+    expect(wrapper.text()).toContain(initialQuestion.outputText)
+
+    await clickButton('上一页')
+    expect(wrapper.get('.page-scene').text()).toBe('第一页')
+    expect(wrapper.text()).not.toContain(initialQuestion.outputText)
+    await clickButton('下一页 →')
+    expect(wrapper.get('.page-scene').text()).toBe('第二页')
+    expect(wrapper.text()).toContain(initialQuestion.outputText)
+
+    await clickButton('孩子回答')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+    expect(submitGuidance).toHaveBeenCalledExactlyOnceWith(42, expect.objectContaining({
+      pageNumber: 2, feedback: 'INITIAL', expectedRevision: 2,
+    }), expect.any(Object))
+    expect(api.addEvent).not.toHaveBeenCalled()
+  })
 })

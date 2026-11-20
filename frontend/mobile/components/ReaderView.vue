@@ -41,7 +41,14 @@ const answerAudioUrl = ref('')
 const answerAudioLoading = ref(false)
 const answerAudioNotice = ref('')
 const localPending = ref(false)
-const answerAudio = useAudioController()
+const answerAudio = useAudioController((url) => {
+  if (answerAudioUrl.value === url) {
+    answerAudioUrl.value = ''
+    answerAudioNotice.value = '回答音频已不可用，可再次点击播放以重新准备。'
+  }
+})
+let pageAudioExpiryTimer
+let answerAudioExpiresAt = NaN
 let requestGeneration = 0
 let pageRequestGeneration = 0
 let active = true
@@ -74,11 +81,15 @@ watch(currentPageNumber, () => {
   restorePageQuestion()
 })
 watch(() => session.state.events, () => restorePageQuestion())
+watch(revision, () => {
+  if (props.mode === 'live') resetAudio()
+})
 watch(() => session.state.session?.currentPage, (page) => {
   if (page != null) currentPageNumber.value = page
 })
 onBeforeUnmount(() => {
   active = false
+  clearTimeout(pageAudioExpiryTimer)
   pageRequestGeneration += 1
   requestGeneration += 1
 })
@@ -104,19 +115,26 @@ async function retryInitialize() {
   await initializeReader()
 }
 
-function resetInteractionForPage() {
-  requestGeneration += 1
+function resetAudio() {
   pageRequestGeneration += 1
+  clearTimeout(pageAudioExpiryTimer)
+  pageAudioLoading.value = false
+  answerAudioLoading.value = false
   answerAudio.stop()
   answerAudioUrl.value = ''
   answerAudioNotice.value = ''
+  pageAudioSrc.value = props.mode === 'demo' ? (currentPage.value?.audio ?? '') : ''
+}
+
+function resetInteractionForPage() {
+  requestGeneration += 1
+  resetAudio()
   interactionResult.value = null
   questionReady.value = false
   lastAnswerText.value = ''
   answerDraft.value = ''
   showAnswerDialog.value = false
   highlightIndex.value = -1
-  pageAudioSrc.value = props.mode === 'demo' ? (currentPage.value?.audio ?? '') : ''
 }
 
 function restorePageQuestion() {
@@ -261,14 +279,29 @@ async function loadPageAudio() {
       revision: revision.value,
     })
     if (generation !== pageRequestGeneration || page !== currentPageNumber.value) return
-    pageAudioSrc.value = response.data.audioUrl
+    const { audioUrl, expiresAt } = response.data
+    pageAudioSrc.value = audioUrl
+    answerAudioNotice.value = ''
+    clearTimeout(pageAudioExpiryTimer)
+    const remaining = Date.parse(expiresAt) - Date.now()
+    if (Number.isFinite(remaining)) {
+      if (remaining <= 0) discardPageAudio(audioUrl)
+      else pageAudioExpiryTimer = setTimeout(() => discardPageAudio(audioUrl), remaining)
+    }
   } catch (error) {
     if (generation === pageRequestGeneration && page === currentPageNumber.value) {
       answerAudioNotice.value = error?.message ?? '页面朗读音频准备失败'
     }
   } finally {
-    pageAudioLoading.value = false
+    if (generation === pageRequestGeneration) pageAudioLoading.value = false
   }
+}
+
+function discardPageAudio(url) {
+  if (props.mode !== 'live' || url !== pageAudioSrc.value) return
+  clearTimeout(pageAudioExpiryTimer)
+  pageAudioSrc.value = ''
+  answerAudioNotice.value = '本页音频已不可用，可重新准备朗读。'
 }
 
 async function playAnswerAudio() {
@@ -286,10 +319,11 @@ async function playAnswerAudio() {
   const generation = pageRequestGeneration
   answerAudioLoading.value = true
   try {
-    if (!answerAudioUrl.value) {
+    if (!answerAudioUrl.value || Date.now() >= answerAudioExpiresAt) {
       const response = await props.voiceApi.synthesizeInteraction({ interactionEventId: eventId })
       if (generation !== pageRequestGeneration || page !== currentPageNumber.value || eventId !== interactionResult.value?.interactionEventId || interactionResult.value.revision !== revision.value) return
       answerAudioUrl.value = response.data.audioUrl
+      answerAudioExpiresAt = Date.parse(response.data.expiresAt)
     }
     await answerAudio.play({ url: answerAudioUrl.value, source: 'answer' })
   } catch (error) {
@@ -297,7 +331,7 @@ async function playAnswerAudio() {
       answerAudioNotice.value = error?.message ?? '回答音频准备失败'
     }
   } finally {
-    answerAudioLoading.value = false
+    if (generation === pageRequestGeneration) answerAudioLoading.value = false
   }
 }
 
@@ -376,6 +410,7 @@ function exitReading() {
               :src="pageAudioSrc"
               :tokens="currentPage.tokens"
               :mode="mode"
+              @media-error="discardPageAudio"
               @highlight="highlightIndex = $event"
             />
           </div>
