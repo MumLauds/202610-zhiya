@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-家长已能登录、选择孩子档案、开读绘本、翻页、录音确认、结束阅读并读回小结。G13 记录了这些操作以及儿童授权到期、分支阅读的本地联调结果。G15 已用测试家庭完成本机 HTTPS 部署、重启读回和备份恢复预演。正式绘本与真实模型的组合验收、公网部署仍待完成。[G13 联调记录](docs/integration.md) · [G15 部署预演](docs/testing/g15/local-https/README.md) · [G15 恢复预演](docs/testing/g15/local-restore/README.md)
+家长可登录、选档、共读、主动提问并读回小结。内容管理员可维护资料库绘本与知识。G13 历轮联调覆盖儿童授权到期与分支阅读，G15 已完成本机 HTTPS 部署、重启和备份恢复预演。香港站已运行过早期版本；候选版的公网电脑与手机结果须按实际部署提交单独记录。[候选版演示与验收](docs/testing/p6/课程候选版演示.md) · [G13 联调记录](docs/integration.md) · [G15 部署预演](docs/testing/g15/local-https/README.md) · [G15 恢复预演](docs/testing/g15/local-restore/README.md)
 
 原“知构”项目的代码与功能不作为本项目成果。
 

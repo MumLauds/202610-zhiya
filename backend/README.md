@@ -14,9 +14,9 @@
 | UTF-8 | Unicode 转换格式（Unicode Transformation Format，8-bit） |
 | MiB | 二进制兆字节（Mebibyte），1 MiB = 1,048,576 字节 |
 
-截至 2026-11-20，v0.4 契约的 32 个接口中，FastAPI 已注册 26 个。已接入家长账号、孩子档案、绘本与推荐、共读会话、儿童限时授权和家长解锁。API-017 调用知识检索生成阅读引导，API-018 保存分支选择，API-019 结束阅读并生成小结。API-022/023 提供转写与合成，API-024 提供受控图片与音频。API-025 支持生成原创及续写草稿，API-026 由家长审核本人的草稿。[G13 联调记录](../docs/integration.md) · [语音接口交接](../docs/design/voice-api-handoff.md)
+本候选版的 FastAPI 已注册 v0.4 契约列出的 32 项操作。家长可登录、选择孩子档案和绘本、开始共读，也可启用儿童限时授权并解锁。API-016 保存主动提问与回答，API-017 生成阅读引导，API-018 保存分支选择，API-019 结束阅读并生成小结。API-022/023 提供转写与合成，API-024 提供受控图片与音频。API-025 支持生成原创及续写草稿，API-026 由家长审核本人的草稿。[G13 联调记录](../docs/integration.md) · [语音接口交接](../docs/design/voice-api-handoff.md)
 
-待接入的六个接口为主动问答（API-016）、管理员绘本管理（API-027/028）和知识管理（API-029～031）。档案声线与语速偏好存储、真实模型的完整业务验收仍待完成。[接口契约](../docs/design/api-contract.md)
+管理员可通过 API-027/028 维护资料库绘本，通过 API-029～031 管理带来源的知识版本。档案声线与语速偏好存储仍待完成。[接口契约](../docs/design/api-contract.md) · [候选版实测与演示步骤](../docs/testing/p6/课程候选版演示.md)
 
 接口以[当前契约](../docs/design/api-contract.md)及其 JSON 示例为准；[验证记录](../docs/testing/backend-bootstrap-checks.md)说明本轮实际验证范围。
 

@@ -5,6 +5,11 @@
   "note": "所有示例为格式数据，不是真实模型输出、凭证或测试结果。",
   "common": {
     "authentication": "会话 Cookie zhiya_session 使用 Secure、HttpOnly 和 SameSite=Lax。受保护的写请求须在 X-CSRF-Token 中提交可读 Cookie zhiya_csrf 的值。进入儿童模式时，在同一事务内吊销当前设备的家长 auth_sessions、签发 child_grants 及版本范围并绑定会话。恢复家长权限时重新验证账号密码，撤销儿童授权并签发全新家长凭证。",
+    "adminWrites": {
+      "appliesTo": ["API-027", "API-028", "API-030", "API-031"],
+      "header": "可选 Idempotency-Key，1～64 个可见 ASCII 字符；同一管理员的结果未确认时沿用同键和原请求。",
+      "replay": "原子保存成功回执。相同方法、路径和请求体使用原键返回 200 和原数据；同键不同请求返回 409 IDEMPOTENCY_CONFLICT。"
+    },
     "adminStoryVersionList": {
       "method": "GET",
       "path": "/api/v1/admin/story-versions",
@@ -1670,7 +1675,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "共读用确认文本；儿童只接收受限短问题。处理前后核验revision与到时状态。 执行前后遵循common.requestExecution；相同键并发最多一次应用层模型调用尝试。",
+      "constraints": "亲子共读提交家长已确认的1至200字符文本。儿童凭证仅可提交“这一页发生了什么？”或“故事里有谁？”。处理前后核验revision与到时状态。执行前后遵循common.requestExecution；相同键并发最多一次应用层模型调用尝试。API-013读回ASK结果，API-023以interactionEventId合成当前修订号的可播放回答。",
       "interfaceId": "API-016",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/questions"
     },
@@ -2237,7 +2242,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "内容只创建草稿；正式内容为完整页面集合。",
+      "constraints": "内容只创建草稿；正式内容为完整页面集合。可选 storybookId 仅指向资料库绘本，传入时原子分配下一版本号；省略时建立新绘本。imageRef 为受控素材目录相对路径，缺少可读取内页图的草稿不能发布。",
       "interfaceId": "API-027",
       "uniqueKey": "POST /api/v1/admin/storybooks"
     },
