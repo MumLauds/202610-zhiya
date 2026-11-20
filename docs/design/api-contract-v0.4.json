@@ -106,7 +106,7 @@
       "repeat": "同键重放原结束响应，可能仍含PENDING；新键重复结束只返回既有终态及当前小结，不再次调用模型。本阶段不提供失败小结重新生成入口。"
     },
     "versionAccess": {
-      "draftPreview": "API-024 允许已认证家长预览本人 PENDING_REVIEW 原创草稿的内页。API-026 批准时使用同一份图片。旧草稿已分配的插画暂时缺失时，该页预览和整本批准返回可重试的 503，其他可用页仍可预览。API-025 成功重放仍须核验目标版本的归属和状态，已撤回时返回 404 RESOURCE_NOT_FOUND。",
+      "draftPreview": "API-024 允许已认证家长预览本人 PENDING_REVIEW 原创草稿的内页。旧草稿预览时只固定当前页，API-026 批准时核对整本并沿用已预览的图片。已分配的插画暂不可读时，该页预览和整本批准返回可重试的 503，其他可用页仍可预览。API-025 成功重放仍须核验目标版本的归属和状态，已撤回时返回 404 RESOURCE_NOT_FOUND。",
       "current": "默认书架及推荐仅选择有权访问的当前PUBLISHED或APPROVED_PRIVATE版本。每个storybookId至多一个当前生效版本，不限制本人可复读的已审核私有历史版本数。",
       "privateHistory": "RETIRED退出当前默认列表；只有storybooks.source_type=ORIGINAL、owner_guardian_id等于当前家长账号且story_versions.reviewed_by_id和reviewed_at均非空的本人私有历史版本，才允许从scope=mine读取并创建新会话。",
       "libraryHistory": "LIBRARY的RETIRED版本不允许新建会话；仍有权访问的既有有效会话可以继续读取。",
@@ -2051,7 +2051,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "4～6个页面节点；branching=true时1～2决策节点，每节点至少两选项；branching=false时无决策节点且branches为空；所有路径4～6页且无环；响应含checkResults。续写另带sourceReadingSessionId，固定前文。 续写请求同时提交expectedRevision，年龄由源会话档案确定而无需传ageBand；服务端短事务固定源版本、当前路径和revision，已读前缀按阅读顺序映射为新版本1..k页且保留文字与配图，resumePageNumber=k+1。整本仍为4～6个节点，不能满足范围时422 CONTINUATION_LIMIT。返回不可由客户端改写的continuation对象，家长同时预览继续点。生成及批准不结束旧会话。调用前按STORY_GENERATION范围占位。有限续写属于本期FR-17 P1验收范围；经API-026审核后由API-011原子切换，覆盖TC-FR17-04/05，审批状态见common.deliveryScope。普通原创及阅读主链路无需触发续写。",
+      "constraints": "4～6个页面节点；branching=true时1～2决策节点，每节点至少两选项；branching=false时无决策节点且branches为空；所有路径4～6页且无环；响应含checkResults。续写另带sourceReadingSessionId，固定前文，按新增页数选择适龄授权插画。自定义媒体目录中缺少或暂不可读的可选插画按页返回imageRef=null。 续写请求同时提交expectedRevision，年龄由源会话档案确定而无需传ageBand；服务端短事务固定源版本、当前路径和revision，已读前缀按阅读顺序映射为新版本1..k页且保留文字与配图，resumePageNumber=k+1。整本仍为4～6个节点，不能满足范围时422 CONTINUATION_LIMIT。返回不可由客户端改写的continuation对象，家长同时预览继续点。生成及批准不结束旧会话。调用前按STORY_GENERATION范围占位。有限续写属于本期FR-17 P1验收范围；经API-026审核后由API-011原子切换，覆盖TC-FR17-04/05，审批状态见common.deliveryScope。普通原创及阅读主链路无需触发续写。",
       "interfaceId": "API-025",
       "uniqueKey": "POST /api/v1/story-generations",
       "additionalExamples": [

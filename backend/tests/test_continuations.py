@@ -46,8 +46,20 @@ def cont_env(tmp_path, monkeypatch):
     _login_attempts.clear()
 
 
-@pytest.mark.parametrize("advance_source", [False, True], ids=["switch", "stale-source"])
-def test_generation_approval_and_continuation_switch(cont_env, monkeypatch, tmp_path, advance_source):
+def _deny_image_read(monkeypatch, path):
+    read_bytes = Path.read_bytes
+
+    def read(candidate):
+        if candidate == path:
+            raise PermissionError("Image is temporarily locked")
+        return read_bytes(candidate)
+
+    monkeypatch.setattr(Path, "read_bytes", read)
+
+
+@pytest.mark.parametrize(("advance_source", "locked"), [(False, False), (True, False), (False, True)],
+                         ids=["switch", "stale-source", "locked-illustration"])
+def test_generation_approval_and_continuation_switch(cont_env, monkeypatch, tmp_path, advance_source, locked):
     from PIL import Image
     from app.services import story_media
 
@@ -89,7 +101,13 @@ def test_generation_approval_and_continuation_switch(cont_env, monkeypatch, tmp_
                "characters": ["小兔子"], "scene": "森林", "branching": False, "clientRequestId": "generate-1"}
     assert other.post("/api/v1/story-generations", headers={"X-CSRF-Token": other.cookies["zhiya_csrf"]},
                       json=payload).status_code == 404
-    generated = client.post("/api/v1/story-generations", headers=headers, json=payload)
+    with monkeypatch.context() as files:
+        if locked:
+            fourth_image = tmp_path.joinpath(*story_media._image_path_parts(templates[3][0]))
+            fourth_image.parent.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (2, 2), "orange").save(fourth_image)
+            _deny_image_read(files, fourth_image)
+        generated = client.post("/api/v1/story-generations", headers=headers, json=payload)
     assert generated.status_code == 201, generated.text
     data = generated.json()["data"]
     version = data["storyVersionId"]
@@ -115,6 +133,7 @@ def test_generation_approval_and_continuation_switch(cont_env, monkeypatch, tmp_
     approved = client.post(f"/api/v1/story-versions/{version}/approvals", headers=headers,
                            json={"versionNumber": data["versionNumber"], "reviewedAllBranches": True})
     assert approved.status_code == 200, approved.text
+    assert approved.json()["data"]["pages"][3]["imageRef"] is None
     assert client.get(f"/api/v1/media/asset-{version}-page-1").content == original_image
     assert client.get(preview_url).content == preview_bytes
     if advance_source:
@@ -206,7 +225,8 @@ def test_original_generation_checks_and_persists_only_valid_drafts(cont_env, mon
     assert len(contexts) == 2
 
 
-def test_legacy_draft_retries_missing_promised_image_before_preview_or_approval(cont_env, monkeypatch, tmp_path):
+@pytest.mark.parametrize("locked", [False, True], ids=["missing", "locked"])
+def test_legacy_draft_retries_missing_promised_image_before_preview_or_approval(cont_env, monkeypatch, tmp_path, locked):
     from PIL import Image
     from app.services import story_media
 
@@ -214,10 +234,11 @@ def test_legacy_draft_retries_missing_promised_image_before_preview_or_approval(
     headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
     monkeypatch.setenv("ZHIYA_MEDIA_ROOT", str(tmp_path))
     paths = []
-    for ref, _ in story_media.select_template_illustrations("AGE_3_4", "互助", 4):
+    for (ref, _), color in zip(story_media.select_template_illustrations("AGE_3_4", "互助", 4),
+                               ["green", "blue", "orange", "purple"], strict=True):
         path = tmp_path.joinpath(*story_media._image_path_parts(ref))
         path.parent.mkdir(parents=True, exist_ok=True)
-        Image.new("RGB", (2, 2), "green").save(path, format="PNG")
+        Image.new("RGB", (2, 2), color).save(path, format="PNG")
         paths.append(path)
 
     class StoryModel:
@@ -241,14 +262,18 @@ def test_legacy_draft_retries_missing_promised_image_before_preview_or_approval(
         db.execute("UPDATE story_versions SET approved_page_media_json = NULL WHERE id = ?", (version,))
     unavailable_file = paths[-1]
     saved_image = unavailable_file.read_bytes()
-    unavailable_file.unlink()
     approval_url = f"/api/v1/story-versions/{version}/approvals"
     approval = {"versionNumber": 1, "reviewedAllBranches": True}
     first_png = paths[0].read_bytes()
-    assert client.get(urls[0]).content == first_png
-    for response in (client.get(urls[-1]), client.post(approval_url, json=approval, headers=headers)):
-        assert response.status_code == 503
-        assert response.json()["error"]["retryable"] is True
+    with monkeypatch.context() as files:
+        if locked:
+            _deny_image_read(files, unavailable_file)
+        else:
+            unavailable_file.unlink()
+        assert client.get(urls[0]).content == first_png
+        for response in (client.get(urls[-1]), client.post(approval_url, json=approval, headers=headers)):
+            assert response.status_code == 503
+            assert response.json()["error"]["retryable"] is True
     with closing(sqlite3.connect(db_path)) as db:
         assert db.execute("SELECT status FROM story_versions WHERE id = ?", (version,)).fetchone() == ("PENDING_REVIEW",)
 
@@ -270,6 +295,65 @@ def test_template_selection_prefers_topic_within_requested_age_band(band, topic)
     matching = [entry for entry in eligible if topic in entry["topics"]]
     selected = story_media.select_template_illustrations(band, topic, 4)
     assert selected in [entry["assets"][:4] for entry in matching or eligible]
+
+
+@pytest.mark.parametrize("licensed_count", [5, 2, 0])
+def test_continuation_uses_short_licensed_template_for_new_pages(cont_env, monkeypatch, tmp_path, licensed_count):
+    from unittest.mock import AsyncMock
+    from PIL import Image
+    from app.services import story_media
+
+    client, _, db_path, profile = cont_env
+    headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
+    monkeypatch.setenv("ZHIYA_MEDIA_ROOT", str(tmp_path))
+    versions, catalog_pages = [], []
+    for version_id, low, high, licensed in [(1, 4, 5, licensed_count), (2, 5, 6, 6)]:
+        versions.append({"id": version_id, "age_min": low, "age_max": high, "topics_json": ["互助"],
+                         "source_ref": story_media.SEED_COVER_SOURCE_REF})
+        for n in range(1, 7):
+            ref = f"{version_id}-{n}.png"
+            Image.new("RGB", (2, 2), (low, n, 0)).save(tmp_path / ref)
+            catalog_pages.append({"version_id": version_id, "page_no": n, "image_ref": ref,
+                                  "image_license_note": story_media.TEMPLATE_PAGE_LICENSE if n <= licensed else None})
+    for name, data in [("DEFAULT_TEMPLATE_VERSIONS", versions), ("DEFAULT_TEMPLATE_PAGES", catalog_pages)]:
+        catalog = tmp_path / f"{name}.json"
+        catalog.write_text(json.dumps(data), encoding="utf-8")
+        monkeypatch.setattr(story_media, name, catalog)
+
+    model = AsyncMock()
+    model.generate.return_value = ModelGenerateResult(success=True, text=json.dumps({
+        "title": "一起散步", "pages": ["来到岔路口。", "走过树林。", "一起回家。"], "choices": ["走进树林", "去找朋友"],
+    }))
+    monkeypatch.setattr(client.app.state, "model_adapter", model)
+    session = client.post("/api/v1/reading-sessions", headers=headers, json={
+        "childProfileId": profile, "storyVersionId": 301, "mode": "PARENT_CHILD",
+    }).json()["data"]["readingSessionId"]
+    for n, event in enumerate(("STARTED", "PAGE_CHANGED", "PAGE_CHANGED"), start=1):
+        advanced = client.post(f"/api/v1/reading-sessions/{session}/events", headers=headers, json={
+            "eventType": event, "pageNumber": n, "expectedRevision": n - 1, "clientEventId": f"read-{n}",
+        })
+        assert advanced.status_code == 201
+    request = {"sourceReadingSessionId": session, "expectedRevision": 3, "topic": "互助",
+               "characters": ["小兔"], "scene": "树林", "branching": True, "clientRequestId": "short-templates"}
+    created = client.post("/api/v1/story-generations", headers=headers, json=request)
+    assert created.status_code == 201, created.text
+    draft = created.json()["data"]
+    assert [p["text"] for p in draft["pages"][:3]] == [f"v1第{n}页" for n in (1, 2, 3)]
+    with closing(sqlite3.connect(db_path)) as db:
+        new_rows = db.execute("SELECT image_ref, image_license_note FROM story_pages "
+                              "WHERE version_id = ? AND page_no > 3 ORDER BY page_no",
+                              (draft["storyVersionId"],)).fetchall()
+    available = min(licensed_count, 3)
+    assert len(new_rows) == 3
+    assert len({ref for ref, _ in new_rows[:available]}) == available
+    licensed_refs = {f"1-{n}.png" for n in range(1, licensed_count + 1)}
+    for page, (ref, note) in zip(draft["pages"][3:3 + available], new_rows[:available], strict=True):
+        assert ref in licensed_refs and note == story_media.TEMPLATE_PAGE_LICENSE
+        assert client.get(f"/api/v1/media/{page['imageRef']}").content == (tmp_path / ref).read_bytes()
+    assert new_rows[available:] == [("none", None)] * (3 - available)
+    assert all(p["imageRef"] is None for p in draft["pages"][3 + available:])
+    assert client.post("/api/v1/story-generations", headers=headers, json=request).json()["data"] == draft
+    model.generate.assert_awaited_once()
 
 
 def test_story_generation_validation_limits_and_mode_guards(cont_env, monkeypatch):

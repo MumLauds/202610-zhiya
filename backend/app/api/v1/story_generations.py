@@ -19,12 +19,12 @@ from app.api.v1.storybooks import AGES, AgeBand, _verify_version_for_approval
 from app.schemas.agent import ModelGenerateRequest
 from app.services.reading_agent import SENSITIVE
 from app.services.story_media import (
+    TEMPLATE_PAGE_LICENSE,
     TEMPLATE_VERSION_LICENSE_NOTE,
     MediaDependencyError,
     ensure_version_pages_media,
-    freeze_approval_page_media,
     page_image_ref_from_manifest,
-    resolve_optional_template_illustrations,
+    pin_generation_illustrations,
     select_template_illustrations,
     verify_template_illustrations,
 )
@@ -215,8 +215,8 @@ def save_draft(db, request, payload, owner, source, carried_pages, total, decisi
         snapshot = (None,) * 6
         continuation = {}
         source_manifest = None
+        carried_images = []
         license_note = TEMPLATE_VERSION_LICENSE_NOTE
-        new_assets = select_template_illustrations(age_band, payload.topic, total)
     else:
         book_id = source["storybook_id"]
         number = db.execute(
@@ -234,16 +234,18 @@ def save_draft(db, request, payload, owner, source, carried_pages, total, decisi
         }}
         source_version = db.execute("SELECT * FROM story_versions WHERE id = ?", (source["version_id"],)).fetchone()
         source_manifest = ensure_version_pages_media(db, source_version, prefix)
+        carried_images = [source_manifest["pages"].get(str(page)) for page in prefix]
         license_note = source["license_note"]
-        new_assets = resolve_optional_template_illustrations(age_band, payload.topic, total, len(carried_pages))
+    new_images = pin_generation_illustrations(age_band, payload.topic, len(draft.pages), len(carried_pages))
+    page_media = dict(enumerate(carried_images + new_images, start=1))
     version_id = db.execute(
         """INSERT INTO story_versions
            (storybook_id, version_no, title, topics_json, age_min, age_max, license_note, status, created_at,
             branching, source_version_id, source_session_id, source_revision, source_page_no, resume_page_no,
-            source_visited_pages_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING_REVIEW', ?, ?, ?, ?, ?, ?, ?, ?)""",
+            source_visited_pages_json, approved_page_media_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING_REVIEW', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (book_id, number, draft.title, json.dumps([payload.topic], ensure_ascii=False), *AGES[age_band], license_note,
-         now, int(payload.branching), *snapshot),
+         now, int(payload.branching), *snapshot, json.dumps(page_media, ensure_ascii=False)),
     ).lastrowid
     pages = []
     texts = [page["body_text"] for page in carried_pages] + draft.pages
@@ -255,8 +257,9 @@ def save_draft(db, request, payload, owner, source, carried_pages, total, decisi
             image_license_note = carried["image_license_note"]
             image = page_image_ref_from_manifest(source["version_id"], carried["page_no"], source_manifest)
         else:
-            image_ref, image_license_note = new_assets[page_no - len(carried_pages) - 1]
-            image = None if image_ref == "none" else f"asset-{version_id}-page-{page_no}"
+            asset = page_media[page_no]
+            image_ref, image_license_note = (asset["rawRef"], TEMPLATE_PAGE_LICENSE) if asset else ("none", None)
+            image = f"asset-{version_id}-page-{page_no}" if asset else None
         db.execute(
             """INSERT INTO story_pages (version_id, page_no, body_text, image_ref, image_license_note,
                                       default_next_page_number) VALUES (?, ?, ?, ?, ?, ?)""",
@@ -277,8 +280,6 @@ def save_draft(db, request, payload, owner, source, carried_pages, total, decisi
     reason = _verify_version_for_approval(db, row, owner)
     if reason is not None:
         return error(request, 422, "VALIDATION_ERROR", reason)
-    promised_pages = {page["pageNumber"] for page in pages if page["imageRef"] is not None}
-    freeze_approval_page_media(db, row, promised_pages=promised_pages)
     return JSONResponse(status_code=201, content={"data": {
         "storybookId": book_id, "storyVersionId": version_id, "versionNumber": number, "title": draft.title,
         "status": "PENDING_REVIEW", "pages": pages, "branches": branches, **continuation,
