@@ -1,9 +1,10 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { mediaUrl } from '../api/client'
 
 const props = defineProps({
   pages: { type: Array, required: true },
+  bookPages: { type: Array, default: null },
   title: { type: String, default: '绘本' },
   pageCount: { type: Number, default: null },
   reviewingHistory: { type: Boolean, default: false },
@@ -12,7 +13,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['page-change', 'error'])
-const MAX_HISTORY_DOTS = 12
+const MAX_SPREADS_WITH_DOTS = 12
+const dotPages = computed(() => props.reviewingHistory ? props.pages : props.bookPages ?? props.pages)
 const container = ref(null)
 const imageErrors = ref(new Set())
 let book = null
@@ -90,8 +92,8 @@ defineExpose({
           <blockquote class="page-quote">{{ page.text }}</blockquote>
           <div class="page-number">
             <span>第 {{ page.pageNumber }} 页 · 共 {{ pageCount ?? pages.length }} 页</span>
-            <span v-if="reviewingHistory && pages.length > MAX_HISTORY_DOTS">回看 {{ index + 1 }} / {{ pages.length }}</span>
-            <span v-else class="page-dots"><i v-for="position in pages.length" :key="position" :class="{ active: position === index + 1 }" /></span>
+            <span v-if="pages.length <= MAX_SPREADS_WITH_DOTS" class="page-dots"><i v-for="(dot, position) in dotPages" :key="position" :class="{ active: reviewingHistory ? position === index : dot.pageNumber === page.pageNumber }" /></span>
+            <span v-else-if="reviewingHistory">回看 {{ index + 1 }} / {{ pages.length }}</span>
           </div>
         </div>
       </section>
