@@ -1098,8 +1098,14 @@ async function signIn(account, password) {
   await loadBooks()
   if (epoch !== authEpoch) return
   setToast('已登录知芽家长空间')
-  if (location.hash === entryHash) {
-    if (state.route.name === 'workshop' || (state.route.name === 'reader' && state.route.sessionId)) {
+  const route = parseRoute()
+  if (route.name === 'reader' && route.sessionId) {
+    const readingSameRoute = state.route.name === 'reader' && state.route.sessionId === route.sessionId
+    if (!readingSameRoute || (!state.sessionLoading && state.currentSession?.readingSessionId !== route.sessionId)) {
+      await syncRoute()
+    }
+  } else if (location.hash === entryHash) {
+    if (route.name === 'workshop') {
       await handleRoute()
     } else {
       navigate(state.books.length ? 'library' : 'account/children')
@@ -2124,7 +2130,7 @@ async function handleRoute() {
   } else if (route.name === 'detail' && route.versionId) {
     await loadDetail(route.versionId, route.source)
   } else if (route.name === 'reader') {
-    await loadReaderRoute()
+    if (route.previewVersionId || state.auth.authenticated) await loadReaderRoute()
   } else if (route.name === 'child') {
     if (state.auth.status === 'child' && !state.childMode) await restoreChildMode(route.sessionId)
   } else if (route.name === 'account' && ['growth', 'overview'].includes(route.section)) {

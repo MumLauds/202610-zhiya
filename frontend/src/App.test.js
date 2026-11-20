@@ -876,6 +876,39 @@ it('restores the guardian view on focus after another tab unlocks it', async () 
   expect(parentUnlock).not.toHaveBeenCalled()
 })
 
+it('restores a finished reader route reached while login is pending', async () => {
+  vi.stubEnv('MODE', 'public')
+  try {
+    const finished = { ...historyRow(55, [1]), currentPage: 1, mode: 'PARENT_CHILD' }
+    listProfiles.mockRejectedValueOnce(new ApiError('请先登录', { status: 401, code: 'AUTH_REQUIRED' }))
+    getReadingSession.mockResolvedValue({ session: finished, events: [], report: { status: 'READY', summary: '今天读完了这本绘本' } })
+    let completeLogin
+    login.mockReturnValueOnce(new Promise((resolve) => { completeLogin = resolve }))
+    await open('auth')
+
+    const form = wrapper.get('.auth-card')
+    await form.get('input[autocomplete="username"]').setValue('parent-test')
+    await form.get('input[type="password"]').setValue('password123')
+    await form.trigger('submit')
+    await flushPromises()
+    expect(login).toHaveBeenCalledTimes(1)
+
+    window.history.replaceState({}, '', '/#reader/55')
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    await flushPromises()
+    expect(getReadingSession).not.toHaveBeenCalled()
+
+    completeLogin({ data: { accountId: 1 } })
+    await flushPromises()
+    expect(location.hash).toBe('#reader/55')
+    expect(wrapper.text()).toContain('今天读完了这本绘本')
+    expect(getReadingSession).toHaveBeenCalledExactlyOnceWith(55)
+    expect(createReadingSession).not.toHaveBeenCalled()
+  } finally {
+    vi.unstubAllEnvs()
+  }
+})
+
 it('keeps a fresh anonymous visit on login and offers unlock if the server identifies a child device', async () => {
   listProfiles.mockRejectedValueOnce(new ApiError('请先登录', { status: 401, code: 'AUTH_REQUIRED' }))
   login.mockRejectedValueOnce(new ApiError('请先通过家长解锁退出儿童模式', { status: 403, code: 'FORBIDDEN' }))
