@@ -66,6 +66,7 @@ def stored(path, sid):
     # Only read from the application's fixture database after the initial seed.
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
         db.row_factory = sqlite3.Row
+        db.execute("BEGIN")  # Read all tables from one SQLite snapshot.
         session = dict(db.execute("""SELECT s.status,s.revision,s.end_reason,s.ended_at,s.visited_pages_json,
             g.issued_at,g.expires_at,g.revoked_at FROM reading_sessions s
             JOIN child_grants g ON g.id=s.grant_id WHERE s.id=?""", (sid,)).fetchone())
@@ -83,21 +84,35 @@ def counts(rows):
     return {name: len(items) for name, items in rows.items()}
 
 
-def check_expired(path, case, calls):
+def probe_state(snapshot):
+    session, rows = snapshot
+    return {"status": session["status"], "revision": session["revision"], "reason": session["end_reason"],
+            "endedAt": utc_at(session["ended_at"]) if session["ended_at"] is not None else None,
+            "grantRevoked": session["revoked_at"] is not None, **counts(rows)}
+
+
+def check_expired(path, case, peer, calls):
     page, sid = case["page"], case["sid"]
     started = case["started"]
     url = f"/api/v1/reading-sessions/{sid}"
     expected_status, reason = ("FINISHED", "TIME_LIMIT") if started else ("INTERRUPTED", "GRANT_REVOKED")
     pages = [1] if started else []
+    before = stored(path, sid)
+    assert before == case["initial"], "Session changed before its first expired request"
+    peer_before = stored(path, peer["sid"])
     timestamp = time.time_ns() // 1_000_000
     assert timestamp >= case["expires"]
-    denied = {}
-    for probe in (url, "/api/v1/child-profiles"):
-        code, body = request(page, probe)
-        assert code == 401 and body["error"]["code"] == "AUTH_REQUIRED" and "data" not in body
-        denied[probe] = code
+    code, body = request(page, url)
+    assert code == 401 and body["error"]["code"] == "AUTH_REQUIRED" and "data" not in body
+    denied = {url: code}
+    after = stored(path, sid)
+    session, _ = after
+    assert (session["status"], session["end_reason"], session["revision"]) == (expected_status, reason, int(started) + 1)
+    assert session["ended_at"] == case["expires"] and session["revoked_at"] is None
+    peer_after = stored(path, peer["sid"])
+    assert peer_after == peer_before, "First expired request changed the other family's session"
 
-    # Check the outcome while this is still the child device, before unlocking can revoke a grant.
+    # Only read SQLite until the first request's deferred report has settled.
     deadline = time.monotonic() + 12
     while True:
         terminal, rows = stored(path, sid)
@@ -112,6 +127,11 @@ def check_expired(path, case, calls):
         assert rows["reports"][0]["summary"] == "本次共读阅读了第 1 页。"
     assert [e["event_type"] for e in rows["events"]] == (["STARTED"] if started else [])
     assert counts(rows) == {"events": int(started), "writes": 2 * int(started), "reports": int(started)}
+
+    code, body = request(page, "/api/v1/child-profiles")
+    assert code == 401 and body["error"]["code"] == "AUTH_REQUIRED" and "data" not in body
+    denied["/api/v1/child-profiles"] = code
+    assert stored(path, sid) == (terminal, rows) and stored(path, peer["sid"]) == peer_before
 
     with page.expect_response(lambda r: r.url.endswith("/child-profiles") and r.request.method == "GET") as identity:
         page.reload()
@@ -166,6 +186,9 @@ def check_expired(path, case, calls):
     return {"case": "started" if started else "notStarted", "sessionId": sid,
             "issuedAt": utc_at(case["issued"]), "expiresAt": utc_at(case["expires"]), "firstExpiredRequestAt": utc_at(timestamp),
             "elapsedSinceGrantMs": timestamp - case["issued"], "beforeExpiry": case["before"],
+            "firstExpiredProbe": {"path": url, "http": denied[url], "before": probe_state(before),
+                                  "after": probe_state(after), "peerSessionId": peer["sid"],
+                                  "peerBefore": probe_state(peer_before), "peerAfter": probe_state(peer_after)},
             "afterExpiryBeforeUnlock": {"denied": denied, "status": terminal["status"], "reason": reason,
                                         "endedAt": utc_at(terminal["ended_at"]), "grantRevoked": False, **counts(rows)},
             "childRefresh": {"profilesHttp": identity.value.status, "route": child_route, "heading": expired_heading,
@@ -214,14 +237,14 @@ def test_natural_expiry(tmp_path, monkeypatch):
             profile_status, forbidden = request(page, "/api/v1/child-profiles")
             assert profile_status == 403 and forbidden["error"]["code"] == "FORBIDDEN"
             print(f"Session {sid} {expected}, expires {utc_at(before['expires_at'])}", flush=True)
-            cases.append({"started": started, "account": account, "password": password, "page": page, "sid": sid,
+            cases.append({"initial": (before, rows), "started": started, "account": account, "password": password, "page": page, "sid": sid,
                           "issued": before["issued_at"], "expires": before["expires_at"], "before": {
                               "sessionHttp": status, "profilesHttp": profile_status, "sessionStatus": expected, **counts(rows)}})
         assert cases[0]["sid"] != cases[1]["sid"]
         deadline = max(c["expires"] for c in cases)
         while time.time_ns() // 1_000_000 <= deadline:
             time.sleep(min(1.0, max(0.01, deadline / 1000 - time.time())))
-        outcomes = [check_expired(path, case, calls) for case in cases]
+        outcomes = [check_expired(path, cases[0], cases[1], calls), check_expired(path, cases[1], cases[0], calls)]
         assert calls == ["reading report"]
         result = {"commit": subprocess.check_output(
             ["git", "-c", f"safe.directory={ROOT.as_posix()}", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip(),

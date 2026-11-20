@@ -4,7 +4,7 @@
 
 ## 原测结果
 
-2026 年 11 月 19 日，原测使用应用提交 [`main@0fd880e`](https://github.com/MumLauds/202610-zhiya/commit/0fd880e421b533529cf800a22f71863eb8dbc47f)。Chrome 同时保有两份独立儿童授权，每份时限均为 300 秒。截止后的第一项业务请求触发结算。以下快照均在家长解锁前取得，当时两个授权的 `revoked_at` 均为空，两条会话的 `ended_at` 都精确等于各自的授权截止时刻。[含毫秒时间戳的原测数据](result.json)
+2026 年 11 月 19 日，原测使用应用提交 [`main@0fd880e`](https://github.com/MumLauds/202610-zhiya/commit/0fd880e421b533529cf800a22f71863eb8dbc47f)。Chrome 同时保有两份独立儿童授权，每份时限均为 300 秒。旧版脚本依次请求会话详情和家长档案，随后才采集以下快照，因此原测仅能确认两次请求后已完成结算。快照均在家长解锁前取得，当时两个授权的 `revoked_at` 均为空，两条会话的 `ended_at` 都精确等于各自的授权截止时刻。[含毫秒时间戳的原测数据](result.json)
 
 | 到期前 | 截止时刻（北京时间） | 到期后的状态与原因 | 家长解锁后读回 | 小结数 |
 | --- | --- | --- | --- | ---: |
@@ -26,9 +26,13 @@
 | 已开读 #1 | 01:12:30.037 | 312.184 秒 | `FINISHED / TIME_LIMIT` | [1] | 1 / 2 / 1 |
 | 待开始 #2 | 01:12:42.208 | 303.076 秒 | `INTERRUPTED / GRANT_REVOKED` | [] | 0 / 0 / 0 |
 
-两个会话的结束时间均精确等于授权截止时间，解锁前 `revoked_at` 均为空。儿童读取会话及家长档案均返回 401。刷新儿童页后仍提示「请家长解锁设备」。家长解锁后读到各自的历史卡片和会话详情，已开读记录带 1 份 `READY` 小结，待开始记录的 `report` 为 `null`。两次刷新成长记录页后，详情、事件、执行记录和小结都保持一致，最终修订号分别为 2 和 1，与原测一致。
+这次历史复测也在两个拒绝响应后才首次查库。两个会话的结束时间均精确等于授权截止时间，解锁前 `revoked_at` 均为空。儿童读取会话及家长档案均返回 401。刷新儿童页后仍提示「请家长解锁设备」。家长解锁后读到各自的历史卡片和会话详情，已开读记录带 1 份 `READY` 小结，待开始记录的 `report` 为 `null`。两次刷新成长记录页后，详情、事件、执行记录和小结都保持一致，最终修订号分别为 2 和 1，与原测一致。
 
 浏览器用例 `1 passed in 374.70s`，后端儿童模式回归 10 项通过。前端生产构建通过，按 `child|unlock|handoff` 筛选的 12 项前端用例通过，另有 35 项未选中。
+
+## 首个到期请求的补充取证
+
+在同一应用提交 `5a0d0da` 上真实等待两份 300 秒授权到期。脚本读取两户的 SQLite 快照，只发送当前儿童的一次会话详情 GET，收到 401 后立即再次查库。已开读会话从 `IN_PROGRESS` 变为 `FINISHED / TIME_LIMIT`，另一户仍是 `CREATED`。轮到待开始会话时，它从 `CREATED` 变为 `INTERRUPTED / GRANT_REVOKED`，先前已结束的另一户记录保持一致。每户都在核对首个请求后才继续请求档案和执行家长解锁。两户最终分别有 1 份和 0 份小结。[首个请求前后的快照和刷新结果](first-request-retest.json)
 
 ## 环境与取证方式
 
@@ -40,13 +44,28 @@ Chrome 通过回环 HTTPS 加载 Vue 生产构建，使用两个独立浏览器�
 
 在仓库根目录准备 Python 3.12 测试环境、Node.js、已安装的 Google Chrome、Git 和 OpenSSL，然后运行以下命令。用例复用[第二轮的本地 HTTPS 环境](../round2/verify.py)。
 
+以下命令在 sh 或 Git Bash 中从仓库根目录执行，默认重演复测版本。若重演原测，将 `app_commit` 改为 `0fd880e421b533529cf800a22f71863eb8dbc47f`。为每次运行选择一个尚不存在的工作树目录。
+
+```sh
+set -e
+app_commit=5a0d0da0a87cb6e5d99d5e8e526c723671377bf4
+git fetch https://github.com/MumLauds/202610-zhiya.git refs/pull/63/head
+test_scripts=$(git rev-parse --verify FETCH_HEAD)
+git worktree add --detach "../g13-round5-$app_commit" "$app_commit"
+cd "../g13-round5-$app_commit"
+git restore --source="$test_scripts" --worktree -- docs/testing/g13/round5
+git rev-parse HEAD
+```
+
+在这个新工作树中继续运行。应用和第二轮 HTTPS 夹具来自 `app_commit`，本轮脚本来自 `test_scripts`。复核时一并记录这两个提交号。
+
 ```sh
 python -m pip install -r backend/requirements-dev.txt playwright==1.65.2
-npm --prefix frontend ci
+npm --prefix frontend ci --include=dev
 npm --prefix frontend run build
 python -m pytest -q -s docs/testing/g13/round5/verify_expiry.py
 ```
 
 脚本从当前工作树启动后端并挂载上一步的前端构建，输出 JSON 的 `commit` 取自该工作树的 `HEAD`。成功时终端会打印当次临时 `result.json` 的路径。两组授权并行等待，相同环境下应为一次复跑至少预留 5 分钟。
 
-原测也运行了 `python -m pytest -q backend/tests/test_child_mode.py`，10 项通过。前端相关回归用 `npm --prefix frontend test -- src/App.test.js -t 'child|unlock|handoff'` 选择了 12 项，全部通过。前端生产构建通过。
+原测也运行了 `python -m pytest -q backend/tests/test_child_mode.py`，10 项通过。前端相关回归可在 `frontend` 目录运行 `node node_modules/vitest/vitest.mjs run src/App.test.js -t 'child|unlock|handoff'`，按该表达式选择了 12 项，全部通过。前端生产构建通过。

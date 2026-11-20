@@ -29,9 +29,24 @@
 
 在仓库根目录使用 Python 3.12 测试虚拟环境、项目支持的 Node.js、Google Chrome、Git 和可在命令行使用的 OpenSSL。脚本复用主分支上的[回环 HTTPS 环境和测试绘本夹具](../round2/verify.py)。
 
+以下命令在 sh 或 Git Bash 中从仓库根目录执行，默认重演复测版本。若重演原测，将 `app_commit` 改为 `0fd880e421b533529cf800a22f71863eb8dbc47f`。为每次运行选择一个尚不存在的工作树目录。
+
+```sh
+set -e
+app_commit=5a0d0da0a87cb6e5d99d5e8e526c723671377bf4
+git fetch https://github.com/MumLauds/202610-zhiya.git refs/pull/63/head
+test_scripts=$(git rev-parse --verify FETCH_HEAD)
+git worktree add --detach "../g13-round4-$app_commit" "$app_commit"
+cd "../g13-round4-$app_commit"
+git restore --source="$test_scripts" --worktree -- docs/testing/g13/round4
+git rev-parse HEAD
+```
+
+在这个新工作树中继续运行。应用和第二轮 HTTPS 夹具来自 `app_commit`，本轮脚本来自 `test_scripts`。复核时一并记录这两个提交号。
+
 ```sh
 python -m pip install -r backend/requirements-dev.txt playwright==1.65.2
-npm --prefix frontend ci
+npm --prefix frontend ci --include=dev
 npm --prefix frontend run build
 npm --prefix frontend test -- src/pages/ReaderPage.test.js -t 'branch'
 python -m pytest -q -s docs/testing/g13/round4/branch_flow.py
