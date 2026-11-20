@@ -53,7 +53,7 @@
     body[data-view="library"] {
       background-image:
         linear-gradient(rgba(255, 250, 242, .42), rgba(255, 250, 242, .26)),
-        url("/assets/figma-prototype/library-background.png");
+        url("/assets/figma-prototype/library-background.webp");
     }
     body[data-view="reader"],
     body[data-view="account"],
@@ -1613,6 +1613,8 @@
       transition: opacity .2s ease, transform .2s ease;
     }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .toast.error.show { pointer-events: auto; }
+    .toast .text-button { margin: 0 0 0 10px; }
 
     @media (max-width: 1180px) {
       .header-inner { gap: 15px; }
@@ -1710,6 +1712,7 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
+      .home-rotation-toggle { display: none; }
       *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
     }
 

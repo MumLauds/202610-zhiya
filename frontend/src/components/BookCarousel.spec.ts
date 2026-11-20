@@ -5,6 +5,21 @@ import BookCarousel from './BookCarousel.vue'
 let wrapper: VueWrapper
 afterEach(() => { wrapper?.unmount(); vi.unstubAllGlobals() })
 
+it('makes only visible covers interactive and updates as the selection changes', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const books = Array.from({ length: 8 }, (_, i) => ({ id: String(i + 1), title: `绘本${i + 1}` }))
+  wrapper = mount(BookCarousel, { props: { books, selectedId: '1' } })
+  const covers = wrapper.findAll('.wheel-book')
+  expect(covers.filter(cover => cover.attributes('inert') === undefined)).toHaveLength(5)
+  expect(covers[3].attributes()).toHaveProperty('inert')
+  expect(wrapper.findAll('.carousel-dot[inert]')).toHaveLength(0)
+
+  await wrapper.setProps({ selectedId: '4' })
+  expect(covers[0].attributes()).toHaveProperty('inert')
+  expect(covers[3].attributes('inert')).toBeUndefined()
+  expect(covers[3].attributes('aria-current')).toBe('true')
+})
+
 it('keeps the selected shelf dot visible after loading more books and wrapping to the first book', async () => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   const books = Array.from({ length: 60 }, (_, i) => ({ id: String(i + 1), title: `绘本${i + 1}` }))

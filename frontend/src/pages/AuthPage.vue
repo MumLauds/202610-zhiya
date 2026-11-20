@@ -27,6 +27,11 @@ async function submit() {
   try {
     await props[mode.value](account.value.trim(), password.value)
   } catch (failure) {
+    if (failure.code === 'ACCOUNT_CREATED_LOGIN_FAILED') {
+      mode.value = 'login'
+      password.value = ''
+      return
+    }
     error.value = describeApiError(failure)
   } finally {
     busy.value = false

@@ -49,11 +49,13 @@ class SessionCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_continuation_fields(self):
-        switch_fields = {"sourceReadingSessionId", "expectedRevision", "clientRequestId"}
+        switch_fields = {"sourceReadingSessionId", "expectedRevision"}
         if self.model_fields_set & switch_fields and (
             self.sourceReadingSessionId is None or self.expectedRevision is None or self.clientRequestId is None
         ):
             raise ValueError("续写切换须同时提供 sourceReadingSessionId、expectedRevision 和 clientRequestId")
+        if "clientRequestId" in self.model_fields_set and self.clientRequestId is None:
+            raise ValueError("clientRequestId 不可显式传空")
         return self
 
 
@@ -280,6 +282,12 @@ def create_session(payload: SessionCreate, request: Request):
             owner = principal.guardian_id
             if payload.sourceReadingSessionId is not None:
                 return _switch_continuation_session(db, request, owner, payload)
+            key = payload.clientRequestId
+            if key:
+                digest = request_digest("/api/v1/reading-sessions", payload.model_dump())
+                replay = replay_execution(db, request, "SESSION_CREATE", owner, key, digest, principal)
+                if replay is not None:
+                    return replay
             profile = db.execute("SELECT 1 FROM child_profiles WHERE id = ? AND guardian_id = ?",
                                  (payload.childProfileId, owner)).fetchone()
             version = db.execute(
@@ -292,15 +300,19 @@ def create_session(payload: SessionCreate, request: Request):
             if not profile or not version:
                 return error(request, 404, "RESOURCE_NOT_FOUND", "档案或绘本不可用")
             ensure_opening_media(db, version)
+            now = int(time.time() * 1000)
             cursor = db.execute(
                 """INSERT INTO reading_sessions
                 (profile_id, version_id, current_page_no, mode, status, created_at)
                 VALUES (?, ?, 1, 'PARENT_CHILD', 'CREATED', ?)""",
-                (payload.childProfileId, payload.storyVersionId, int(time.time() * 1000)),
+                (payload.childProfileId, payload.storyVersionId, now),
             )
             row = db.execute("SELECT *, NULL AS grant_expires_at FROM reading_sessions WHERE id = ?",
                              (cursor.lastrowid,)).fetchone()
-            return {"data": session_object(row), "requestId": request.state.request_id}
+            response = {"data": session_object(row), "requestId": request.state.request_id}
+            if key:
+                record_execution(db, owner, "SESSION_CREATE", owner, None, key, digest, now, 201, response)
+            return response
     except MediaDependencyError:
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用", retryable=True)
     except sqlite3.Error:
@@ -557,7 +569,7 @@ def replay_execution(db, request: Request, scope_type: str, scope_id: int, clien
                      digest: str, principal: Principal | None = None, *, page_version_id: int | None = None,
                      source_session_id: int | None = None):
     """Shared request_executions lookup for SESSION_EVENT and SESSION_CREATE scopes."""
-    previous = db.execute("""SELECT id, request_digest, status, response_status, response_body, deadline_at,
+    previous = db.execute("""SELECT id, request_digest, status, response_status, response_body, deadline_at, started_at,
                                  source_reading_session_id
                           FROM request_executions WHERE scope_type = ?
                           AND scope_id = ? AND client_request_id = ?""",
@@ -587,6 +599,11 @@ def replay_execution(db, request: Request, scope_type: str, scope_id: int, clien
             and readable_story_version(db, principal, page_version_id) is None):
         return error(request, 404, "RESOURCE_NOT_FOUND", "绘本不可用")
     body = json.loads(previous["response_body"])
+    if previous["status"] == "SUCCEEDED" and scope_type == "SESSION_CREATE" and principal is not None:
+        target = body["data"]["readingSessionId"]
+        session = owned_session(db, target, principal)
+        if session is None or session["created_at"] != previous["started_at"]:
+            return error(request, 404, "RESOURCE_NOT_FOUND", "会话不可用")
     if previous["status"] == "SUCCEEDED" and scope_type == "STORY_GENERATION":
         target = body.get("data", {}).get("storyVersionId")
         if target is None or owned_generation_version(db, scope_id, target) is None:

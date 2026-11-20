@@ -1,4 +1,6 @@
 <script setup>
+import { vModalFocus } from '../components/modalFocus'
+import { approvedBranchesAt } from '../data/readingBranches'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import FlipBook from '../components/FlipBook.vue'
 import { synthesize, transcribe } from '../api/voice'
@@ -90,9 +92,7 @@ const answerText = computed(() => {
   if (props.session?.preview) return previewAnswer.value
   return props.authenticated ? savedAnswer.value?.inputText : ''
 })
-const currentBranches = computed(() => (props.book?.branches || []).filter((branch) => (
-  branch.fromPageNumber === currentPage.value?.pageNumber && branch.reviewStatus === 'APPROVED'
-)))
+const currentBranches = computed(() => approvedBranchesAt(props.book?.branches, currentPage.value?.pageNumber))
 const showDockFinish = computed(() => currentPage.value?.defaultNextPageNumber == null && !currentBranches.value.length && !readerPages.value[pageIndex.value + 1])
 const rereading = computed(() => pageIndex.value !== progressIndex.value)
 const canFinish = computed(() => !props.loading && !turnBusy.value && !interactionBusy.value && !props.syncRequired && props.session?.status === 'IN_PROGRESS' && (props.session?.preview || props.authenticated))
@@ -666,7 +666,7 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
     </div>
 
     <div v-if="voiceOpen" class="modal-backdrop" @click.self="closeVoice">
-      <section class="modal-card voice-card" role="dialog" aria-modal="true" aria-labelledby="voice-title">
+      <section v-modal-focus="closeVoice" class="modal-card voice-card" role="dialog" aria-modal="true" aria-labelledby="voice-title">
         <div class="modal-head">
           <div><h2 id="voice-title">{{ asking ? '问问芽芽' : '本页回答' }}</h2><p>{{ book.title }} · 第 {{ currentPage?.pageNumber }} 页</p></div>
           <button class="modal-close" type="button" aria-label="关闭本页问题" @click="closeVoice">×</button>
@@ -713,7 +713,7 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
     </div>
 
     <div v-if="childModeOpen" class="modal-backdrop" @click.self="childModeOpen = false">
-      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="child-mode-title">
+      <section v-modal-focus="() => { if (!childModeBusy) childModeOpen = false }" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="child-mode-title">
         <div class="modal-head">
           <div><h2 id="child-mode-title">交接给儿童自主阅读</h2><p>开启后当前浏览器会切换为受限儿童会话，家长导航和档案将不可访问。</p></div>
           <button class="modal-close" type="button" aria-label="关闭儿童模式设置" :disabled="childModeBusy" @click="childModeOpen = false">×</button>

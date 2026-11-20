@@ -27,6 +27,8 @@ import {
 import { approveStoryVersion, generateStory } from '../api/storyWorkshop'
 import { previewBooks, mapApiBook } from '../data/preview'
 import { canContinueStory, countReadPages } from '../data/readingProgress'
+import { readingCreationKey } from '../data/readingCreation'
+import { parseMobileRoute } from '../data/mobileRoute'
 
 const CHILD_SESSION_KEY = 'zhiya.childHandoffSessionId'
 const PENDING_SESSION_DELETES = 'zhiya.pendingSessionDeletes'
@@ -116,18 +118,22 @@ const state = reactive({
   sessionLoading: false,
   readerLoadRetryable: false,
   sessionBusy: false,
+  readingCreationRecovery: null,
   profileDeleteBusyId: null,
   sessionDeleteBusyId: null,
   pendingDeletionChecks: { profile: new Set(), session: new Set() },
   childMode: null,
   readingSyncRequired: false,
   sessions: [],
+  nextSessionsPage: null,
   sessionsLoaded: false,
   sessionsLoading: false,
   sessionsError: '',
   admin: {
     storyVersions: [],
     knowledgeItems: [],
+    nextStoryPage: null,
+    nextKnowledgePage: null,
     storiesLoaded: false,
     storiesLoading: false,
     knowledgeLoaded: false,
@@ -163,12 +169,14 @@ let workshopRequest = 0
 function clearAccountViews() {
   clearTimeout(toastTimer)
   state.toast = { message: '', tone: 'info', visible: false }
+  state.readingCreationRecovery = null
   activeInitialGuidance = null
   state.profiles = []
   state.profilesLoading = false
   state.profilesError = ''
   state.activeProfileId = null
   state.sessions = []
+  state.nextSessionsPage = null
   state.sessionsLoaded = false
   state.sessionsError = ''
   state.recommendations = []
@@ -180,6 +188,7 @@ function clearAccountViews() {
   state.workshop = emptyWorkshopState()
   state.admin.storyVersions = []
   state.admin.knowledgeItems = []
+  state.admin.nextStoryPage = state.admin.nextKnowledgePage = null
   state.admin.storiesLoaded = false
   state.admin.storiesLoading = false
   state.admin.knowledgeLoaded = false
@@ -235,9 +244,12 @@ function setToast(message, tone = 'info') {
   state.toast.tone = tone
   state.toast.visible = true
   clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => {
-    state.toast.visible = false
-  }, 2800)
+  if (tone !== 'error') toastTimer = window.setTimeout(dismissToast, 2800)
+}
+
+function dismissToast() {
+  clearTimeout(toastTimer)
+  state.toast.visible = false
 }
 
 function navigate(path) {
@@ -456,26 +468,27 @@ async function trackAdminWrite(request) {
   }
 }
 
-async function loadAdminContent(section = state.route.section) {
+async function loadAdminContent(section = state.route.section, { append = false } = {}) {
   const knowledge = section === 'knowledge'
   const loading = knowledge ? 'loading' : 'storiesLoading'
   const loaded = knowledge ? 'knowledgeLoaded' : 'storiesLoaded'
   const errorField = knowledge ? 'knowledgeError' : 'error'
   const list = knowledge ? listAdminKnowledge : listAdminStoryVersions
-  if (!hasAdminSession() || state.admin[loading]) return false
+  const itemsField = knowledge ? 'knowledgeItems' : 'storyVersions'
+  const nextField = knowledge ? 'nextKnowledgePage' : 'nextStoryPage'
+  const idField = knowledge ? 'knowledgeItemId' : 'storyVersionId'
+  const page = append ? state.admin[nextField] : 1
+  if (!page || !hasAdminSession() || state.admin[loading]) return false
   const epoch = authEpoch
   state.admin[loading] = true
   state.admin[errorField] = ''
   try {
-    const items = []
     const pageSize = 50
-    for (let page = 1; ; page += 1) {
-      const result = await list({ page, pageSize })
-      if (epoch !== authEpoch) return false
-      items.push(...result.items)
-      if (result.items.length < pageSize) break
-    }
-    state.admin[knowledge ? 'knowledgeItems' : 'storyVersions'] = items
+    const { items } = await list({ page, pageSize })
+    if (epoch !== authEpoch) return false
+    const merged = append ? [...state.admin[itemsField], ...items] : items
+    state.admin[itemsField] = [...new Map(merged.map(item => [item[idField], item])).values()]
+    state.admin[nextField] = items.length === pageSize ? page + 1 : null
     state.admin[loaded] = true
     return true
   } catch (error) {
@@ -1096,8 +1109,10 @@ async function signIn(account, password) {
     setToast('已登录内容管理空间')
     return
   }
-  if (state.route.name === 'auth' && new URLSearchParams(location.search).get('entry') === 'mobile') {
-    window.location.replace('/mobile.html')
+  const params = new URLSearchParams(location.search)
+  if (state.route.name === 'auth' && params.get('entry') === 'mobile') {
+    const route = parseMobileRoute(params.get('mobileRoute') || '')
+    window.location.replace(`/mobile.html${route.hash}`)
     return
   }
   await loadProfiles()
@@ -1125,7 +1140,13 @@ async function signIn(account, password) {
 
 async function signUp(account, password) {
   await register(account, password)
-  await signIn(account, password)
+  try {
+    await signIn(account, password)
+  } catch {
+    const message = '账号已创建，自动登录未完成。请用刚注册的账号登录。'
+    setToast(message, 'error')
+    throw new ApiError(message, { code: 'ACCOUNT_CREATED_LOGIN_FAILED' })
+  }
   setToast('账号已创建并登录')
 }
 
@@ -1205,6 +1226,7 @@ async function editProfile(profileId, payload) {
 function applyProfileRemoval(profileId) {
   state.profiles = state.profiles.filter((profile) => profile.childProfileId !== profileId)
   state.sessions = []
+  state.nextSessionsPage = null
   state.sessionsLoaded = false
   if (!activeProfile()) {
     clearRecommendations()
@@ -1233,7 +1255,7 @@ function applySessionRemoval(sessionId) {
     state.currentEvents = []
     state.currentReport = null
   }
-  if (wasLoading) void loadSessions()
+  if (wasLoading || state.nextSessionsPage) void loadSessions()
 }
 
 function markSessionDelete(id, pending) {
@@ -1275,6 +1297,10 @@ async function checkDeletion(type, id) {
   } else {
     if (!await loadSessions() || epoch !== authEpoch) return 'unconfirmed'
     present = state.sessions.some(session => session.readingSessionId === id)
+    while (!present && state.nextSessionsPage) {
+      if (!await loadSessions({ append: true }) || epoch !== authEpoch) return 'unconfirmed'
+      present = state.sessions.some(session => session.readingSessionId === id)
+    }
     if (!present) {
       // API-012 also omits sessions whose book was withdrawn.
       const exists = await getDeletionStatus(id)
@@ -1468,17 +1494,28 @@ async function startReading(book) {
   }
   // Reapplying the same filters or loading another page keeps the same shelf.
   const filtersAtStart = state.bookFilters
+  const creation = readingCreationKey(state.auth.accountId, profile.childProfileId, book.storyVersionId)
   try {
     state.sessionBusy = true
     const created = await createReadingSession({
       childProfileId: profile.childProfileId,
       storyVersionId: book.storyVersionId,
+      clientRequestId: creation.requestId,
     })
+    creation.clear()
     if (epoch !== authEpoch) return
+    state.readingCreationRecovery = null
     state.currentSession = created
     navigate(`reader/${created.readingSessionId}`)
   } catch (error) {
     if (epoch !== authEpoch) return
+    if (['REQUEST_OUTCOME_UNKNOWN', 'REQUEST_IN_PROGRESS'].includes(error.code) || error.status >= 500) {
+      state.readingCreationRecovery = { book, profileId: profile.childProfileId }
+      setToast('阅读会话是否创建成功尚未确认。可以核对原请求，避免重复创建。', 'error')
+      return
+    }
+    creation.clear()
+    state.readingCreationRecovery = null
     if (error.status === 404) {
       // API-011 returns the same 404 for an unavailable profile or book.
       const profiles = await loadProfiles().catch((lookupError) => {
@@ -1497,6 +1534,16 @@ async function startReading(book) {
   } finally {
     if (epoch === authEpoch) state.sessionBusy = false
   }
+}
+
+async function retryReadingCreation() {
+  const recovery = state.readingCreationRecovery
+  if (!recovery) return
+  if (activeProfile()?.childProfileId !== recovery.profileId) {
+    setToast('请选择原来的儿童档案，再核对这次阅读请求。', 'error')
+    return
+  }
+  await startReading(recovery.book)
 }
 
 function isTemporaryReadFailure(error) {
@@ -2052,28 +2099,28 @@ async function completeReading() {
   })
 }
 
-async function loadSessions() {
+async function loadSessions({ append = false } = {}) {
+  const page = append ? state.nextSessionsPage : 1
+  if (!page || (append && state.sessionsLoading)) return false
   const epoch = authEpoch
   const request = ++sessionsRequest
   const isCurrent = () => epoch === authEpoch && request === sessionsRequest
   state.sessionsError = ''
   if (!state.auth.authenticated) {
     state.sessions = []
+    state.nextSessionsPage = null
     state.sessionsLoaded = false
     state.sessionsLoading = false
     return false
   }
   state.sessionsLoading = true
   try {
-    const sessions = new Map()
     const pageSize = 50
-    for (let page = 1; ; page += 1) {
-      const items = await listReadingSessions(page, pageSize)
-      if (!isCurrent()) return false
-      for (const session of items) sessions.set(session.readingSessionId, session)
-      if (items.length < pageSize) break
-    }
-    state.sessions = [...sessions.values()]
+    const items = await listReadingSessions(page, pageSize)
+    if (!isCurrent()) return false
+    const merged = append ? [...state.sessions, ...items] : items
+    state.sessions = [...new Map(merged.map(session => [session.readingSessionId, session])).values()]
+    state.nextSessionsPage = items.length === pageSize ? page + 1 : null
     state.sessionsLoaded = true
     return true
   } catch (error) {
@@ -2199,6 +2246,7 @@ export const zhiyaActions = {
   openDetail,
   loadDetail,
   startReading,
+  retryReadingCreation,
   retryReadingIdentity,
   startCurrentReading,
   enterChildMode,
@@ -2214,5 +2262,6 @@ export const zhiyaActions = {
   refreshReading,
   loadSessions,
   setToast,
+  dismissToast,
 }
 export { activeProfile, totals, parseRoute }

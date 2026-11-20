@@ -204,7 +204,9 @@ it.each(['start', 'profile lookup'])('keeps the new filtered shelf when the old 
   await button('3–4 岁').trigger('click')
   await flushPromises()
   await button('开始阅读').trigger('click')
-  expect(createReadingSession).toHaveBeenCalledWith({ childProfileId: 7, storyVersionId: book.storyVersionId })
+  expect(createReadingSession).toHaveBeenCalledWith({
+    childProfileId: 7, storyVersionId: book.storyVersionId, clientRequestId: expect.stringMatching(/^create-reading-.+$/),
+  })
   let finishLookup
   if (pending === 'profile lookup') {
     listProfiles.mockReturnValueOnce(new Promise((resolve) => { finishLookup = resolve }))
@@ -508,7 +510,9 @@ it('shelf coherence: rechecks the pending shelf when reading creation returns 40
 
   await wrapper.get('.detail-actions .primary').trigger('click')
   await flushPromises()
-  expect(createReadingSession.mock.calls).toEqual([[{ storyVersionId: 88, childProfileId: 7 }]])
+  expect(createReadingSession).toHaveBeenCalledExactlyOnceWith({
+    storyVersionId: 88, childProfileId: 7, clientRequestId: expect.stringMatching(/^create-reading-.+$/),
+  })
   expect(listProfiles).toHaveBeenCalledTimes(2)
   expect(listStorybooks.mock.calls.map(([query]) => query.page)).toEqual([1, 1])
 
@@ -601,7 +605,9 @@ it.each([
     await button('开始阅读').trigger('click')
     await flushPromises()
     expect(createReadingSession).toHaveBeenCalledTimes(1)
-    expect(createReadingSession).toHaveBeenCalledWith({ storyVersionId: 1, childProfileId: 7 })
+    expect(createReadingSession).toHaveBeenCalledWith({
+      storyVersionId: 1, childProfileId: 7, clientRequestId: expect.stringMatching(/^create-reading-.+$/),
+    })
     expect(button('加载更多绘本')).toBeDefined()
   }
   await button('加载更多绘本').trigger('click')
@@ -649,8 +655,11 @@ it('keeps the second shelf page until the guardian selects a replacement for a d
   await button('开始阅读').trigger('click')
   await vi.waitFor(() => expect(location.hash).toBe('#reader/55'))
   expect(createReadingSession.mock.calls.map(([input]) => input)).toEqual([
-    { childProfileId: 7, storyVersionId: 32 }, { childProfileId: 9, storyVersionId: 32 },
+    { childProfileId: 7, storyVersionId: 32, clientRequestId: expect.stringMatching(/^create-reading-.+$/) },
+    { childProfileId: 9, storyVersionId: 32, clientRequestId: expect.stringMatching(/^create-reading-.+$/) },
   ])
+  expect(createReadingSession.mock.calls[0][0].clientRequestId)
+    .not.toBe(createReadingSession.mock.calls[1][0].clientRequestId)
   expect(listStorybooks.mock.calls.map(([query]) => query.page)).toEqual([1, 2])
 })
 

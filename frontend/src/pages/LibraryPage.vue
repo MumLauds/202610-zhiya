@@ -6,6 +6,7 @@ import { bookStatusLabel } from '../data/preview'
 const props = defineProps({
   books: { type: Array, default: () => [] },
   selectedId: { type: String, default: '' },
+  filters: { type: Object, default: () => ({ ageBand: '', topic: '' }) },
   loading: { type: Boolean, default: false },
   starting: { type: Boolean, default: false },
   nextPage: { type: Number, default: null },
@@ -19,7 +20,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['select', 'detail', 'start', 'filter', 'login', 'more', 'recommend', 'workshop'])
-const category = ref('')
+const category = ref(props.filters.ageBand ? 'age' : props.filters.topic ? 'topic' : '')
 
 const ageOptions = [
   ['AGE_3_4', '3–4 岁'],
@@ -28,6 +29,11 @@ const ageOptions = [
 ]
 const topicOptions = ['亲子依恋', '安全感', '想象力', '友谊', '自然观察', '勇气', '生命成长'].map((topic) => [topic, topic])
 const options = computed(() => category.value === 'age' ? ageOptions : category.value === 'topic' ? topicOptions : [])
+const currentOption = computed(() => category.value === 'age' ? props.filters.ageBand : props.filters.topic)
+const activeFilters = computed(() => [
+  props.filters.ageBand && (ageOptions.find(([value]) => value === props.filters.ageBand)?.[1] || props.filters.ageBand),
+  props.filters.topic,
+].filter(Boolean).join(' · '))
 const selected = computed(() => props.selectedId ? props.books.find((book) => book.id === props.selectedId) : props.books[0])
 const selectedRecommendation = computed(() => (
   props.recommendations.find((item) => item.storyVersionId === selected.value?.storyVersionId) || null
@@ -69,17 +75,18 @@ function chooseFilter(value) {
           <p v-if="recommendationsError" class="form-error" role="alert">{{ recommendationsError }}</p>
           <div class="library-category-rows">
             <div class="library-category-row">
-              <button class="library-category-chip" :class="{ active: !category }" type="button" @click="resetFilters">全部</button>
+              <button class="library-category-chip" :class="{ active: !activeFilters && !category }" type="button" :aria-pressed="!activeFilters" @click="resetFilters">全部</button>
               <button class="library-category-chip" :class="{ active: category === 'age' }" type="button" :aria-expanded="category === 'age'" @click="toggleCategory('age')">年龄</button>
               <button class="library-category-chip" :class="{ active: category === 'topic' }" type="button" :aria-expanded="category === 'topic'" @click="toggleCategory('topic')">主题</button>
               <button class="library-category-chip" type="button" disabled>阅读时长</button>
             </div>
           </div>
+          <p v-if="activeFilters">当前筛选：{{ activeFilters }}</p>
           <div v-if="options.length" class="library-filter-expand">
             <strong>{{ category === 'age' ? '年龄' : '主题' }}：选择具体条件</strong>
             <div class="library-option-list">
-              <button class="library-option-chip" type="button" @click="chooseFilter('')">全部</button>
-              <button v-for="[value, label] in options" :key="value" class="library-option-chip" type="button" @click="chooseFilter(value)">{{ label }}</button>
+              <button class="library-option-chip" :class="{ active: !activeFilters }" type="button" :aria-pressed="!activeFilters" @click="chooseFilter('')">全部</button>
+              <button v-for="[value, label] in options" :key="value" class="library-option-chip" :class="{ active: currentOption === value }" type="button" :aria-pressed="currentOption === value" @click="chooseFilter(value)">{{ label }}</button>
             </div>
           </div>
           <section class="library-workshop-entry" aria-labelledby="library-workshop-title">

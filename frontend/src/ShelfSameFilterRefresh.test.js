@@ -52,7 +52,9 @@ it.each(['details', 'reading creation'])('refreshes the same shelf after a pendi
     await vi.waitFor(() => expect(wrapper.find('.library-page').exists()).toBe(true))
   } else {
     await wrapper.findAll('button').find((button) => button.text() === '开始阅读').trigger('click')
-    expect(createReadingSession).toHaveBeenCalledExactlyOnceWith({ storyVersionId: 88, childProfileId: 7 })
+    expect(createReadingSession).toHaveBeenCalledExactlyOnceWith({
+      storyVersionId: 88, childProfileId: 7, clientRequestId: expect.stringMatching(/^create-reading-.+$/),
+    })
   }
 
   expect(listStorybooks.mock.calls).toEqual([[allQuery]])
@@ -180,7 +182,9 @@ it.each([
   expect(wrapper.get('.library-feature-copy h2').text()).toBe(`绘本${expectedId}`)
   expect(localStorage.getItem(selectionKey)).toBe(`version-${expectedId}`)
   await button('开始阅读').trigger('click')
-  expect(createReadingSession).toHaveBeenCalledExactlyOnceWith({ storyVersionId: expectedId, childProfileId: 7 })
+  expect(createReadingSession).toHaveBeenCalledExactlyOnceWith({
+    storyVersionId: expectedId, childProfileId: 7, clientRequestId: expect.stringMatching(/^create-reading-.+$/),
+  })
 })
 
 it('does not restore a book picked on the old shelf after reselecting a new age filter', async () => {

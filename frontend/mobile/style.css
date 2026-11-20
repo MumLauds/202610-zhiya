@@ -140,10 +140,6 @@ h1, h2, h3, p { margin-top: 0; }
 .live-setup .eyebrow { color: #a8d4b4; }
 .live-setup h2 { margin-bottom: .6rem; }
 .live-setup p { margin-bottom: 0; color: rgba(255, 255, 255, .68); line-height: 1.65; }
-.setup-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; align-content: center; }
-.setup-form label { display: grid; gap: .35rem; color: rgba(255, 255, 255, .7); font-size: .75rem; }
-.setup-form input { width: 100%; padding: .75rem .9rem; color: #fff; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .15); border-radius: 12px; }
-.setup-form button { grid-column: span 2; }
 
 .book-section { padding: clamp(22px, 4vw, 42px); background: rgba(255, 253, 248, .82); border: 1px solid var(--line); border-radius: var(--radius-xl); }
 .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.3rem; }
@@ -302,8 +298,6 @@ h1, h2, h3, p { margin-top: 0; }
   .hero-copy h1 { font-size: clamp(2.35rem, 12vw, 3.8rem); }
   .hero-note { padding: 28px 22px; }
   .implementation-grid { grid-template-columns: 1fr; }
-  .setup-form { grid-template-columns: 1fr; }
-  .setup-form button { grid-column: auto; }
   .book-section { padding: 20px 14px; border-radius: 24px; }
   .book-grid { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; }
   .book-card { flex: 0 0 134px; scroll-snap-align: start; }
@@ -405,17 +399,6 @@ body {
 .featured-copy h2 { margin: .3rem 0 .28rem; font-family: "STKaiti", "KaiTi", serif; font-size: 1.65rem; }
 .featured-copy p { margin: 0; font-size: .68rem; opacity: .82; }
 .round-next { position: absolute; right: 15px; bottom: 15px; display: grid; width: 42px; height: 42px; place-items: center; color: var(--leaf-deep); background: #fff; border: 0; border-radius: 50%; cursor: pointer; font-size: 1.1rem; box-shadow: 0 8px 20px rgba(0, 0, 0, .18); }
-.live-panel { padding: 18px; background: var(--ink); color: #fff; border-radius: 26px; }
-.live-panel .eyebrow { color: #a8d4b4; }
-.panel-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
-.panel-title h2 { margin: 0; font-size: 1.25rem; }
-.status-dot { padding: .26rem .48rem; color: #bddfc3; background: rgba(255, 255, 255, .09); border: 1px solid rgba(255, 255, 255, .12); border-radius: 999px; font-size: .62rem; font-weight: 800; }
-.panel-copy { margin: .7rem 0 1rem; color: rgba(255, 255, 255, .65); font-size: .74rem; line-height: 1.6; }
-.live-panel .setup-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
-.live-panel .setup-form label { gap: .3rem; color: rgba(255, 255, 255, .65); font-size: .68rem; }
-.live-panel .setup-form input { padding: .7rem .75rem; font-size: .8rem; }
-.live-panel .wide-field { grid-column: span 2; }
-.live-panel .setup-form button { grid-column: span 2; margin-top: .2rem; }
 .shelf-panel { padding: 18px 0 4px; }
 .mobile-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: .8rem; padding-inline: 2px; }
 .mobile-section-heading h2 { margin: 0; font-size: 1.2rem; }
@@ -455,7 +438,7 @@ body {
 .mobile-main { grid-template-columns: minmax(0, 1fr); min-width: 0; }
 .mobile-main > * { min-width: 0; }
 .phone-book-row { width: 100%; min-width: 0; }
-.welcome-card, .featured-book, .live-panel, .shelf-panel, .service-strip { min-width: 0; }
+.welcome-card, .featured-book, .shelf-panel, .service-strip { min-width: 0; }
 
 /* Fixed phone aspect ratio on desktop */
 @media (min-width: 521px) {
@@ -516,6 +499,7 @@ body {
 .filter-row.secondary button.active { color: var(--leaf-deep); background: #cfe5d2; }
 .library-phone-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .library-phone-card { padding: 0; overflow: hidden; text-align: left; background: #f1eee6; border: 2px solid transparent; border-radius: 18px; cursor: pointer; }
+.library-phone-grid > article > .library-phone-card { width: 100%; }
 .library-phone-card.selected { border-color: var(--leaf); box-shadow: 0 7px 18px rgba(47, 106, 74, .15); }
 .library-phone-card img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
 .library-phone-card strong { display: block; overflow: hidden; padding: .58rem .62rem 0; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
@@ -525,9 +509,6 @@ body {
 .library-start-bar small { color: var(--ink-soft); font-size: .6rem; }
 .library-start-bar strong { overflow: hidden; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
 .library-start-bar .button { flex: 0 0 auto; min-height: 38px; padding: .45rem .75rem; font-size: .72rem; }
-.story-form { display: grid; gap: .72rem; padding: 1rem; background: #f3f6ef; border-radius: 22px; }
-.story-form label { display: grid; gap: .32rem; color: var(--ink-soft); font-size: .68rem; }
-.story-form select, .story-form input { width: 100%; padding: .72rem .75rem; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 13px; font-size: .8rem; }
 .family-profile { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; font-weight: 600; }
 .family-profile select { min-width: 0; flex: 1; padding: .75rem; color: var(--ink); background: white; border: 1px solid var(--line); border-radius: 13px; font: inherit; }
 .info-panel { display: grid; gap: .55rem; justify-items: start; padding: 1rem; background: #fff8ea; border: 1px solid #f0dfbf; border-radius: 18px; }
@@ -554,7 +535,6 @@ body {
 .setting-row + .setting-row, div.setting-row + button.setting-row, button.setting-row + div.setting-row { border-top: 1px solid var(--line); }
 .setting-row span { font-size: .76rem; }
 .setting-row b { color: var(--ink-soft); font-size: .68rem; font-weight: 600; text-align: right; }
-.profile-note { margin: 0; padding: .7rem; color: var(--ink-soft); font-size: .64rem; line-height: 1.6; text-align: center; }
 @media (max-width: 520px) {
   .library-shell { height: 100dvh; }
   .bottom-nav { padding-bottom: max(7px, env(safe-area-inset-bottom)); }

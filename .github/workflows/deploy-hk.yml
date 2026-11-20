@@ -27,9 +27,7 @@ jobs:
       - working-directory: frontend
         run: |
           npm ci
-          npm test -- --maxWorkers=2
-          npm run test:mobile
-          npm run build -- --mode public
+          npm run check
       - run: |
           bash -n infra/hk/deploy.sh
           python infra/hk/test_release.py

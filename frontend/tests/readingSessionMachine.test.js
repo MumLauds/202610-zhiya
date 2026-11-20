@@ -125,6 +125,28 @@ test('REQUEST_IN_PROGRESS retries with the same idempotency key', async () => {
   assert.equal(machine.session.revision, 1)
 })
 
+test('branch retries with the same revision and key, then adopts the server path', async () => {
+  const attempts = []
+  const api = fakeApi({
+    async chooseBranch(id, payload) {
+      attempts.push([id, payload])
+      if (attempts.length === 1) throw new ApiError('处理中', {
+        status: 409, code: 'REQUEST_IN_PROGRESS', retryable: true, retryAfter: '0',
+      })
+      return { data: { currentPage: 5, visitedPageNumbers: [1, 5], revision: 2 } }
+    },
+  })
+  const machine = new ReadingSessionMachine({ api, keyFactory: prefix => `${prefix}-same`, sleep: async () => {} })
+  await machine.create({ childProfileId: 101, storyVersionId: 301 })
+  await machine.start()
+  await machine.chooseBranch(17)
+  const request = [401, { branchId: 17, expectedRevision: 1, clientEventId: 'branch-same' }]
+  assert.deepEqual(attempts, [request, request])
+  assert.equal(machine.session.currentPage, 5)
+  assert.equal(machine.session.revision, 2)
+  assert.deepEqual(machine.session.visitedPageNumbers, [1, 5])
+})
+
 test('finish sends USER_FINISH with the current revision and stores report', async () => {
   const api = fakeApi()
   const machine = new ReadingSessionMachine({ api, keyFactory: (prefix) => `${prefix}-fixed` })

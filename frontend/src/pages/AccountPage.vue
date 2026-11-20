@@ -1,4 +1,5 @@
 <script setup>
+import { vModalFocus } from '../components/modalFocus'
 import { computed, reactive, ref, watch } from 'vue'
 import { describeApiError } from '../api/client'
 import { ageLabels } from '../data/preview'
@@ -12,6 +13,7 @@ const props = defineProps({
   profilesLoading: { type: Boolean, default: false },
   activeProfileId: { type: Number, default: null },
   sessions: { type: Array, default: () => [] },
+  moreSessions: Boolean,
   sessionsError: { type: String, default: '' },
   books: { type: Array, default: () => [] },
   totals: { type: Object, required: true },
@@ -25,7 +27,7 @@ const props = defineProps({
   reloadAccountDataAction: { type: Function, default: async () => false },
 })
 
-const emit = defineEmits(['navigate', 'detail', 'select-profile', 'sign-out', 'start', 'reload-sessions'])
+const emit = defineEmits(['navigate', 'detail', 'select-profile', 'sign-out', 'start', 'reload-sessions', 'more-sessions'])
 const editing = ref(false)
 const saving = ref(false)
 const saveError = ref('')
@@ -34,7 +36,22 @@ const deleteBusy = ref(false)
 const deleteError = ref('')
 const emptyProfile = { childProfileId: null, nickname: '', ageBand: 'AGE_4_5', interests: '', preferredMinutes: 15 }
 const form = reactive({ ...emptyProfile })
-const plan = reactive(JSON.parse(localStorage.getItem('zhiya.plan') || '{"minutes":15,"books":1,"weekly":5}'))
+const plan = reactive(loadPlan())
+
+function loadPlan() {
+  const defaults = { minutes: 15, books: 1, weekly: 5 }
+  const limits = { minutes: 60, books: 5, weekly: 7 }
+  try {
+    const saved = JSON.parse(localStorage.getItem('zhiya.plan'))
+    for (const [key, max] of Object.entries(limits)) {
+      const value = saved?.[key]
+      if (Number.isInteger(value) && value >= 1 && value <= max) defaults[key] = value
+    }
+  } catch {
+    // Keep defaults if storage is unavailable or an older value is corrupt.
+  }
+  return defaults
+}
 
 const nav = [
   ['overview', '个人中心首页', '⌂'],
@@ -116,10 +133,6 @@ async function saveProfile() {
 
 function savePlan() {
   localStorage.setItem('zhiya.plan', JSON.stringify(plan))
-}
-
-function saveLocalNickname() {
-  localStorage.setItem('zhiya.guardianNickname', props.auth.nickname)
 }
 
 function sessionTitle(session) {
@@ -266,7 +279,7 @@ async function confirmDelete() {
             <div class="stat-card"><span>读过绘本版本</span><strong>{{ growthValue('read') }}</strong></div>
             <div class="stat-card"><span>累计浏览页面</span><strong>{{ growthValue('pages') }}</strong></div>
           </div>
-          <div v-if="loading" class="reader-loading"><div class="spinner" /></div>
+          <div v-if="loading && !sessions.length" class="reader-loading" role="status" aria-label="正在读取阅读记录"><div class="spinner" /></div>
           <div v-else-if="sessions.length" class="recent-list">
             <article v-for="session in sessions" :key="session.readingSessionId" class="recent-item">
               <div><strong>{{ sessionTitle(session) }}</strong><p>{{ sessionRecordLabel(session) }} · 浏览 {{ countReadPages(session) }} 页 · {{ sessionStatusLabels[session.status] || '状态待确认' }}</p></div>
@@ -278,6 +291,8 @@ async function confirmDelete() {
             </article>
           </div>
           <div v-else-if="totalsLoaded && !sessionsError && !unlistedDeleteIds.length" class="empty-state"><div><h2>还没有真实阅读记录</h2><p>从绘本馆开始一次后端阅读后，这里会自动出现记录。</p><button class="primary" type="button" @click="emit('navigate', 'library')">去绘本馆</button></div></div>
+          <p v-if="moreSessions">统计截至已加载的阅读记录。</p>
+          <button v-if="moreSessions" class="secondary" type="button" :disabled="loading" @click="emit('more-sessions')">{{ loading ? '正在加载…' : '加载更多阅读记录' }}</button>
           <div v-for="id in unlistedDeleteIds" :key="id" class="account-data-error">
             <span>阅读记录 #{{ id }} · 删除结果待确认</span>
             <button class="secondary" type="button" :disabled="deleteBusy" @click="askDeleteSession({ readingSessionId: id })">核对删除结果</button>
@@ -306,14 +321,14 @@ async function confirmDelete() {
         </template>
 
         <template v-else-if="section === 'profile'">
-          <div class="account-title"><div><h1>个人资料</h1><p>当前后端仅保存账号身份；昵称与签名仍保存在本地。</p></div></div>
+          <div class="account-title"><div><h1>个人资料</h1></div></div>
           <section class="account-card profile-grid">
             <div class="profile-card-large"><div class="account-avatar">{{ auth.nickname?.slice(0, 1) || '知' }}</div><h2>{{ auth.nickname }}</h2><p>{{ auth.account || '未登录' }}</p></div>
-            <form class="profile-form" @submit.prevent="saveLocalNickname">
+            <div class="profile-form">
               <label class="form-field"><span>昵称</span><input :value="auth.nickname" readonly></label>
               <label class="form-field"><span>登录账号</span><input :value="auth.account" readonly></label>
               <button class="secondary" type="button" :disabled="auth.status === 'signing-out'" @click="emit('sign-out')">{{ auth.status === 'signing-out' ? '正在退出…' : '退出登录' }}</button>
-            </form>
+            </div>
           </section>
         </template>
 
@@ -334,6 +349,7 @@ async function confirmDelete() {
             <div class="stat-card"><span>浏览页面</span><strong>{{ growthValue('pages') }}</strong></div>
             <div class="stat-card"><span>当前档案</span><strong>{{ activeProfile ? '已选择' : (profiles.length ? '待选择' : '待添加') }}</strong></div>
           </div>
+          <p v-if="moreSessions">统计截至已加载的阅读记录。</p>
           <section class="account-card">
             <div class="account-card-head"><h2>最近阅读</h2><button class="text-button" type="button" @click="emit('navigate', 'account/growth')">查看全部</button></div>
             <div v-if="recentSessions.length" class="recent-list">
@@ -346,7 +362,7 @@ async function confirmDelete() {
     </div>
 
     <div v-if="deleteTarget" class="modal-backdrop" @click.self="!deleteBusy && (deleteTarget = null)">
-      <section class="modal-card confirm-card" role="dialog" aria-modal="true" aria-labelledby="delete-account-item-title">
+      <section v-modal-focus="() => { if (!deleteBusy) deleteTarget = null }" class="modal-card confirm-card" role="dialog" aria-modal="true" aria-labelledby="delete-account-item-title">
         <div class="modal-head">
           <div>
             <h2 id="delete-account-item-title">{{ deleteTarget.needsCheck ? '核对删除结果' : (deleteTarget.type === 'profile' ? '确认删除儿童档案？' : '确认删除阅读记录？') }}</h2>

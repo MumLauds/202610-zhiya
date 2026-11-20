@@ -16,6 +16,7 @@ const story = {
   branches: [],
 }
 const json = (data, status = 200) => new Response(JSON.stringify({ data }), { status })
+const child = { childProfileId: 13, nickname: '安安', ageBand: 'AGE_4_5', interests: ['动物', '自然'] }
 let wrapper
 
 function login(cookie) {
@@ -32,12 +33,38 @@ function mountApp(handler, props = {}) {
 
 afterEach(() => {
   wrapper?.unmount()
+  window.history.replaceState(null, '', location.pathname)
   document.cookie = 'zhiya_csrf=; Max-Age=0; path=/'
   localStorage.clear()
   vi.unstubAllGlobals()
 })
 
 describe('mobile live mode', () => {
+  it('restores the book and reading snapshot from their addresses without creating a session', async () => {
+    window.history.replaceState(null, '', '#book/700')
+    const snapshot = { session: session(73, 700), events: [], report: null }
+    const fetch = mountApp(async path => {
+      if (path === '/api/v1/story-versions/700') return json(story)
+      if (path === '/api/v1/reading-sessions/73') return json(snapshot)
+      if (path === '/api/v1/child-profiles') return json({ items: [child] })
+      return json({ items: [] })
+    }, { publicSite: true })
+    await flushPromises()
+    expect(wrapper.get('.profile-card h1').text()).toBe(story.title)
+
+    window.history.pushState(null, '', '#reader/73')
+    window.dispatchEvent(new Event('popstate'))
+    await flushPromises()
+    expect(wrapper.getComponent(ReaderView).props('initialSnapshot')).toEqual(snapshot)
+    expect(fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
+
+    window.history.pushState(null, '', '#library')
+    window.dispatchEvent(new Event('popstate'))
+    await flushPromises()
+    expect(wrapper.findComponent(ReaderView).exists()).toBe(false)
+    expect(wrapper.get('input[type=search]').exists()).toBe(true)
+  })
+
   it('shows the exact API age range and author on the public mobile card', async () => {
     mountApp(async path => {
       if (path.endsWith('/child-profiles')) return json({ items: [] })
@@ -70,7 +97,7 @@ describe('mobile live mode', () => {
     expect(wrapper.getComponent(ReaderView).props()).toMatchObject({ childProfileId: 25, storyVersionId: 700 })
   })
 
-  it('clears the previous family selection and offers profile creation for an empty account', async () => {
+  it('clears the previous family selection on cross-tab login and offers profile creation for an empty account', async () => {
     login('guardian-a')
     mountApp(async path => {
       if (path.endsWith('/child-profiles')) return json({ items: document.cookie.includes('guardian-a')
@@ -79,11 +106,29 @@ describe('mobile live mode', () => {
     }, { publicSite: true })
     await flushPromises()
     expect(wrapper.get('select').element.value).toBe('42')
-    login('guardian-b')
+    document.cookie = 'zhiya_csrf=guardian-b; path=/'
+    window.dispatchEvent(new StorageEvent('storage', { key: 'zhiya.account', storageArea: localStorage }))
     await flushPromises()
     expect(wrapper.find('select').exists()).toBe(false)
     expect(wrapper.get('a[href="/#account/children"]').text()).toContain('创建')
     expect(wrapper.get('.library-phone-card').element.disabled).toBe(true)
+  })
+
+  it('shows the selected server profile and links to the working workshop in local live mode', async () => {
+    mountApp(async path => path.endsWith('/child-profiles')
+      ? json({ items: [child, { childProfileId: 25, nickname: '乐乐', ageBand: 'AGE_5_6', interests: ['音乐'] }] })
+      : json({ items: [story] }))
+    await wrapper.get('.mode-mini').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('input[type="number"]').exists()).toBe(false)
+    await wrapper.get('.avatar-button').trigger('click')
+    expect(wrapper.find('.profile-card').exists()).toBe(false)
+    await wrapper.get('select').setValue('25')
+    expect(wrapper.get('.profile-card').text()).toContain('乐乐')
+    expect(wrapper.get('.profile-card').text()).toContain('5–6 岁 · 音乐')
+    await wrapper.findAll('.bottom-nav button')[2].trigger('click')
+    expect(wrapper.get('a[href="/#workshop"]').text()).toBe('前往创作工坊')
+    expect(wrapper.find('input').exists()).toBe(false)
   })
 
   it('restores the version bound by API-013 and keeps real pages and media', async () => {
@@ -91,13 +136,13 @@ describe('mobile live mode', () => {
     const fetch = mountApp(async (path) => {
       if (path === '/api/v1/reading-sessions/73') return json(snapshot)
       if (path === '/api/v1/story-versions/700') return json(story)
+      if (path.includes('/reading-sessions?')) return json({ items: [session(73, 91)] })
       return json({ items: [] })
     })
     await wrapper.get('.mode-mini').trigger('click')
-    const inputs = wrapper.findAll('input')
-    await inputs[1].setValue('91')
-    await inputs[2].setValue('73')
-    await wrapper.get('form').trigger('submit')
+    await wrapper.findAll('.bottom-nav button')[3].trigger('click')
+    await flushPromises()
+    await wrapper.get('.record-card button').trigger('click')
     await flushPromises()
 
     const reader = wrapper.getComponent(ReaderView)
@@ -121,12 +166,13 @@ describe('mobile live mode', () => {
 
   it('reads a real catalog book and surfaces a detail failure without opening the reader', async () => {
     let available = false
-    const fetch = mountApp(async (path) => path.startsWith('/api/v1/storybooks?')
-      ? json({ items: [story] })
-      : available ? json(story) : json(null, 404))
+    const fetch = mountApp(async (path) => {
+      if (path.endsWith('/child-profiles')) return json({ items: [child] })
+      if (path.startsWith('/api/v1/storybooks?')) return json({ items: [story] })
+      return available ? json(story) : json(null, 404)
+    })
     await wrapper.get('.mode-mini').trigger('click')
-    await wrapper.findAll('input')[2].setValue('73')
-    await wrapper.get('.setup-form button[type="button"]').trigger('click')
+    await wrapper.findAll('.bottom-nav button')[1].trigger('click')
     await flushPromises()
     await wrapper.get('.library-phone-card').trigger('click')
     await flushPromises()
@@ -142,34 +188,35 @@ describe('mobile live mode', () => {
     expect(fetch.mock.calls.some(([path]) => path === '/api/v1/reading-sessions/73')).toBe(false)
   })
 
-  it('paginates the current account history and drops delayed responses after account changes', async () => {
+  it('paginates history and notices a cookie change when a request settles without an event', async () => {
     login('guardian-a')
     localStorage.setItem('zhiya_vue_reading_records', JSON.stringify([{ title: '旧账户混合记录' }]))
     let replyPageTwo
     const fetch = mountApp(async (path) => {
       const account = document.cookie
+      if (path.endsWith('/child-profiles')) return json({ items: [child] })
       if (path.includes('storybooks')) return json({ items: [story] })
       if (path.includes('page=2')) return new Promise((resolve) => { replyPageTwo = resolve })
       return json({ items: account.includes('guardian-a')
         ? Array.from({ length: 20 }, (_, index) => session(100 + index, story.storyVersionId))
-        : [session(888, story.storyVersionId)] })
+        : [{ ...session(888, story.storyVersionId), visitedPageNumbers: [4, 9] }] })
     })
     await wrapper.get('.mode-mini').trigger('click')
     await wrapper.findAll('.bottom-nav button')[3].trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('打开会话 100')
+    expect(wrapper.findAll('.record-card')).toHaveLength(20)
+    expect(wrapper.get('.record-card button').text()).toBe('继续阅读')
     await wrapper.findAll('button').find((button) => button.text() === '加载更多记录').trigger('click')
     expect(fetch.mock.calls.some(([path]) => path === '/api/v1/reading-sessions?page=2&pageSize=20')).toBe(true)
 
-    login('guardian-b')
-    await flushPromises()
+    document.cookie = 'zhiya_csrf=guardian-b; path=/'
     replyPageTwo(json({ items: [session(999, story.storyVersionId)] }))
     await flushPromises()
-    expect(wrapper.text()).toContain('打开会话 888')
-    expect(wrapper.text()).not.toMatch(/打开会话 (100|999)/)
+    expect(wrapper.findAll('.record-card')).toHaveLength(1)
+    expect(wrapper.get('.record-card').text()).toContain('2 页 · 进行中')
     await wrapper.get('.mode-mini').trigger('click')
     expect(wrapper.text()).not.toContain('旧账户混合记录')
-    expect(wrapper.text()).not.toContain('打开会话 888')
+    expect(wrapper.find('.record-card').exists()).toBe(false)
   })
 
   it('refreshes unfinished continuation progress and excludes inherited pages', async () => {

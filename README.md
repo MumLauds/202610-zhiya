@@ -55,14 +55,12 @@ npm run dev
 
 ## 测试与构建
 
-完成依赖安装后，在仓库根目录运行以下检查。公开版构建产物位于 `frontend/dist/`，包含主站和移动端两个入口。
+完成依赖安装后，在仓库根目录运行以下检查。前端检查依次运行 Vitest、移动端 Node.js 测试和公开站点构建。只需重新打包时可运行 `npm --prefix frontend run build:public`。公开版产物位于 `frontend/dist/`，包含主站和移动端入口，两端书架均读取后端。
 
 ```powershell
 .\.venv\Scripts\python.exe database/init_db.py --check
 .\.venv\Scripts\python.exe -m pytest -q -c backend/pytest.ini backend/tests database/tests
-npm --prefix frontend test -- --maxWorkers=2
-npm --prefix frontend run test:mobile
-npm --prefix frontend run build -- --mode public
+npm --prefix frontend run check
 ```
 
 课程演示中的手机实测、业务流程验收及数据库冷恢复各有单独记录。[课程候选版演示与验收步骤](docs/testing/p6/课程候选版演示.md) · [G15 恢复预演](docs/testing/g15/local-restore/README.md)

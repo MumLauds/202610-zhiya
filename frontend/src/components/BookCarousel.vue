@@ -104,13 +104,14 @@ function move(step) {
           }"
           :style="styleFor(index)"
           type="button"
+          :inert="Math.abs(offsetFor(index)) > 2 || undefined"
           :aria-label="`选择《${book.title}》`"
           :aria-current="book.id === selectedId ? 'true' : undefined"
           @click="choose(book)"
         >
           <span class="wheel-book-shell">
-            <img class="book-shell" src="/assets/figma-prototype/book-shell.png" alt="">
-            <span class="wheel-cover"><img v-if="Math.abs(offsetFor(index)) <= 2" :src="book.cover" :alt="`${book.title}封面`"></span>
+            <img class="book-shell" src="/assets/figma-prototype/book-shell.webp" alt="">
+            <span class="wheel-cover"><img v-if="Math.abs(offsetFor(index)) <= 2" :loading="offsetFor(index) === 0 ? 'eager' : 'lazy'" :src="book.cover" :alt="`${book.title}封面`"></span>
           </span>
         </button>
       </div>

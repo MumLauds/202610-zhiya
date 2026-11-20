@@ -134,7 +134,9 @@ it.each([1001, 88])('keeps online version %s while retrying a failed identity ch
   expect(createReadingSession).not.toHaveBeenCalled()
   await clickRoute(button('开始阅读'))
 
-  expect(createReadingSession.mock.calls).toEqual([[{ storyVersionId, childProfileId: 7 }]])
+  expect(createReadingSession).toHaveBeenCalledExactlyOnceWith({
+    storyVersionId, childProfileId: 7, clientRequestId: expect.stringMatching(/^create-reading-.+$/),
+  })
   expect(window.location.hash).toBe('#reader/55')
   expect(wrapper.get('.reader-page h1').text()).toBe(onlineBook.title)
 })
@@ -170,7 +172,9 @@ it('legacy detail keeps the online book through identity recovery and reading', 
   expect(wrapper.get('.detail-card h1').text()).toBe(onlineBook.title)
   await clickRoute(button('开始阅读'))
 
-  expect(createReadingSession.mock.calls).toEqual([[{ storyVersionId: 1001, childProfileId: 7 }]])
+  expect(createReadingSession).toHaveBeenCalledExactlyOnceWith({
+    storyVersionId: 1001, childProfileId: 7, clientRequestId: expect.stringMatching(/^create-reading-.+$/),
+  })
   expect(window.location.hash).toBe('#reader/55')
   expect(wrapper.get('.reader-page h1').text()).toBe(onlineBook.title)
 })
@@ -223,7 +227,8 @@ it.each([200, 404])('legacy detail preserves its online source when identity rec
   if (status === 404) {
     expect(wrapper.find('.detail-card').exists()).toBe(false)
     expect(wrapper.get('.detail-page .empty-state h2').text()).toBe('绘本暂不可用')
-    expect(wrapper.get('.toast').text()).toBe('资源不可用')
+    expect(wrapper.get('.toast').text()).toContain('资源不可用')
+    expect(wrapper.get('.toast button[aria-label="关闭通知"]').exists()).toBe(true)
     expect(button('开始阅读')).toBeUndefined()
   } else {
     expect(wrapper.get('.detail-card h1').text()).toBe(onlineBook.title)

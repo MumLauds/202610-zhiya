@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:public": "vite build --mode public",
     "build:html-review": "vite build --config vite.html.config.js && node scripts/inline-html-review.cjs",
+    "check": "npm test -- --maxWorkers=2 && npm run test:mobile && npm run build:public",
     "test": "vitest run",
     "test:mobile": "node --test tests/readingSessionMachine.test.js tests/mobileWriteRecovery.test.js"
   },
