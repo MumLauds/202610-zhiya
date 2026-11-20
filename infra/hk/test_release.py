@@ -2,6 +2,7 @@ import io
 import json
 import runpy
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -77,20 +78,41 @@ class ReleaseTests(unittest.TestCase):
                     create table accounts(id, created_at);
                     create table child_profiles(id, guardian_id, created_at, nickname);
                     create table reading_sessions(id, profile_id, version_id, created_at);
-                    create table reading_reports(session_id);
+                    create table interaction_events(id, session_id, version_id, page_no, event_type, created_at,
+                                                    input_text, output_text, feedback, response_json);
+                    create table reading_reports(session_id, status, summary, activities_json);
                     insert into accounts values (1,10);
                     insert into child_profiles values (2,1,20,'first');
                     insert into reading_sessions values (3,2,4,30);
-                    insert into reading_reports values (3);
+                    insert into interaction_events values (5,3,4,1,'ASK',31,'question','answer',NULL,'{}');
+                    insert into reading_reports values (3,'READY','original','[]'), (6,'PENDING',NULL,NULL);
                 """)
                 saved = create_backup(live)
-                db.executescript("insert into accounts values (9,99); update child_profiles set nickname='second';")
+                db.executescript("""
+                    insert into accounts values (9,99);
+                    update child_profiles set nickname='second';
+                    update reading_reports set status='READY', summary='new' where session_id=6;
+                """)
                 verify_history(live, saved)
-                for table in ("accounts", "child_profiles", "reading_sessions", "reading_reports"):
+                for table in ("accounts", "child_profiles", "reading_sessions", "interaction_events", "reading_reports"):
                     with self.subTest(table=table):
                         db.execute(f"delete from {table}")
                         db.commit()
                         with self.assertRaisesRegex(RuntimeError, table):
+                            verify_history(live, saved)
+                        with closing(sqlite3.connect(saved)) as restore:
+                            restore.backup(db)
+                for change, expected in [
+                    ("update interaction_events set output_text='changed'", "interaction_events"),
+                    ("update interaction_events set session_id=7", "interaction_events"),
+                    ("update reading_reports set status='FAILED',summary=NULL where session_id=3", "Completed"),
+                    ("update reading_reports set summary='changed' where session_id=3", "Completed"),
+                    ("update reading_reports set activities_json=NULL where session_id=3", "Completed"),
+                ]:
+                    with self.subTest(change=change):
+                        db.execute(change)
+                        db.commit()
+                        with self.assertRaisesRegex(RuntimeError, expected):
                             verify_history(live, saved)
                         with closing(sqlite3.connect(saved)) as restore:
                             restore.backup(db)
@@ -102,10 +124,29 @@ class ReleaseTests(unittest.TestCase):
                                      (f"false {web} {sha}", False), (f"true {web} {'b' * 40}", False)]:
             with self.subTest(frontend_state=frontend_state), tempfile.TemporaryDirectory() as tmp:
                 receipt = Path(tmp) / "current.json"
-                receipt.write_text(json.dumps(dict(revision=sha, backend=api, web=web)))
+                private = Path(tmp) / "last-success.json"
+                private.write_text(json.dumps(dict(revision=sha, backend=api, web=web)))
+                receipt.write_bytes(private.read_bytes())
                 with patch("receipt.subprocess.check_output", side_effect=[f"true {api} {sha}", frontend_state]):
-                    check_receipt(receipt, "test")
+                    check_receipt(receipt, "test", private)
                 self.assertEqual(receipt.exists(), keep)
+
+    def test_inspect_outage_then_recovery_republishes_only_matching_receipt(self):
+        sha, api, web = "a" * 40, "sha256:" + "1" * 64, "sha256:" + "2" * 64
+        with tempfile.TemporaryDirectory() as tmp:
+            public = Path(tmp) / "current.json"
+            private = Path(tmp) / "last-success.json"
+            private.write_text(json.dumps(dict(revision=sha, backend=api, web=web, run="12-3")))
+            public.write_bytes(private.read_bytes())
+            for states, visible in [
+                ([subprocess.CalledProcessError(1, "docker inspect")], False),
+                ([f"true {api} {sha}", f"true {api} {sha}"], False),
+                ([f"true {api} {sha}", f"true {web} {sha}"], True),
+            ]:
+                with patch("receipt.subprocess.check_output", side_effect=states):
+                    check_receipt(public, "test", private)
+                self.assertEqual(public.exists(), visible)
+            self.assertEqual(public.read_bytes(), private.read_bytes())
 
 
 if __name__ == "__main__":

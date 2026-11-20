@@ -37,10 +37,25 @@ docker() {
         *"python - create")
             echo backup >> "$fixture/backups"
             if [[ $scenario == failure ]]; then return 1; fi
-            touch "$fixture/cancelled"
+            if [[ $scenario == cancel ]]; then touch "$fixture/cancelled"; fi
             echo /fixture/backup ;;
+        "compose "*) echo switch >> "$fixture/switches" ;;
+        *"cat /srv/www/"*) echo html ;;
+        *"python - verify /fixture/backup") echo verify >> "$fixture/verifications"; return 1 ;;
         *) echo "Unexpected docker operation: $*" >> "$fixture/unexpected"; return 1 ;;
     esac
+}
+curl() {
+    case "$*" in
+        *html*) echo html ;;
+        *health*) echo '{"data":{"status":"ok"}}' ;;
+        *storybooks*|*story-versions*) touch "$release/headers"; printf 401 ;;
+        *) return 1 ;;
+    esac
+}
+jq() {
+    [[ $* == *'.data.status'* ]] || return 1
+    grep -q '"ok"'
 }
 # Each invocation gets the same errexit semantics as the systemd service.
 invoke() { ( source "$fixture/deploy.sh" ); }
@@ -58,3 +73,25 @@ run_id=12-1
 invoke
 [[ $(wc -l < "$fixture/backups") -eq 2 ]]
 [[ ! -e "$fixture/pending" && ! -e "$fixture/public/current.json" && ! -e "$fixture/unexpected" ]]
+
+# A failed DB check rolls back the images, and the next run cannot replace
+# the baseline even if Docker reports the previous application as healthy.
+rm "$fixture/cancelled"
+scenario=history
+run_id=13-1
+set +e
+invoke
+failed=$?
+set -e
+[[ $failed != 0 && -f "$fixture/history-hold" && ! -e "$fixture/pending" ]]
+[[ $(wc -l < "$fixture/switches") -eq 2 && $(wc -l < "$fixture/verifications") -eq 2 ]]
+read -r held_sha _ _ held_run < "$fixture/history-hold"
+[[ $held_sha == "$sha" && $held_run == 13-1 ]]
+[[ $(head -n 1 "$release/attempt-$held_run") == /fixture/backup ]]
+run_id=14-1
+set +e
+invoke
+failed=$?
+set -e
+[[ $failed != 0 && ! -e "$release/attempt-$run_id" && ! -e "$fixture/public/current.json" ]]
+[[ $(wc -l < "$fixture/backups") -eq 3 && ! -e "$fixture/unexpected" ]]

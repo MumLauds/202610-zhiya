@@ -32,6 +32,8 @@ def verify_history(live, saved):
         "accounts": "id, created_at",
         "child_profiles": "id, guardian_id, created_at",
         "reading_sessions": "id, profile_id, version_id, created_at",
+        "interaction_events": ("id, session_id, version_id, page_no, event_type, created_at, "
+                               "input_text, output_text, feedback, response_json"),
         "reading_reports": "session_id",
     }
     with closing(read_only(live)) as db:
@@ -43,6 +45,13 @@ def verify_history(live, saved):
             ).fetchone()
             if missing is not None:
                 raise RuntimeError(f"Pre-release record missing or reassigned in {table}")
+        if db.execute("""
+            SELECT session_id, summary, activities_json FROM prior.reading_reports WHERE status = 'READY'
+            EXCEPT
+            SELECT session_id, summary, activities_json FROM main.reading_reports WHERE status = 'READY'
+            LIMIT 1
+        """).fetchone() is not None:
+            raise RuntimeError("Completed reading report changed after cutover")
         if db.execute("pragma main.foreign_key_check").fetchone():
             raise RuntimeError("Foreign key check failed after cutover")
 

@@ -16,6 +16,7 @@ web="$project-web-1"
 install -d -m 0755 public
 mkdir -p releases
 receipt=public/current.json
+last_success=last-success.json
 image_id() { docker inspect --format '{{.Image}}' "$1"; }
 db_volume() { docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/zhiya"}}{{.Name}}{{end}}{{end}}' "$backend"; }
 db_inode() { docker exec "$backend" stat -c '%i' /var/lib/zhiya/zhiya.sqlite3; }
@@ -32,20 +33,44 @@ probe() {
 recover() {
     # pending is written atomically before either live container is replaced.
     read -r target old_api old_web pending_run < pending
-    if [[ -s "$receipt" ]] && jq -e --arg sha "$target" --arg run "$pending_run" \
-        '.revision == $sha and .run == $run' "$receipt" >/dev/null; then
+    if [[ -s "$last_success" ]] && jq -e --arg sha "$target" --arg run "$pending_run" \
+        '.revision == $sha and .run == $run' "$last_success" >/dev/null; then
         rm pending
         return
     fi
+    rm -f "$receipt" || return 1
     echo "Restoring images recorded before $target" >&2
     switch_images "$old_api" "$old_web" || return 1
     [[ $(image_id "$backend") == "$old_api" && $(image_id "$web") == "$old_web" ]] || return 1
     [[ $(db_volume) == "${project}_sqlite-data" ]] || return 1
     probe /api/v1/health -f | jq -e '.data.status == "ok"' >/dev/null || return 1
+    # A crash may have interrupted the candidate before its history check.
+    # Always use the original baseline when completing an interrupted switch.
+    local prior_backup
+    read -r prior_backup < "releases/$target/attempt-$pending_run" || return 1
+    if ! docker exec -i "$backend" python - verify "$prior_backup" < backup.py; then
+        mv -f pending history-hold || return 1
+        echo "History verification failed after rollback; see history-hold" >&2
+        return 1
+    fi
     rm pending
 }
-python3 receipt.py "$receipt" "$project"
+# Upgrade installations that published their verified receipt before this
+# private commit record existed. Only adopt an identical release manifest.
+if [[ ! -e "$last_success" && -s "$receipt" ]]; then
+    legacy_sha=$(jq -er '.revision' "$receipt") || legacy_sha=''
+    if [[ $legacy_sha =~ ^[0-9a-f]{40}$ ]] && cmp -s "$receipt" "releases/$legacy_sha/current.json"; then
+        install -m 0600 "$receipt" last-success.tmp
+        mv last-success.tmp "$last_success"
+    fi
+fi
 if [[ -f pending ]]; then recover; fi
+if [[ -e history-hold ]]; then
+    rm -f "$receipt"
+    echo "Automatic deployment paused; reconcile original backup recorded by history-hold" >&2
+    exit 1
+fi
+python3 receipt.py "$receipt" "$project" "$last_success"
 sha=$(main_sha)
 [[ $sha =~ ^[0-9a-f]{40}$ ]]
 run=$(python3 gate.py "$sha")
@@ -96,7 +121,8 @@ current_run=$(python3 gate.py "$sha")
 if [[ $current_run != "$run" ]]; then echo "Run $run no longer authorizes release"; exit 0; fi
 printf '%s %s %s %s\n' "$sha" "$old_api" "$old_web" "$run" > pending.tmp
 mv pending.tmp pending
-trap 'rc=$?; if [[ -f pending ]]; then recover || echo "Recovery incomplete; see pending" >&2; fi; exit "$rc"' EXIT
+trap 'rc=$?; if [[ -f pending ]]; then recover || echo "Review recovery state and service journal" >&2; fi; exit "$rc"' EXIT
+rm -f "$receipt"
 switch_images "${images[@]}"
 [[ $(db_volume) == "${project}_sqlite-data" && $(db_inode) == "$inode" ]]
 [[ $(image_id "$backend") == "${images[0]}" && $(image_id "$web") == "${images[1]}" ]]
@@ -109,11 +135,17 @@ for path in /api/v1/storybooks /api/v1/admin/story-versions; do
     [[ $(probe "$path" -D "$release/headers" -o /dev/null -w '%{http_code}') == 401 ]]
     if grep -qi '^www-authenticate: *Basic' "$release/headers"; then exit 1; fi
 done
-docker exec -i "$backend" python - verify "$backup" < backup.py
+if ! docker exec -i "$backend" python - verify "$backup" < backup.py; then
+    cp pending history-hold.tmp
+    mv history-hold.tmp history-hold
+    exit 1
+fi
 jq -n --arg revision "$sha" --arg backend "${images[0]}" --arg web "${images[1]}" \
     --arg previous "$previous" --arg run "$run" '{ $revision, $backend, $web, $previous, $run }' > "$release/current.json"
-install -m 0644 "$release/current.json" public/.current.tmp
-mv -f public/.current.tmp "$receipt"
+install -m 0600 "$release/current.json" last-success.tmp
+mv -f last-success.tmp "$last_success"
 rm pending
 trap - EXIT
+python3 receipt.py "$receipt" "$project" "$last_success"
+test -s "$receipt"
 echo "Published $sha"
