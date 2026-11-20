@@ -53,6 +53,7 @@ const answerAudio = useAudioController((url) => {
   }
 })
 let pageAudioExpiryTimer
+let pageAudioRequest = null
 let answerAudioExpiresAt = NaN
 let answerAudioRequest = null
 let requestGeneration = 0
@@ -97,6 +98,7 @@ watch(() => session.state.session?.currentPage, (page) => {
 })
 onBeforeUnmount(() => {
   active = false
+  cancelPageAudioRequest()
   stopAnswerAudio()
   clearTimeout(pageAudioExpiryTimer)
   pageRequestGeneration += 1
@@ -131,10 +133,16 @@ function stopAnswerAudio() {
   answerAudio.stop()
 }
 
+function cancelPageAudioRequest() {
+  pageAudioRequest?.abort()
+  pageAudioRequest = null
+  pageAudioLoading.value = false
+}
+
 function resetAudio() {
   pageRequestGeneration += 1
   clearTimeout(pageAudioExpiryTimer)
-  pageAudioLoading.value = false
+  cancelPageAudioRequest()
   stopAnswerAudio()
   answerAudioUrl.value = ''
   answerAudioNotice.value = ''
@@ -247,6 +255,7 @@ async function openAnswerDialog() {
     if (!result) return
   }
   if (questionReady.value) {
+    cancelPageAudioRequest()
     pagePlayer.value?.stop()
     stopAnswerAudio()
     showAnswerDialog.value = true
@@ -268,17 +277,19 @@ async function handleAnswerConfirmed({ text }) {
 }
 
 async function loadPageAudio() {
-  if (!session.state.session || pageAudioLoading.value) return
+  if (!session.state.session || pageAudioLoading.value || showAnswerDialog.value) return
   const page = currentPageNumber.value
-  const generation = pageRequestGeneration
+  const controller = new AbortController()
+  pageAudioRequest = controller
   pageAudioLoading.value = true
   try {
     const response = await props.voiceApi.synthesizePage({
       readingSessionId: session.state.session.readingSessionId,
       pageNumber: page,
       revision: revision.value,
+      signal: controller.signal,
     })
-    if (generation !== pageRequestGeneration || page !== currentPageNumber.value) return
+    if (controller.signal.aborted || page !== currentPageNumber.value) return
     const { audioUrl, expiresAt } = response.data
     pageAudioSrc.value = audioUrl
     answerAudioNotice.value = ''
@@ -289,11 +300,14 @@ async function loadPageAudio() {
       else pageAudioExpiryTimer = setTimeout(() => discardPageAudio(audioUrl), remaining)
     }
   } catch (error) {
-    if (generation === pageRequestGeneration && page === currentPageNumber.value) {
+    if (!controller.signal.aborted && page === currentPageNumber.value) {
       answerAudioNotice.value = error?.message ?? '页面朗读音频准备失败'
     }
   } finally {
-    if (generation === pageRequestGeneration) pageAudioLoading.value = false
+    if (pageAudioRequest === controller) {
+      pageAudioRequest = null
+      pageAudioLoading.value = false
+    }
   }
 }
 
@@ -408,7 +422,7 @@ function exitReading() {
               v-if="mode === 'live' && !reviewing && !pageAudioSrc"
               class="button button-ghost button-small page-audio-request"
               type="button"
-              :disabled="pageAudioLoading"
+              :disabled="pageAudioLoading || showAnswerDialog"
               @click="loadPageAudio"
             >
               {{ pageAudioLoading ? '音频准备中…' : '准备本页朗读音频' }}

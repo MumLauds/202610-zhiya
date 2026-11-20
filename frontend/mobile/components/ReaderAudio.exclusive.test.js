@@ -1,5 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../api/client'
+import PageAudioPlayer from './PageAudioPlayer.vue'
 import ReaderView from './ReaderView.vue'
 
 const book = {
@@ -109,7 +111,13 @@ function stubRecorder() {
       start()
     }
 
-    stop() { this.state = 'inactive' }
+    stop() {
+      this.state = 'inactive'
+      const data = new Event('dataavailable')
+      data.data = new Blob(['audio'], { type: 'audio/webm' })
+      this.dispatchEvent(data)
+      this.dispatchEvent(new Event('stop'))
+    }
   })
   return { permission, getUserMedia, start }
 }
@@ -194,5 +202,68 @@ describe('Reader audio playback and recording exclusion', () => {
 
     expect(playingSources(media)).toEqual([])
     expect(play).not.toHaveBeenCalled()
+  })
+})
+
+describe('Reader voice request lock recovery', () => {
+  it('aborts pending page synthesis on opening the answer dialog and ignores its late result', async () => {
+    const synthesis = deferred()
+    const synthesizePage = vi.fn().mockReturnValue(synthesis.promise)
+    await openReader({ synthesizePage })
+    await clickButton('准备本页朗读音频')
+    expect(synthesizePage).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      readingSessionId: 42,
+      pageNumber: 1,
+      revision: 2,
+      signal: expect.any(AbortSignal),
+    }))
+    const [{ signal }] = synthesizePage.mock.calls[0]
+    expect(signal.aborted).toBe(false)
+
+    await clickButton('孩子回答')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+    expect(signal.aborted).toBe(true)
+
+    synthesis.resolve({ data: { audioUrl: '/late.mp3' } })
+    await flushPromises()
+    expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('')
+    await wrapper.get('[role="dialog"] [aria-label="关闭"]').trigger('click')
+    expect(getButton('准备本页朗读音频')).toBeDefined()
+    expect(synthesizePage).toHaveBeenCalledOnce()
+  })
+
+  it('retries the same recording after a voice lock conflict', async () => {
+    const { permission, getUserMedia } = stubRecorder()
+    permission.resolve({ getTracks: () => [] })
+    vi.stubGlobal('URL', class extends URL {
+      static createObjectURL() { return 'blob:voice-test' }
+      static revokeObjectURL() {}
+    })
+    const conflict = new ApiError('该会话正在处理语音，请稍后再试', {
+      code: 'VOICE_REQUEST_IN_PROGRESS',
+      status: 409,
+    })
+    const transcribe = vi.fn()
+      .mockRejectedValueOnce(conflict)
+      .mockResolvedValueOnce({ data: { text: '小兔子', reliable: true } })
+    await openReader({ transcribe })
+
+    await clickButton('孩子回答')
+    await clickButton('开始录音')
+    await wrapper.get('.record-button.is-recording').trigger('click')
+    await flushPromises()
+    await clickButton('提交转写')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('请稍后再次提交这段录音')
+    expect(transcribe).toHaveBeenCalledOnce()
+    const [firstRequest] = transcribe.mock.calls[0]
+    expect(firstRequest.file.size).toBeGreaterThan(0)
+
+    await clickButton('提交转写')
+    expect(getUserMedia).toHaveBeenCalledOnce()
+    expect(transcribe).toHaveBeenCalledTimes(2)
+    const [secondRequest] = transcribe.mock.calls[1]
+    expect(secondRequest.file).toBe(firstRequest.file)
+    expect(secondRequest).toMatchObject({ readingSessionId: 42, pageNumber: 1, revision: 2 })
+    expect(wrapper.get('[role="dialog"] textarea').element.value).toBe('小兔子')
   })
 })

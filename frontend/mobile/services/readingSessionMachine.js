@@ -242,9 +242,10 @@ export class ReadingSessionMachine {
   async _runMutation(operation) {
     const { request, apply, result = false, signal } = operation
     if (!this.session) throw new Error('尚无阅读会话')
-    const initialReply = operation.feedback === 'SKIPPED' ? this.activeMutation?.initialReply : null
-    if (this.pending && !initialReply) throw new Error('已有请求正在处理')
+    const supersedesInitial = operation.feedback === 'SKIPPED' && this.activeMutation?.initialReply
+    if (this.pending && !supersedesInitial) throw new Error('已有请求正在处理')
     if (this.syncRequired) throw new Error('请先重新核对会话进度')
+    if (supersedesInitial) operation.supersededInitial = this.activeMutation
     this.activeMutation = operation
     this.pending = true
     this._emit()
@@ -268,30 +269,27 @@ export class ReadingSessionMachine {
             await this.sleep(retryDelay(error))
             continue
           }
-          if (error instanceof ApiError && (RECOVERABLE_CODES.has(error.code) || error.code === 'REQUEST_IN_PROGRESS')) {
-            this.syncRequired = true
-            // A transport failure can precede the server commit. Retain the same event key
-            // if the first read still shows the original revision.
-            const transportUnconfirmed = error.code === 'REQUEST_OUTCOME_UNKNOWN' && !error.payload?.error?.code
-            if (transportUnconfirmed || error.code === 'REQUEST_IN_PROGRESS') {
-              this.unconfirmed = {
-                operation, revision: this.session.revision,
-                retryAt: Date.now() + (error.retryAfter ? retryDelay(error) : 0),
-              }
+          const recoverable = error instanceof ApiError && (RECOVERABLE_CODES.has(error.code) || error.code === 'REQUEST_IN_PROGRESS')
+          const initial = operation.supersededInitial
+          if (!recoverable && !initial) throw error
+          this.syncRequired = true
+          this.unconfirmed = pendingReceipt(operation, this.session.revision, error)
+          if (initial && !this.unconfirmed) {
+            // A rejected skip leaves INITIAL free to commit, even after its connection closes.
+            try {
+              await initial.initialReply
+            } catch (initialError) {
+              this.unconfirmed = pendingReceipt(initial, this.session.revision, initialError)
             }
-            const recovered = await this.restore(this.session.readingSessionId, { signal })
+          }
+          const recovered = await this.restore(this.session.readingSessionId, { signal })
+          if (recoverable) {
             throw new RecoverableSessionError(
               error.code === 'REQUEST_OUTCOME_UNKNOWN'
                 ? '请求结果未知，已重新读取会话状态。'
                 : '阅读进度已变化，已恢复为服务端最新状态。',
               { code: error.code, cause: error, recoveredSession: recovered.session },
             )
-          }
-          if (initialReply) {
-            // A rejected skip leaves INITIAL free to commit. Read after both requests have settled.
-            this.syncRequired = true
-            await Promise.allSettled([initialReply])
-            await this.restore(this.session.readingSessionId, { signal })
           }
           throw error
         }
@@ -306,6 +304,13 @@ export class ReadingSessionMachine {
       }
     }
   }
+}
+
+function pendingReceipt(operation, revision, error) {
+  if (!(error instanceof ApiError)) return null
+  const transportUnconfirmed = error.code === 'REQUEST_OUTCOME_UNKNOWN' && !error.payload?.error?.code
+  if (!transportUnconfirmed && error.code !== 'REQUEST_IN_PROGRESS') return null
+  return { operation, revision, retryAt: Date.now() + (error.retryAfter ? retryDelay(error) : 0) }
 }
 
 function appendUnique(list, value) {

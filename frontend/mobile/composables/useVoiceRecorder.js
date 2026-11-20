@@ -111,8 +111,8 @@ export function useVoiceRecorder() {
     return { text, reliable }
   }
 
-  function markError(message) {
-    state.value = 'error'
+  function markError(message, { keepRecording = false } = {}) {
+    state.value = keepRecording && blob.value ? 'recorded' : 'error'
     error.value = message || '转写失败，请重录或手动输入'
   }
 

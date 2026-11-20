@@ -80,6 +80,10 @@ async function submitTranscription() {
     recorder.markReview({ text: transcript.value, reliable: reliable.value })
   } catch (error) {
     if (controller.signal.aborted || error?.code === 'REQUEST_ABORTED') return
+    if (error?.code === 'VOICE_REQUEST_IN_PROGRESS') {
+      recorder.markError('语音服务正在处理上一个请求，请稍后再次提交这段录音。', { keepRecording: true })
+      return
+    }
     recorder.markError(error?.message ?? '转写失败，请重录或手动输入')
     manualMode.value = true
   } finally {

@@ -108,8 +108,8 @@ describe('Reader audio recovery', () => {
 
     await clickButton('准备本页朗读音频')
     expect(synthesizePage.mock.calls).toEqual([
-      [{ readingSessionId: 42, pageNumber: 1, revision: 1 }],
-      [{ readingSessionId: 42, pageNumber: 1, revision: 2 }],
+      [{ readingSessionId: 42, pageNumber: 1, revision: 1, signal: expect.any(AbortSignal) }],
+      [{ readingSessionId: 42, pageNumber: 1, revision: 2, signal: expect.any(AbortSignal) }],
     ])
     expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/fresh.mp3')
   })
@@ -147,7 +147,9 @@ describe('Reader audio recovery', () => {
     expect(synthesizePage).toHaveBeenCalledTimes(1)
 
     await clickButton('准备本页朗读音频')
-    expect(synthesizePage).toHaveBeenNthCalledWith(2, { readingSessionId: 42, pageNumber: 1, revision: 1 })
+    expect(synthesizePage).toHaveBeenNthCalledWith(2, {
+      readingSessionId: 42, pageNumber: 1, revision: 1, signal: expect.any(AbortSignal),
+    })
     expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/fresh.mp3')
   })
 
@@ -165,7 +167,9 @@ describe('Reader audio recovery', () => {
 
     expect(synthesizePage).toHaveBeenCalledTimes(1)
     await clickButton('准备本页朗读音频')
-    expect(synthesizePage).toHaveBeenNthCalledWith(2, { readingSessionId: 42, pageNumber: 1, revision: 1 })
+    expect(synthesizePage).toHaveBeenNthCalledWith(2, {
+      readingSessionId: 42, pageNumber: 1, revision: 1, signal: expect.any(AbortSignal),
+    })
     expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/fresh.mp3')
   })
 
