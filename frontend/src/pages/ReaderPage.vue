@@ -57,10 +57,8 @@ const readerPages = computed(() => {
   const next = pagesByNumber.value.get(pages.at(-1)?.defaultNextPageNumber)
   return props.session?.status === 'IN_PROGRESS' && next ? [...pages, next] : pages
 })
-// OpenPageFlip captures its page elements at mount. Rebuild when the displayed sequence changes.
-const pageOrder = computed(() => readerPages.value.map(page => page.pageNumber).join(','))
 const currentPage = computed(() => readerPages.value[pageIndex.value] || readerPages.value[0] || null)
-const isLast = computed(() => currentPage.value?.defaultNextPageNumber == null)
+const showDockFinish = computed(() => currentPage.value?.defaultNextPageNumber == null && !readerPages.value[pageIndex.value + 1])
 const rereading = computed(() => pageIndex.value !== progressIndex.value)
 const canFinish = computed(() => !props.loading && !turnBusy.value && !props.syncRequired && props.session?.status === 'IN_PROGRESS' && (props.session?.preview || props.authenticated))
 const mediaAllowed = computed(() => canFinish.value && !rereading.value)
@@ -387,7 +385,7 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
         <p v-if="rereading && session.status === 'IN_PROGRESS'">回看期间仅阅读文字和插图；返回当前进度后可继续朗读与录音。</p>
         <button v-if="syncRequired" class="secondary" type="button" :disabled="turnBusy" @click="refreshProgress">确认并同步进度</button>
         <button v-else-if="session.status === 'CREATED'" class="primary" type="button" @click="emit('start-session')">开始本次阅读</button>
-        <button v-if="!isLast && session.status === 'IN_PROGRESS'" class="secondary" type="button" :disabled="!canFinish" @click="finishReading">结束本次阅读</button>
+        <button v-if="!showDockFinish && session.status === 'IN_PROGRESS'" class="secondary" type="button" :disabled="!canFinish" @click="finishReading">结束本次阅读</button>
       </div>
       <span class="pill">{{ report ? '本次阅读已完成' : '亲子共读模式' }}</span>
     </div>
@@ -397,7 +395,7 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
         <div class="flipbook-stage">
           <FlipBook
             ref="flipBook"
-            :key="`${session.readingSessionId}-${reviewingHistory}-${pageOrder}`"
+            :key="`${session.readingSessionId}-${reviewingHistory}`"
             :pages="readerPages"
             :book-pages="book.pages"
             :page-count="book.pageCount"
@@ -414,7 +412,7 @@ onBeforeUnmount(() => { stopNarration(); closeVoice() })
           <button class="dock-button" type="button" :disabled="pageIndex === 0 || turnBusy || syncRequired" @click="onPageChange({ storyIndex: pageIndex - 1 })"><span class="dock-glyph">‹</span>上一页</button>
           <button class="dock-button" type="button" :disabled="!mediaAllowed" @click="playNarration"><span class="dock-glyph">{{ audioStatus === 'playing' ? 'Ⅱ' : '▶' }}</span>{{ audioStatus === 'playing' ? '暂停朗读' : audioStatus === 'loading' ? '取消朗读' : '朗读' }}</button>
           <button class="dock-button primary" type="button" :disabled="!mediaAllowed" @click="openVoice()"><span class="dock-glyph">芽</span>语音识别</button>
-          <button v-if="isLast && !readerPages[pageIndex + 1]" class="dock-button" type="button" :disabled="!canFinish" @click="finishReading"><span class="dock-glyph">✓</span>完成</button>
+          <button v-if="showDockFinish" class="dock-button" type="button" :disabled="!canFinish" @click="finishReading"><span class="dock-glyph">✓</span>完成</button>
           <button v-else class="dock-button" type="button" :disabled="turnBusy || syncRequired || !readerPages[pageIndex + 1] || (!reviewingHistory && session.status !== 'IN_PROGRESS')" @click="onPageChange({ storyIndex: pageIndex + 1 })"><span class="dock-glyph">›</span>下一页</button>
         </nav>
       </section>
