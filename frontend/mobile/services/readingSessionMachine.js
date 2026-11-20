@@ -28,6 +28,7 @@ export class ReadingSessionMachine {
     this.report = initialSnapshot?.report ?? null
     this.lastRequestId = null
     this.pending = false
+    this.activeMutation = null
     this.syncRequired = false
     this.unconfirmed = null
   }
@@ -173,13 +174,15 @@ export class ReadingSessionMachine {
     clientEventId = this.keyFactory(feedback.toLowerCase()),
   } = {}) {
     if (!this.session) throw new Error('尚无阅读会话')
+    const expectedRevision = this.session.revision
     return this._runMutation({
+      feedback,
       clientEventId,
       signal,
       request: () => this.api.submitGuidance(this.session.readingSessionId, {
         pageNumber,
         feedback,
-        expectedRevision: this.session.revision,
+        expectedRevision,
         clientEventId,
       }, { signal }),
       apply: (data) => {
@@ -239,20 +242,26 @@ export class ReadingSessionMachine {
   async _runMutation(operation) {
     const { request, apply, result = false, signal } = operation
     if (!this.session) throw new Error('尚无阅读会话')
-    if (this.pending) throw new Error('已有请求正在处理')
+    const initialReply = operation.feedback === 'SKIPPED' ? this.activeMutation?.initialReply : null
+    if (this.pending && !initialReply) throw new Error('已有请求正在处理')
     if (this.syncRequired) throw new Error('请先重新核对会话进度')
+    this.activeMutation = operation
     this.pending = true
     this._emit()
     let attempts = 0
     try {
-      while (true) {
+      while (this.activeMutation === operation) {
         try {
-          const response = await request()
+          const reply = request()
+          if (operation.feedback === 'INITIAL') operation.initialReply = reply
+          const response = await reply
+          if (this.activeMutation !== operation) break
           apply(response.data)
           this.lastRequestId = response.requestId
           this._emit()
           return result ? { result: response.data, ...this.snapshot() } : this.snapshot()
         } catch (error) {
+          if (this.activeMutation !== operation) break
           if (signal?.aborted) throw error
           if (error instanceof ApiError && error.code === 'REQUEST_IN_PROGRESS' && attempts < 2) {
             attempts += 1
@@ -278,12 +287,23 @@ export class ReadingSessionMachine {
               { code: error.code, cause: error, recoveredSession: recovered.session },
             )
           }
+          if (initialReply) {
+            // A rejected skip leaves INITIAL free to commit. Read after both requests have settled.
+            this.syncRequired = true
+            await Promise.allSettled([initialReply])
+            await this.restore(this.session.readingSessionId, { signal })
+          }
           throw error
         }
       }
+      // SKIPPED owns the UI and any conflict recovery once it supersedes INITIAL.
+      return this.snapshot()
     } finally {
-      this.pending = false
-      this._emit()
+      if (this.activeMutation === operation) {
+        this.activeMutation = null
+        this.pending = false
+        this._emit()
+      }
     }
   }
 }

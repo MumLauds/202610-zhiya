@@ -180,7 +180,7 @@ describe('Reader audio recovery', () => {
 
     expect(wrapper.get('.agent-text').text()).toBe(question.outputText)
     await clickButton('播放回答音频')
-    expect(synthesizeInteraction).toHaveBeenCalledExactlyOnceWith({ interactionEventId: question.interactionEventId })
+    expect(synthesizeInteraction).toHaveBeenCalledExactlyOnceWith({ interactionEventId: question.interactionEventId, signal: expect.any(AbortSignal) })
     expect(media[0].src).toBe('/answer.mp3')
     expect(media[0].paused).toBe(false)
     expect(submitGuidance).not.toHaveBeenCalled()

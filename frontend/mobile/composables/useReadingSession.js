@@ -102,7 +102,7 @@ export function useReadingSession({ api, initialSessionId = null, initialSnapsho
     clearMessages()
     try {
       const output = await machine.guidance(feedback)
-      lastAgentResult.value = output.result
+      if (output.result) lastAgentResult.value = output.result
       return output.result
     } catch (cause) {
       describeError(cause)

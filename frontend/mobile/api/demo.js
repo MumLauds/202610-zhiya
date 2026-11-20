@@ -66,30 +66,39 @@ export class DemoReadingSessionsApi {
   }
 
   async submitGuidance(_sessionId, payload) {
-    await wait(this.latency)
+    if (payload.feedback !== 'SKIPPED') await wait(this.latency)
     assertRevision(this.session, payload.expectedRevision)
     const page = this.book.pages[payload.pageNumber - 1]
     if (!page) throw demoError('RESOURCE_NOT_FOUND', '页面不存在', 404)
+    const save = (text, strategy, status) => {
+      const response = this._agentResult(text, strategy, status)
+      this.events.push({
+        ...response.data, pageNumber: payload.pageNumber, feedback: payload.feedback,
+        eventType: payload.feedback === 'INITIAL' ? 'QUESTION' : 'FEEDBACK',
+      })
+      return response
+    }
+    if (payload.feedback === 'SKIPPED') {
+      this.promptByPage.delete(payload.pageNumber)
+      return save('', 'SKIP', 'FALLBACK')
+    }
     if (payload.feedback === 'INITIAL') {
       const outputText = page.prompt || '看看画面里发生了什么，再请孩子说一说。'
       this.promptByPage.set(payload.pageNumber, outputText)
-      return this._agentResult(outputText, 'CONTEXT_QUESTION', 'GENERATED')
+      return save(outputText, 'CONTEXT_QUESTION', 'GENERATED')
     }
     if (!this.promptByPage.has(payload.pageNumber)) {
       throw demoError('PROMPT_REQUIRED', '请先生成本页共读问题', 409)
     }
-    if (payload.feedback === 'SKIPPED') {
-      return this._agentResult('', 'SKIP', 'FALLBACK')
-    }
     if (payload.feedback === 'NOT_UNDERSTOOD') {
-      return this._agentResult(
+      return save(
         page.promptHint || '先看看谁在画面里，他在做什么？',
         'CONCRETE_RECALL',
         'GENERATED',
       )
     }
     if (payload.feedback === 'UNDERSTOOD') {
-      return this._agentResult(
+      return save(
         '孩子的回答已由家长确认。演示模式不会保存录音或把转写文本写入后端。',
         'CONTEXT_QUESTION',
         'FALLBACK',

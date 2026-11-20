@@ -6,10 +6,12 @@ const props = defineProps({
   src: { type: String, default: '' },
   tokens: { type: Array, default: () => [] },
   mode: { type: String, default: 'demo' },
+  disabled: { type: Boolean, default: false },
 })
-const emit = defineEmits(['highlight', 'media-error'])
+const emit = defineEmits(['highlight', 'media-error', 'before-play'])
 
 const audio = useAudioController((url) => emit('media-error', url))
+defineExpose({ stop: audio.stop })
 const highlightIndex = computed(() => {
   if (!audio.progress.value || !props.tokens.length) return -1
   return Math.min(props.tokens.length - 1, Math.floor(audio.progress.value * props.tokens.length))
@@ -21,6 +23,8 @@ watch(() => props.src, () => {
 })
 
 async function toggle() {
+  if (props.disabled) return
+  if (!audio.playing.value) emit('before-play')
   if (audio.activeSource.value === 'page') {
     audio.togglePause()
     return
@@ -36,7 +40,7 @@ function formatTime(value) {
 
 <template>
   <div class="audio-card">
-    <button class="audio-play" type="button" :disabled="!src" :aria-label="audio.playing.value ? '暂停朗读' : '播放朗读'" @click="toggle">
+    <button class="audio-play" type="button" :disabled="disabled || !src" :aria-label="audio.playing.value ? '暂停朗读' : '播放朗读'" @click="toggle">
       {{ audio.playing.value ? 'Ⅱ' : '▶' }}
     </button>
     <div class="audio-meta">

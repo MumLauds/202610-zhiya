@@ -8,6 +8,7 @@ const props = defineProps({
   pending: { type: Boolean, default: false },
   demo: { type: Boolean, default: false },
   questionReady: { type: Boolean, default: false },
+  canSkip: { type: Boolean, default: false },
   answerAudioUrl: { type: String, default: '' },
   answerAudioLoading: { type: Boolean, default: false },
 })
@@ -33,7 +34,8 @@ const hasOutput = computed(() => Boolean(props.result?.outputText))
         <span v-if="statusLabel">{{ statusLabel }}</span>
         <span v-if="strategyLabel">{{ strategyLabel }}</span>
       </div>
-      <p v-if="hasOutput" class="agent-text">{{ result.outputText }}</p>
+      <p v-if="result.strategyType === 'SKIP' || result.feedback === 'SKIPPED'" class="agent-text">已跳过本页互动。</p>
+      <p v-else-if="hasOutput" class="agent-text">{{ result.outputText }}</p>
       <p v-else class="muted">本次没有生成可展示的文字。</p>
       <ul v-if="result.sources?.length" class="source-list">
         <li v-for="source in result.sources" :key="`${source.knowledgeItemId}-${source.sourceTitle}`">
@@ -41,7 +43,7 @@ const hasOutput = computed(() => Boolean(props.result?.outputText))
         </li>
       </ul>
       <button
-        v-if="!demo && result.interactionEventId && result.revision === revision && hasOutput && result.status !== 'BLOCKED'"
+        v-if="!demo && questionReady && result.interactionEventId && result.revision === revision"
         class="button button-ghost button-small"
         type="button"
         :disabled="pending || answerAudioLoading"
@@ -59,14 +61,14 @@ const hasOutput = computed(() => Boolean(props.result?.outputText))
       <button v-if="!questionReady" class="button button-primary" type="button" :disabled="pending" @click="emit('generate')">
         {{ pending ? '生成中…' : '生成本页共读问题' }}
       </button>
-      <button class="button button-soft" type="button" :disabled="pending" @click="emit('answer')">
+      <button class="button button-soft" type="button" :disabled="pending || (Boolean(result) && !questionReady)" @click="emit('answer')">
         孩子回答
       </button>
       <button class="button button-soft" type="button" :disabled="pending || !questionReady" @click="emit('not-understood')">
         没听懂
       </button>
       <button class="button button-soft" type="button" :disabled="pending || !questionReady" @click="emit('understood')">已听懂</button>
-      <button class="button button-ghost" type="button" :disabled="pending || !questionReady" @click="emit('skip')">
+      <button class="button button-ghost" type="button" :disabled="!canSkip" @click="emit('skip')">
         跳过
       </button>
     </div>

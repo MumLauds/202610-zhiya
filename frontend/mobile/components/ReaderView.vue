@@ -31,16 +31,21 @@ const currentPageNumber = ref(props.book.pages[0]?.page ?? 1)
 const showPinyin = ref(true)
 const highlightIndex = ref(-1)
 const interactionResult = ref(null)
-const questionReady = ref(false)
+const questionReady = computed(() => {
+  const result = interactionResult.value
+  return Boolean(result?.outputText?.trim()) && result.status !== 'BLOCKED' &&
+    !['SKIP', 'SAFETY_BLOCK'].includes(result.strategyType) && result.feedback !== 'SKIPPED'
+})
 const showAnswerDialog = ref(false)
 const lastAnswerText = ref('')
 const answerDraft = ref('')
 const pageAudioSrc = ref('')
+const pagePlayer = ref(null)
 const pageAudioLoading = ref(false)
 const answerAudioUrl = ref('')
 const answerAudioLoading = ref(false)
 const answerAudioNotice = ref('')
-const localPending = ref(false)
+const pendingFeedback = ref(null)
 const answerAudio = useAudioController((url) => {
   if (answerAudioUrl.value === url) {
     answerAudioUrl.value = ''
@@ -49,6 +54,7 @@ const answerAudio = useAudioController((url) => {
 })
 let pageAudioExpiryTimer
 let answerAudioExpiresAt = NaN
+let answerAudioRequest = null
 let requestGeneration = 0
 let pageRequestGeneration = 0
 let active = true
@@ -69,7 +75,9 @@ const nextPageNumber = computed(() => {
 })
 const isLastPage = computed(() => !reviewing.value && nextPageNumber.value == null)
 const isFinished = computed(() => session.state.session?.status === 'FINISHED')
-const pending = computed(() => session.state.pending || localPending.value || session.loading.value)
+const pending = computed(() => session.state.pending || Boolean(pendingFeedback.value) || session.loading.value)
+const canSkip = computed(() => !session.state.syncRequired && (pendingFeedback.value === 'INITIAL' ||
+  (!pending.value && interactionResult.value?.strategyType !== 'SKIP' && interactionResult.value?.feedback !== 'SKIPPED')))
 const revision = computed(() => session.state.session?.revision ?? 0)
 const sessionId = computed(() => session.state.session?.readingSessionId ?? null)
 const errorMessage = computed(() => session.error.value?.message ?? session.error.value ?? '')
@@ -89,6 +97,7 @@ watch(() => session.state.session?.currentPage, (page) => {
 })
 onBeforeUnmount(() => {
   active = false
+  stopAnswerAudio()
   clearTimeout(pageAudioExpiryTimer)
   pageRequestGeneration += 1
   requestGeneration += 1
@@ -115,12 +124,18 @@ async function retryInitialize() {
   await initializeReader()
 }
 
+function stopAnswerAudio() {
+  answerAudioRequest?.abort()
+  answerAudioRequest = null
+  answerAudioLoading.value = false
+  answerAudio.stop()
+}
+
 function resetAudio() {
   pageRequestGeneration += 1
   clearTimeout(pageAudioExpiryTimer)
   pageAudioLoading.value = false
-  answerAudioLoading.value = false
-  answerAudio.stop()
+  stopAnswerAudio()
   answerAudioUrl.value = ''
   answerAudioNotice.value = ''
   pageAudioSrc.value = props.mode === 'demo' ? (currentPage.value?.audio ?? '') : ''
@@ -130,7 +145,7 @@ function resetInteractionForPage() {
   requestGeneration += 1
   resetAudio()
   interactionResult.value = null
-  questionReady.value = false
+  pendingFeedback.value = null
   lastAnswerText.value = ''
   answerDraft.value = ''
   showAnswerDialog.value = false
@@ -139,15 +154,10 @@ function resetInteractionForPage() {
 
 function restorePageQuestion() {
   if (reviewing.value || session.state.session?.status !== 'IN_PROGRESS') return
-  const question = session.state.events.findLast((event) =>
-    event.pageNumber === currentPageNumber.value && event.outputText?.trim() &&
-    !['SKIP', 'SAFETY_BLOCK'].includes(event.strategyType) &&
+  interactionResult.value = session.state.events.findLast((event) =>
+    event.pageNumber === currentPageNumber.value && (event.strategyType || event.outputText?.trim() || event.feedback === 'SKIPPED') &&
     (event.eventType === 'QUESTION' ||
-      (event.eventType === 'FEEDBACK' && ['UNDERSTOOD', 'NOT_UNDERSTOOD'].includes(event.feedback))))
-  if (question) {
-    interactionResult.value = question
-    questionReady.value = true
-  }
+      (event.eventType === 'FEEDBACK' && ['UNDERSTOOD', 'NOT_UNDERSTOOD', 'SKIPPED'].includes(event.feedback)))) ?? null
 }
 
 async function syncReading() {
@@ -157,7 +167,6 @@ async function syncReading() {
     currentPageNumber.value = session.state.session.currentPage
     if (recovered?.result) {
       interactionResult.value = recovered.result
-      questionReady.value = true
     }
     if (recovered?.confirmedAnswer) {
       lastAnswerText.value = recovered.confirmedAnswer
@@ -214,47 +223,38 @@ async function finishReading() {
   }
 }
 
-async function generateQuestion() {
-  if (pending.value || !session.state.session) return
-  localPending.value = true
-  const page = currentPageNumber.value
-  const generation = ++requestGeneration
-  try {
-    const result = await session.guidance('INITIAL')
-    if (generation !== requestGeneration || page !== currentPageNumber.value) return
-    interactionResult.value = result
-    questionReady.value = true
-  } catch {
-    // Error is rendered from the composable state.
-  } finally {
-    localPending.value = false
-  }
-}
-
 async function submitFeedback(feedback) {
-  if (pending.value || !session.state.session) return
-  localPending.value = true
+  if (!session.state.session || reviewing.value || session.state.syncRequired) return
+  if (feedback === 'SKIPPED' ? !canSkip.value : pending.value) return
+  pendingFeedback.value = feedback
   const page = currentPageNumber.value
   const generation = ++requestGeneration
   try {
     const result = await session.guidance(feedback)
     if (generation !== requestGeneration || page !== currentPageNumber.value) return
     interactionResult.value = result
-    questionReady.value = true
+    return result
   } catch (error) {
-    if (error?.code === 'PROMPT_REQUIRED') questionReady.value = false
+    if (generation === requestGeneration && error?.code === 'PROMPT_REQUIRED') interactionResult.value = null
   } finally {
-    localPending.value = false
+    if (generation === requestGeneration) pendingFeedback.value = null
   }
 }
 
 async function openAnswerDialog() {
-  if (!questionReady.value) await generateQuestion()
-  if (questionReady.value) showAnswerDialog.value = true
+  if (!interactionResult.value) {
+    const result = await submitFeedback('INITIAL')
+    if (!result) return
+  }
+  if (questionReady.value) {
+    pagePlayer.value?.stop()
+    stopAnswerAudio()
+    showAnswerDialog.value = true
+  }
 }
 
 async function handleAnswerConfirmed({ text }) {
-  if (pending.value || reviewing.value || session.state.syncRequired) return
+  if (!questionReady.value || pending.value || reviewing.value || session.state.syncRequired) return
   answerDraft.value = text
   try {
     await session.answer(text)
@@ -305,6 +305,7 @@ function discardPageAudio(url) {
 }
 
 async function playAnswerAudio() {
+  if (showAnswerDialog.value || !questionReady.value) return
   answerAudioNotice.value = ''
   if (props.mode === 'demo') {
     answerAudioNotice.value = '演示模式没有回答音频；实机模式将在 G10 返回 interactionEventId 后请求 API-023。'
@@ -317,26 +318,32 @@ async function playAnswerAudio() {
   }
   const page = currentPageNumber.value
   const generation = pageRequestGeneration
+  pagePlayer.value?.stop()
+  const controller = new AbortController()
+  answerAudioRequest = controller
   answerAudioLoading.value = true
   try {
     if (!answerAudioUrl.value || Date.now() >= answerAudioExpiresAt) {
-      const response = await props.voiceApi.synthesizeInteraction({ interactionEventId: eventId })
-      if (generation !== pageRequestGeneration || page !== currentPageNumber.value || eventId !== interactionResult.value?.interactionEventId || interactionResult.value.revision !== revision.value) return
+      const response = await props.voiceApi.synthesizeInteraction({ interactionEventId: eventId, signal: controller.signal })
+      if (controller.signal.aborted || generation !== pageRequestGeneration || page !== currentPageNumber.value || eventId !== interactionResult.value?.interactionEventId || interactionResult.value.revision !== revision.value) return
       answerAudioUrl.value = response.data.audioUrl
       answerAudioExpiresAt = Date.parse(response.data.expiresAt)
     }
     await answerAudio.play({ url: answerAudioUrl.value, source: 'answer' })
   } catch (error) {
-    if (generation === pageRequestGeneration && page === currentPageNumber.value) {
+    if (!controller.signal.aborted && generation === pageRequestGeneration && page === currentPageNumber.value) {
       answerAudioNotice.value = error?.message ?? '回答音频准备失败'
     }
   } finally {
-    if (generation === pageRequestGeneration) answerAudioLoading.value = false
+    if (answerAudioRequest === controller) {
+      answerAudioRequest = null
+      answerAudioLoading.value = false
+    }
   }
 }
 
 watch(() => interactionResult.value?.interactionEventId, () => {
-  answerAudio.stop()
+  stopAnswerAudio()
   answerAudioUrl.value = ''
 })
 
@@ -407,10 +414,13 @@ function exitReading() {
               {{ pageAudioLoading ? '音频准备中…' : '准备本页朗读音频' }}
             </button>
             <PageAudioPlayer
+              ref="pagePlayer"
               :src="pageAudioSrc"
+              :disabled="showAnswerDialog"
               :tokens="currentPage.tokens"
               :mode="mode"
               @media-error="discardPageAudio"
+              @before-play="stopAnswerAudio"
               @highlight="highlightIndex = $event"
             />
           </div>
@@ -423,9 +433,10 @@ function exitReading() {
           :pending="pending"
           :demo="mode === 'demo'"
           :question-ready="questionReady"
+          :can-skip="canSkip"
           :answer-audio-url="answerAudioUrl"
           :answer-audio-loading="answerAudioLoading"
-          @generate="generateQuestion"
+          @generate="submitFeedback('INITIAL')"
           @answer="openAnswerDialog"
           @not-understood="submitFeedback('NOT_UNDERSTOOD')"
           @understood="submitFeedback('UNDERSTOOD')"

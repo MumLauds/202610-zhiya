@@ -167,7 +167,7 @@ describe('ReaderView session recovery and interaction', () => {
 
     await clickButton('生成本页共读问题')
     await clickButton('播放回答音频')
-    expect(synthesizeInteraction).toHaveBeenCalledExactlyOnceWith({ interactionEventId: 22 })
+    expect(synthesizeInteraction).toHaveBeenCalledExactlyOnceWith({ interactionEventId: 22, signal: expect.any(AbortSignal) })
     expect(play).toHaveBeenCalledTimes(1)
     expect(play.mock.contexts[0].src).toBe('/answer.mp3')
   })

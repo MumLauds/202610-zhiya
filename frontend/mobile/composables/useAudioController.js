@@ -57,7 +57,7 @@ export function useAudioController(onMediaError) {
     try {
       await element.play()
       if (token !== generation) {
-        element.pause()
+        if (!activeSource.value) element.pause()
         return false
       }
       return true
