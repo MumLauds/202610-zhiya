@@ -176,11 +176,12 @@ def test_page_image_refs_access_control_child_scope_withdrawn_and_traversal(medi
         db.execute("INSERT INTO story_pages (version_id, page_no, body_text, image_ref) VALUES (110, 1, 'ret', 'p2.jpg')")
 
     own_book = first.get("/api/v1/story-versions/20").json()["data"]
-    assert own_book["coverRef"] is None
     assert [p["imageRef"] for p in own_book["pages"]] == [
         "asset-20-page-1", "asset-20-page-2", None, None, None, None, None, None,
     ]
-    assert first.get("/api/v1/media/asset-20-page-1").content == PNG_RED
+    assert own_book["coverRef"] == own_book["pages"][0]["imageRef"]
+    cover_url = f"/api/v1/media/{own_book['coverRef']}"
+    assert first.get(cover_url).content == PNG_RED
     p2_resp = first.get("/api/v1/media/asset-20-page-2")
     assert p2_resp.status_code == 200 and p2_resp.headers["content-type"] == "image/jpeg"
     for blocked in (
@@ -188,7 +189,7 @@ def test_page_image_refs_access_control_child_scope_withdrawn_and_traversal(medi
         "asset-20-page-6", "asset-20-page-7", "asset-20-page-8",
     ):
         assert first.get(f"/api/v1/media/{blocked}").status_code == 404
-    assert second.get("/api/v1/media/asset-20-page-1").status_code == 404
+    assert second.get(cover_url).status_code == 404
     assert first.get("/api/v1/media/asset-110-page-1").content == VALID_JPEG
 
     # CHILD_SOLO only accesses versions explicitly granted in child_grant_books.
@@ -201,13 +202,13 @@ def test_page_image_refs_access_control_child_scope_withdrawn_and_traversal(medi
     assert first.put(f"/api/v1/reading-sessions/{sid}/mode-settings", headers=h1, json={
         "mode": "CHILD_SOLO", "allowedStoryVersionIds": [20], "timeLimitSeconds": 300,
     }).status_code == 200
-    assert first.get("/api/v1/media/asset-20-page-1").status_code == 200
+    assert first.get(cover_url).status_code == 200
     assert first.get("/api/v1/media/asset-100-page-1").status_code == 404  # PUBLISHED but ungranted
 
     # Withdrawing version 20 immediately blocks media access.
     with closing(sqlite3.connect(db_path)) as db, db:
         db.execute("UPDATE story_versions SET status = 'WITHDRAWN' WHERE id = 20")
-    assert first.get("/api/v1/media/asset-20-page-1").status_code == 404
+    assert first.get(cover_url).status_code == 404
 
     # RETIRED LIBRARY version media is accessible only during an active reading session.
     assert second.get("/api/v1/media/asset-100-page-1").status_code == 200
