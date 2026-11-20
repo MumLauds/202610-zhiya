@@ -79,7 +79,7 @@ def test_generation_approval_and_continuation_switch(cont_env, monkeypatch, tmp_
     cover = tmp_path / "first.png"
     Image.new("RGB", (2, 2), "green").save(cover)
     original_image = cover.read_bytes()
-    templates = story_media.select_template_illustrations("AGE_4_5", "互助", 4)
+    templates = next(story_media._template_candidates("AGE_4_5", "互助", 4))
     third_image = tmp_path.joinpath(*story_media._image_path_parts(templates[2][0]))
     third_image.parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGB", (2, 2), "blue").save(third_image)
@@ -234,7 +234,7 @@ def test_legacy_draft_retries_missing_promised_image_before_preview_or_approval(
     headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
     monkeypatch.setenv("ZHIYA_MEDIA_ROOT", str(tmp_path))
     paths = []
-    for (ref, _), color in zip(story_media.select_template_illustrations("AGE_3_4", "互助", 4),
+    for (ref, _), color in zip(next(story_media._template_candidates("AGE_3_4", "互助", 4)),
                                ["green", "blue", "orange", "purple"], strict=True):
         path = tmp_path.joinpath(*story_media._image_path_parts(ref))
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -285,7 +285,7 @@ def test_legacy_draft_retries_missing_promised_image_before_preview_or_approval(
     assert client.get(urls[-1]).content == saved_image
 
 
-@pytest.mark.parametrize(("band", "topic"), [("AGE_3_4", "时间认知"), ("AGE_4_5", "互助")])
+@pytest.mark.parametrize(("band", "topic"), [("AGE_3_4", "时间认知"), ("AGE_4_5", "互助"), ("AGE_4_5", "合作")])
 def test_template_selection_prefers_topic_within_requested_age_band(band, topic):
     from app.services import story_media
 
@@ -297,22 +297,33 @@ def test_template_selection_prefers_topic_within_requested_age_band(band, topic)
     assert selected in [entry["assets"][:4] for entry in matching or eligible]
 
 
-@pytest.mark.parametrize("licensed_count", [5, 2, 0])
-def test_continuation_uses_short_licensed_template_for_new_pages(cont_env, monkeypatch, tmp_path, licensed_count):
+@pytest.mark.parametrize(("licensed_count", "custom_root"), [(5, True), (2, True), (0, True), (5, False)],
+                         ids=["custom-complete", "custom-partial", "custom-empty", "default-complete"])
+def test_continuation_uses_readable_licensed_template_for_new_pages(cont_env, monkeypatch, tmp_path,
+                                                                   licensed_count, custom_root):
     from unittest.mock import AsyncMock
     from PIL import Image
     from app.services import story_media
 
     client, _, db_path, profile = cont_env
     headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
-    monkeypatch.setenv("ZHIYA_MEDIA_ROOT", str(tmp_path))
+    if custom_root:
+        monkeypatch.setenv("ZHIYA_MEDIA_ROOT", str(tmp_path))
+    else:
+        monkeypatch.delenv("ZHIYA_MEDIA_ROOT", raising=False)
+        monkeypatch.setattr(story_media, "DEFAULT_MEDIA_ROOT", tmp_path)
     versions, catalog_pages = [], []
-    for version_id, low, high, licensed in [(1, 4, 5, licensed_count), (2, 5, 6, 6)]:
-        versions.append({"id": version_id, "age_min": low, "age_max": high, "topics_json": ["互助"],
+    # The on-topic template has one readable page in the partial case and none in the complete cases.
+    for version_id, low, high, licensed, topic in [(1, 4, 5, licensed_count, "观察"), (2, 5, 6, 6, "互助"),
+                                                   (3, 4, 5, 5 if licensed_count else 0, "互助")]:
+        versions.append({"id": version_id, "age_min": low, "age_max": high, "topics_json": [topic],
                          "source_ref": story_media.SEED_COVER_SOURCE_REF})
         for n in range(1, 7):
             ref = f"{version_id}-{n}.png"
-            Image.new("RGB", (2, 2), (low, n, 0)).save(tmp_path / ref)
+            if version_id != 3 or (licensed_count == 2 and n == 2):
+                Image.new("RGB", (2, 2), (version_id, n, 0)).save(tmp_path / ref)
+            elif n == 1:
+                (tmp_path / ref).write_bytes(b"incomplete PNG")
             catalog_pages.append({"version_id": version_id, "page_no": n, "image_ref": ref,
                                   "image_license_note": story_media.TEMPLATE_PAGE_LICENSE if n <= licensed else None})
     for name, data in [("DEFAULT_TEMPLATE_VERSIONS", versions), ("DEFAULT_TEMPLATE_PAGES", catalog_pages)]:
@@ -354,6 +365,11 @@ def test_continuation_uses_short_licensed_template_for_new_pages(cont_env, monke
     assert all(p["imageRef"] is None for p in draft["pages"][3 + available:])
     assert client.post("/api/v1/story-generations", headers=headers, json=request).json()["data"] == draft
     model.generate.assert_awaited_once()
+    approved = client.post(f"/api/v1/story-versions/{draft['storyVersionId']}/approvals", headers=headers,
+                           json={"versionNumber": draft["versionNumber"], "reviewedAllBranches": True})
+    assert approved.status_code == 200, approved.text
+    approved_refs = [page["imageRef"] for page in approved.json()["data"]["pages"][3:]]
+    assert approved_refs == [page["imageRef"] for page in draft["pages"][3:]]
 
 
 def test_story_generation_validation_limits_and_mode_guards(cont_env, monkeypatch):

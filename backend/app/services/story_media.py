@@ -6,6 +6,7 @@ import os
 import re
 import sqlite3
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path, PurePosixPath
@@ -38,6 +39,7 @@ ASSET_KEY_RE = re.compile(r"^asset-([1-9][0-9]{0,15})-(cover|page-([1-9][0-9]{0,
 BLOB_NAME_RE = re.compile(r"^[0-9a-f]{64}\.(png|jpg|webp)$")
 MAX_ID = 9007199254740991
 DEFAULT_DB_PATH = REPO_ROOT / "database" / "instance" / "zhiya.sqlite3"
+VerifiedSource = tuple[Path, str, str, bytes]
 
 _PIN_LOCK = threading.RLock()
 _DIGEST_LOCK = threading.Lock()
@@ -167,7 +169,7 @@ def _image_path_parts(raw_ref: str | None) -> tuple[str, ...] | None:
     return parts
 
 
-def _resolve_verified_source(raw_ref: str | None, root: Path) -> tuple[Path, str, str, bytes] | None:
+def _resolve_verified_source(raw_ref: str | None, root: Path) -> VerifiedSource | None:
     parts = _image_path_parts(raw_ref)
     if parts is None:
         return None
@@ -307,25 +309,19 @@ def _load_version_manifest(meta_path: Path, binding_path: Path, expected_identit
     return data
 
 
-def _pin_asset(store_root: Path, root: Path, raw_ref: str | None, *, optional_source: bool = False) -> dict | None:
-    try:
-        resolved = _resolve_verified_source(raw_ref, root)
-    except MediaDependencyError:
-        if optional_source:
-            return None
-        raise
+def _pin_verified_asset(store_root: Path, resolved: VerifiedSource | None, *, raw_ref: str | None = None) -> dict | None:
     if resolved is None:
         return None
     _, digest, media_type, data = resolved
     blob_name = _write_blob_once(store_root, digest, media_type, data)
-    return {"blob": blob_name, "mediaType": media_type}
-
-
-def _pin_page_asset(store_root: Path, root: Path, raw_ref: str, *, optional_source: bool = False) -> dict | None:
-    asset = _pin_asset(store_root, root, raw_ref, optional_source=optional_source)
-    if asset is not None:
+    asset = {"blob": blob_name, "mediaType": media_type}
+    if raw_ref is not None:
         asset["rawRef"] = raw_ref
     return asset
+
+
+def _pin_page_asset(store_root: Path, root: Path, raw_ref: str) -> dict | None:
+    return _pin_verified_asset(store_root, _resolve_verified_source(raw_ref, root), raw_ref=raw_ref)
 
 
 def _previously_returned_image_pages(db: sqlite3.Connection, version: sqlite3.Row | dict) -> set[int]:
@@ -460,7 +456,7 @@ def pin_version_media(db: sqlite3.Connection, version_row: sqlite3.Row | dict, *
             root, entries = dependencies or ensure_media_dependencies()
             if cover is None and has_seed_cover:
                 cover_path = _select_cover_path(entries, storybook_id, version_id, version_no)
-                cover = _pin_asset(store_root, root, cover_path)
+                cover = _pin_verified_asset(store_root, _resolve_verified_source(cover_path, root))
             manifest = {"identity": identity, "cover": cover, "pages": {}}
             for page in pages:
                 manifest["pages"][str(page["page_no"])] = _pin_page_asset(store_root, root, page["image_ref"])
@@ -569,60 +565,69 @@ def _template_catalog() -> list[dict]:
     return catalog
 
 
-def select_template_illustrations(age_band: str, topic: str, page_count: int, *,
-                                  carried_count: int = 0, allow_partial: bool = False) -> list[tuple[str, str]]:
-    """Select an ordered set of licensed template illustrations matching age band and topic."""
+def _template_candidates(age_band: str, topic: str, page_count: int,
+                         carried_count: int = 0) -> Iterator[list[tuple[str, str]]]:
     low, high = AGE_BAND_BOUNDS.get(age_band, (3, 6))
     try:
         catalog = _template_catalog()
     except (KeyError, TypeError, ValueError, OverflowError) as exc:
         raise MediaDependencyError("Template illustration catalog is invalid") from exc
-    candidates = [
-        entry for entry in catalog
-        if entry["age_min"] <= low and entry["age_max"] >= high
-        and (allow_partial or len(entry["assets"]) >= page_count)
-    ]
-    if not candidates:
-        if allow_partial:
-            return []
-        raise MediaDependencyError("No template illustration set matches the age band and page count")
-    best = max(
-        candidates,
-        key=lambda entry: (
-            min(len(entry["assets"]), page_count),
-            topic in entry["topics"],
-            -entry["version_id"],
-        ),
-    )
-    assets = best["assets"]
-    # Keep matching page positions when the template spans the book. A shorter set starts at its first illustration.
-    start = carried_count if len(assets) >= carried_count + page_count else 0
-    return assets[start:start + page_count]
+    eligible = (entry for entry in catalog if entry["age_min"] <= low and entry["age_max"] >= high)
+    for entry in sorted(eligible, key=lambda entry: (topic not in entry["topics"], entry["version_id"])):
+        assets = entry["assets"]
+        # Keep page positions for a full-length template. Shorter sets supply just the new pages.
+        start = carried_count if len(assets) >= carried_count + page_count else 0
+        yield assets[start:start + page_count]
 
 
-def verify_template_illustrations(assets: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """Ensure every selected template illustration has an explicit license and decodes cleanly."""
+def _resolve_template_illustrations(
+    age_band: str, topic: str, page_count: int, *, carried_count: int, allow_partial: bool,
+) -> list[tuple[str, VerifiedSource | None]]:
+    """Select one template by readable new pages, preserving their positions and verified bytes."""
     root, _ = ensure_media_dependencies()
-    for ref, license_note in assets:
-        if license_note != TEMPLATE_PAGE_LICENSE or _resolve_verified_source(ref, root) is None:
-            raise MediaDependencyError("Template illustration is unavailable")
-    return assets
+    best = []
+    best_count = 0
+    for assets in _template_candidates(age_band, topic, page_count, carried_count):
+        if len(assets) <= best_count or (not allow_partial and len(assets) < page_count):
+            continue
+        images = []
+        for ref, _ in assets:
+            try:
+                source = _resolve_verified_source(ref, root)
+            except MediaDependencyError:
+                source = None
+            if source is None and not allow_partial:
+                break
+            images.append((ref, source))
+        count = sum(source is not None for _, source in images)
+        if count == page_count:
+            return images
+        if allow_partial and count > best_count:
+            best, best_count = images, count
+    if not allow_partial:
+        raise MediaDependencyError("No complete template illustration set is available")
+    return best
+
+
+def select_template_illustrations(age_band: str, topic: str, page_count: int, *,
+                                  carried_count: int = 0, allow_partial: bool = False) -> list[tuple[str, str]]:
+    """Return licensed references from the template selected for the active media root."""
+    selected = _resolve_template_illustrations(age_band, topic, page_count,
+                                               carried_count=carried_count, allow_partial=allow_partial)
+    return [(ref, TEMPLATE_PAGE_LICENSE) for ref, _ in selected]
 
 
 def pin_generation_illustrations(age_band: str, topic: str, new_page_count: int,
                                  carried_count: int) -> list[dict | None]:
     """Pin new illustrations before returning their keys. Custom-root continuations allow placeholders."""
     optional = carried_count > 0 and bool(os.environ.get("ZHIYA_MEDIA_ROOT", "").strip())
-    selected = select_template_illustrations(age_band, topic, new_page_count,
-                                             carried_count=carried_count, allow_partial=optional)
-    root, _ = ensure_media_dependencies()
+    selected = _resolve_template_illustrations(age_band, topic, new_page_count,
+                                               carried_count=carried_count, allow_partial=optional)
     store = _pin_store_root()
     try:
-        images = [_pin_page_asset(store, root, ref, optional_source=optional) for ref, _ in selected]
+        images = [_pin_verified_asset(store, source, raw_ref=ref) for ref, source in selected]
     except OSError as exc:
         raise MediaDependencyError("Page image storage is unavailable") from exc
-    if not optional and None in images:
-        raise MediaDependencyError("Template illustration is unavailable")
     if any(not _pinned_blob_is_readable(image) for image in images if image is not None):
         raise MediaDependencyError("Pinned template illustration is unavailable")
     return images + [None] * (new_page_count - len(images))

@@ -26,7 +26,6 @@ from app.services.story_media import (
     page_image_ref_from_manifest,
     pin_generation_illustrations,
     select_template_illustrations,
-    verify_template_illustrations,
 )
 
 
@@ -151,7 +150,7 @@ def reserve_generation(request, payload, digest):
             source_version = db.execute("SELECT * FROM story_versions WHERE id = ?", (source["version_id"],)).fetchone()
             ensure_version_pages_media(db, source_version, prefix)
         else:
-            verify_template_illustrations(select_template_illustrations(payload.ageBand, payload.topic, total))
+            select_template_illustrations(payload.ageBand, payload.topic, total)
         token = str(uuid4())
         now = int(time.time() * 1000)
         db.execute(
