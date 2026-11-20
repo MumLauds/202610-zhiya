@@ -18,7 +18,7 @@ afterEach(() => {
   sessionStorage.clear()
 })
 
-it('checks an unconfirmed desktop reading creation with the original request key', async () => {
+it('checks an unconfirmed desktop reading creation with the original request key after an auth failure', async () => {
   vi.resetModules()
   localStorage.setItem('zhiya.account', 'parent-a')
   window.history.replaceState({}, '', '/#detail/api/88')
@@ -31,6 +31,7 @@ it('checks an unconfirmed desktop reading creation with the original request key
   getStoryVersion.mockResolvedValue(book)
   createReadingSession
     .mockRejectedValueOnce(new ApiError('连接中断', { status: 0, code: 'REQUEST_OUTCOME_UNKNOWN' }))
+    .mockRejectedValueOnce(new ApiError('登录状态已变更', { status: 403, code: 'CSRF_INVALID' }))
     .mockResolvedValueOnce(session)
   getReadingSession.mockResolvedValue({ session, events: [] })
   const flipBook = { template: '<div />', methods: { showPage() {} } }
@@ -47,8 +48,12 @@ it('checks an unconfirmed desktop reading creation with the original request key
   const recoveryButton = wrapper.get('.toast button:not([aria-label])')
   expect(recoveryButton.text()).toBe('核对原阅读请求')
   await recoveryButton.trigger('click')
+  await flushPromises()
+  expect(window.location.hash).toBe('#detail/api/88')
+  await wrapper.get('.toast button:not([aria-label])').trigger('click')
   await vi.waitFor(() => expect(window.location.hash).toBe('#reader/55'))
   expect(createReadingSession.mock.calls).toEqual([
+    createReadingSession.mock.calls[0],
     createReadingSession.mock.calls[0],
     createReadingSession.mock.calls[0],
   ])

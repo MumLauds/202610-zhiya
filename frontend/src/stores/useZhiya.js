@@ -1514,6 +1514,11 @@ async function startReading(book) {
       setToast('阅读会话是否创建成功尚未确认。可以核对原请求，避免重复创建。', 'error')
       return
     }
+    if (creation.isRecovery && [401, 403, 429].includes(error.status)) {
+      state.readingCreationRecovery = { book, profileId: profile.childProfileId }
+      setToast(describeApiError(error), 'error')
+      return
+    }
     creation.clear()
     state.readingCreationRecovery = null
     if (error.status === 404) {
