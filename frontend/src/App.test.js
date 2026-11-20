@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises } from '@vue/test-utils'
+import { mountApp } from '../tests/mountApp'
 import { ApiError } from './api/client'
 import { login, parentUnlock } from './api/auth'
 import { deleteProfile, listProfiles } from './api/profiles'
-import { getStoryVersion, listStorybooks } from './api/storybooks'
+import { getStoryVersion, listStorybooks, recommendStorybooks } from './api/storybooks'
 import { addReadingEvent, createReadingSession, deleteReadingSession, getDeletionStatus, getReadingSession, listReadingSessions, updateReadingMode } from './api/reading'
 
-vi.mock('./api/auth', () => ({ checkHealth: vi.fn(), login: vi.fn(), parentUnlock: vi.fn() }))
+vi.mock('./api/auth', () => ({ checkHealth: vi.fn(), currentIdentity: async () => ({ role: 'GUARDIAN', accountId: 1 }), login: vi.fn(), logout: vi.fn(), parentUnlock: vi.fn(), register: vi.fn() }))
 vi.mock('./api/profiles', () => ({ listProfiles: vi.fn(async () => []), deleteProfile: vi.fn() }))
-vi.mock('./api/storybooks', () => ({ getStoryVersion: vi.fn(), listStorybooks: vi.fn() }))
+vi.mock('./api/storybooks', () => ({ getStoryVersion: vi.fn(), listStorybooks: vi.fn(), recommendStorybooks: vi.fn() }))
 vi.mock('./api/reading', () => ({ getReadingSession: vi.fn(), addReadingEvent: vi.fn(), createReadingSession: vi.fn(), deleteReadingSession: vi.fn(), getDeletionStatus: vi.fn(), listReadingSessions: vi.fn(), updateReadingMode: vi.fn() }))
 
 const book = { storyVersionId: 88, title: '书架上的绘本', status: 'PUBLISHED', pages: [{ pageNumber: 1, text: '只在授权时可读的正文' }] }
@@ -37,9 +38,8 @@ function holdBookshelfPage(pageToHold) {
 
 async function open(path) {
   window.history.replaceState({}, '', '/#' + path)
-  const { default: App } = await import('./App.vue')
   const flipBook = { template: '<div />', methods: { showPage() {} } }
-  wrapper = mount(App, { global: { stubs: { BookCarousel: true, FlipBook: flipBook } } })
+  wrapper = await mountApp({ global: { stubs: { BookCarousel: true, FlipBook: flipBook } } })
   await flushPromises()
 }
 
@@ -49,10 +49,14 @@ beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
   listStorybooks.mockResolvedValue([book])
+  recommendStorybooks.mockResolvedValue([])
   listReadingSessions.mockResolvedValue([])
   getDeletionStatus.mockResolvedValue(false)
 })
-afterEach(() => wrapper?.unmount())
+afterEach(() => {
+  wrapper?.unmount()
+  wrapper = undefined
+})
 
 it('opens cold-start growth history before the saved bookshelf selection is restored', async () => {
   const releaseFirstPage = holdBookshelfPage(1)

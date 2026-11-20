@@ -12,3 +12,15 @@ export async function getStoryVersion(versionId) {
   const result = await apiRequest(`/story-versions/${versionId}`)
   return result.data
 }
+
+export async function recommendStorybooks({ childProfileId, topic, minutes } = {}) {
+  const result = await apiRequest('/recommendations', {
+    method: 'POST',
+    body: {
+      childProfileId,
+      ...(topic ? { topic } : {}),
+      ...(minutes ? { minutes } : {}),
+    },
+  })
+  return result.data.items
+}

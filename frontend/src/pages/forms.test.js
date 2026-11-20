@@ -6,6 +6,7 @@ import BookDetailPage from './BookDetailPage.vue'
 import HomePage from './HomePage.vue'
 import LibraryPage from './LibraryPage.vue'
 import ChildModePage from './ChildModePage.vue'
+import AdminPage from './AdminPage.vue'
 import { mapApiBook } from '../data/preview'
 import { ApiError } from '../api/client'
 
@@ -268,5 +269,127 @@ describe('real book metadata', () => {
     const wrapper = render(component, { books: [book], auth: { authenticated: true } })
     expect(wrapper.text()).toContain('本人已审核私有绘本')
     expect(wrapper.text()).not.toContain('公开已发布')
+  })
+})
+
+describe('recommendations and content workspace', () => {
+  it('shows recommendation reasons and emits a topic-specific refresh', async () => {
+    const book = mapApiBook({
+      storyVersionId: 88,
+      title: '推荐绘本',
+      status: 'PUBLISHED',
+      ageBand: 'AGE_4_5',
+      pages: [{ pageNumber: 1, text: '推荐正文' }],
+    })
+    const wrapper = render(LibraryPage, {
+      books: [book],
+      auth: { authenticated: true, role: 'GUARDIAN' },
+      activeProfile: { nickname: '小芽', preferredMinutes: 10 },
+      recommendations: [{ storyVersionId: 88, reason: '符合 4～5 岁与兴趣「动物」', book }],
+    })
+    expect(wrapper.text()).toContain('符合 4～5 岁与兴趣「动物」')
+    expect(wrapper.text()).toContain('根据年龄、兴趣和阅读时长挑选')
+    expect(wrapper.find('.library-recommendations').exists()).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === '推荐')).toBe(false)
+    await wrapper.findAll('button').find((button) => button.text() === '主题').trigger('click')
+    await wrapper.findAll('button').find((button) => button.text() === '友谊').trigger('click')
+    expect(wrapper.emitted('recommend').at(-1)).toEqual(['友谊'])
+    expect(wrapper.emitted('filter').at(-1)).toEqual([{ ageBand: '', topic: '友谊' }])
+  })
+
+  it.each(['collapse', 'age'])('clears the recommendation topic on %s', async (action) => {
+    const wrapper = render(LibraryPage, {})
+    const click = (label) => wrapper.findAll('button').find((item) => item.text() === label).trigger('click')
+    await click('主题')
+    await click('友谊')
+    if (action === 'collapse') {
+      await click('主题')
+    } else {
+      await click('年龄')
+      await click('4–5 岁')
+    }
+    expect(wrapper.emitted('filter').at(-1)).toEqual([{ ageBand: action === 'age' ? 'AGE_4_5' : '', topic: '' }])
+    expect(wrapper.emitted('recommend')).toEqual([['友谊'], ['']])
+  })
+
+  it('builds a draft payload and exposes publish actions', async () => {
+    const createStoryAction = vi.fn().mockResolvedValue(true)
+    const setStoryStatusAction = vi.fn().mockResolvedValue(true)
+    const story = {
+      storyVersionId: 201,
+      title: '待发布绘本',
+      status: 'DRAFT',
+      versionNumber: 1,
+      pages: [{ pageNumber: 1, text: '第一页', imageRef: 'none' }],
+      branches: [],
+    }
+    const wrapper = render(AdminPage, {
+      section: 'storybooks',
+      admin: { storyVersions: [story], knowledgeItems: [], loading: false, busy: false, error: '' },
+      createStoryAction,
+      setStoryStatusAction,
+      createKnowledgeAction: vi.fn(),
+      updateKnowledgeAction: vi.fn(),
+    })
+    await wrapper.get('input[placeholder="例如：纸船停在哪里"]').setValue('纸船去哪里')
+    await wrapper.get('input[placeholder="互助，自然观察"]').setValue('自然观察，勇气')
+    await wrapper.get('input[placeholder="自制或明确授权依据"]').setValue('团队原创')
+    const textareas = wrapper.findAll('textarea')
+    await textareas[0].setValue('小纸船漂进浅湾。\n小芽把它推回水里。\n船靠岸了。')
+    await textareas[1].setValue('asset-first\n\nasset-third')
+    await wrapper.get('.admin-form').trigger('submit')
+    await flushPromises()
+    expect(createStoryAction.mock.calls[0][0]).toMatchObject({
+      title: '纸船去哪里',
+      topics: ['自然观察', '勇气'],
+      licenseNote: '团队原创',
+    })
+    expect(createStoryAction.mock.calls[0][0].pages.map(page => page.imageRef)).toEqual(['asset-first', 'none', 'asset-third'])
+    await wrapper.findAll('button').find((button) => button.text() === '审核并发布').trigger('click')
+    expect(setStoryStatusAction).toHaveBeenCalledWith(201, 'PUBLISHED')
+  })
+
+  it.each([undefined, '第 2 节'])('shows the full source reference before a reviewer approves, locator %s', async (locator) => {
+    const item = { knowledgeItemId: 806, status: 'DRAFT', title: '示例条目', content: '观察画面',
+      sourceTitle: '阅读资料', sourceReference: '文献编号 A-17（2025 年版）', locator }
+    const updateKnowledgeAction = vi.fn()
+    const wrapper = render(AdminPage, { section: 'knowledge', admin: { knowledgeItems: [item] },
+      createStoryAction: vi.fn(), setStoryStatusAction: vi.fn(), createKnowledgeAction: vi.fn(), updateKnowledgeAction })
+    const card = wrapper.get('.admin-card')
+    expect(card.text()).toContain(item.sourceReference)
+    if (locator) expect(card.text()).toContain(locator)
+    await card.findAll('button').find(button => button.text() === '审核通过').trigger('click')
+    expect(updateKnowledgeAction).toHaveBeenCalledWith(806, { status: 'APPROVED' })
+  })
+
+  it('creates a knowledge revision instead of editing the historical row', async () => {
+    const updateKnowledgeAction = vi.fn().mockResolvedValue(true)
+    const item = {
+      knowledgeItemId: 301,
+      itemKey: 'guided-observation',
+      title: '先观察再提问',
+      sourceTitle: '内容规范',
+      locator: '第 1 节',
+      ageBand: null,
+      status: 'APPROVED',
+      versionNumber: 1,
+      content: '先请孩子观察画面。',
+    }
+    const wrapper = render(AdminPage, {
+      section: 'knowledge',
+      admin: { storyVersions: [], knowledgeItems: [item], loading: false, busy: false, error: '' },
+      createStoryAction: vi.fn(),
+      setStoryStatusAction: vi.fn(),
+      createKnowledgeAction: vi.fn(),
+      updateKnowledgeAction,
+    })
+    await wrapper.findAll('button').find((button) => button.text() === '创建修订').trigger('click')
+    await wrapper.get('[role="dialog"] textarea').setValue('先请孩子观察，再让他说。')
+    await wrapper.findAll('button').find((button) => button.text() === '保存新版本').trigger('click')
+    await flushPromises()
+    expect(updateKnowledgeAction).toHaveBeenCalledWith(301, {
+      content: '先请孩子观察，再让他说。',
+      status: 'APPROVED',
+    })
   })
 })

@@ -150,6 +150,7 @@ export function mapApiBook(version) {
     quote: '',
     pageCount: pages.length,
     pages,
+    branches: version.branches || [],
     status: version.status,
   }
 }

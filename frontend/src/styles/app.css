@@ -725,7 +725,7 @@
       box-shadow: var(--shadow-sm);
       transition: height .22s ease;
     }
-    .library-filter-panel.expanded { min-height: 248px; }
+    .library-filter-panel.expanded { min-height: 252px; }
     .library-filter-panel h2 {
       margin: 0;
       font-family: var(--font-story);
@@ -760,6 +760,17 @@
     }
     .library-category-chip:hover { background: #ddbe9b; transform: translateY(-1px); }
     .library-category-chip.active { background: #f1cb82; }
+    .library-recommendation-intro {
+      margin: 9px 0 8px;
+      padding: 9px 11px;
+      display: grid;
+      gap: 2px;
+      border-radius: 12px;
+      background: rgba(241, 203, 130, .24);
+    }
+    .library-recommendation-intro span { color: var(--brown-soft); font-size: 9px; letter-spacing: .08em; }
+    .library-recommendation-intro strong { color: var(--brown); font-family: var(--font-story); font-size: 13px; font-weight: 500; line-height: 19px; }
+    .library-recommendation-intro small { color: var(--muted); font-size: 9px; line-height: 15px; }
     .library-filter-expand {
       margin-top: 13px;
       padding-top: 11px;
@@ -1203,8 +1214,15 @@
     .side-card h2 { margin: 0 0 11px; color: var(--brown); font-size: 12px; line-height: 19px; }
     .side-card.question-card { border: 1px solid #e6cfae; background: var(--cream); }
     .question-card p { margin: 0; font-family: var(--font-story); font-size: 18px; line-height: 29px; }
+    .question-card p.question-saved { margin-top: 10px; color: var(--leaf); font-family: inherit; font-size: 11px; line-height: 18px; }
+    .question-card p.question-error { margin-top: 10px; color: var(--danger); font-family: inherit; font-size: 10px; line-height: 18px; }
+    .question-retry { margin-top: 9px; padding: 0; font-size: 10px; }
     .question-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
     .question-actions .primary { width: 100%; }
+    .side-card.branch-card { border: 1px solid #d7e0d0; background: var(--leaf-pale); }
+    .branch-card p { margin: 0 0 12px; color: var(--muted); font-size: 10px; line-height: 18px; }
+    .branch-actions { display: grid; gap: 8px; }
+    .branch-actions button { width: 100%; text-align: left; }
     .side-card.parent-tip p { margin: 0; color: #62655e; font-family: var(--font-story); font-size: 13px; line-height: 22px; }
     .reader-dock {
       width: min(100%, 760px);
@@ -1599,6 +1617,7 @@
       .home-plan { height: auto; min-height: 352px; transform: none; }
       .library-page { padding-top: 22px; }
       .library-filter-panel { height: auto; }
+      .library-category-row:first-child { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .library-feature-card { height: auto; min-height: 255px; }
       .library-feature-card { grid-template-columns: 140px minmax(0, 1fr); }
       .wheel-controls { inset: auto 18px 48px; transform: none; }
@@ -1842,6 +1861,44 @@
       .home-actions { width: 100%; }
       .home-actions .primary,
       .home-actions .secondary { width: 100%; }
+    }
+
+    .admin-page { padding-block: 34px 60px; }
+    .admin-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 30px; border-radius: 26px; background: linear-gradient(145deg, #fffaf1, #eef4eb); box-shadow: var(--shadow-md); }
+    .admin-heading h1 { margin: 8px 0; font-family: var(--font-story); font-size: clamp(34px, 5vw, 56px); font-weight: 500; }
+    .admin-heading p { max-width: 720px; margin: 0; color: var(--muted); line-height: 24px; }
+    .admin-tabs { margin: 22px 0; display: flex; gap: 10px; }
+    .admin-tabs button { min-height: 44px; padding: 0 20px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); }
+    .admin-tabs button.active { color: #fff; border-color: var(--leaf); background: var(--leaf); }
+    .admin-loading, .admin-empty { padding: 24px; color: var(--muted); text-align: center; }
+    .admin-toolbar { margin-bottom: 16px; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .admin-toolbar > div { display: grid; gap: 4px; }
+    .admin-toolbar > div span { color: var(--muted); font-size: 11px; }
+    .admin-create-panel { width: min(100%, 920px); }
+    .admin-create-panel summary { list-style: none; cursor: pointer; }
+    .admin-create-panel summary::-webkit-details-marker { display: none; }
+    .admin-form { margin-top: 14px; padding: 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: var(--shadow-sm); }
+    .admin-form .admin-wide { grid-column: 1 / -1; }
+    .admin-form .primary { justify-self: start; }
+    .admin-list { display: grid; gap: 14px; }
+    .admin-card { padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: var(--shadow-sm); }
+    .admin-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .admin-card-head > div { display: flex; align-items: center; gap: 10px; }
+    .admin-card-head h2 { margin: 0; font-family: var(--font-story); font-size: 24px; font-weight: 500; }
+    .admin-card-head small, .admin-card > p { color: var(--muted); font-size: 12px; line-height: 20px; }
+    .admin-license, .admin-content { margin: 10px 0 0; color: var(--ink-soft); line-height: 22px; }
+    .admin-warning { color: var(--danger) !important; }
+    .admin-card-actions { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 9px; }
+    .admin-card-actions details summary { list-style: none; cursor: pointer; }
+    .admin-card-actions details summary::-webkit-details-marker { display: none; }
+    .admin-pages { margin: 12px 0 0; padding-left: 22px; color: var(--ink-soft); font-size: 12px; line-height: 21px; }
+    .admin-pages p { margin: 4px 0 10px; }
+
+    @media (max-width: 700px) {
+      .admin-heading, .admin-card-head { flex-direction: column; }
+      .admin-form { grid-template-columns: 1fr; }
+      .admin-form .admin-wide { grid-column: auto; }
+      .admin-heading { padding: 22px; }
     }
   
 

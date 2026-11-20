@@ -272,6 +272,8 @@ API-012 会隐藏已撤回绘本的阅读记录。API-013 增加可选 `view=del
 
 从正式 HTTP 入口以临时 SQLite 和模拟模型覆盖提问、反馈、刷新、重放、权限及逾期写入。模型网关的默认请求体保留 `thinking.type=disabled`，兼容端点可显式关闭。[接口回归用例](../../backend/tests/test_interactions.py) · [网关回归用例](../../backend/tests/test_backend.py)
 
+2026-11-20，桌面共读端允许用户在自动提问期间翻页或跳过，并丢弃过期页面的结果。管理员身份恢复与资料库版本查询使用服务器核实的会话和独立的分页接口，知识列表沿用 API-029。相关接口处于评审中。[PR #64](https://github.com/MumLauds/202610-zhiya/pull/64) · [接口契约](../design/api-contract.md)
+
 ## 后续追加模板
 
 复制以下模板并使用下一个未占用编号；仅在有证据时填写“已确认”或“验证通过”。

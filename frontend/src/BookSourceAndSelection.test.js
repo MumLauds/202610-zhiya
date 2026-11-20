@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises } from '@vue/test-utils'
+import { mountApp } from '../tests/mountApp'
 import { ApiError } from './api/client'
 import { listProfiles } from './api/profiles'
 import { getStoryVersion, listStorybooks } from './api/storybooks'
 import { createReadingSession, getReadingSession } from './api/reading'
 import { previewBooks } from './data/preview'
 
-vi.mock('./api/auth', () => ({ checkHealth: vi.fn() }))
+vi.mock('./api/auth', () => ({ checkHealth: vi.fn(), currentIdentity: async () => ({ role: 'GUARDIAN', accountId: 1 }) }))
 vi.mock('./api/profiles', () => ({ listProfiles: vi.fn(async () => []) }))
 vi.mock('./api/storybooks', () => ({ getStoryVersion: vi.fn(), listStorybooks: vi.fn() }))
 vi.mock('./api/reading', () => ({ createReadingSession: vi.fn(), getReadingSession: vi.fn() }))
@@ -23,9 +24,8 @@ let wrapper
 
 async function open(path) {
   window.history.replaceState({}, '', '/#' + path)
-  const { default: App } = await import('./App.vue')
   const flipBook = { template: '<div />', methods: { showPage() {} } }
-  wrapper = mount(App, { global: { stubs: { BookCarousel: true, FlipBook: flipBook } } })
+  wrapper = await mountApp({ global: { stubs: { BookCarousel: true, FlipBook: flipBook } } })
   await flushPromises()
 }
 

@@ -10,9 +10,14 @@ const props = defineProps({
   nextPage: { type: Number, default: null },
   source: { type: String, default: 'preview' },
   error: { type: String, default: '' },
+  auth: { type: Object, default: () => ({}) },
+  activeProfile: { type: Object, default: null },
+  recommendations: { type: Array, default: () => [] },
+  recommendationsLoading: { type: Boolean, default: false },
+  recommendationsError: { type: String, default: '' },
 })
 
-const emit = defineEmits(['select', 'detail', 'start', 'filter', 'login', 'more'])
+const emit = defineEmits(['select', 'detail', 'start', 'filter', 'login', 'more', 'recommend'])
 const category = ref('')
 
 const ageOptions = [
@@ -23,20 +28,28 @@ const ageOptions = [
 const topicOptions = ['亲子依恋', '安全感', '想象力', '友谊', '自然观察', '勇气', '生命成长'].map((topic) => [topic, topic])
 const options = computed(() => category.value === 'age' ? ageOptions : category.value === 'topic' ? topicOptions : [])
 const selected = computed(() => props.selectedId ? props.books.find((book) => book.id === props.selectedId) : props.books[0])
+const selectedRecommendation = computed(() => (
+  props.recommendations.find((item) => item.storyVersionId === selected.value?.storyVersionId) || null
+))
+
+function applyFilters(ageBand, topic) {
+  emit('filter', { ageBand, topic })
+  emit('recommend', topic)
+}
 
 function toggleCategory(value) {
   category.value = category.value === value ? '' : value
-  if (!category.value) emit('filter', { ageBand: '', topic: '' })
+  if (!category.value) applyFilters('', '')
 }
 
 function resetFilters() {
   category.value = ''
-  emit('filter', { ageBand: '', topic: '' })
+  applyFilters('', '')
 }
 
 function chooseFilter(value) {
-  if (category.value === 'age') emit('filter', { ageBand: value, topic: '' })
-  if (category.value === 'topic') emit('filter', { ageBand: '', topic: value })
+  if (category.value === 'age') applyFilters(value, '')
+  if (category.value === 'topic') applyFilters('', value)
 }
 </script>
 
@@ -47,6 +60,12 @@ function chooseFilter(value) {
         <aside class="library-filter-panel" :class="{ expanded: category }" aria-labelledby="library-title">
           <h2 id="library-title">绘本馆</h2>
           <p>展示公开绘本和当前账号已审核的私有绘本</p>
+          <div v-if="auth.authenticated && auth.role === 'GUARDIAN' && activeProfile" class="library-recommendation-intro">
+            <span>✦ 为{{ activeProfile.nickname || '孩子' }}推荐</span>
+            <strong>根据年龄、兴趣和阅读时长挑选</strong>
+            <small v-if="recommendationsLoading">正在更新推荐条件…</small>
+          </div>
+          <p v-if="recommendationsError" class="form-error" role="alert">{{ recommendationsError }}</p>
           <div class="library-category-rows">
             <div class="library-category-row">
               <button class="library-category-chip" :class="{ active: !category }" type="button" @click="resetFilters">全部</button>
@@ -77,7 +96,10 @@ function chooseFilter(value) {
             <span class="pill">{{ bookStatusLabel(selected.status) }} · 亲子共读</span>
             <h2>{{ selected.title }}</h2>
             <p>{{ selected.author }} · {{ selected.ageLabel }} · {{ selected.pageCount }} 页</p>
-            <div class="reason-box"><strong>内容简介：</strong>{{ selected.summary }}</div>
+            <div class="reason-box">
+              <strong>{{ selectedRecommendation ? '推荐理由：' : '内容简介：' }}</strong>
+              {{ selectedRecommendation?.reason || selected.summary }}
+            </div>
             <div class="feature-actions">
               <button class="primary" type="button" @click="emit('detail', selected)">查看详情</button>
               <button class="secondary" type="button" @click="emit('start', selected)">开始阅读</button>
@@ -89,7 +111,7 @@ function chooseFilter(value) {
           <div>
             <h2>没有找到符合条件的可见绘本</h2>
             <p>当前账号可读取的绘本为空，可切换条件或等待内容发布。</p>
-            <button class="primary" type="button" @click="emit('filter', { ageBand: '', topic: '' })">查看全部</button>
+            <button class="primary" type="button" @click="resetFilters">查看全部</button>
           </div>
         </div>
       </div>

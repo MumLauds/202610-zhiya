@@ -58,6 +58,19 @@ def bookshelf(tmp_path, monkeypatch):
     _login_attempts.clear()
 
 
+def test_admin_catalogue_lists_only_library_versions(bookshelf):
+    admin, guardian, path = bookshelf
+    url = "/api/v1/admin/story-versions"
+    assert guardian.get(url).status_code == 403
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE accounts SET role = 'ADMIN' WHERE account = 'guardian-one'")
+    items = admin.get(url).json()["data"]["items"]
+    assert [item["storyVersionId"] for item in items] == [11, 43, 42, 41]
+    assert items[-1]["pages"] == [{"pageNumber": 1, "text": "text-41"}]
+    assert [branch["reviewStatus"] for branch in items[0]["branches"]] == ["APPROVED", "PENDING"]
+    assert admin.get(url, params={"page": 2, "pageSize": 2}).json()["data"]["items"] == items[2:]
+
+
 def test_guardian_visibility_history_and_private_isolation(bookshelf):
     first, second, _ = bookshelf
     def ids(client, **params):

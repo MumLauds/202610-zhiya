@@ -35,6 +35,22 @@ export async function addReadingEvent(sessionId, payload) {
   return result.data
 }
 
+export async function requestReadingGuidance(sessionId, payload) {
+  const result = await apiRequest(`/reading-sessions/${sessionId}/guidance`, {
+    method: 'POST',
+    body: payload,
+  })
+  return result.data
+}
+
+export async function chooseReadingBranch(sessionId, payload) {
+  const result = await apiRequest(`/reading-sessions/${sessionId}/branches`, {
+    method: 'POST',
+    body: payload,
+  })
+  return result.data
+}
+
 export async function completeReadingSession(sessionId, payload) {
   const result = await apiRequest(`/reading-sessions/${sessionId}/completions`, {
     method: 'POST',

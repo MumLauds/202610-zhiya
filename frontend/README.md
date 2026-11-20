@@ -11,6 +11,10 @@ npm run dev
 
 开发地址为 http://127.0.0.1:5173，`/api` 请求代理至本地 FastAPI 的 8000 端口。用 `npm run build` 构建静态资源。
 
+桌面端入口为 `/`，移动端入口为 `/mobile.html`。`npm run build` 在 `dist/` 生成两个入口。运行 `npm run build:html-review` 可重新生成移动端离线审查页 `html-review/index.html`，绘本媒体从 `public/demo/` 相对加载。移动端阅读状态机测试使用 `npm run test:mobile`。
+
+移动端的实机连接、会话恢复和演示范围见[移动阅读端说明](mobile/README.md)。
+
 ## 后端对齐
 
 - `src/api/` 按 `docs/design/api-contract.md` 封装登录、儿童档案、绘本、阅读会话和语音接口，所有请求携带 Cookie，写请求读取 `zhiya_csrf` 并放入 `X-CSRF-Token`。

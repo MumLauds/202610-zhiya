@@ -637,6 +637,29 @@ def test_guidance_child_options_follow_the_latest_question(child_guidance_sessio
     assert invalid.status_code == 422
 
 
+def test_guidance_refresh_preserves_event_revision(child_guidance_session):
+    client, _, _, sid, headers = child_guidance_session
+    url = f"/api/v1/reading-sessions/{sid}"
+    first = guidance(client, headers, sid, "child-question")
+    assert first.status_code == 201
+    question = first.json()["data"]
+
+    answer = client.post(url + "/events", headers=headers, json={
+        "eventType": "ANSWER", "pageNumber": 1, "expectedRevision": question["revision"],
+        "clientEventId": "answer", "inputText": question["answerOptions"][0],
+    })
+    assert answer.status_code == 201
+
+    refreshed = client.get(url)
+    assert refreshed.status_code == 200
+    snapshot = refreshed.json()["data"]
+    assert snapshot["session"]["revision"] == answer.json()["data"]["revision"] == question["revision"] + 1
+    saved_question = next(
+        event for event in snapshot["events"] if event["interactionEventId"] == question["interactionEventId"]
+    )
+    assert saved_question["revision"] == question["revision"]
+
+
 def test_guidance_refresh_respects_child_current_page(child_guidance_session):
     client, other_guardian, _, sid, headers = child_guidance_session
     url = f"/api/v1/reading-sessions/{sid}"

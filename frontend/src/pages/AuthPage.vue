@@ -48,7 +48,7 @@ async function submit() {
           <button type="button" :disabled="busy" :class="{ active: mode === 'register' }" @click="mode = 'register'">注册</button>
         </div>
         <h2>{{ mode === 'login' ? '回到知芽' : '创建家长账号' }}</h2>
-        <p class="auth-note">账号仅用于家长身份，儿童资料在登录后单独创建。</p>
+        <p class="auth-note">家长登录后创建儿童资料；内容管理员账号登录后直接进入内容工作台。</p>
         <label class="form-field">
           <span>账号</span>
           <input v-model="account" autocomplete="username" placeholder="3–64 个字符">

@@ -106,7 +106,7 @@ defineExpose({
           <blockquote class="page-quote">{{ page.text }}</blockquote>
           <div class="page-number">
             <span>第 {{ page.pageNumber }} 页 · 共 {{ pageCount ?? pages.length }} 页</span>
-            <span v-if="pages.length <= MAX_SPREADS_WITH_DOTS" class="page-dots"><i v-for="(dot, position) in dotPages" :key="position" :class="{ active: reviewingHistory ? position === windowStart + index : dot.pageNumber === page.pageNumber }" /></span>
+            <span v-if="dotPages.length <= MAX_SPREADS_WITH_DOTS" class="page-dots"><i v-for="(dot, position) in dotPages" :key="position" :class="{ active: reviewingHistory ? position === windowStart + index : dot.pageNumber === page.pageNumber }" /></span>
             <span v-else-if="reviewingHistory">回看 {{ windowStart + index + 1 }} / {{ pages.length }}</span>
           </div>
         </div>

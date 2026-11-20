@@ -61,6 +61,7 @@ function chooseShelf(book) {
   if (!book) return
   emit('select', book.id)
 }
+
 </script>
 
 <template>

@@ -4,11 +4,23 @@ import * as auth from '../api/auth'
 import * as profiles from '../api/profiles'
 import * as books from '../api/storybooks'
 import * as reading from '../api/reading'
+import * as adminApi from '../api/admin'
 
-vi.mock('../api/auth', () => ({ checkHealth: vi.fn(), login: vi.fn(), logout: vi.fn(), parentUnlock: vi.fn(), register: vi.fn() }))
+vi.mock('../api/auth', () => ({ checkHealth: vi.fn(), currentIdentity: vi.fn(), login: vi.fn(), logout: vi.fn(), parentUnlock: vi.fn(), register: vi.fn() }))
 vi.mock('../api/profiles', () => ({ listProfiles: vi.fn(), createProfile: vi.fn(), updateProfile: vi.fn(), deleteProfile: vi.fn() }))
-vi.mock('../api/storybooks', () => ({ listStorybooks: vi.fn(), getStoryVersion: vi.fn() }))
-vi.mock('../api/reading', () => ({ createReadingSession: vi.fn(), getReadingSession: vi.fn(), addReadingEvent: vi.fn(), completeReadingSession: vi.fn(), listReadingSessions: vi.fn(), deleteReadingSession: vi.fn(), updateReadingMode: vi.fn() }))
+vi.mock('../api/storybooks', () => ({ listStorybooks: vi.fn(), getStoryVersion: vi.fn(), recommendStorybooks: vi.fn() }))
+vi.mock('../api/admin', () => ({ listAdminStoryVersions: vi.fn(), listAdminKnowledge: vi.fn(), createAdminStory: vi.fn(), updateAdminStoryStatus: vi.fn(), createAdminKnowledge: vi.fn(), updateAdminKnowledge: vi.fn() }))
+vi.mock('../api/reading', () => ({
+  createReadingSession: vi.fn(),
+  getReadingSession: vi.fn(),
+  addReadingEvent: vi.fn(),
+  requestReadingGuidance: vi.fn(),
+  chooseReadingBranch: vi.fn(),
+  completeReadingSession: vi.fn(),
+  listReadingSessions: vi.fn(),
+  deleteReadingSession: vi.fn(),
+  updateReadingMode: vi.fn(),
+}))
 
 const session = (overrides = {}) => ({ readingSessionId: 55, storyVersionId: 88, mode: 'PARENT_CHILD', currentPage: 1, visitedPageNumbers: [1], revision: 1, status: 'IN_PROGRESS', ...overrides })
 const detail = (overrides = {}) => ({ session: session(overrides), events: [], report: null })
@@ -28,8 +40,14 @@ beforeEach(async () => {
   profiles.listProfiles.mockResolvedValue([{ childProfileId: 1, nickname: '小芽' }])
   books.listStorybooks.mockResolvedValue([version])
   books.getStoryVersion.mockResolvedValue(version)
+  books.recommendStorybooks.mockResolvedValue([])
+  auth.currentIdentity.mockResolvedValue({ role: 'GUARDIAN', accountId: 1 })
+  adminApi.listAdminStoryVersions.mockResolvedValue({ items: [] })
+  adminApi.listAdminKnowledge.mockResolvedValue({ items: [], page: 1, pageSize: 100 })
   reading.getReadingSession.mockImplementation(async () => detail())
   reading.addReadingEvent.mockResolvedValue({ revision: 2 })
+  reading.requestReadingGuidance.mockResolvedValue({ interactionEventId: 2, revision: 2, outputText: '你能指一指小兔吗？', strategyType: 'CONCRETE_RECALL', status: 'GENERATED', sources: [] })
+  reading.chooseReadingBranch.mockResolvedValue({ readingSessionId: 55, branchId: 501, currentPage: 3, revision: 2, interactionEventId: 3, visitedPageNumbers: [1, 3], nextPage: { pageNumber: 3 } })
   reading.listReadingSessions.mockResolvedValue([session()])
   profiles.deleteProfile.mockResolvedValue(undefined)
   reading.deleteReadingSession.mockResolvedValue(undefined)
@@ -124,6 +142,13 @@ describe('authoritative reading progress', () => {
     expect(await actions.recordPageChange(7)).toBe(true)
     expect(reading.addReadingEvent.mock.calls[1][1].expectedRevision).toBe(2)
     expect(state.currentSession.currentPage).toBe(7)
+  })
+
+  it('preserves repeated visits when a new page change follows a branch back', async () => {
+    reading.getReadingSession.mockResolvedValueOnce(detail({ currentPage: 1, visitedPageNumbers: [1, 3, 1] }))
+    await actions.loadReaderRoute()
+    expect(await actions.recordPageChange(3)).toBe(true)
+    expect(state.currentSession.visitedPageNumbers).toEqual([1, 3, 1, 3])
   })
 
   it('resynchronizes all session details after a 409 and uses the new revision', async () => {
@@ -227,6 +252,125 @@ describe('authoritative reading progress', () => {
     expect(state.currentSession.status).toBe('IN_PROGRESS')
   })
 
+  it('uses API-017 for an initial question and appends the recoverable event', async () => {
+    expect(await actions.requestGuidance('INITIAL')).toBe(true)
+    expect(reading.requestReadingGuidance).toHaveBeenCalledWith(55, expect.objectContaining({
+      pageNumber: 1,
+      feedback: 'INITIAL',
+      expectedRevision: 1,
+    }))
+    expect(state.currentSession.revision).toBe(2)
+    expect(state.currentEvents.at(-1)).toMatchObject({
+      interactionEventId: 2,
+      eventType: 'QUESTION',
+      pageNumber: 1,
+      outputText: '你能指一指小兔吗？',
+      strategyType: 'CONCRETE_RECALL',
+    })
+  })
+
+  it('records understanding feedback as recoverable FEEDBACK without advancing the page', async () => {
+    expect(await actions.requestGuidance('UNDERSTOOD')).toBe(true)
+    expect(reading.requestReadingGuidance.mock.calls[0][1]).toMatchObject({
+      pageNumber: 1,
+      feedback: 'UNDERSTOOD',
+      expectedRevision: 1,
+    })
+    expect(state.currentSession.currentPage).toBe(1)
+    expect(state.currentEvents.at(-1)).toMatchObject({
+      eventType: 'FEEDBACK',
+      feedback: 'UNDERSTOOD',
+      outputText: '你能指一指小兔吗？',
+    })
+  })
+
+  it('submits a trimmed ANSWER through API-015 and updates the revision', async () => {
+    reading.addReadingEvent.mockResolvedValueOnce({ interactionEventId: 9, revision: 3 })
+    expect(await actions.submitAnswer('  小兔躲在树后。  ')).toBe(true)
+    expect(reading.addReadingEvent.mock.calls[0][1]).toMatchObject({
+      eventType: 'ANSWER',
+      pageNumber: 1,
+      inputText: '小兔躲在树后。',
+      expectedRevision: 1,
+    })
+    expect(state.currentSession.revision).toBe(3)
+    expect(state.currentEvents.at(-1)).toMatchObject({ eventType: 'ANSWER', interactionEventId: 9 })
+  })
+
+  it('chooses an approved branch through API-018 and installs the authoritative path', async () => {
+    expect(await actions.chooseBranch(501)).toBe(true)
+    expect(reading.chooseReadingBranch).toHaveBeenCalledWith(55, expect.objectContaining({
+      branchId: 501,
+      expectedRevision: 1,
+    }))
+    expect(state.currentSession).toMatchObject({
+      currentPage: 3,
+      visitedPageNumbers: [1, 3],
+      revision: 2,
+      status: 'IN_PROGRESS',
+    })
+    expect(state.currentEvents.at(-1)).toMatchObject({
+      eventType: 'BRANCH_CHOSEN',
+      branchId: 501,
+      pageNumber: 1,
+    })
+  })
+
+  it.each(['page', 'skip'])('allows %s to supersede a pending automatic question', async (kind) => {
+    const initial = deferred()
+    reading.requestReadingGuidance.mockReturnValueOnce(initial.promise)
+    const generating = actions.requestGuidance('INITIAL')
+    if (kind === 'page') {
+      expect(await actions.recordPageChange(3)).toBe(true)
+    } else {
+      reading.requestReadingGuidance.mockResolvedValueOnce({ interactionEventId: 5, revision: 2, strategyType: 'SKIP', outputText: '' })
+      expect(await actions.requestGuidance('SKIPPED')).toBe(true)
+    }
+    initial.resolve({ interactionEventId: 99, revision: 2, outputText: '迟到的问题' })
+    expect(await generating).toBe(false)
+    expect(state.currentEvents.some(event => event.interactionEventId === 99)).toBe(false)
+    expect(state.currentSession.currentPage).toBe(kind === 'page' ? 3 : 1)
+    expect(state.currentSession.revision).toBe(2)
+    expect(state.readingSyncRequired).toBe(false)
+  })
+
+  it('ignores a question for an older revision after an authoritative refresh', async () => {
+    const initial = deferred()
+    reading.requestReadingGuidance.mockReturnValueOnce(initial.promise)
+    const generating = actions.requestGuidance('INITIAL')
+    reading.getReadingSession.mockResolvedValueOnce(detail({ currentPage: 3, visitedPageNumbers: [1, 3], revision: 6 }))
+    expect(await actions.refreshReading()).toBe(true)
+    initial.resolve({ interactionEventId: 99, revision: 2, outputText: '旧问题' })
+    expect(await generating).toBe(false)
+    expect(state.currentSession.revision).toBe(6)
+    expect(state.currentEvents).toEqual([])
+  })
+
+  it('replays the exact guidance request after an unknown transport outcome', async () => {
+    reading.requestReadingGuidance.mockRejectedValueOnce(new ApiError('pending', { status: 0, code: 'REQUEST_OUTCOME_UNKNOWN' }))
+    reading.getReadingSession.mockRejectedValueOnce(new Error('offline'))
+    expect(await actions.requestGuidance('INITIAL')).toBe(false)
+    const original = structuredClone(reading.requestReadingGuidance.mock.calls[0][1])
+    expect(state.readingSyncRequired).toBe(true)
+    await vi.advanceTimersByTimeAsync(1100)
+    expect(await actions.refreshReading()).toBe(true)
+    expect(reading.requestReadingGuidance).toHaveBeenCalledTimes(2)
+    expect(reading.requestReadingGuidance.mock.calls[1][1]).toEqual(original)
+    expect(state.readingSyncRequired).toBe(false)
+  })
+
+  it('reloads the session after a guidance conflict and uses its new revision', async () => {
+    reading.requestReadingGuidance.mockRejectedValueOnce(new ApiError('changed', { status: 409, code: 'SESSION_CONFLICT' }))
+    reading.getReadingSession.mockResolvedValueOnce(detail({ revision: 6 }))
+    expect(await actions.requestGuidance('INITIAL')).toBe(false)
+    expect(state.currentSession.revision).toBe(6)
+    expect(state.readingSyncRequired).toBe(false)
+    reading.requestReadingGuidance.mockResolvedValueOnce({ interactionEventId: 18, revision: 7, outputText: '再看一次画面。', strategyType: 'CONCRETE_RECALL' })
+    expect(await actions.requestGuidance('INITIAL')).toBe(true)
+    expect(reading.requestReadingGuidance.mock.calls[1][1].expectedRevision).toBe(6)
+    expect(state.currentSession.revision).toBe(7)
+  })
+
   it('does not overwrite a reloaded session with a late result from the old view', async () => {
     const pending = deferred()
     reading.addReadingEvent.mockReturnValueOnce(pending.promise)
@@ -237,6 +381,188 @@ describe('authoritative reading progress', () => {
     await oldWrite
     expect(state.currentSession.currentPage).toBe(7)
     expect(state.currentSession.revision).toBe(5)
+  })
+})
+
+describe('recommendations and content operations', () => {
+  it('loads recommendations for the active profile and resolves their shelf records', async () => {
+    books.recommendStorybooks.mockResolvedValueOnce([
+      { storyVersionId: 88, reason: '符合 4～5 岁与兴趣「动物」', sources: [] },
+    ])
+    auth.login.mockResolvedValueOnce({ data: { accountId: 1, role: 'GUARDIAN' } })
+    await actions.signIn('parent-a', 'password123')
+    expect(books.recommendStorybooks).toHaveBeenCalledWith({
+      childProfileId: 1,
+      topic: undefined,
+      minutes: undefined,
+    })
+    expect(state.recommendations).toHaveLength(1)
+    expect(state.recommendations[0]).toMatchObject({
+      storyVersionId: 88,
+      reason: '符合 4～5 岁与兴趣「动物」',
+      book: { storyVersionId: 88, title: '测试绘本' },
+    })
+  })
+
+  it('clears displayed topic reasons immediately and ignores late results after reset', async () => {
+    await actions.signIn('parent-a', 'password123')
+    const old = { storyVersionId: 88, reason: '符合主题「友谊」' }
+    books.recommendStorybooks.mockResolvedValueOnce([old])
+    await actions.loadRecommendations('友谊')
+    expect(state.recommendations[0].reason).toBe(old.reason)
+    const pending = deferred()
+    const reset = deferred()
+    books.recommendStorybooks.mockReturnValueOnce(pending.promise).mockReturnValueOnce(reset.promise)
+    const refreshing = actions.loadRecommendations('友谊')
+    const resetting = actions.loadRecommendations('')
+    expect(state.recommendations).toEqual([])
+    reset.resolve([{ storyVersionId: 88, reason: '符合年龄' }])
+    expect(await resetting).toBe(true)
+    pending.resolve([old])
+    expect(await refreshing).toBe(false)
+    expect(state.recommendations[0].reason).toBe('符合年龄')
+  })
+
+  it('clears recommendations and discards a late result after deleting the selected profile', async () => {
+    await actions.signIn('parent-a', 'password123')
+    const pending = deferred()
+    books.recommendStorybooks.mockReturnValueOnce(pending.promise)
+    const loading = actions.loadRecommendations()
+    profiles.listProfiles.mockResolvedValue([])
+    expect(await actions.removeProfile(1)).toBe(true)
+    pending.resolve([{ storyVersionId: 88, reason: '旧档案的推荐' }])
+    expect(await loading).toBe(false)
+    expect(state.recommendations).toEqual([])
+    expect(state.recommendationsLoading).toBe(false)
+  })
+
+  it.each([true, false])('retires the old publication after publish (catalogue refresh succeeds: %s)', async (refreshSucceeds) => {
+    auth.login.mockResolvedValueOnce({ data: { accountId: 9 } })
+    auth.currentIdentity.mockResolvedValue({ role: 'ADMIN', accountId: 9 })
+    await actions.signIn('content-admin', 'password123')
+    const old = { storybookId: 201, storyVersionId: 301, status: 'PUBLISHED' }
+    const draft = { ...old, storyVersionId: 302, status: 'DRAFT' }
+    const other = { ...old, storybookId: 202, storyVersionId: 303 }
+    adminApi.listAdminStoryVersions.mockResolvedValueOnce({ items: [old, draft, other] })
+    await actions.loadAdminContent('storybooks')
+    const published = { ...draft, status: 'PUBLISHED' }
+    adminApi.updateAdminStoryStatus.mockResolvedValueOnce(published)
+    if (refreshSucceeds) {
+      adminApi.listAdminStoryVersions.mockResolvedValueOnce({ items: [
+        { ...old, status: 'RETIRED' }, { ...published, title: '服务端标题' }, other,
+      ] })
+    } else {
+      adminApi.listAdminStoryVersions.mockRejectedValueOnce(new ApiError('暂不可用', { status: 503 }))
+    }
+    expect(await actions.adminSetStoryStatus(302, 'PUBLISHED')).toBe(true)
+    expect(state.admin.storyVersions.map(item => item.status)).toEqual(['RETIRED', 'PUBLISHED', 'PUBLISHED'])
+    if (refreshSucceeds) expect(state.admin.storyVersions[1].title).toBe('服务端标题')
+    else {
+      expect(state.admin.error).toBeTruthy()
+      expect(state.admin.storiesLoaded).toBe(false)
+    }
+    expect(adminApi.updateAdminStoryStatus).toHaveBeenCalledTimes(1)
+  })
+
+  it('routes a content role to the prepared management workspace', async () => {
+    auth.login.mockResolvedValueOnce({ data: { accountId: 9 } })
+    auth.currentIdentity.mockResolvedValue({ role: 'ADMIN', accountId: 9 })
+    profiles.listProfiles.mockClear()
+    adminApi.listAdminKnowledge.mockResolvedValueOnce({
+      items: [{ knowledgeItemId: 301, title: '引导知识', status: 'DRAFT' }],
+      page: 1,
+      pageSize: 100,
+    })
+    await actions.signIn('content-admin', 'password123')
+    expect(state.auth.role).toBe('ADMIN')
+    expect(location.hash).toBe('#admin/storybooks')
+    expect(profiles.listProfiles).not.toHaveBeenCalled()
+    expect(adminApi.listAdminKnowledge).not.toHaveBeenCalled()
+    adminApi.listAdminStoryVersions.mockRejectedValueOnce(new ApiError('未上线', { status: 404 }))
+    expect(await actions.loadAdminContent('storybooks')).toBe(false)
+    expect(state.admin.error).toContain('绘本列表')
+    expect(state.admin.knowledgeError).toBe('')
+    window.history.replaceState({}, '', '/#admin/knowledge')
+    vi.resetModules()
+    const restored = await import('./useZhiya')
+    await restored.zhiyaActions.bootstrap()
+    expect(restored.zhiya.auth.role).toBe('ADMIN')
+    expect(restored.zhiya.route.section).toBe('knowledge')
+    expect(restored.zhiya.admin.knowledgeItems).toHaveLength(1)
+    expect(profiles.listProfiles).not.toHaveBeenCalled()
+    expect(restored.zhiya.admin.knowledgeItems[0].title).toBe('引导知识')
+  })
+})
+
+describe('admin workspace recovery after failed logout', () => {
+  beforeEach(async () => {
+    auth.login.mockResolvedValueOnce({ data: { accountId: 9 } })
+    auth.currentIdentity.mockResolvedValue({ role: 'ADMIN', accountId: 9 })
+    await actions.signIn('content-admin', 'password123')
+    auth.logout.mockRejectedValueOnce(new ApiError('暂不可用', { status: 503 }))
+  })
+
+  it.each(['storybooks', 'knowledge'])('reloads %s and ignores a stale list response', async (section) => {
+    const knowledge = section === 'knowledge'
+    const list = knowledge ? adminApi.listAdminKnowledge : adminApi.listAdminStoryVersions
+    const pending = deferred()
+    list.mockReturnValueOnce(pending.promise).mockResolvedValueOnce({ items: [{ title: '当前结果' }] })
+    window.history.replaceState({}, '', '/#admin/' + section)
+    const firstLoad = actions.syncRoute()
+    expect(await actions.signOut()).toBe(false)
+    expect(auth.currentIdentity).toHaveBeenCalledTimes(2)
+    expect(list).toHaveBeenCalledTimes(2)
+    pending.resolve({ items: [{ title: '旧请求结果' }] })
+    await firstLoad
+    expect(state.admin[knowledge ? 'loading' : 'storiesLoading']).toBe(false)
+    expect(state.admin[knowledge ? 'knowledgeItems' : 'storyVersions']).toEqual([{ title: '当前结果' }])
+    expect(await actions.loadAdminContent(section)).toBe(true)
+  })
+
+  it('reads the committed publication after the in-flight write settles without repeating it', async () => {
+    await actions.syncRoute()
+    adminApi.listAdminStoryVersions.mockClear()
+    const pending = deferred()
+    adminApi.updateAdminStoryStatus.mockReturnValueOnce(pending.promise)
+    const publishing = actions.adminSetStoryStatus(302, 'PUBLISHED')
+    const recovery = actions.signOut()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(adminApi.listAdminStoryVersions).not.toHaveBeenCalled()
+    const published = { storybookId: 201, storyVersionId: 302, status: 'PUBLISHED' }
+    adminApi.listAdminStoryVersions.mockResolvedValueOnce({ items: [published] })
+    pending.resolve(published)
+    await publishing
+    expect(await recovery).toBe(false)
+    expect(state.admin.busy).toBe(false)
+    expect(state.admin.storyVersions).toEqual([published])
+    expect(adminApi.updateAdminStoryStatus).toHaveBeenCalledTimes(1)
+    expect(adminApi.listAdminStoryVersions).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps old lists and writes inaccessible while identity is unavailable, then recovers on retry', async () => {
+    adminApi.listAdminStoryVersions.mockResolvedValueOnce({ items: [{ title: '退出前的数据' }] })
+    await actions.syncRoute()
+    auth.currentIdentity.mockRejectedValueOnce(new ApiError('无法确认会话', { status: 503 }))
+    expect(await actions.signOut()).toBe(false)
+    expect(state.auth.status).toBe('unavailable')
+    expect(state.admin.storyVersions).toEqual([])
+    expect(await actions.adminSetStoryStatus(302, 'PUBLISHED')).toBe(false)
+    expect(adminApi.updateAdminStoryStatus).not.toHaveBeenCalled()
+    expect(state.toast.message).toContain('重新确认身份')
+    adminApi.listAdminStoryVersions.mockResolvedValueOnce({ items: [{ title: '已核实的列表' }] })
+    await actions.refreshIdentity()
+    expect(state.auth.role).toBe('ADMIN')
+    expect(state.admin.storyVersions).toEqual([{ title: '已核实的列表' }])
+  })
+
+  it('keeps the workspace closed when the identity check confirms the session has ended', async () => {
+    await actions.syncRoute()
+    adminApi.listAdminStoryVersions.mockClear()
+    auth.currentIdentity.mockRejectedValueOnce(new ApiError('登录已失效', { status: 401 }))
+    expect(await actions.signOut()).toBe(true)
+    expect(state.auth.authenticated).toBe(false)
+    expect(state.admin.storyVersions).toEqual([])
+    expect(adminApi.listAdminStoryVersions).not.toHaveBeenCalled()
   })
 })
 
@@ -254,6 +580,7 @@ describe('account isolation and logout', () => {
     expect(state.selectedBookId).toBe('')
 
     auth.login.mockResolvedValueOnce({ data: { accountId: 2 } })
+    auth.currentIdentity.mockResolvedValueOnce({ role: 'GUARDIAN', accountId: 2 })
     await actions.signIn('parent-b', 'password123')
     expect(state.auth.accountId).toBe(2)
     expect(state.booksSource).toBe('preview')
@@ -278,6 +605,7 @@ describe('account isolation and logout', () => {
     const { zhiya: refreshed, zhiyaActions: refreshedActions } = await import('./useZhiya')
     if (switchAccount) {
       auth.login.mockResolvedValueOnce({ data: { accountId: 2 } })
+      auth.currentIdentity.mockResolvedValueOnce({ role: 'GUARDIAN', accountId: 2 })
       await refreshedActions.signIn('parent-b', 'password123')
     } else {
       await refreshedActions.bootstrap()

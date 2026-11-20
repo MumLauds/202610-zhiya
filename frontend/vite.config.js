@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { configDefaults } from 'vitest/config'
 
 export default defineConfig(({ mode }) => ({
   // Public URLs are served by Vite; jsdom must not import them as Windows files.
@@ -8,6 +9,12 @@ export default defineConfig(({ mode }) => ({
     environment: 'jsdom',
     clearMocks: true,
     restoreMocks: true,
+    exclude: [...configDefaults.exclude, 'tests/readingSessionMachine.test.js', 'tests/mobileWriteRecovery.test.js'],
+  },
+  build: {
+    rollupOptions: {
+      input: ['index.html', 'mobile.html'],
+    },
   },
   server: {
     host: '127.0.0.1',

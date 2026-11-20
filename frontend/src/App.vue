@@ -7,6 +7,7 @@ import LibraryPage from './pages/LibraryPage.vue'
 import BookDetailPage from './pages/BookDetailPage.vue'
 import ReaderPage from './pages/ReaderPage.vue'
 import AccountPage from './pages/AccountPage.vue'
+import AdminPage from './pages/AdminPage.vue'
 import ChildModePage from './pages/ChildModePage.vue'
 import { activeProfile, totals, zhiya, zhiyaActions } from './stores/useZhiya'
 
@@ -70,7 +71,7 @@ onBeforeUnmount(() => {
     />
 
     <AuthPage
-      v-if="state.route.name === 'auth' || (state.route.name === 'account' && !state.auth.authenticated)"
+      v-if="state.route.name === 'auth' || (['account', 'admin'].includes(state.route.name) && !state.auth.authenticated)"
       :health="state.health"
       :login="zhiyaActions.signIn"
       :register="zhiyaActions.signUp"
@@ -97,12 +98,18 @@ onBeforeUnmount(() => {
       :next-page="state.nextBooksPage"
       :source="state.booksSource"
       :error="state.booksError"
+      :auth="state.auth"
+      :active-profile="activeProfile()"
+      :recommendations="state.recommendations"
+      :recommendations-loading="state.recommendationsLoading"
+      :recommendations-error="state.recommendationsError"
       @select="zhiyaActions.selectBook"
       @detail="zhiyaActions.openDetail"
       @start="startBook"
       @filter="zhiyaActions.loadBooks"
       @more="zhiyaActions.loadMoreBooks"
       @login="zhiyaActions.navigate('auth')"
+      @recommend="zhiyaActions.loadRecommendations"
     />
     <BookDetailPage
       v-else-if="state.route.name === 'detail'"
@@ -118,11 +125,15 @@ onBeforeUnmount(() => {
       v-else-if="state.route.name === 'reader'"
       :book="state.currentBook"
       :session="state.currentSession"
+      :events="state.currentEvents"
       :report="state.currentReport"
       :loading="state.sessionLoading || state.auth.status === 'checking'"
       :authenticated="state.auth.authenticated && state.auth.status === 'authenticated'"
       :sync-required="state.readingSyncRequired"
       :can-retry-load="state.readerLoadRetryable"
+      :request-guidance="zhiyaActions.requestGuidance"
+      :submit-answer="zhiyaActions.submitAnswer"
+      :choose-branch="zhiyaActions.chooseBranch"
       :record-page="zhiyaActions.recordPageChange"
       :complete-reading="zhiyaActions.completeReading"
       :refresh-reading="zhiyaActions.refreshReading"
@@ -159,6 +170,17 @@ onBeforeUnmount(() => {
       @reload-sessions="zhiyaActions.loadSessions"
       @sign-out="zhiyaActions.signOut"
       @start="startBook"
+    />
+    <AdminPage
+      v-else-if="state.route.name === 'admin'"
+      :section="state.route.section"
+      :admin="state.admin"
+      :create-story-action="zhiyaActions.adminCreateStory"
+      :set-story-status-action="zhiyaActions.adminSetStoryStatus"
+      :create-knowledge-action="zhiyaActions.adminCreateKnowledge"
+      :update-knowledge-action="zhiyaActions.adminUpdateKnowledge"
+      @sign-out="zhiyaActions.signOut"
+      @navigate="zhiyaActions.navigate"
     />
     <HomePage
       v-else

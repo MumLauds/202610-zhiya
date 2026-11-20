@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises } from '@vue/test-utils'
+import { mountApp } from '../tests/mountApp'
 import { ApiError } from './api/client'
 import { listProfiles } from './api/profiles'
 import { getStoryVersion, listStorybooks } from './api/storybooks'
 import { createReadingSession } from './api/reading'
 
-vi.mock('./api/auth', () => ({ checkHealth: vi.fn(), login: vi.fn(), parentUnlock: vi.fn() }))
+vi.mock('./api/auth', () => ({ checkHealth: vi.fn(), currentIdentity: async () => ({ role: 'GUARDIAN', accountId: 1 }), login: vi.fn(), parentUnlock: vi.fn() }))
 vi.mock('./api/profiles', () => ({ listProfiles: vi.fn(async () => []), deleteProfile: vi.fn() }))
 vi.mock('./api/storybooks', () => ({ getStoryVersion: vi.fn(), listStorybooks: vi.fn() }))
 vi.mock('./api/reading', () => ({ getReadingSession: vi.fn(), addReadingEvent: vi.fn(), createReadingSession: vi.fn(), deleteReadingSession: vi.fn(), getDeletionStatus: vi.fn(), listReadingSessions: vi.fn(), updateReadingMode: vi.fn() }))
@@ -42,8 +43,7 @@ it.each(['details', 'reading creation'])('refreshes the same shelf after a pendi
   else createReadingSession.mockReturnValueOnce(pendingRequest)
 
   window.history.replaceState({}, '', request === 'details' ? '/#detail/88' : '/#library')
-  const { default: App } = await import('./App.vue')
-  wrapper = mount(App, { global: { stubs: { BookCarousel: true } } })
+  wrapper = await mountApp({ global: { stubs: { BookCarousel: true } } })
   await flushPromises()
 
   if (request === 'details') {
@@ -86,8 +86,7 @@ it('restores saved book 63 after reselecting All during the initial shelf restor
     .mockImplementation(async ({ page, pageSize }) => catalog.slice((page - 1) * pageSize, page * pageSize))
 
   window.history.replaceState({}, '', '/#library')
-  const { default: App } = await import('./App.vue')
-  wrapper = mount(App, { global: { stubs: { BookCarousel: true } } })
+  wrapper = await mountApp({ global: { stubs: { BookCarousel: true } } })
   await flushPromises()
   expect(listStorybooks.mock.calls).toEqual([[allQuery]])
 
@@ -116,8 +115,7 @@ it('keeps restored book 63 after reselecting All once the initial shelf restore 
   listStorybooks.mockImplementation(async ({ page, pageSize }) => catalog.slice((page - 1) * pageSize, page * pageSize))
 
   window.history.replaceState({}, '', '/#library')
-  const { default: App } = await import('./App.vue')
-  wrapper = mount(App, { global: { stubs: { BookCarousel: true } } })
+  wrapper = await mountApp({ global: { stubs: { BookCarousel: true } } })
   await flushPromises()
 
   expect(listStorybooks.mock.calls).toEqual([1, 2, 3].map((page) => [{ ...allQuery, page }]))
@@ -148,8 +146,7 @@ it.each([
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
 
   window.history.replaceState({}, '', '/#library')
-  const { default: App } = await import('./App.vue')
-  wrapper = mount(App)
+  wrapper = await mountApp()
   await flushPromises()
 
   const button = (label) => wrapper.findAll('button').find((item) => item.text() === label)
@@ -198,8 +195,7 @@ it('does not restore a book picked on the old shelf after reselecting a new age 
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
 
   window.history.replaceState({}, '', '/#library')
-  const { default: App } = await import('./App.vue')
-  wrapper = mount(App)
+  wrapper = await mountApp()
   await flushPromises()
   const title = () => wrapper.get('.library-feature-copy h2').text()
   expect(title()).toBe('绘本63')

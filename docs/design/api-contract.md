@@ -6,13 +6,17 @@
 
 儿童设备的 Cookie 保留 24 小时。业务访问到 `expiresAt` 截止。持有未吊销儿童凭证的设备使用 API-021 验证所属家长密码，业务时限届满后仍可解锁。此时调用普通登录 API-002 返回 403 `FORBIDDEN`。
 
+登录（API-002）后或页面刷新时，客户端通过 `GET /api/v1/auth/sessions/current` 查询当前 Cookie 的身份。家长和管理员返回 `accountId` 与 `role`，儿童仅返回 `role: CHILD` 以恢复交接页。无有效身份返回 401，成功响应使用 `Cache-Control: no-store`。API-003 允许管理员注销当前设备的账号会话。
+
+管理员工作台通过 `GET /api/v1/admin/story-versions` 分页读取资料库各状态版本，包含正文与全部分支。该查询只对管理员开放，并排除家庭原创绘本。知识列表单独使用 API-029。两个页签均遵循每页最多 50 项的分页规则。
+
 公共术语、标识语义与枚举见[公共术语表](../standards/glossary.md)。详细请求响应、错误及幂等规则见[接口示例](api-contract-v0.4.json)。
 
 | 编号 | 方法与路径 | 权限 |
 | --- | --- | --- |
 | API-001 | POST /api/v1/auth/registrations | 匿名 |
 | API-002 | POST /api/v1/auth/sessions | 匿名 |
-| API-003 | DELETE /api/v1/auth/sessions/current | 家长或当前受限儿童 |
+| API-003 | DELETE /api/v1/auth/sessions/current | 家长、当前受限儿童或内容管理员 |
 | API-004 | GET /api/v1/child-profiles | 已认证家长且归本人 |
 | API-005 | POST /api/v1/child-profiles | 已认证家长 |
 | API-006 | PATCH /api/v1/child-profiles/{profile_id} | 已认证家长且归本人 |
@@ -117,7 +121,7 @@ JSON 错误统一使用 `{error: {code, message, retryable}, requestId}`。前�
 
 档案对象包含 `childProfileId`、`nickname`（可空）、`ageBand`（`AGE_3_4/AGE_4_5/AGE_5_6`）、`interests`（字符串数组，可为空）、`preferredMinutes`（1～30 整数）。建议昵称去除两端空白后 1～32 字符，创建省略时返回 null，修改时显式 null 清除昵称。兴趣最多 10 项，每项去除两端空白后 1～32 字符。创建省略兴趣时用空数组，修改传空数组清除兴趣。
 
-会话对象包含 `readingSessionId`、`storyVersionId`、`currentPage`、`visitedPageNumbers`、`mode`、`status`、`revision`、`expiresAt`（UTC ISO 8601 字符串或 null）。断线恢复以 API-013 返回的固定版本、当前页、状态及修订号为准。首阶段开始和翻页的 `events` 示例使用 `interactionEventId`、`eventType`、`pageNumber`。已保存完整响应的 API-017 引导事件还返回 `outputText` 和 `strategyType`，实际反馈另含 `feedback`，可用于刷新后恢复问题及跳过状态。家长可查看含 `readingSessionId`、`summary`、`activities`、`status` 的小结。儿童只接收授权范围内的必要交互和进度，API-013 及 API-019 的 `report` 均建议为 null，重放前仍校验调用者权限并按当前角色投影。客户端下一次新写入使用服务端修订号。网络失联或返回 `REQUEST_IN_PROGRESS` 时，可使用原键和原请求体查询式重发。收到明确的 504 后先读取 API-013，由用户根据会话状态决定下一步。
+会话对象包含 `readingSessionId`、`storyVersionId`、`currentPage`、`visitedPageNumbers`、`mode`、`status`、`revision`、`expiresAt`（UTC ISO 8601 字符串或 null）。断线恢复以 API-013 返回的固定版本、当前页、状态及修订号为准。首阶段开始和翻页的 `events` 示例使用 `interactionEventId`、`eventType`、`pageNumber`。已保存完整响应的 API-017 引导事件还返回 `outputText`、`strategyType` 和事件写入后的 `revision`，实际反馈另含 `feedback`，可用于刷新后恢复问题及跳过状态。家长可查看含 `readingSessionId`、`summary`、`activities`、`status` 的小结。儿童只接收授权范围内的必要交互和进度，API-013 及 API-019 的 `report` 均建议为 null，重放前仍校验调用者权限并按当前角色投影。客户端下一次新写入使用服务端修订号。网络失联或返回 `REQUEST_IN_PROGRESS` 时，可使用原键和原请求体查询式重发。收到明确的 504 后先读取 API-013，由用户根据会话状态决定下一步。
 
 儿童在进行中的会话读取 API-013 时，`data.answerOptions` 列出当前页可以提交的作答文案。选项来自当前会话、绘本版本和页面上最近一道可展示的问题，包括首次 `QUESTION` 和理解反馈 `FEEDBACK` 中已保存的追问。跳过、拦截和没有正文的事件不算作提问。API-017 为儿童模式生成可用“是／不是／不知道”回答的问题，无知识及超时回退也遵守这一约定。该题的最终响应 `data.answerOptions` 保存实际选项，刷新和作答校验使用同一份数据。旧问题省略该字段时提供“是”“不是”“不知道”。页面尚无可展示的问题时，沿用该页已审核的分支选项文案。返回空数组表示当前没有可提交的选项。
 

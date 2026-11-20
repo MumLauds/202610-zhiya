@@ -83,7 +83,7 @@ def valid_csrf(request: Request, token: str) -> bool:
 @dataclass(frozen=True)
 class Principal:
     guardian_id: int
-    role: Literal["GUARDIAN", "CHILD"]
+    role: Literal["GUARDIAN", "CHILD", "ADMIN"]
     auth_session_id: int | None = None
     grant_id: int | None = None
     profile_id: int | None = None
@@ -101,7 +101,7 @@ def set_session_cookies(response: Response, token: str, max_age: int) -> None:
                         httponly=False, samesite="lax", path="/")
 
 
-def _identify(db, request: Request, *, csrf: bool, now: int):
+def _identify(db, request: Request, *, csrf: bool, now: int, allow_admin: bool = False):
     """An expired child grant can still identify its owner for settlement and password unlock."""
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
@@ -114,11 +114,11 @@ def _identify(db, request: Request, *, csrf: bool, now: int):
         (digest, now),
     ).fetchone()
     if guardian_row:
-        if guardian_row["role"] != "GUARDIAN":
+        if guardian_row["role"] != "GUARDIAN" and not (allow_admin and guardian_row["role"] == "ADMIN"):
             return None, error(request, 403, "FORBIDDEN", "当前账号不能执行此操作")
         if csrf and not valid_csrf(request, token):
             return None, error(request, 403, "CSRF_INVALID", "请求校验失败")
-        return Principal(guardian_id=guardian_row["account_id"], role="GUARDIAN",
+        return Principal(guardian_id=guardian_row["account_id"], role=guardian_row["role"],
                          auth_session_id=guardian_row["session_id"]), None
     child_row = db.execute(
         """SELECT g.id AS grant_id, g.profile_id, g.expires_at, p.guardian_id
@@ -141,22 +141,23 @@ def _identify(db, request: Request, *, csrf: bool, now: int):
 @contextmanager
 def authorized_db(request: Request, *, write: bool = False, csrf: bool = False,
                   guardian_only: bool = False, allow_expired_child: bool = False,
-                  settle_guardian: bool = True):
+                  settle_guardian: bool = True, allow_admin: bool = False):
     """Keep authorization and business data in one snapshot; publish report jobs after commit."""
     pending = []
     with closing(connect()) as db, db:
         db.execute("BEGIN")
         now = int(time.time() * 1000)
-        principal, failure = _identify(db, request, csrf=write or csrf, now=now)
-        if principal and (write or unsettled_sessions(db, principal.guardian_id, principal.grant_id, now).fetchone()):
+        principal, failure = _identify(db, request, csrf=write or csrf, now=now, allow_admin=allow_admin)
+        if principal and (write or (principal.role != "ADMIN" and
+                                    unsettled_sessions(db, principal.guardian_id, principal.grant_id, now).fetchone())):
             # Release the read snapshot before recovery acquires its own write lock.
             db.rollback()
             if not ensure_startup_recovered():
                 raise sqlite3.OperationalError("report recovery pending")
             db.execute("BEGIN IMMEDIATE")
             now = int(time.time() * 1000)
-            principal, failure = _identify(db, request, csrf=write or csrf, now=now)
-            if principal and (settle_guardian or principal.role == "CHILD"):
+            principal, failure = _identify(db, request, csrf=write or csrf, now=now, allow_admin=allow_admin)
+            if principal and principal.role != "ADMIN" and (settle_guardian or principal.role == "CHILD"):
                 pending = settle_grant_sessions(db, principal.guardian_id, principal.grant_id, now)
             if not write:
                 # A bookshelf or history read can be long. Only settlement needs the write lock.
@@ -254,16 +255,33 @@ def login(payload: Credentials, request: Request):
     return response
 
 
+@router.get("/sessions/current")
+def current_session(request: Request):
+    try:
+        with closing(connect()) as db:
+            principal, failure = _identify(db, request, csrf=False, now=int(time.time() * 1000), allow_admin=True)
+            if failure:
+                return failure
+            data = {"role": principal.role}
+            if principal.role != "CHILD":
+                data["accountId"] = principal.guardian_id
+            return JSONResponse(content={"data": data, "requestId": request.state.request_id},
+                                headers={"Cache-Control": "no-store"})
+    except sqlite3.Error:
+        return error(request, 503, "DEPENDENCY_UNAVAILABLE", "暂时无法确认登录身份", retryable=True)
+
+
 @router.delete("/sessions/current", status_code=204)
 def logout(request: Request):
     try:
-        with authorized_db(request, write=True, allow_expired_child=True) as (db, principal, failure):
+        with authorized_db(request, write=True, allow_expired_child=True, allow_admin=True) as (db, principal, failure):
             if failure:
                 return failure
             now = int(time.time() * 1000)
-            if principal.role == "GUARDIAN":
+            if principal.auth_session_id is not None:
                 db.execute("UPDATE auth_sessions SET revoked_at = ? WHERE id = ?",
                            (now, principal.auth_session_id))
+            if principal.role == "GUARDIAN":
                 grant_ids = [r[0] for r in db.execute(
                     """SELECT g.id FROM child_grants g
                        JOIN child_profiles p ON p.id = g.profile_id
@@ -272,7 +290,7 @@ def logout(request: Request):
                 )]
                 for gid in grant_ids:
                     revoke_grant_and_interrupt(db, gid, now)
-            else:
+            elif principal.role == "CHILD":
                 revoke_grant_and_interrupt(db, principal.grant_id, now)
     except sqlite3.Error:
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用")

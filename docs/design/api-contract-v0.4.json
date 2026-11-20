@@ -5,6 +5,18 @@
   "note": "所有示例为格式数据，不是真实模型输出、凭证或测试结果。",
   "common": {
     "authentication": "会话 Cookie zhiya_session 使用 Secure、HttpOnly 和 SameSite=Lax。受保护的写请求须在 X-CSRF-Token 中提交可读 Cookie zhiya_csrf 的值。进入儿童模式时，在同一事务内吊销当前设备的家长 auth_sessions、签发 child_grants 及版本范围并绑定会话。恢复家长权限时重新验证账号密码，撤销儿童授权并签发全新家长凭证。",
+    "adminStoryVersionList": {
+      "method": "GET",
+      "path": "/api/v1/admin/story-versions",
+      "description": "仅内容管理员可分页读取 LIBRARY 各状态版本。page 从1开始，pageSize 为1至50。每项包含 storybookId、storyVersionId、versionNumber、title、status、topics、licenseNote、正文页及全部分支的标签、目标和审核状态。发布资格由 API-028 在服务端复核。",
+      "responseExample": {"data": {"items": [], "page": 1, "pageSize": 20}, "requestId": "req-demo"}
+    },
+    "currentSessionIdentity": {
+      "method": "GET",
+      "path": "/api/v1/auth/sessions/current",
+      "description": "使用当前设备的会话 Cookie 查询身份。家长和管理员返回 accountId、role；儿童凭证只返回 role=CHILD 以恢复交接页（含已到时但尚可解锁的凭证）。无有效身份返回401。响应禁止缓存。",
+      "responseExample": {"data": {"accountId": 1, "role": "ADMIN"}, "requestId": "req-demo"}
+    },
     "ownership": "私有资源每次执行归属校验；非本人统一404。",
     "pagination": {
       "defaultPageSize": 20,
@@ -1088,7 +1100,7 @@
     {
       "method": "DELETE",
       "path": "/api/v1/auth/sessions/current",
-      "permission": "家长或当前受限儿童",
+      "permission": "家长、当前受限儿童或内容管理员",
       "ownerRole": "业务后端",
       "requestContentType": null,
       "queryExample": null,
@@ -1508,7 +1520,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。已保存完整响应的 API-017 引导事件还返回 outputText 和 strategyType，实际反馈事件另含 feedback，供刷新后恢复。儿童在 IN_PROGRESS 时另收到 data.answerOptions 字符串数组，供 API-015 作答。该数组取自当前页最近一道可展示的问题，包括首次 QUESTION 和理解反馈 FEEDBACK 中保存的追问。跳过、拦截及空正文不算作问题。API-017 的儿童问题及回退均可用固定短答作答，最终响应 data.answerOptions 保存实际选项。旧提问未带此字段时使用固定短答“是”“不是”“不知道”。当前页尚无可展示提问时沿用已审核的分支选项文案。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
+      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。已保存完整响应的 API-017 引导事件还返回 outputText、strategyType 和事件写入后的 revision，实际反馈事件另含 feedback，供刷新后恢复。儿童在 IN_PROGRESS 时另收到 data.answerOptions 字符串数组，供 API-015 作答。该数组取自当前页最近一道可展示的问题，包括首次 QUESTION 和理解反馈 FEEDBACK 中保存的追问。跳过、拦截及空正文不算作问题。API-017 的儿童问题及回退均可用固定短答作答，最终响应 data.answerOptions 保存实际选项。旧提问未带此字段时使用固定短答“是”“不是”“不知道”。当前页尚无可展示提问时沿用已审核的分支选项文案。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
       "interfaceId": "API-013",
       "uniqueKey": "GET /api/v1/reading-sessions/{session_id}",
       "additionalExamples": [

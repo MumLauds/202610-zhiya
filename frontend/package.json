@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "vitest run"
+    "build:html-review": "vite build --config vite.html.config.js && node scripts/inline-html-review.cjs",
+    "test": "vitest run",
+    "test:mobile": "node --test tests/readingSessionMachine.test.js tests/mobileWriteRecovery.test.js"
   },
   "dependencies": {
     "vue": "^3.5.0"

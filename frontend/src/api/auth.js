@@ -18,6 +18,11 @@ export function register(account, password) {
   })
 }
 
+export async function currentIdentity() {
+  const result = await apiRequest('/auth/sessions/current', { cache: 'no-store' })
+  return result.data
+}
+
 export function logout() {
   return apiRequest('/auth/sessions/current', { method: 'DELETE' })
 }

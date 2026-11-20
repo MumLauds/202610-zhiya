@@ -334,7 +334,7 @@ def session_event_object(event: sqlite3.Row) -> dict:
     # Only project a finalized guidance response; older rows may contain unverified text.
     if (event["event_type"] in ("QUESTION", "FEEDBACK") and event["strategy_type"]
             and event["saved_id"] == event["id"]):
-        data.update(outputText=event["output_text"], strategyType=event["strategy_type"])
+        data.update(outputText=event["output_text"], strategyType=event["strategy_type"], revision=event["revision_after"])
         if event["feedback"] is not None:
             data["feedback"] = event["feedback"]
     return data
@@ -359,7 +359,7 @@ def get_session(request: Request, session_id: int = Path(ge=1, le=MAX_ID),
             row = owned_session(db, session_id, principal)
             if not row:
                 return error(request, 404, "RESOURCE_NOT_FOUND", "会话不可用")
-            event_query = """SELECT id, event_type, page_no, feedback, output_text, strategy_type,
+            event_query = """SELECT id, event_type, page_no, feedback, output_text, strategy_type, revision_after,
                                     json_extract(response_json, '$.data.interactionEventId') AS saved_id
                              FROM interaction_events WHERE session_id = ?"""
             event_params = [session_id]

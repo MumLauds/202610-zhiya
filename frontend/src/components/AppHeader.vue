@@ -1,4 +1,6 @@
 <script setup>
+import { computed } from 'vue'
+
 const props = defineProps({
   route: { type: Object, required: true },
   auth: { type: Object, required: true },
@@ -6,15 +8,22 @@ const props = defineProps({
 
 const emit = defineEmits(['navigate'])
 
-const items = [
+const readerItems = [
   { label: '首页', path: 'home', icon: '/assets/figma-prototype/icon-house.svg' },
   { label: '绘本馆', path: 'library', icon: '/assets/figma-prototype/icon-bookmark.svg' },
   { label: '成长记录', path: 'account/growth', icon: '/assets/figma-prototype/icon-clock.svg' },
   { label: '个人中心', path: 'account/overview', icon: '/assets/figma-prototype/icon-users.svg' },
 ]
+const items = computed(() => props.auth.role === 'ADMIN'
+  ? [
+      { label: '首页', path: 'home', icon: '/assets/figma-prototype/icon-house.svg' },
+      { label: '内容管理', path: 'admin/storybooks', icon: '/assets/figma-prototype/icon-bookmark.svg' },
+    ]
+  : readerItems)
 
 function current(path) {
   if (path === 'home') return ['home'].includes(props.route.name)
+  if (path.startsWith('admin')) return props.route.name === 'admin'
   if (path === 'library') return ['library', 'detail', 'reader'].includes(props.route.name)
   if (path === 'account/growth') return props.route.name === 'account' && props.route.section === 'growth'
   return props.route.name === 'account' && props.route.section !== 'growth'
@@ -43,7 +52,7 @@ function current(path) {
         </button>
       </nav>
       <div class="header-spacer" />
-      <button class="avatar-button" type="button" aria-label="打开账号" @click="emit('navigate', auth.authenticated ? 'account/overview' : 'auth')">
+      <button class="avatar-button" type="button" aria-label="打开账号" @click="emit('navigate', auth.authenticated ? (auth.role === 'ADMIN' ? 'admin/storybooks' : 'account/overview') : 'auth')">
         {{ auth.nickname?.slice(0, 1) || '知' }}
       </button>
     </div>
