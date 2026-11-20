@@ -7,7 +7,7 @@ const props = defineProps({
   bookPages: { type: Array, default: null },
   title: { type: String, default: '绘本' },
   pageCount: { type: Number, default: null },
-  reviewingHistory: { type: Boolean, default: false },
+  visitPages: { type: Array, default: null },
   startPage: { type: Number, default: 0 },
   disabled: { type: Boolean, default: false },
 })
@@ -20,7 +20,7 @@ const windowStart = computed(() => Math.max(0, Math.min(
   props.pages.length - SPREADS_PER_WINDOW,
 )))
 const visiblePages = computed(() => props.pages.slice(windowStart.value, windowStart.value + SPREADS_PER_WINDOW))
-const dotPages = computed(() => props.reviewingHistory ? props.pages : props.bookPages ?? props.pages)
+const dotPages = computed(() => props.visitPages ?? props.bookPages ?? props.pages)
 const container = ref(null)
 const imageErrors = ref(new Set())
 let book = null
@@ -106,8 +106,10 @@ defineExpose({
           <blockquote class="page-quote">{{ page.text }}</blockquote>
           <div class="page-number">
             <span>第 {{ page.pageNumber }} 页 · 共 {{ pageCount ?? pages.length }} 页</span>
-            <span v-if="dotPages.length <= MAX_SPREADS_WITH_DOTS" class="page-dots"><i v-for="(dot, position) in dotPages" :key="position" :class="{ active: reviewingHistory ? position === windowStart + index : dot.pageNumber === page.pageNumber }" /></span>
-            <span v-else-if="reviewingHistory">回看 {{ windowStart + index + 1 }} / {{ pages.length }}</span>
+            <template v-if="!visitPages || windowStart + index < visitPages.length">
+              <span v-if="dotPages.length <= MAX_SPREADS_WITH_DOTS" class="page-dots"><i v-for="(dot, position) in dotPages" :key="position" :class="{ active: visitPages ? position === windowStart + index : dot.pageNumber === page.pageNumber }" /></span>
+              <span v-else-if="visitPages">回看 {{ windowStart + index + 1 }} / {{ visitPages.length }}</span>
+            </template>
           </div>
         </div>
       </section>

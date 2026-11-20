@@ -584,6 +584,30 @@ describe('reader state and visual progress', () => {
     expectWindow(count - 8)
   })
 
+  it.each([12, 16])('shows the confirmed visit position while retracing %i live visits', async (count) => {
+    const visits = Array.from({ length: count }, (_, index) => index % 2 === 0 ? 1 : 3)
+    renderWithFlipWidget({ session: { ...initialSession, currentPage: 3, visitedPageNumbers: visits } })
+
+    const visibleFooter = () => wrapper.findAll('.flip-page--text').find(page => page.isVisible()).get('.page-number')
+    for (const position of [count - 1, count - 2, count - 3]) {
+      await button('上一页').trigger('click')
+      const footer = visibleFooter()
+      expect(footer.text()).toContain(`第 ${visits[position - 1]} 页`)
+      if (count === 12) {
+        expect(footer.findAll('.page-dots i').map(dot => dot.classes('active')))
+          .toEqual(visits.map((_, index) => index + 1 === position))
+      } else {
+        expect(footer.text()).toContain(`回看 ${position} / ${count}`)
+        expect(wrapper.text()).not.toContain(`回看 ${count + 1} / ${count}`)
+      }
+    }
+    for (let i = 0; i < 3; i++) await button('下一页').trigger('click')
+    expect(visibleFooter().findAll('.page-dots i').map(dot => dot.classes('active')))
+      .toEqual(book.pages.map(page => page.pageNumber === 3))
+    expect(button('朗读').element.disabled).toBe(false)
+    expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
+  })
+
   it('keeps the same page indicator when a 15-page book crosses the dot threshold', async () => {
     const pages = Array.from({ length: 15 }, (_, i) => ({
       pageNumber: i + 1, text: String(i + 1), defaultNextPageNumber: i < 14 ? i + 2 : null,
