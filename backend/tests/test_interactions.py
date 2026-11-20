@@ -603,18 +603,41 @@ def test_guidance_uses_current_parent_answer_without_sending_it_to_model(started
     result = follow.json()["data"]
     controlled = "读到“小兔打开雨伞”时，你从画面里的哪个细节看出来的？"
     assert (result["status"], result["strategyType"], result["outputText"], result["sources"]) == (
-        "GENERATED", "CONTEXT_QUESTION", controlled, [],
+        "GENERATED", "CONTEXT_QUESTION", controlled, [{"knowledgeItemId": 81, "sourceTitle": "共读手册"}],
     )
-    guidance_model.assert_awaited_once()
+    assert guidance_model.await_count == 2
+    request = guidance_model.await_args.args[0]
+    assert "刚才回答对应到的当页原文线索：小兔打开雨伞" in request.context_text
+    assert raw_answer not in request.context_text + request.user_input
 
     guidance_model.return_value = ModelGenerateResult(success=True, text="2")
     next_follow = guidance(client, headers, sid, "follow-without-current-answer",
                            feedback="UNDERSTOOD", revision=result["revision"])
     assert next_follow.status_code == 201
     assert next_follow.json()["data"]["outputText"] != controlled
-    assert guidance_model.await_count == 2
+    assert guidance_model.await_count == 3
     request = guidance_model.await_args.args[0]
     assert "私人例子" not in request.system_prompt + request.context_text
+
+
+@pytest.mark.parametrize("previous_fragment, status", [("小兔打开雨伞", "GENERATED"), ("第二页", "BLOCKED")])
+def test_guidance_composes_from_the_actual_branch_path(started_session, guidance_model, previous_fragment, status):
+    client, headers, _, sid = started_session
+    route = f"/api/v1/reading-sessions/{sid}"
+    changed = client.post(route + "/branches", headers=headers, json={
+        "branchId": 503, "expectedRevision": 1, "clientEventId": "choose-earlier-path",
+    })
+    assert changed.status_code == 201
+    question = f"“{previous_fragment}”和“常规第三页”有什么关系？"
+    guidance_model.return_value = ModelGenerateResult(success=True, text=question)
+    reply = guidance(client, headers, sid, "branch-context", page=3, revision=2)
+    assert reply.status_code == 201
+    data = reply.json()["data"]
+    assert data["status"] == status
+    assert data["outputText"] == (question if status == "GENERATED" else reading_agent.HANDOFF)
+    prompt = guidance_model.await_args.args[0].context_text
+    assert "小兔打开雨伞" in prompt and "常规第三页" in prompt
+    assert "第二页" not in prompt and "分支第四页" not in prompt
 
 
 def test_guidance_persistence_feedback_skip_and_replay(started_session, guidance_model, monkeypatch):

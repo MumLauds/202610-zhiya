@@ -188,6 +188,16 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
             if context is None:
                 return fail_session_event(db, request, owner, session_id, key, digest, 404,
                                           "RESOURCE_NOT_FOUND", "当前页不可用")
+            earlier_pages = []
+            if not ask:
+                path = json.loads(session["visited_pages_json"])
+                earlier = [number for number in path if number != payload.pageNumber][-3:]
+                if earlier:
+                    texts = dict(db.execute(
+                        "SELECT page_no, body_text FROM story_pages WHERE version_id = ? AND page_no IN (%s)"
+                        % ",".join("?" * len(earlier)), (session["version_id"], *earlier),
+                    ))
+                    earlier_pages = [texts[number][:600] for number in earlier if number in texts]
             token = str(uuid4())
             db.execute(
                 """INSERT INTO request_executions
@@ -207,7 +217,7 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
         else:
             result = await run_agent(request.app.state.model_adapter, feedback=payload.feedback,
                                      previous_question=previous_question, child_mode=session["mode"] == "CHILD_SOLO",
-                                     confirmed_answer=confirmed_answer,
+                                     confirmed_answer=confirmed_answer, earlier_pages=earlier_pages,
                                      **context_args)
     except Exception as exc:
         # Keep private prompts and provider messages out of logs; record a definite failure for this key.

@@ -70,6 +70,18 @@ def test_dashscope_sends_each_page_and_downloads_without_api_key(monkeypatch):
         assert "Authorization" not in request.headers
 
 
+def test_image_settings_reuse_only_an_official_speech_workspace(monkeypatch):
+    monkeypatch.delenv("IMAGE_API_URL", raising=False)
+    monkeypatch.delenv("IMAGE_MODEL", raising=False)
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "fake-workspace-key")
+    monkeypatch.setenv("TTS_API_URL", "https://workspace.cn-beijing.maas.aliyuncs.com/voice/synthesis")
+    assert image_generation.image_generation_settings().endpoint == (
+        "https://workspace.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+    )
+    monkeypatch.setenv("TTS_API_URL", "https://workspace.cn-beijing.maas.aliyuncs.com.invalid/voice/synthesis")
+    assert image_generation.image_generation_settings() is None
+
+
 @pytest.mark.parametrize("content", [
     [{"image": "https://example.test/image.png"}],
     [{"text": "No image was generated"}],

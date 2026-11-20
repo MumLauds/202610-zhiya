@@ -15,6 +15,8 @@ from app.services.story_media import MediaDependencyError, pin_generated_illustr
 IMAGE_GENERATION_SECONDS = 45
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 RESULT_HOST = re.compile(r"dashscope-[a-z0-9-]+\.oss-[a-z0-9-]+\.aliyuncs\.com")
+WORKSPACE_HOST = re.compile(r"[a-z0-9-]+\.(?:cn-beijing|cn-hongkong|ap-southeast-1|us-east-1|eu-central-1|ap-northeast-1)\.maas\.aliyuncs\.com")
+IMAGE_PATH = "/api/v1/services/aigc/multimodal-generation/generation"
 
 
 class ImageGenerationError(RuntimeError):
@@ -32,6 +34,13 @@ def image_generation_settings() -> ImageSettings | None:
     endpoint = os.getenv("IMAGE_API_URL", "").strip()
     api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
     model = os.getenv("IMAGE_MODEL", "qwen-image-2.1-turbo").strip()
+    if api_key and model and not endpoint:
+        try:
+            speech = urlsplit(os.getenv("TTS_API_URL", ""))
+        except ValueError:
+            return None
+        if speech.scheme == "https" and WORKSPACE_HOST.fullmatch(speech.netloc):
+            endpoint = f"https://{speech.netloc}{IMAGE_PATH}"
     if not endpoint or not api_key or not model:
         return None
     try:

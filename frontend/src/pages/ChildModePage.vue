@@ -69,6 +69,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
       <div class="child-handoff-notice">
         这是桌面家长端的授权与交接页。儿童阅读交互由手机端或 4.3C 硬件端模块承接；本页面不会展示家长导航、档案或历史记录。
       </div>
+      <a v-if="auth.status === 'child' && childMode?.sessionId" class="primary" :href="`/mobile.html#reader/${childMode.sessionId}`">打开儿童阅读</a>
       <div v-if="verifying" class="child-handoff-loading">
         <p v-if="identityError" role="alert">{{ identityError }}</p>
         <button class="secondary" type="button" :disabled="identityLoading" @click="emit('recheck-identity')">{{ identityLoading ? '正在读取设备身份…' : '重新核对设备身份' }}</button>

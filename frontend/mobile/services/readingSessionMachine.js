@@ -117,6 +117,7 @@ export class ReadingSessionMachine {
   async changePage(pageNumber, { signal, clientEventId = this.keyFactory('page') } = {}) {
     if (!this.session) throw new Error('尚无阅读会话')
     return this._runMutation({
+      canSupersedeInitial: true,
       clientEventId,
       signal,
       request: () => this.api.addEvent(this.session.readingSessionId, {
@@ -139,6 +140,7 @@ export class ReadingSessionMachine {
   async finish({ signal, clientEventId = this.keyFactory('finish') } = {}) {
     if (!this.session) throw new Error('尚无阅读会话')
     return this._runMutation({
+      canSupersedeInitial: true,
       clientEventId,
       signal,
       request: () => this.api.finish(this.session.readingSessionId, {
@@ -203,6 +205,7 @@ export class ReadingSessionMachine {
     if (this.session?.status !== 'IN_PROGRESS') throw new Error('请先开始阅读')
     const expectedRevision = this.session.revision
     return this._runMutation({
+      canSupersedeInitial: true,
       clientEventId,
       signal,
       request: () => this.api.submitQuestion(this.session.readingSessionId, {
@@ -246,7 +249,8 @@ export class ReadingSessionMachine {
   async _runMutation(operation) {
     const { request, apply, result = false, signal } = operation
     if (!this.session) throw new Error('尚无阅读会话')
-    const supersedesInitial = operation.feedback === 'SKIPPED' && this.activeMutation?.initialReply
+    const supersedesInitial = (operation.feedback === 'SKIPPED' || operation.canSupersedeInitial)
+      && this.activeMutation?.initialReply
     if (this.pending && !supersedesInitial) throw new Error('已有请求正在处理')
     if (this.syncRequired) throw new Error('请先重新核对会话进度')
     if (supersedesInitial) operation.supersededInitial = this.activeMutation
@@ -298,7 +302,7 @@ export class ReadingSessionMachine {
           throw error
         }
       }
-      // SKIPPED owns the UI and any conflict recovery once it supersedes INITIAL.
+      // The foreground operation owns UI and recovery once it supersedes INITIAL.
       return this.snapshot()
     } finally {
       if (this.activeMutation === operation) {

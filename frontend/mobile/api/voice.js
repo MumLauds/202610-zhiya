@@ -22,7 +22,7 @@ export class VoiceApi {
   synthesizePage({ readingSessionId, pageNumber, revision, signal }) {
     return this.request('/api/v1/voice/syntheses', {
       method: 'POST',
-      body: { readingSessionId, pageNumber, revision },
+      body: { readingSessionId, pageNumber, revision, preload: true },
       signal,
       timeoutMs: 30000,
     })

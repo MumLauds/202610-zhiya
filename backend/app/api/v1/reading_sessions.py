@@ -800,6 +800,8 @@ def finish_session(payload: Completion, request: Request, background: Background
             now = int(time.time() * 1000)
             generation = None
             generation_token = None
+            answered_report = None
+            prompts = []
             if row["status"] == "FINISHED":
                 # New key after finish: existing terminal state and current report, no model call.
                 report = db.execute("SELECT * FROM reading_reports WHERE session_id = ?", (session_id,)).fetchone()
@@ -809,20 +811,23 @@ def finish_session(payload: Completion, request: Request, background: Background
                            ended_at = ?, revision = revision + 1 WHERE id = ? AND revision = ?""",
                            (now, session_id, row["revision"]))
                 answered_report = answer_based_report(db, row, visited)
-                if answered_report is not None:
-                    summary, activities = answered_report
-                    report_status = "READY"
-                else:
-                    summary, activities, report_status = fact_summary(visited), [], "PENDING"
-                    generation_token = str(uuid4())
-                    pages = list(dict.fromkeys(visited))
-                    texts = [r[0] for r in db.execute(
-                        "SELECT body_text FROM story_pages WHERE version_id = ? AND page_no IN (%s) ORDER BY page_no"
-                        % ",".join("?" * len(pages)), (row["version_id"], *pages))] if pages else []
-                    generation = (summary, texts)
+                facts = fact_summary(visited)
+                summary, activities = answered_report or (facts, [])
+                generation_token = str(uuid4())
+                pages = list(dict.fromkeys(visited))
+                page_texts = dict(db.execute(
+                    "SELECT page_no, body_text FROM story_pages WHERE version_id = ? AND page_no IN (%s)"
+                    % ",".join("?" * len(pages)), (row["version_id"], *pages))) if pages else {}
+                prompts = [event[0][:150] for event in reversed(db.execute(
+                    """SELECT output_text FROM interaction_events WHERE session_id = ? AND version_id = ?
+                       AND event_type IN ('QUESTION', 'FEEDBACK') AND result_status IN ('SUCCESS', 'FALLBACK')
+                       AND trim(output_text) <> '' ORDER BY id DESC LIMIT 4""",
+                    (session_id, row["version_id"]),
+                ).fetchall())]
+                generation = (facts, [page_texts[page] for page in pages if page in page_texts])
                 db.execute("""INSERT INTO reading_reports (session_id, status, summary, activities_json, updated_at)
                            VALUES (?, ?, ?, ?, ?)""",
-                           (session_id, report_status, summary, json.dumps(activities, ensure_ascii=False), now))
+                           (session_id, "PENDING", summary, json.dumps(activities, ensure_ascii=False), now))
                 report = db.execute("SELECT * FROM reading_reports WHERE session_id = ?", (session_id,)).fetchone()
             else:
                 return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
@@ -843,5 +848,5 @@ def finish_session(payload: Completion, request: Request, background: Background
     if generation is not None:
         background.add_task(generate_report, session_id, *generation,
                             getattr(request.app.state, "model_adapter", None),
-                            generation_token=generation_token)
+                            generation_token=generation_token, prompts=prompts, answer_report=answered_report)
     return JSONResponse(status_code=200, content=response, headers={"Cache-Control": "private, no-store"})

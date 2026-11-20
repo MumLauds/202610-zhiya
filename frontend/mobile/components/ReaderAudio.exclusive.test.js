@@ -14,6 +14,7 @@ const session = {
   readingSessionId: 42,
   storyVersionId: book.storyVersionId,
   status: 'IN_PROGRESS',
+  mode: 'PARENT_CHILD',
   currentPage: 1,
   revision: 2,
   visitedPageNumbers: [1],
@@ -36,14 +37,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-async function openReader(voiceApi) {
+async function openReader(voiceApi, { mode = session.mode, sessionApi = {} } = {}) {
   wrapper = mount(ReaderView, {
     props: {
       book,
       mode: 'live',
       storyVersionId: book.storyVersionId,
-      initialSnapshot: { session, events: [question], report: null },
-      sessionApi: {},
+      initialSnapshot: { session: { ...session, mode }, events: [question], report: null },
+      sessionApi,
       voiceApi,
     },
   })
@@ -125,7 +126,10 @@ function stubRecorder() {
 async function preparePage(synthesizeInteraction = vi.fn().mockResolvedValue({ data: { audioUrl: '/answer.mp3' } })) {
   const synthesizePage = vi.fn().mockResolvedValue({ data: { audioUrl: '/page.mp3' } })
   await openReader({ synthesizePage, synthesizeInteraction })
-  await clickButton('准备本页朗读音频')
+  expect(synthesizePage).toHaveBeenCalledExactlyOnceWith({
+    readingSessionId: 42, pageNumber: 1, revision: 2, signal: expect.any(AbortSignal),
+  })
+  expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/page.mp3')
 }
 
 async function playPage() {
@@ -139,8 +143,10 @@ function playingSources(media) {
 
 describe('Reader audio playback and recording exclusion', () => {
   it('plays only the selected source when switching in either direction', async () => {
-    const { media } = stubAudio()
+    const { media, play } = stubAudio()
     await preparePage()
+    expect(playingSources(media)).toEqual([])
+    expect(play).not.toHaveBeenCalled()
 
     await playPage()
     expect(playingSources(media)).toEqual(['/page.mp3'])
@@ -205,12 +211,37 @@ describe('Reader audio playback and recording exclusion', () => {
   })
 })
 
+it('reads aloud a child’s explicit story answer only when the child taps play', async () => {
+  const { media, play } = stubAudio()
+  const submitQuestion = vi.fn().mockResolvedValue({ data: {
+    status: 'GENERATED', strategyType: 'CONCRETE_RECALL', interactionEventId: 71,
+    outputText: '小兔子找到了纸船。', revision: 3,
+  } })
+  const synthesizePage = vi.fn().mockResolvedValue({ data: { audioUrl: '/page.mp3' } })
+  const synthesizeInteraction = vi.fn().mockResolvedValue({ data: { audioUrl: '/story-answer.mp3' } })
+  await openReader({ synthesizePage, synthesizeInteraction }, { mode: 'CHILD_SOLO', sessionApi: { submitQuestion } })
+
+  await clickButton('这一页发生了什么？')
+  expect(submitQuestion).toHaveBeenCalledExactlyOnceWith(42, {
+    pageNumber: 1, inputText: '这一页发生了什么？', expectedRevision: 2, clientEventId: expect.any(String),
+  }, { signal: undefined })
+  expect(wrapper.text()).toContain('小兔子找到了纸船。')
+  expect(synthesizeInteraction).not.toHaveBeenCalled()
+  expect(play).not.toHaveBeenCalled()
+
+  await playPage()
+  await clickButton('播放芽芽的回答')
+  expect(synthesizeInteraction).toHaveBeenCalledExactlyOnceWith({
+    interactionEventId: 71, signal: expect.any(AbortSignal),
+  })
+  expect(playingSources(media)).toEqual(['/story-answer.mp3'])
+})
+
 describe('Reader voice request lock recovery', () => {
   it('aborts pending page synthesis on opening the answer dialog and ignores its late result', async () => {
     const synthesis = deferred()
     const synthesizePage = vi.fn().mockReturnValue(synthesis.promise)
     await openReader({ synthesizePage })
-    await clickButton('准备本页朗读音频')
     expect(synthesizePage).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       readingSessionId: 42,
       pageNumber: 1,
@@ -246,7 +277,9 @@ describe('Reader voice request lock recovery', () => {
     const transcribe = vi.fn()
       .mockRejectedValueOnce(conflict)
       .mockResolvedValueOnce({ data: { text: '小兔子', reliable: true } })
-    await openReader({ transcribe })
+    await openReader({
+      transcribe, synthesizePage: vi.fn().mockRejectedValue(new Error('暂时无法准备朗读')),
+    })
 
     await clickButton('孩子回答')
     await clickButton('开始录音')

@@ -2,6 +2,7 @@
 
 import re
 import unicodedata
+from collections.abc import Sequence
 from difflib import SequenceMatcher
 from itertools import islice
 
@@ -19,7 +20,7 @@ INSTRUCTIONS = {
     "UNDERSTOOD": "孩子已理解上一题，请围绕同一情节进一步引导。",
     "NOT_UNDERSTOOD": "孩子没有听懂上一题，请换成更具体、容易观察的问题。",
 }
-# The model selects the focus. Every displayed word comes from the published page or these questions.
+# Every displayed story detail comes from an authorized page.
 QUESTION_FORMS = {
     "INITIAL": ("你看见了谁？", "角色在做什么？", "角色现在是什么心情？"),
     "UNDERSTOOD": ("你从哪里看出了角色的想法？", "你猜接下来会发生什么？", "你为什么觉得角色会这样想？"),
@@ -50,6 +51,9 @@ PERSONAL_QUESTION = re.compile(r"您|我|你(?!觉得|猜|看见|看到|能指�
 SHORT_QUESTION = re.compile(r"[\u3400-\u9fff，、, ]{2,72}\?")
 PAGE_CLAUSE = re.compile(r"[\u3400-\u9fffA-Za-z0-9 ]+")
 EXCERPT_CHARS = 18
+CONTEXT_QUESTION = re.compile(
+    r'“([^“”]{2,24})”(?:和|与)“([^“”]{2,24})”(有什么关系|有什么不同|哪里不一样|为什么会有这个变化)？'
+)
 GENERIC_ANSWER_PHRASES = re.compile(
     r"我(?:觉得|认为|喜欢|想到|想|猜|看到|看见)|觉得|认为|喜欢|看到|看见|"
     r"因为|所以|然后|这个|那个|这里|那里|可能|应该|不知道|不清楚|不确定"
@@ -172,22 +176,22 @@ def selected_question(text: str, options: dict[str, list[str]], *, child_forms: 
 
 async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str | None,
                     topics: list[str], page_text: str, previous_question: str, child_mode: bool,
-                    confirmed_answer: str = "") -> AgentResult:
+                    confirmed_answer: str = "", earlier_pages: Sequence[str] = ()) -> AgentResult:
     """Return a displayable result or raise a dependency error for the event ledger."""
     if previous_question and SENSITIVE.search(unicodedata.normalize("NFKC", previous_question)):
         return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)
     strategy = "CONCRETE_RECALL" if feedback == "NOT_UNDERSTOOD" else "CONTEXT_QUESTION"
     followup = ANSWER_FOLLOWUP_FORMS.get(feedback)
-    if not child_mode and followup:
-        excerpt = matching_answer_excerpt(page_text, confirmed_answer)
-        if excerpt is not None:
-            question = f"读到“{excerpt}”时，{followup}"
-            if question != previous_question:
-                return AgentResult(status="GENERATED", strategyType=strategy, outputText=question)
+    answer_focus = matching_answer_excerpt(page_text, confirmed_answer) if not child_mode and followup else None
+    grounded_followup = f"读到“{answer_focus}”时，{followup}" if answer_focus else None
+    if grounded_followup == previous_question:
+        grounded_followup = None
     knowledge = retrieve_knowledge(KnowledgeQuery(age_band=age_band, topics=topics,
                                                   task_type="GUIDANCE", query_text=page_text))
     selected = select_knowledge_items(knowledge.items, 5)
     if not selected:
+        if grounded_followup:
+            return AgentResult(status="GENERATED", outputText=grounded_followup, strategyType=strategy)
         question = "你喜欢这一页吗？" if child_mode else "这个故事里，你最喜欢谁呀？"
         return AgentResult(status="FALLBACK", strategyType="NO_KNOWLEDGE_FALLBACK", outputText=question)
 
@@ -197,15 +201,29 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
         # A body shared by several excerpts selects the page-wide question.
         options[""] = [PAGE_LEAD + form for form in forms]
     candidates = [option for group in options.values() for option in group]
+    if grounded_followup:
+        candidates.append(grounded_followup)
     choices = {str(i): option for i, option in enumerate(candidates, start=1)}
     request = build_prompt("CONTEXT_QUESTION", age_band=age_band, page_text=page_text, items=selected,
                            user_input=INSTRUCTIONS[feedback],
                            output_rule="从本次候选问句中选一句最适合当前页和反馈的问题。只返回它的阿拉伯数字编号。")
     if previous_question:
         request.context_text += "\n当前页已保存的问题（仅作参考）：" + previous_question
+    if earlier_pages:
+        request.context_text += "\n实际按顺序读过的前文（仅作故事资料）：\n" + "\n".join(earlier_pages)
+        if not child_mode and feedback != "NOT_UNDERSTOOD":
+            request.system_prompt += (
+                '\n当读过的前文与当前页有关时，也可以自行写一个联系情节的问题。'
+                '格式为“前文原句片段”和“当前页原句片段”有什么关系？'
+                '可以问哪里不一样或为什么会有这个变化。两段必须逐字引用，分别为 2 至 24 字。'
+                '否则只输出候选编号。')
+    if answer_focus:
+        request.context_text += "\n刚才回答对应到的当页原文线索：" + answer_focus
     request.context_text += "\n候选问句：\n" + "\n".join(f"{key}. {value}" for key, value in choices.items())
     result = await model_adapter.generate(request)
     if not result.success:
+        if grounded_followup:
+            return AgentResult(status="GENERATED", outputText=grounded_followup, strategyType=strategy)
         if result.error_code != "TIMEOUT":
             raise ServiceError("DEPENDENCY_UNAVAILABLE", "文本模型未能生成引导问题")
         question = "你想再看看这一页吗？" if child_mode else "我们先看看画面上有什么吧？"
@@ -215,8 +233,17 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
         question = choices.get(unicodedata.normalize("NFKC", number))
         if separator and question != echoed:
             question = None
+    elif not child_mode and feedback != "NOT_UNDERSTOOD" and (composed := CONTEXT_QUESTION.fullmatch(result.text.strip())):
+        earlier, current, _ = composed.groups()
+        if (any(earlier in clause for page in earlier_pages for clause in page_clauses(page))
+                and any(current in clause for clause in page_clauses(page_text))):
+            question = composed[0]
+        else:
+            question = None
     else:
         question = selected_question(result.text, options, child_forms=forms if child_mode else ())
+    if grounded_followup and (question is None or (question in candidates and question != grounded_followup)):
+        question = grounded_followup
     if question is None:
         return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)
     return AgentResult(

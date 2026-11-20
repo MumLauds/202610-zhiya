@@ -98,8 +98,9 @@ export function useReadingSession({ api, initialSessionId = null, initialSnapsho
     }
   }
 
-  async function guidance(feedback) {
-    clearMessages()
+  async function guidance(feedback, { background = false } = {}) {
+    if (background) error.value = null
+    else clearMessages()
     try {
       const output = await machine.guidance(feedback)
       if (output.result) lastAgentResult.value = output.result

@@ -70,7 +70,7 @@ X-Request-ID 响应头与响应体一致。/docs 可查看健康、账号、档�
 
 ## 工坊 AI 插画（可选）
 
-保留 `IMAGE_API_URL` 为空时，工坊可以继续使用既有的授权模板。启用时填入百炼业务空间的完整 HTTPS 文生图同步接口，使用与该地域匹配的 `DASHSCOPE_API_KEY`。默认模型是 `qwen-image-2.1-turbo`，可通过 `IMAGE_MODEL` 换成同一请求格式的千问图像模型。使用 Compose 或现有部署文件时也要给后端容器传入这两个图像变量。[示例配置](.env.example) · [百炼文生图说明](https://www.alibabacloud.com/help/en/model-studio/text-to-image)
+工坊的 AI 插画默认使用 `qwen-image-2.1-turbo`。当 `IMAGE_API_URL` 为空时，自动复用 `TTS_API_URL` 中的百炼官方工作空间域名及 `DASHSCOPE_API_KEY`。使用独立工作空间时，在后端环境中填写完整的 HTTPS 文生图同步 `IMAGE_API_URL`，并确认密钥有该空间的模型调用权限。缺少有效工作空间或密钥时仍可用授权模板。需要关闭 AI 插画时显式设置 `IMAGE_MODEL=`。[示例配置](.env.example) · [百炼文生图同步 API](https://help.aliyun.com/en/model-studio/qwen-image-generation-and-editing-api-reference)
 
 家长在工坊勾选「使用 AI 生成专属插画」才会调用文生图。每个新增页调用一次，调用受百炼额度和计费约束。续写沿用已读页的冻结配图。生成结果保存在数据库同卷的媒体存储，只有本人家长可在审核前预览。请逐页核对画面后再审核，生成失败可在工坊取消该选项并改用模板。
 

@@ -375,11 +375,15 @@ class _FakeAdapter:
         return self.result
 
 
-def test_finish_uses_latest_parent_answer_in_local_report(bookshelf, monkeypatch):
+@pytest.mark.parametrize("model_ok", [True, False])
+def test_finish_enriches_latest_answer_locally_without_sending_it_to_model(bookshelf, monkeypatch, model_ok):
+    from app.schemas.agent import ModelGenerateResult
     first, second, path = bookshelf
     headers = {"X-CSRF-Token": first.cookies["zhiya_csrf"]}
     other_headers = {"X-CSRF-Token": second.cookies["zhiya_csrf"]}
-    adapter = _FakeAdapter(exc=AssertionError("answer-based report must not call the model"))
+    adapter = _FakeAdapter(result=ModelGenerateResult(
+        success=model_ok, text='{"suggestionId":"DRAW_PICTURE","storyMoment":"小兔打开雨伞"}',
+    ))
     monkeypatch.setattr(app.state, "model_adapter", adapter, raising=False)
     session = _started_session(first, headers, path)
     with closing(sqlite3.connect(path)) as db, db:
@@ -404,21 +408,30 @@ def test_finish_uses_latest_parent_answer_in_local_report(bookshelf, monkeypatch
     data = done.json()["data"]
     assert data["session"]["status"] == "FINISHED"
     report = data["report"]
-    assert report["status"] == "READY"
+    assert report["status"] == "PENDING"
     assert "孩子在第 1 页的回答：“我喜欢小兔”" in report["summary"]
     assert "之前的回答" not in report["summary"]
-    activity, = report["activities"]
+    assert report["activities"] == []
+    detail = first.get(base)
+    assert detail.status_code == 200
+    saved_report = detail.json()["data"]["report"]
+    assert saved_report["status"] == "READY"
+    assert "孩子在第 1 页的回答：“我喜欢小兔”" in saved_report["summary"]
+    assert ("我们读到了“小兔打开雨伞”这一幕" in saved_report["summary"]) is model_ok
+    activity = saved_report["activities"][0]
     steps = " ".join(activity["steps"])
     assert "第 1 页" in steps and "小兔打开雨伞" in steps
 
     replay = first.post(f"{base}/completions", headers=headers, json=body)
     assert replay.status_code == 200 and replay.json()["data"] == data
     assert replay.headers["Cache-Control"] == "private, no-store"
-    detail = first.get(base)
-    assert detail.status_code == 200 and detail.json()["data"]["report"] == report
+    assert first.get(base).json()["data"]["report"] == saved_report
     assert second.get(base).status_code == 404
     assert second.post(f"{base}/completions", headers=other_headers, json=body).status_code == 404
-    assert not adapter.calls
+    call, = adapter.calls
+    assert "小兔打开雨伞" in call.context_text
+    assert "我喜欢小兔" not in call.context_text + call.user_input
+    assert "之前的回答" not in call.context_text + call.user_input
 
 
 @pytest.mark.parametrize("suggestion_id, suggestion, activity_name, materials", [
@@ -486,6 +499,7 @@ def test_report_without_readable_text_has_no_activity(bookshelf, monkeypatch, su
     "孩子已经掌握了故事中的所有词语。",
     "建议用体罚帮助孩子集中注意力。",
     '{"suggestionId":"TALK_ABOUT_STORY","summary":"阅读能力低于同龄儿童"}',
+    '{"suggestionId":"DRAW_PICTURE","storyMoment":"没有读过的小兔到火车站"}',
     '{"suggestionId":"正确回答十道问题"}',
     '{"suggestionId":["TALK_ABOUT_STORY"]}',
     "[]", "null", "", "文" * 501,

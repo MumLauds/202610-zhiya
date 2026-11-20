@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import FlipBook from '../components/FlipBook.vue'
 import { synthesize, transcribe } from '../api/voice'
 import { describeApiError } from '../api/client'
@@ -51,10 +51,10 @@ let recordingStream = null
 let submitRecording = false
 let voiceGeneration = 0
 let recognitionRequest = null
-let initialGuidanceRequest = null
 let audio = null
 let audioGeneration = 0
 let speechRequest = null
+let preparedPageAudio = null
 
 const reviewingHistory = computed(() => ['FINISHED', 'INTERRUPTED'].includes(props.session?.status))
 const pagesByNumber = computed(() => new Map((props.book?.pages || []).map(page => [page.pageNumber, page])))
@@ -97,6 +97,10 @@ const showDockFinish = computed(() => currentPage.value?.defaultNextPageNumber =
 const rereading = computed(() => pageIndex.value !== progressIndex.value)
 const canFinish = computed(() => !props.loading && !turnBusy.value && !interactionBusy.value && !props.syncRequired && props.session?.status === 'IN_PROGRESS' && (props.session?.preview || props.authenticated))
 const mediaAllowed = computed(() => canFinish.value && !rereading.value)
+const narrationKey = computed(() => props.authenticated && !props.loading && !props.syncRequired
+  && !props.session?.preview && props.session?.status === 'IN_PROGRESS'
+  && currentPage.value?.pageNumber === props.session.currentPage
+  ? `${props.session.readingSessionId}:${currentPage.value.pageNumber}` : '')
 const canSubmitFeedback = computed(() => mediaAllowed.value && Boolean(currentQuestion.value) && !questionSkipped.value && !questionBlocked.value)
 const canSkipQuestion = computed(() => mediaAllowed.value && !questionSkipped.value)
 const canAnswer = computed(() => props.session?.preview ? mediaAllowed.value : canSubmitFeedback.value)
@@ -119,8 +123,7 @@ async function ensurePageQuestion(force = false) {
   pendingGuidanceKey.value = key
   guidanceError.value = ''
   try {
-    initialGuidanceRequest = props.requestGuidance('INITIAL')
-    const saved = await initialGuidanceRequest
+    const saved = await props.requestGuidance('INITIAL')
     if (!saved && pageGuidanceKey.value === key && autoGuidanceKey.value === key && !turnBusy.value && !interactionBusy.value
         && !questionSkipped.value && !currentQuestion.value && !rereading.value) {
       guidanceError.value = '本页问题暂时没有生成，可以重试，或先跳过继续阅读。'
@@ -129,7 +132,6 @@ async function ensurePageQuestion(force = false) {
   } finally {
     if (pendingGuidanceKey.value === key) {
       pendingGuidanceKey.value = ''
-      initialGuidanceRequest = null
     }
   }
 }
@@ -208,8 +210,8 @@ function stopNarration() {
   if (audio) {
     audio.onended = audio.onerror = null
     audio.pause()
-    audio.removeAttribute('src')
-    audio.load()
+    if (audio === preparedPageAudio?.node) audio.currentTime = 0
+    else releaseAudio(audio)
     audio = null
   }
   window.speechSynthesis?.cancel()
@@ -220,6 +222,44 @@ function stopNarration() {
 function voiceSnapshot() {
   return { readingSessionId: props.session.readingSessionId, pageNumber: currentPage.value.pageNumber, revision: props.session.revision }
 }
+
+function releaseAudio(node) {
+  node.removeAttribute('src')
+  node.load()
+}
+
+function clearPreparedAudio() {
+  const previous = preparedPageAudio
+  preparedPageAudio = null
+  previous?.controller.abort()
+  if (previous?.node && previous.node !== audio) releaseAudio(previous.node)
+}
+
+function preparePageAudio(key) {
+  if (preparedPageAudio?.key === key && !(Date.now() >= preparedPageAudio.expiresAt)) {
+    return preparedPageAudio.promise
+  }
+  clearPreparedAudio()
+  const entry = { key, controller: new AbortController() }
+  preparedPageAudio = entry
+  entry.promise = synthesize({ ...voiceSnapshot(), preload: true }, entry.controller.signal).then(data => {
+    if (preparedPageAudio !== entry) return null
+    entry.expiresAt = Date.parse(data.expiresAt)
+    entry.node = new Audio()
+    entry.node.preload = 'auto'
+    entry.node.src = data.audioUrl
+    return entry.node
+  }).catch(error => {
+    if (preparedPageAudio === entry) clearPreparedAudio()
+    throw error
+  })
+  return entry.promise
+}
+
+watch(narrationKey, (key) => {
+  clearPreparedAudio()
+  if (key) void preparePageAudio(key).catch(() => {})
+}, { immediate: true, flush: 'post' })
 
 async function playNarration(interactionEventId = null) {
   if (['playing', 'loading'].includes(audioStatus.value)) {
@@ -233,25 +273,27 @@ async function playNarration(interactionEventId = null) {
   if (!props.session.preview) {
     try {
       audioStatus.value = 'loading'
-      if (guidanceLoading.value && initialGuidanceRequest) {
-        audioMessage.value = '等待本页提问完成后朗读'
-        await initialGuidanceRequest
-        await nextTick()
-        if (generation !== audioGeneration) return
-      }
-      speechRequest = new AbortController()
       audioMessage.value = '正在生成朗读'
-      const data = await synthesize(interactionEventId ? { interactionEventId } : voiceSnapshot(), speechRequest.signal)
-      if (generation !== audioGeneration) return
-      audio = new Audio(data.audioUrl)
+      let node
+      if (interactionEventId) {
+        speechRequest = new AbortController()
+        const data = await synthesize({ interactionEventId }, speechRequest.signal)
+        if (generation !== audioGeneration) return
+        node = new Audio(data.audioUrl)
+      } else {
+        node = await preparePageAudio(narrationKey.value)
+      }
+      if (!node || generation !== audioGeneration) return
+      audio = node
       audio.onended = () => { stopNarration(); audioMessage.value = '朗读完成' }
-      audio.onerror = () => { stopNarration(); audioMessage.value = '播放失败，文字仍可阅读' }
+      audio.onerror = () => { clearPreparedAudio(); stopNarration(); audioMessage.value = '播放失败，文字仍可阅读' }
       await audio.play()
       if (generation !== audioGeneration) return
       audioStatus.value = 'playing'
       audioMessage.value = interactionEventId ? '正在播放故事回答' : `正在朗读第 ${pageNumber} 页`
     } catch (error) {
       if (generation !== audioGeneration) return
+      if (audio === preparedPageAudio?.node) clearPreparedAudio()
       stopNarration()
       audioStatus.value = 'error'
       audioMessage.value = describeApiError(error)
@@ -276,6 +318,7 @@ async function playNarration(interactionEventId = null) {
 
 async function toggleRecording() {
   voiceError.value = ''
+  if (preparedPageAudio && !preparedPageAudio.node) clearPreparedAudio()
   if (['starting', 'processing'].includes(voiceState.value)) return
   if (voiceState.value === 'recording') {
     submitRecording = true
@@ -530,7 +573,7 @@ watch([
   stopNarration()
   closeVoice()
 })
-onBeforeUnmount(() => { stopNarration(); closeVoice() })
+onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
 </script>
 
 <template>

@@ -46,14 +46,13 @@ export function useAudioController(onMediaError) {
       error.value = '当前没有可用音频'
       return false
     }
-    stopInternal(false)
+    if (sourceUrl !== url) prepare(url)
     const token = ++generation
     error.value = ''
     const element = ensureAudio()
     activeSource.value = source
     sourceUrl = url
-    element.src = url
-    element.currentTime = 0
+    if (element.currentTime) element.currentTime = 0
     try {
       await element.play()
       if (token !== generation) {
@@ -68,6 +67,16 @@ export function useAudioController(onMediaError) {
       }
       return false
     }
+  }
+
+  function prepare(url) {
+    if (sourceUrl === url) return
+    stop()
+    if (!url) return
+    const element = ensureAudio()
+    element.preload = 'auto'
+    sourceUrl = url
+    element.src = url
   }
 
   function togglePause() {
@@ -92,7 +101,12 @@ export function useAudioController(onMediaError) {
 
   function stop() {
     error.value = ''
+    const hadSource = Boolean(sourceUrl)
     stopInternal(true)
+    if (audio && hadSource) {
+      audio.removeAttribute('src')
+      audio.load()
+    }
   }
 
   onBeforeUnmount(() => {
@@ -112,6 +126,7 @@ export function useAudioController(onMediaError) {
     activeSource: computed(() => activeSource.value),
     error: computed(() => error.value),
     play,
+    prepare,
     togglePause,
     stop,
   }

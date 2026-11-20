@@ -29,6 +29,15 @@ const initialQuestion = {
   outputText: '你看到了什么？',
   revision: 2,
 }
+const savedQuestion = (pageNumber, revision) => ({
+  ...initialQuestion, interactionEventId: 21 + pageNumber, eventType: 'QUESTION', pageNumber, revision,
+})
+const questionedPageOne = { ...inProgress, revision: 2 }
+const questionedPageTwo = { ...pageTwo, revision: 3 }
+const recoveredPageTwo = {
+  session: { ...pageTwo, revision: 4 },
+  events: [savedQuestion(1, 2), savedQuestion(2, 4)],
+}
 
 let wrapper
 
@@ -44,7 +53,9 @@ async function openReader({ snapshot = inProgress, events = [], sessionApi = {},
     get: vi.fn(),
     addEvent: vi.fn(),
     finish: vi.fn(),
-    submitGuidance: vi.fn().mockResolvedValue({ data: initialQuestion }),
+    submitGuidance: vi.fn(async (_, { expectedRevision }) => ({
+      data: { ...initialQuestion, revision: expectedRevision + 1 },
+    })),
     ...sessionApi,
   }
   wrapper = mount(ReaderView, {
@@ -54,7 +65,10 @@ async function openReader({ snapshot = inProgress, events = [], sessionApi = {},
       storyVersionId: book.storyVersionId,
       initialSnapshot: snapshot ? { session: snapshot, events, report: null } : null,
       sessionApi: api,
-      voiceApi,
+      voiceApi: {
+        synthesizePage: vi.fn().mockRejectedValue(new ApiError('朗读暂不可用', { status: 503 })),
+        ...voiceApi,
+      },
     },
   })
   await flushPromises()
@@ -77,6 +91,7 @@ describe('ReaderView session recovery and interaction', () => {
       .mockRejectedValueOnce(new ApiError('offline', { code: 'REQUEST_OUTCOME_UNKNOWN' }))
       .mockResolvedValueOnce({ data: reply })
     await openReader({ snapshot, sessionApi: { submitQuestion,
+      submitGuidance: vi.fn().mockRejectedValue(new ApiError('题目暂不可用', { status: 503, code: 'DEPENDENCY_UNAVAILABLE' })),
       get: vi.fn().mockResolvedValue({ data: { session: snapshot, events: [], report: null } }) } })
     await clickButton('故事里有谁？')
     await clickButton('重新核对进度')
@@ -92,31 +107,37 @@ describe('ReaderView session recovery and interaction', () => {
       load() {}
       removeAttribute() {}
     })
-    const result = { interactionEventId: 121, revision: 2, outputText: '小狐狸举着伞。', status: 'GENERATED', strategyType: 'CONCRETE_RECALL' }
+    const result = { interactionEventId: 121, revision: 3, outputText: '小狐狸举着伞。', status: 'GENERATED', strategyType: 'CONCRETE_RECALL' }
     const voice = { synthesizeInteraction: vi.fn().mockResolvedValue({ data: { audioUrl: '/story-audio', expiresAt: '2099-01-01' } }) }
     const api = await openReader({ snapshot: { ...inProgress, mode: 'CHILD_SOLO' },
       sessionApi: { submitQuestion: vi.fn().mockResolvedValueOnce({ data: result }) }, voiceApi: voice })
     expect(wrapper.text()).not.toContain('提出本页问题')
     await clickButton('故事里有谁？')
     expect(api.submitQuestion).toHaveBeenCalledWith(42, expect.objectContaining({
-      inputText: '故事里有谁？', expectedRevision: 1, pageNumber: 1,
+      inputText: '故事里有谁？', expectedRevision: 2, pageNumber: 1,
     }), expect.any(Object))
     expect(api.addEvent).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain(result.outputText)
-    await clickButton('播放故事回答')
+    await clickButton('播放芽芽的回答')
     expect(voice.synthesizeInteraction).toHaveBeenCalledWith({ interactionEventId: 121, signal: expect.any(AbortSignal) })
   })
 
   it('submits a confirmed mobile question without first answering a generated prompt', async () => {
-    const api = await openReader({ sessionApi: { submitQuestion: vi.fn().mockResolvedValueOnce({ data: {
-      interactionEventId: 15, revision: 2, outputText: '一起看看书页吧。', status: 'FALLBACK', strategyType: 'NO_KNOWLEDGE_FALLBACK',
-    } }) } })
+    const api = await openReader({
+      snapshot: questionedPageOne,
+      events: [savedQuestion(1, 2)],
+      sessionApi: { submitQuestion: vi.fn().mockResolvedValueOnce({ data: {
+        interactionEventId: 15, revision: 3, outputText: '一起看看书页吧。', status: 'FALLBACK', strategyType: 'NO_KNOWLEDGE_FALLBACK',
+      } }) },
+    })
     await clickButton('提出本页问题')
     await clickButton('改用文字输入')
     await wrapper.get('textarea').setValue('它在做什么？')
     expect(api.submitQuestion).not.toHaveBeenCalled()
     await clickButton('确认提问')
-    expect(api.submitQuestion).toHaveBeenCalledWith(42, expect.objectContaining({ inputText: '它在做什么？' }), expect.any(Object))
+    expect(api.submitQuestion).toHaveBeenCalledWith(42, expect.objectContaining({
+      inputText: '它在做什么？', expectedRevision: 2,
+    }), expect.any(Object))
     expect(api.submitGuidance).not.toHaveBeenCalled()
     expect(api.addEvent).not.toHaveBeenCalled()
   })
@@ -146,8 +167,8 @@ describe('ReaderView session recovery and interaction', () => {
   })
 
   it('keeps the finished facts after a failed summary refresh and retries with GET only', async () => {
-    const lastPage = { ...inProgress, currentPage: 3, revision: 3, visitedPageNumbers: [1, 2, 3] }
-    const finished = { ...lastPage, status: 'FINISHED', revision: 4 }
+    const lastPage = { ...inProgress, currentPage: 3, revision: 4, visitedPageNumbers: [1, 2, 3] }
+    const finished = { ...lastPage, status: 'FINISHED', revision: 5 }
     const pending = { status: 'PENDING', summary: '本次共读访问了三页。', activities: [] }
     const ready = { ...pending, status: 'READY', summary: '最终小结' }
     const reply = (report) => new Response(JSON.stringify({ data: { session: finished, events: [], report } }))
@@ -156,17 +177,21 @@ describe('ReaderView session recovery and interaction', () => {
       .mockResolvedValueOnce(reply(ready))
     vi.stubGlobal('fetch', fetch)
     const api = new ReadingSessionsApi()
-    const writes = await openReader({ snapshot: lastPage, sessionApi: { finish: api.finish.bind(api), get: api.get.bind(api) } })
+    const writes = await openReader({
+      snapshot: lastPage,
+      events: [savedQuestion(3, 4)],
+      sessionApi: { finish: api.finish.bind(api), get: api.get.bind(api) },
+    })
     await clickButton('完成阅读')
     const facts = () => wrapper.get('.summary-facts').findAll('dd').map(item => item.text())
-    expect(facts()).toEqual(['3', '4', 'PENDING'])
+    expect(facts()).toEqual(['3', '5', 'PENDING'])
 
     await clickButton('刷新小结')
-    expect(facts()).toEqual(['3', '4', 'PENDING'])
+    expect(facts()).toEqual(['3', '5', 'PENDING'])
     expect(wrapper.get('.summary-panel').text()).toContain(pending.summary)
     expect(wrapper.get('.summary-panel [role="alert"]').text()).toContain('503')
     await clickButton('刷新小结')
-    expect(facts()).toEqual(['3', '4', 'READY'])
+    expect(facts()).toEqual(['3', '5', 'READY'])
     expect(wrapper.get('.summary-panel').text()).toContain(ready.summary)
     expect(wrapper.findAll('button').some(button => button.text() === '刷新小结')).toBe(false)
     expect(fetch.mock.calls.map(([path, options]) => [options.method, path])).toEqual([
@@ -204,12 +229,17 @@ describe('ReaderView session recovery and interaction', () => {
   })
 
   it('keeps reviewing visited pages local and hides interaction controls until the current page', async () => {
-    const api = await openReader({ snapshot: pageTwo })
+    const synthesizePage = vi.fn().mockRejectedValue(new ApiError('朗读暂不可用', { status: 503 }))
+    const api = await openReader({ snapshot: questionedPageTwo, events: [savedQuestion(2, 3)], voiceApi: { synthesizePage } })
+    expect(synthesizePage).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      readingSessionId: 42, pageNumber: 2, revision: 3,
+    }))
     await clickButton('上一页')
     expect(wrapper.get('.page-scene').text()).toBe('第一页')
     expect(wrapper.text()).toContain('正在回看已读页')
     expect(wrapper.find('.interaction-card').exists()).toBe(false)
     expect(wrapper.find('.page-audio-request').exists()).toBe(false)
+    expect(synthesizePage).toHaveBeenCalledTimes(1)
 
     await clickButton('下一页 →')
     expect(wrapper.get('.page-scene').text()).toBe('第二页')
@@ -251,7 +281,6 @@ describe('ReaderView session recovery and interaction', () => {
     const synthesizeInteraction = vi.fn().mockResolvedValue({ data: { audioUrl: '/answer.mp3' } })
     await openReader({ voiceApi: { synthesizeInteraction } })
 
-    await clickButton('生成本页共读问题')
     await clickButton('播放回答音频')
     expect(synthesizeInteraction).toHaveBeenCalledExactlyOnceWith({ interactionEventId: 22, signal: expect.any(AbortSignal) })
     expect(play).toHaveBeenCalledTimes(1)
@@ -260,9 +289,11 @@ describe('ReaderView session recovery and interaction', () => {
 
   it('automatically reads progress after losing a write response and advances without replaying', async () => {
     const api = await openReader({
+      snapshot: questionedPageOne,
+      events: [savedQuestion(1, 2)],
       sessionApi: {
         addEvent: vi.fn().mockRejectedValue(new ApiError('响应丢失', { code: 'REQUEST_OUTCOME_UNKNOWN' })),
-        get: vi.fn().mockResolvedValue({ data: { session: pageTwo } }),
+        get: vi.fn().mockResolvedValue({ data: recoveredPageTwo }),
       },
     })
     await clickButton('下一页 →')
@@ -275,13 +306,15 @@ describe('ReaderView session recovery and interaction', () => {
 
   it('locks writes after the automatic read fails until manual recheck succeeds', async () => {
     const api = await openReader({
+      snapshot: questionedPageOne,
+      events: [savedQuestion(1, 2)],
       sessionApi: {
         addEvent: vi.fn()
           .mockRejectedValueOnce(new ApiError('响应丢失', { code: 'REQUEST_OUTCOME_UNKNOWN' }))
-          .mockResolvedValueOnce({ data: { revision: 3 } }),
+          .mockResolvedValueOnce({ data: { revision: 5 } }),
         get: vi.fn()
           .mockRejectedValueOnce(new ApiError('读取失败', { code: 'NETWORK_ERROR' }))
-          .mockResolvedValueOnce({ data: { session: pageTwo } }),
+          .mockResolvedValueOnce({ data: recoveredPageTwo }),
       },
     })
     await clickButton('下一页 →')
@@ -298,7 +331,7 @@ describe('ReaderView session recovery and interaction', () => {
 
     await clickButton('下一页 →')
     expect(api.addEvent.mock.calls[1].slice(0, 2)).toEqual([
-      42, expect.objectContaining({ eventType: 'PAGE_CHANGED', pageNumber: 3, expectedRevision: 2 }),
+      42, expect.objectContaining({ eventType: 'PAGE_CHANGED', pageNumber: 3, expectedRevision: 4 }),
     ])
     expect(wrapper.get('.page-scene').text()).toBe('第三页')
   })
@@ -346,7 +379,6 @@ describe('ReaderView session recovery and interaction', () => {
       .mockResolvedValueOnce({ data: initialQuestion })
     const get = vi.fn().mockResolvedValue({ data: { session: inProgress, events: [], report: null } })
     await openReader({ sessionApi: { submitGuidance, get } })
-    await clickButton('生成本页共读问题')
     expect(submitGuidance).toHaveBeenCalledTimes(1)
     await clickButton('重新核对进度')
 
@@ -382,7 +414,6 @@ describe('ReaderView session recovery and interaction', () => {
     const api = new ReadingSessionsApi()
     const get = vi.fn().mockResolvedValue({ data: { session: inProgress, events: [], report: null } })
     await openReader({ sessionApi: { get, submitGuidance: api.submitGuidance.bind(api) } })
-    await clickButton('生成本页共读问题')
 
     expect(get).toHaveBeenCalledExactlyOnceWith(42, expect.any(Object))
     expect(wrapper.text()).not.toContain('重新核对进度')
@@ -434,7 +465,8 @@ describe('ReaderView session recovery and interaction', () => {
           data: {
             session: latest,
             events: [
-              { ...initialQuestion, eventType: 'QUESTION', pageNumber: 1 },
+              savedQuestion(1, 2),
+              ...(currentPage === 2 ? [savedQuestion(2, 5)] : []),
               ...[...committed.values()].map(({ event }) => event),
             ],
             report: null,
@@ -488,7 +520,6 @@ describe('ReaderView session recovery and interaction', () => {
   it('PR41 final recovery reuses a newly generated question after revisiting a read page', async () => {
     const submitGuidance = vi.fn().mockResolvedValue({ data: { ...initialQuestion, revision: 3 } })
     const api = await openReader({ snapshot: pageTwo, sessionApi: { submitGuidance } })
-    await clickButton('生成本页共读问题')
     expect(wrapper.text()).toContain(initialQuestion.outputText)
 
     await clickButton('上一页')

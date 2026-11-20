@@ -10,7 +10,7 @@ const book = {
 }
 const session = {
   readingSessionId: 42, storyVersionId: 6, status: 'IN_PROGRESS',
-  currentPage: 1, revision: 1, visitedPageNumbers: [1],
+  currentPage: 1, revision: 1, visitedPageNumbers: [1], mode: 'PARENT_CHILD',
 }
 const question = {
   status: 'GENERATED', strategyType: 'CONTEXT_QUESTION', interactionEventId: 22,
@@ -43,7 +43,8 @@ async function openReader(fetch, { restore = false } = {}) {
   vi.stubGlobal('fetch', fetch)
   wrapper = mount(ReaderView, {
     props: {
-      book, mode: 'live', storyVersionId: book.storyVersionId, voiceApi: {},
+      book, mode: 'live', storyVersionId: book.storyVersionId,
+      voiceApi: { synthesizePage: vi.fn().mockRejectedValue(new Error('暂时无法准备朗读')) },
       sessionApi: new ReadingSessionsApi(),
       initialSessionId: restore ? 42 : null,
       initialSnapshot: restore ? null : { session, events: [], report: null },
@@ -79,10 +80,9 @@ async function expectAnswerUnavailable() {
   expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
 }
 
-it('shows the API-017 safety block reached from the answer button without opening the modal', async () => {
+it('shows a safety block from the automatic API-017 request without opening the answer modal', async () => {
   const fetch = vi.fn().mockResolvedValueOnce(result(blocked))
   await openReader(fetch)
-  await click('孩子回答')
 
   expect(wrapper.text()).toContain(blocked.outputText)
   await expectAnswerUnavailable()
@@ -97,7 +97,6 @@ it('keeps a safety-blocked result non-answerable when recovered by same-key repl
     .mockResolvedValueOnce(detail(1))
     .mockResolvedValueOnce(result(blocked))
   await openReader(fetch)
-  await click('孩子回答')
   await click('重新核对进度')
 
   expect(wrapper.text()).toContain(blocked.outputText)
@@ -136,7 +135,6 @@ it('submits a separate skip after the initial question returns a business 503', 
     .mockResolvedValueOnce(json({ error: { code: 'DEPENDENCY_UNAVAILABLE', message: '暂时无法生成问题' } }, 503))
     .mockResolvedValueOnce(result(skipped))
   await openReader(fetch)
-  await click('生成本页共读问题')
   expect(wrapper.text()).toContain('暂时无法生成问题')
   await click('跳过')
 
@@ -159,7 +157,6 @@ it.each([
     .mockReturnValueOnce(pendingInitial)
     .mockResolvedValueOnce(result(skipped))
   await openReader(fetch)
-  await click('生成本页共读问题')
   expect(guidanceWrites(fetch).map(({ feedback }) => feedback)).toEqual(['INITIAL'])
 
   await click('跳过')
@@ -187,7 +184,6 @@ it('restores the committed initial question when a concurrent skip returns a rev
     .mockResolvedValueOnce(detail(2, [questionEvent]))
     .mockResolvedValueOnce(result({ ...skipped, revision: 3 }))
   await openReader(fetch)
-  await click('生成本页共读问题')
   await click('跳过')
   resolveInitial(result(question))
   await flushPromises()
@@ -268,7 +264,6 @@ it('rechecks the committed first question after a concurrent skip fails with a b
     return json({ error: { code: 'DEPENDENCY_UNAVAILABLE', message: '暂时无法跳过' } }, 503)
   })
   await openReader(fetch)
-  await click('生成本页共读问题')
   await click('跳过')
   expect(wrapper.text()).not.toContain(skipNotice)
   expect(wrapper.find('[role="dialog"]').exists()).toBe(false)

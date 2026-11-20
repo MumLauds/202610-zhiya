@@ -191,7 +191,9 @@ describe('parent transcript review', () => {
     expect(dialog.text()).toContain('确认后将作为本页回答保存')
     expect(getUserMedia).toHaveBeenCalledTimes(entry === 'denied' ? 1 : 0)
     expect(transcribe).not.toHaveBeenCalled()
-    expect(synthesize).not.toHaveBeenCalled()
+    expect(synthesize.mock.calls.map(([source]) => source)).toEqual([
+      { readingSessionId: 55, pageNumber: 1, revision: 1, preload: true },
+    ])
     await dialog.get('.modal-close').trigger('click')
     await button('输入回答').trigger('click')
     expect(wrapper.get('textarea').element.value).toBe('')
@@ -302,14 +304,18 @@ describe('parent child-mode handoff', () => {
 })
 
 describe('narration lifecycle', () => {
-  it('pauses the actual player and releases its source', async () => {
+  it('pauses the actual player and reuses its prepared source on the same page', async () => {
     render()
     await button('朗读').trigger('click')
     await flushPromises()
     expect(audios).toHaveLength(1)
     await button('暂停朗读').trigger('click')
     expect(audios[0].pause).toHaveBeenCalledTimes(1)
-    expect(audios[0].removeAttribute).toHaveBeenCalledWith('src')
+    expect(audios[0].removeAttribute).not.toHaveBeenCalled()
+    await button('朗读').trigger('click')
+    await flushPromises()
+    expect(synthesize).toHaveBeenCalledOnce()
+    expect(audios[0].play).toHaveBeenCalledTimes(2)
     expect(speechSynthesis.cancel).toHaveBeenCalled()
   })
 
@@ -324,34 +330,34 @@ describe('narration lifecycle', () => {
     expect(audios[0].pause).not.toHaveBeenCalled()
   })
 
-  it.each(['play', 'cancel'])('waits for INITIAL before requesting narration: %s', async (action) => {
+  it('prepares and plays narration while INITIAL is still waiting for the model', async () => {
     const pending = deferred()
-    render({ events: [], requestGuidance: () => pending.promise })
+    const requestGuidance = vi.fn().mockReturnValue(pending.promise)
+    render({ events: [], requestGuidance })
+    await flushPromises()
+    expect(requestGuidance).toHaveBeenCalledWith('INITIAL')
+    expect(synthesize.mock.calls[0][0]).toEqual({ readingSessionId: 55, pageNumber: 1, revision: 1, preload: true })
+    expect(audios[0].play).not.toHaveBeenCalled()
     await button('朗读').trigger('click')
-    expect(synthesize).not.toHaveBeenCalled()
-    if (action === 'cancel') await button('取消朗读').trigger('click')
+    await flushPromises()
+    expect(audios[0].play).toHaveBeenCalledOnce()
     await wrapper.setProps({ session: { ...initialSession, revision: 2 }, events: [questionEvent] })
     pending.resolve(true)
     await flushPromises()
-    if (action === 'cancel') {
-      expect(synthesize).not.toHaveBeenCalled()
-    } else {
-      expect(synthesize).toHaveBeenCalledTimes(1)
-      expect(synthesize.mock.calls[0][0]).toEqual({ readingSessionId: 55, pageNumber: 1, revision: 2 })
-      expect(audios[0].play).toHaveBeenCalledTimes(1)
-    }
+    expect(synthesize).toHaveBeenCalledOnce()
   })
 
-  it('ignores synthesis returned after cancelling the loading state', async () => {
+  it('keeps preparing the page but never plays after cancelling the loading state', async () => {
     const speech = deferred()
     synthesize.mockReturnValueOnce(speech.promise)
     render()
     await button('朗读').trigger('click')
     await button('取消朗读').trigger('click')
-    expect(synthesize.mock.calls[0][1].aborted).toBe(true)
+    expect(synthesize.mock.calls[0][1].aborted).toBe(false)
     speech.resolve({ audioUrl: '/late' })
     await flushPromises()
-    expect(audios).toHaveLength(0)
+    expect(audios).toHaveLength(1)
+    expect(audios[0].play).not.toHaveBeenCalled()
   })
 
   it.each(['page', 'logout', 'unmount'])('releases playback on %s', async (action) => {
@@ -365,7 +371,7 @@ describe('narration lifecycle', () => {
   })
 
   it('does not silently fall back to browser speech on a backend error', async () => {
-    synthesize.mockRejectedValueOnce(new Error('服务暂不可用'))
+    synthesize.mockRejectedValue(new Error('服务暂不可用'))
     render()
     await button('朗读').trigger('click')
     await flushPromises()

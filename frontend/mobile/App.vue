@@ -234,7 +234,11 @@ watch(mode, () => {
 }, { flush: 'sync' })
 watch(activeTab, refreshLiveView)
 onMounted(() => {
-  if (publicSite) syncAccount()
+  if (publicSite) {
+    syncAccount()
+    const target = /^#reader\/([1-9]\d*)$/.exec(window.location.hash)
+    if (target && validId(Number(target[1]))) void startLive({ restoreId: Number(target[1]) })
+  }
   window.addEventListener('focus', syncAccount)
   document.addEventListener('visibilitychange', syncAccount)
   accountTimer = setInterval(syncAccount, 1000)

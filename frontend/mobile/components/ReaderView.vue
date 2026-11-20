@@ -49,6 +49,9 @@ const answerAudioUrl = ref('')
 const answerAudioLoading = ref(false)
 const answerAudioNotice = ref('')
 const pendingFeedback = ref(null)
+const foregroundBusy = ref(false)
+let autoQuestionPage = ''
+let answerAudioEventId = null
 const answerAudio = useAudioController((url) => {
   if (answerAudioUrl.value === url) {
     answerAudioUrl.value = ''
@@ -80,6 +83,7 @@ const nextPageNumber = computed(() => {
 const isLastPage = computed(() => !reviewing.value && nextPageNumber.value == null)
 const isFinished = computed(() => session.state.session?.status === 'FINISHED')
 const pending = computed(() => session.state.pending || Boolean(pendingFeedback.value) || session.loading.value)
+const navigationPending = computed(() => foregroundBusy.value || (pending.value && pendingFeedback.value !== 'INITIAL'))
 const canSkip = computed(() => !session.state.syncRequired && (pendingFeedback.value === 'INITIAL' ||
   (!pending.value && interactionResult.value?.strategyType !== 'SKIP' && interactionResult.value?.feedback !== 'SKIPPED')))
 const revision = computed(() => session.state.session?.revision ?? 0)
@@ -93,9 +97,17 @@ watch(currentPageNumber, () => {
   restorePageQuestion()
 })
 watch(() => session.state.events, () => restorePageQuestion())
-watch(revision, () => {
-  if (props.mode === 'live') resetAudio()
-})
+const activePageKey = computed(() => props.mode === 'live' && !reviewing.value && !session.state.syncRequired
+  && session.state.session?.status === 'IN_PROGRESS' ? `${sessionId.value}:${currentPageNumber.value}` : '')
+watch(activePageKey, (key) => {
+  if (key && !pageAudioSrc.value) void loadPageAudio(true)
+  else if (!key) resetAudio()
+}, { immediate: true, flush: 'post' })
+watch([activePageKey, pending, interactionResult], ([key, busy, question]) => {
+  if (!key || busy || question || autoQuestionPage === key) return
+  autoQuestionPage = key
+  void submitFeedback('INITIAL', { background: true })
+}, { immediate: true, flush: 'post' })
 watch(() => session.state.session?.currentPage, (page) => {
   if (page != null) currentPageNumber.value = page
 })
@@ -148,6 +160,7 @@ function resetAudio() {
   cancelPageAudioRequest()
   stopAnswerAudio()
   answerAudioUrl.value = ''
+  answerAudioEventId = null
   answerAudioNotice.value = ''
   pageAudioSrc.value = props.mode === 'demo' ? (currentPage.value?.audio ?? '') : ''
 }
@@ -194,7 +207,7 @@ async function retryStart() {
 }
 
 async function goNext() {
-  if (pending.value || !session.state.session) return
+  if (navigationPending.value || !session.state.session) return
   answerAudio.stop()
   if (isLastPage.value) {
     await finishReading()
@@ -206,40 +219,46 @@ async function goNext() {
     currentPageNumber.value = next
     return
   }
+  foregroundBusy.value = true
   try {
     await session.changePage(next)
     currentPageNumber.value = session.state.session.currentPage
   } catch {
     // Conflict recovery is reported through `session.notice`.
+  } finally {
+    foregroundBusy.value = false
   }
 }
 
 function goPrevious() {
   const index = visited.value.indexOf(currentPageNumber.value)
-  if (pending.value || index <= 0) return
+  if (navigationPending.value || index <= 0) return
   answerAudio.stop()
   currentPageNumber.value = visited.value[index - 1]
 }
 
 async function finishReading() {
-  if (pending.value) return
+  if (navigationPending.value) return
   answerAudio.stop()
+  foregroundBusy.value = true
   try {
     await session.finish()
     emit('finished', { book: props.book, session: session.state.session, report: session.state.report })
   } catch {
     // Error is rendered from the composable state.
+  } finally {
+    foregroundBusy.value = false
   }
 }
 
-async function submitFeedback(feedback) {
+async function submitFeedback(feedback, { background = false } = {}) {
   if (!session.state.session || reviewing.value || session.state.syncRequired) return
   if (feedback === 'SKIPPED' ? !canSkip.value : pending.value) return
   pendingFeedback.value = feedback
   const page = currentPageNumber.value
   const generation = ++requestGeneration
   try {
-    const result = await session.guidance(feedback)
+    const result = await session.guidance(feedback, { background })
     if (generation !== requestGeneration || page !== currentPageNumber.value) return
     interactionResult.value = result
     return result
@@ -251,6 +270,7 @@ async function submitFeedback(feedback) {
 }
 
 async function openAnswerDialog(question = false) {
+  if (pageAudioLoading.value) cancelPageAudioRequest()
   asking.value = question
   if (!question && !interactionResult.value) {
     const result = await submitFeedback('INITIAL')
@@ -282,12 +302,15 @@ async function handleAnswerConfirmed({ text }) {
 }
 
 async function askShortQuestion(text) {
-  if (pending.value || reviewing.value || session.state.syncRequired) return
+  if (navigationPending.value || reviewing.value || session.state.syncRequired) return
+  if (pageAudioLoading.value) cancelPageAudioRequest()
+  foregroundBusy.value = true
   try { await session.askQuestion(text) } catch { /* Error and reconciliation appear in the reader. */ }
+  finally { foregroundBusy.value = false }
 }
 
-async function loadPageAudio() {
-  if (!session.state.session || pageAudioLoading.value || showAnswerDialog.value) return
+async function loadPageAudio(silent = false) {
+  if (!activePageKey.value || pageAudioLoading.value || showAnswerDialog.value) return
   const page = currentPageNumber.value
   const controller = new AbortController()
   pageAudioRequest = controller
@@ -310,7 +333,7 @@ async function loadPageAudio() {
       else pageAudioExpiryTimer = setTimeout(() => discardPageAudio(audioUrl), remaining)
     }
   } catch (error) {
-    if (!controller.signal.aborted && page === currentPageNumber.value) {
+    if (!silent && !controller.signal.aborted && page === currentPageNumber.value) {
       answerAudioNotice.value = error?.message ?? '页面朗读音频准备失败'
     }
   } finally {
@@ -336,7 +359,9 @@ async function playAnswerAudio(result = interactionResult.value) {
     return
   }
   const eventId = result.interactionEventId
-  if (!eventId || answerAudioLoading.value || result.revision !== revision.value) {
+  const matches = () => result.eventType === 'ASK'
+    ? storyAnswer.value?.interactionEventId === eventId : result.revision === revision.value
+  if (!eventId || answerAudioLoading.value || !matches()) {
     answerAudioNotice.value = '当前结果没有可用的 interactionEventId，无法请求回答音频。'
     return
   }
@@ -347,13 +372,16 @@ async function playAnswerAudio(result = interactionResult.value) {
   answerAudioRequest = controller
   answerAudioLoading.value = true
   try {
-    if (!answerAudioUrl.value || Date.now() >= answerAudioExpiresAt) {
+    if (!answerAudioUrl.value || eventId !== answerAudioEventId || Date.now() >= answerAudioExpiresAt) {
       const response = await props.voiceApi.synthesizeInteraction({ interactionEventId: eventId, signal: controller.signal })
-      if (controller.signal.aborted || generation !== pageRequestGeneration || page !== currentPageNumber.value || result.revision !== revision.value) return
+      if (controller.signal.aborted || generation !== pageRequestGeneration || page !== currentPageNumber.value || !matches()) return
       answerAudioUrl.value = response.data.audioUrl
+      answerAudioEventId = eventId
       answerAudioExpiresAt = Date.parse(response.data.expiresAt)
     }
-    await answerAudio.play({ url: answerAudioUrl.value, source: 'answer' })
+    if (!await answerAudio.play({ url: answerAudioUrl.value, source: 'answer' }) && !controller.signal.aborted) {
+      answerAudioNotice.value = answerAudio.error.value
+    }
   } catch (error) {
     if (!controller.signal.aborted && generation === pageRequestGeneration && page === currentPageNumber.value) {
       answerAudioNotice.value = error?.message ?? '回答音频准备失败'
@@ -366,7 +394,7 @@ async function playAnswerAudio(result = interactionResult.value) {
   }
 }
 
-watch(() => interactionResult.value?.interactionEventId, () => {
+watch([() => interactionResult.value?.interactionEventId, () => storyAnswer.value?.interactionEventId], () => {
   stopAnswerAudio()
   answerAudioUrl.value = ''
 })
@@ -434,7 +462,7 @@ function exitReading() {
               class="button button-ghost button-small page-audio-request"
               type="button"
               :disabled="pageAudioLoading || showAnswerDialog"
-              @click="loadPageAudio"
+              @click="loadPageAudio()"
             >
               {{ pageAudioLoading ? '音频准备中…' : '准备本页朗读音频' }}
             </button>
@@ -471,11 +499,11 @@ function exitReading() {
         <section v-if="mode === 'live' && !reviewing" class="interaction-card">
           <h2>问问芽芽</h2>
           <template v-if="session.state.session.mode === 'CHILD_SOLO'">
-            <button v-for="question in ['这一页发生了什么？', '故事里有谁？']" :key="question" type="button" class="button button-soft" :disabled="pending || session.state.syncRequired" @click="askShortQuestion(question)">{{ question }}</button>
+            <button v-for="question in ['这一页发生了什么？', '故事里有谁？']" :key="question" type="button" class="button button-soft" :disabled="navigationPending || session.state.syncRequired" @click="askShortQuestion(question)">{{ question }}</button>
           </template>
           <button v-else class="button button-soft" type="button" :disabled="pending || session.state.syncRequired" @click="openAnswerDialog(true)">提出本页问题</button>
           <p v-if="storyAnswer">{{ storyAnswer.outputText }}</p>
-          <button v-if="storyAnswer && storyAnswer.revision === revision && storyAnswer.strategyType !== 'SAFETY_BLOCK'" class="button button-ghost" type="button" :disabled="pending || answerAudioLoading" @click="playAnswerAudio(storyAnswer)">播放故事回答</button>
+          <button v-if="storyAnswer?.interactionEventId && storyAnswer.strategyType !== 'SAFETY_BLOCK'" class="button button-ghost" type="button" :disabled="answerAudioLoading" @click="playAnswerAudio(storyAnswer)">{{ answerAudioLoading ? '回答音频准备中…' : '播放芽芽的回答' }}</button>
         </section>
 
         <p v-if="lastAnswerText" class="answer-confirmation">
@@ -486,9 +514,9 @@ function exitReading() {
         <p v-if="session.error.value" class="inline-error">{{ errorMessage }}</p>
 
         <nav class="page-navigation" aria-label="翻页">
-          <button class="button button-ghost" type="button" :disabled="pending || visited.indexOf(currentPageNumber) <= 0" @click="goPrevious">上一页</button>
-          <button class="button button-primary" type="button" :disabled="pending" @click="goNext">
-            {{ pending ? '同步中…' : (isLastPage ? '完成阅读' : '下一页 →') }}
+          <button class="button button-ghost" type="button" :disabled="navigationPending || visited.indexOf(currentPageNumber) <= 0" @click="goPrevious">上一页</button>
+          <button class="button button-primary" type="button" :disabled="navigationPending" @click="goNext">
+            {{ navigationPending ? '同步中…' : (isLastPage ? '完成阅读' : '下一页 →') }}
           </button>
         </nav>
       </template>

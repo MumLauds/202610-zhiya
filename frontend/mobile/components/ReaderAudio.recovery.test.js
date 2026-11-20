@@ -13,6 +13,7 @@ const inProgress = {
   readingSessionId: 42,
   storyVersionId: book.storyVersionId,
   status: 'IN_PROGRESS',
+  mode: 'PARENT_CHILD',
   currentPage: 1,
   revision: 1,
   visitedPageNumbers: [1],
@@ -36,8 +37,12 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-async function openReader({ snapshot = inProgress, events = [], voiceApi }) {
-  const submitGuidance = vi.fn().mockResolvedValue({ data: question })
+async function openReader({
+  snapshot = { ...inProgress, revision: 2 },
+  events = [question],
+  voiceApi,
+  submitGuidance = vi.fn().mockResolvedValue({ data: question }),
+}) {
   wrapper = mount(ReaderView, {
     props: {
       book,
@@ -45,7 +50,10 @@ async function openReader({ snapshot = inProgress, events = [], voiceApi }) {
       storyVersionId: book.storyVersionId,
       initialSnapshot: { session: snapshot, events, report: null },
       sessionApi: { submitGuidance },
-      voiceApi,
+      voiceApi: {
+        synthesizePage: vi.fn().mockRejectedValue(new Error('暂时无法准备朗读')),
+        ...voiceApi,
+      },
     },
   })
   await flushPromises()
@@ -92,47 +100,46 @@ function stubAudio() {
 }
 
 describe('Reader audio recovery', () => {
-  it('allows preparing fresh narration when guidance changes the revision on the same page', async () => {
-    const synthesizePage = vi.fn()
-      .mockResolvedValueOnce({ data: { audioUrl: '/old.mp3' } })
-      .mockResolvedValueOnce({ data: { audioUrl: '/fresh.mp3' } })
-    await openReader({ voiceApi: { synthesizePage } })
+  it('retains prepared narration when guidance changes the revision on the same page', async () => {
+    stubAudio()
+    let resolveGuidance
+    const submitGuidance = vi.fn().mockImplementation(() => new Promise((resolve) => { resolveGuidance = resolve }))
+    const synthesizePage = vi.fn().mockResolvedValue({ data: { audioUrl: '/page.mp3' } })
+    await openReader({ snapshot: inProgress, events: [], voiceApi: { synthesizePage }, submitGuidance })
 
-    await clickButton('准备本页朗读音频')
-    expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/old.mp3')
-    await clickButton('生成本页共读问题')
+    expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/page.mp3')
+    expect(submitGuidance).toHaveBeenCalledExactlyOnceWith(42, expect.objectContaining({
+      feedback: 'INITIAL', expectedRevision: 1,
+    }), { signal: undefined })
+    resolveGuidance({ data: question })
+    await flushPromises()
     expect(wrapper.get('.revision-tag').text()).toBe('rev 2')
     expect(wrapper.get('.page-scene').text()).toBe('第一页')
-    expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('')
-    expect(synthesizePage).toHaveBeenCalledTimes(1)
-
-    await clickButton('准备本页朗读音频')
-    expect(synthesizePage.mock.calls).toEqual([
-      [{ readingSessionId: 42, pageNumber: 1, revision: 1, signal: expect.any(AbortSignal) }],
-      [{ readingSessionId: 42, pageNumber: 1, revision: 2, signal: expect.any(AbortSignal) }],
-    ])
-    expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/fresh.mp3')
+    expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/page.mp3')
+    expect(synthesizePage).toHaveBeenCalledExactlyOnceWith({
+      readingSessionId: 42, pageNumber: 1, revision: 1, signal: expect.any(AbortSignal),
+    })
   })
 
-  it('ignores narration that completes after a same-page revision change', async () => {
+  it('accepts delayed narration when guidance has changed only the same page’s revision', async () => {
+    const media = stubAudio()
     let resolveAudio
     const synthesizePage = vi.fn().mockImplementationOnce(() => new Promise((resolve) => {
       resolveAudio = resolve
     }))
-    await openReader({ voiceApi: { synthesizePage } })
-    await clickButton('准备本页朗读音频')
-    await clickButton('生成本页共读问题')
+    await openReader({ snapshot: inProgress, events: [], voiceApi: { synthesizePage } })
     expect(wrapper.get('.revision-tag').text()).toBe('rev 2')
 
     resolveAudio({ data: { audioUrl: '/late.mp3' } })
     await flushPromises()
 
-    expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('')
-    expect(getButton('准备本页朗读音频').element.disabled).toBe(false)
+    expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/late.mp3')
+    expect(media[0].paused).toBe(true)
     expect(synthesizePage).toHaveBeenCalledTimes(1)
   })
 
   it('allows manual preparation at the same revision when narration expires', async () => {
+    stubAudio()
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
     vi.setSystemTime(new Date('2026-11-20T00:00:00Z'))
     const synthesizePage = vi.fn()
@@ -140,7 +147,6 @@ describe('Reader audio recovery', () => {
       .mockResolvedValueOnce({ data: { audioUrl: '/fresh.mp3', expiresAt: '2026-11-20T00:00:04Z' } })
     await openReader({ voiceApi: { synthesizePage } })
 
-    await clickButton('准备本页朗读音频')
     expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/expired.mp3')
     await vi.advanceTimersByTimeAsync(2000)
     expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('')
@@ -148,7 +154,7 @@ describe('Reader audio recovery', () => {
 
     await clickButton('准备本页朗读音频')
     expect(synthesizePage).toHaveBeenNthCalledWith(2, {
-      readingSessionId: 42, pageNumber: 1, revision: 1, signal: expect.any(AbortSignal),
+      readingSessionId: 42, pageNumber: 1, revision: 2, signal: expect.any(AbortSignal),
     })
     expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/fresh.mp3')
   })
@@ -159,7 +165,6 @@ describe('Reader audio recovery', () => {
       .mockResolvedValueOnce({ data: { audioUrl: '/expired.mp3' } })
       .mockResolvedValueOnce({ data: { audioUrl: '/fresh.mp3' } })
     await openReader({ voiceApi: { synthesizePage } })
-    await clickButton('准备本页朗读音频')
     await wrapper.get('[aria-label="播放朗读"]').trigger('click')
     await flushPromises()
     media[0].dispatchEvent(new Event('error'))
@@ -168,7 +173,7 @@ describe('Reader audio recovery', () => {
     expect(synthesizePage).toHaveBeenCalledTimes(1)
     await clickButton('准备本页朗读音频')
     expect(synthesizePage).toHaveBeenNthCalledWith(2, {
-      readingSessionId: 42, pageNumber: 1, revision: 1, signal: expect.any(AbortSignal),
+      readingSessionId: 42, pageNumber: 1, revision: 2, signal: expect.any(AbortSignal),
     })
     expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/fresh.mp3')
   })

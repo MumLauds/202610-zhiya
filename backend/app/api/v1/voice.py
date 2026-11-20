@@ -133,7 +133,7 @@ async def synthesize(request: Request):
         raise invalid() from None
     snapshot = read_voice_source(principal, session_id=fields.reading_session_id,
                                  page_number=fields.page_number, revision=fields.revision,
-                                 event_id=fields.interaction_event_id)
+                                 event_id=fields.interaction_event_id, visit_scoped=fields.preload)
     config = request.app.state.speech_settings
     if not config.tts_configured:
         raise ServiceError("TTS_NOT_CONFIGURED", "语音合成尚未配置", 503)
@@ -147,11 +147,13 @@ async def synthesize(request: Request):
         await refresh(request, principal, snapshot, write=True)
         return store.put(principal, snapshot, voice_id, speech_rate, config.tts_model, audio)
 
-    with store.claim(snapshot.session_id):
-        found = store.find(principal, snapshot, voice_id, speech_rate, config.tts_model)
-        if found is not None:
-            await refresh(request, principal, snapshot, write=True)
-        key, media = found if found is not None else await operation_until_disconnect(request, generate())
+    found = store.find(principal, snapshot, voice_id, speech_rate, config.tts_model)
+    if found is not None:
+        await refresh(request, principal, snapshot, write=True)
+        key, media = found
+    else:
+        with store.claim(snapshot.session_id):
+            key, media = await operation_until_disconnect(request, generate())
     return {"data": {"audioUrl": f"/api/v1/media/{key}",
                      "expiresAt": datetime.fromtimestamp(media.expires_at, timezone.utc).isoformat().replace("+00:00", "Z")},
             "requestId": request.state.request_id}
