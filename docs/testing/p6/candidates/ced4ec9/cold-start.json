@@ -1,0 +1,22 @@
+{
+  "candidate": "ced4ec935df8b855c8dd1669089467c9906cef27",
+  "scope": "isolated SQLite, real Chrome, cold verification cache, zero provider credentials",
+  "results": [
+    {
+      "startHttp": 503,
+      "secondsAfterReload": 6.8,
+      "errorCode": "DEPENDENCY_UNAVAILABLE",
+      "sessionStatus": "CREATED",
+      "revision": 0,
+      "startRows": 0
+    },
+    {
+      "startHttp": 503,
+      "secondsAfterReload": 6.9,
+      "errorCode": "DEPENDENCY_UNAVAILABLE",
+      "sessionStatus": "CREATED",
+      "revision": 0,
+      "startRows": 0
+    }
+  ]
+}

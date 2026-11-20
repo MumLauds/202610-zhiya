@@ -1,0 +1,52 @@
+{
+  "testedCommit": "ced4ec935df8b855c8dd1669089467c9906cef27",
+  "phase": "prepare",
+  "passed": true,
+  "database": "rehearsal.sqlite3",
+  "publishedInFixture": 20,
+  "modelDatabase": "g14-input.sqlite3",
+  "modelDatabaseSha256": "c0e1a4f321d02421eae1422da7a94db7b1bc36f2bceb89f9144463a6ceddd03c",
+  "reviewScope": "automated QA in an isolated SQLite database",
+  "items": [
+    {
+      "storyVersionId": 2,
+      "itemKey": "KN-BOOK-002",
+      "knowledgeItemId": 22
+    },
+    {
+      "storyVersionId": 3,
+      "itemKey": "KN-BOOK-003",
+      "knowledgeItemId": 24
+    },
+    {
+      "storyVersionId": 4,
+      "itemKey": "KN-BOOK-004",
+      "knowledgeItemId": 26
+    },
+    {
+      "storyVersionId": 6,
+      "itemKey": "KN-BOOK-006",
+      "knowledgeItemId": 28
+    },
+    {
+      "storyVersionId": 9,
+      "itemKey": "KN-BOOK-009",
+      "knowledgeItemId": 30
+    },
+    {
+      "storyVersionId": 12,
+      "itemKey": "KN-BOOK-012",
+      "knowledgeItemId": 32
+    },
+    {
+      "storyVersionId": 18,
+      "itemKey": "KN-BOOK-018",
+      "knowledgeItemId": 34
+    },
+    {
+      "storyVersionId": 20,
+      "itemKey": "KN-BOOK-020",
+      "knowledgeItemId": 36
+    }
+  ]
+}
