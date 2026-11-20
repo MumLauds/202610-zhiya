@@ -49,18 +49,24 @@ SENSITIVE = re.compile(
 PERSONAL_QUESTION = re.compile(r"您|我|你(?!觉得|猜|看见|看到|能指一指)")
 SHORT_QUESTION = re.compile(r"[\u3400-\u9fff，、, ]{2,72}\?")
 PAGE_CLAUSE = re.compile(r"[\u3400-\u9fffA-Za-z0-9 ]+")
+EXCERPT_CHARS = 18
+GENERIC_ANSWER_PHRASES = re.compile(
+    r"我(?:觉得|认为|喜欢|想到|想|猜|看到|看见)|觉得|认为|喜欢|看到|看见|"
+    r"因为|所以|然后|这个|那个|这里|那里|可能|应该|不知道|不清楚|不确定"
+)
 
 
-def page_excerpts(page_text: str):
-    # Quote only short excerpts of the already published page. Never quote model or user prose.
+def page_clauses(page_text: str):
+    # Only use published page text that passes the existing quotation rules.
     for clause in re.split(r"[，。！？；：、‘’“”「」\n,.!?;:]", page_text):
         clause = clause.strip()
         if len(clause) >= 2 and PAGE_CLAUSE.fullmatch(clause) and not SENSITIVE.search(clause):
-            yield clause if len(clause) <= 18 else clause[:18] + "…"
+            yield clause
 
 
 def question_options(page_text: str, forms: tuple[str, ...]) -> dict[str, list[str]]:
-    excerpts = list(islice(page_excerpts(page_text), 3))
+    excerpts = [clause[:EXCERPT_CHARS] + ("…" if len(clause) > EXCERPT_CHARS else "")
+                for clause in islice(page_clauses(page_text), 3)]
     options = {}
     for excerpt in excerpts or [""]:
         lead = f"读到“{excerpt}”时，" if excerpt else PAGE_LEAD
@@ -74,12 +80,22 @@ def matching_answer_excerpt(page_text: str, confirmed_answer: str) -> str | None
     if not answer or SENSITIVE.search(answer):
         return None
 
-    def overlap(excerpt):
-        normalized = unicodedata.normalize("NFKC", excerpt)
-        return SequenceMatcher(None, normalized, answer, autojunk=False).find_longest_match().size
+    # Separate generic phrasing so it cannot count toward or join two matching details.
+    answer = GENERIC_ANSWER_PHRASES.sub("，", answer)
+    best_size = 1
+    excerpt = None
+    for clause in page_clauses(page_text):
+        match = SequenceMatcher(None, clause, answer, autojunk=False).find_longest_match()
+        size = len(clause[match.a:match.a + match.size].strip())
+        if size <= best_size:
+            continue
+        best_size = size
+        context_before = max(0, (EXCERPT_CHARS - match.size) // 2)
+        start = min(max(0, match.a - context_before), max(0, len(clause) - EXCERPT_CHARS))
+        end = start + EXCERPT_CHARS
+        excerpt = ("…" if start else "") + clause[start:end] + ("…" if end < len(clause) else "")
 
-    excerpt = max(page_excerpts(page_text), key=overlap, default="")
-    return excerpt if overlap(excerpt) >= 2 else None
+    return excerpt
 
 
 async def answer_question(model_adapter: ModelAdapter, *, input_text: str, age_band: str | None,
