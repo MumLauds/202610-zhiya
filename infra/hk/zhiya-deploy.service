@@ -1,0 +1,11 @@
+[Unit]
+Description=Deploy validated Zhiya main revision
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/opt/zhiya-release/deploy.env
+ExecStart=/opt/zhiya-release/deploy.sh
+TimeoutStartSec=45min
+UMask=0022
