@@ -17,6 +17,9 @@
 !knowledge-base_v2.5/图片/*.jpg
 !knowledge-base_v2.5/图片/*.jpeg
 !knowledge-base_v2.5/图片/*.webp
+!knowledge-base_v2.5/图片/内页
+!knowledge-base_v2.5/图片/内页/PIC-B*
+!knowledge-base_v2.5/图片/内页/PIC-B*/*.png
 **/__pycache__
 **/.pytest_cache
 **/*.pyc
