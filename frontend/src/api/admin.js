@@ -1,4 +1,28 @@
-import { apiRequest } from './client'
+import { apiRequest, createClientEventId, readCsrfCookie } from './client'
+
+const uncertainWrites = new Map()
+let adminSession = ''
+
+async function writeAdmin(path, method, body) {
+  const session = readCsrfCookie()
+  if (session !== adminSession) {
+    uncertainWrites.clear()
+    adminSession = session
+  }
+  const signature = JSON.stringify([method, path, body])
+  const key = uncertainWrites.get(signature) || createClientEventId('admin')
+  try {
+    const result = await apiRequest(path, { method, body, headers: { 'Idempotency-Key': key } })
+    if (session === adminSession) uncertainWrites.delete(signature)
+    return result.data
+  } catch (error) {
+    if (session === adminSession) {
+      if (!error.status || error.status >= 500) uncertainWrites.set(signature, key)
+      else uncertainWrites.delete(signature)
+    }
+    throw error
+  }
+}
 
 export async function listAdminStoryVersions({ page = 1, pageSize = 50 } = {}) {
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
@@ -7,16 +31,11 @@ export async function listAdminStoryVersions({ page = 1, pageSize = 50 } = {}) {
 }
 
 export async function createAdminStory(payload) {
-  const result = await apiRequest('/admin/storybooks', { method: 'POST', body: payload })
-  return result.data
+  return writeAdmin('/admin/storybooks', 'POST', payload)
 }
 
 export async function updateAdminStoryStatus(versionId, status) {
-  const result = await apiRequest(`/admin/story-versions/${versionId}`, {
-    method: 'PATCH',
-    body: { status },
-  })
-  return result.data
+  return writeAdmin(`/admin/story-versions/${versionId}`, 'PATCH', { status })
 }
 
 export async function listAdminKnowledge({ page = 1, pageSize = 50, status = '', query = '' } = {}) {
@@ -28,14 +47,9 @@ export async function listAdminKnowledge({ page = 1, pageSize = 50, status = '',
 }
 
 export async function createAdminKnowledge(payload) {
-  const result = await apiRequest('/admin/knowledge-items', { method: 'POST', body: payload })
-  return result.data
+  return writeAdmin('/admin/knowledge-items', 'POST', payload)
 }
 
 export async function updateAdminKnowledge(knowledgeId, payload) {
-  const result = await apiRequest(`/admin/knowledge-items/${knowledgeId}`, {
-    method: 'PATCH',
-    body: payload,
-  })
-  return result.data
+  return writeAdmin(`/admin/knowledge-items/${knowledgeId}`, 'PATCH', payload)
 }

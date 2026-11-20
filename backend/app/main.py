@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException
 
 from app.api.v1.health import router as health_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.admin import router as admin_router
 from app.api.v1.profiles import router as profiles_router
 from app.api.v1.storybooks import router as storybooks_router
 from app.api.v1.story_generations import router as story_generations_router
@@ -115,6 +116,7 @@ def create_app(settings: Settings | None = None, speech_settings: SpeechSettings
 
     app.include_router(health_router)
     app.include_router(auth_router)
+    app.include_router(admin_router)
     app.include_router(profiles_router)
     app.include_router(storybooks_router)
     app.include_router(story_generations_router)

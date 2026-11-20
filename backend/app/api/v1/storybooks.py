@@ -102,6 +102,26 @@ VISIBLE = """(v.status = 'PUBLISHED' OR
        AND b.owner_guardian_id = ? AND v.reviewed_by_id IS NOT NULL AND v.reviewed_at IS NOT NULL))"""
 
 
+def admin_story_object(db, version, *, page_details=False):
+    pages = []
+    manifest = pin_version_media(db, version, source_type="LIBRARY") if page_details and version["status"] == "PUBLISHED" else None
+    for row in db.execute("""SELECT page_no,body_text,default_next_page_number FROM story_pages
+                             WHERE version_id=? ORDER BY page_no""", (version["id"],)):
+        page = {"pageNumber": row["page_no"], "text": row["body_text"]}
+        if page_details:
+            page["defaultNextPageNumber"] = row["default_next_page_number"]
+            page["imageRef"] = page_image_ref_from_manifest(version["id"], row["page_no"], manifest) if manifest else None
+        pages.append(page)
+    branches = db.execute("""SELECT id AS branchId, from_page_no AS fromPageNumber, next_page_no AS nextPageNumber,
+                            choice_label AS choiceLabel, review_status AS reviewStatus
+                            FROM story_branches WHERE version_id=? ORDER BY id""", (version["id"],))
+    age = (version["age_min"], version["age_max"])
+    return {"storybookId": version["storybook_id"], "storyVersionId": version["id"], "versionNumber": version["version_no"],
+            "title": version["title"], "status": version["status"], "licenseNote": version["license_note"],
+            "ageBand": next((band for band, bounds in AGES.items() if bounds == age), None),
+            "topics": json.loads(version["topics_json"]), "pages": pages, "branches": [dict(row) for row in branches]}
+
+
 @router.get("/admin/story-versions")
 def list_admin_story_versions(request: Request, page: int = Query(default=1, ge=1, le=MAX_ID),
                               page_size: int = Query(default=20, ge=1, le=50, alias="pageSize")):
@@ -117,21 +137,7 @@ def list_admin_story_versions(request: Request, page: int = Query(default=1, ge=
                    WHERE b.source_type = 'LIBRARY' ORDER BY v.storybook_id, v.version_no DESC LIMIT ? OFFSET ?""",
                 (page_size, (page - 1) * page_size),
             )
-            items = []
-            for version in versions:
-                pages = db.execute(
-                    """SELECT page_no AS pageNumber, body_text AS text FROM story_pages
-                       WHERE version_id = ? ORDER BY page_no""", (version["id"],))
-                branches = db.execute(
-                    """SELECT id AS branchId, from_page_no AS fromPageNumber, next_page_no AS nextPageNumber,
-                              choice_label AS choiceLabel, review_status AS reviewStatus
-                       FROM story_branches WHERE version_id = ? ORDER BY id""", (version["id"],))
-                items.append({
-                    "storybookId": version["storybook_id"], "storyVersionId": version["id"],
-                    "versionNumber": version["version_no"], "title": version["title"], "status": version["status"],
-                    "topics": json.loads(version["topics_json"]), "licenseNote": version["license_note"],
-                    "pages": [dict(row) for row in pages], "branches": [dict(row) for row in branches],
-                })
+            items = [admin_story_object(db, version) for version in versions]
             return {"data": {"items": items, "page": page, "pageSize": page_size}, "requestId": request.state.request_id}
     except sqlite3.Error:
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "暂时无法读取绘本版本", retryable=True)

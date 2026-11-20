@@ -240,6 +240,14 @@ CREATE TABLE IF NOT EXISTS knowledge_items (
     CHECK (status <> 'APPROVED' OR reviewed_at IS NOT NULL)
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS admin_write_receipts (
+    admin_id INTEGER NOT NULL REFERENCES accounts(id),
+    request_key TEXT NOT NULL CHECK (length(request_key) BETWEEN 1 AND 64),
+    digest TEXT NOT NULL,
+    response_json TEXT NOT NULL CHECK (json_valid(response_json)),
+    PRIMARY KEY (admin_id, request_key)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS event_evidence (
     event_id INTEGER NOT NULL REFERENCES interaction_events(id),
     knowledge_item_id INTEGER NOT NULL REFERENCES knowledge_items(id),

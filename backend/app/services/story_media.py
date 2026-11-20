@@ -403,7 +403,12 @@ def pin_version_media(db: sqlite3.Connection, version_row: sqlite3.Row | dict, *
     if "approved_page_media_json" in version_row.keys() and version_row["approved_page_media_json"] is not None:
         if not backfill:
             ensure_media_dependencies()
-        return {"identity": identity, "cover": None, "pages": json.loads(version_row["approved_page_media_json"])}
+        cover = None
+        if src_type == "LIBRARY" and version_row["source_ref"] == SEED_COVER_SOURCE_REF:
+            # Library covers were bound at import. Keep that binding when page approval is saved in SQLite.
+            draft = dict(version_row, status="DRAFT", approved_page_media_json=None)
+            cover = pin_version_media(db, draft, source_type=src_type, db_path=db_path, backfill=backfill)["cover"]
+        return {"identity": identity, "cover": cover, "pages": json.loads(version_row["approved_page_media_json"])}
     draft = version_row["status"] in ("DRAFT", "CHECK_FAILED", "PENDING_REVIEW")
     has_seed_cover = src_type == "LIBRARY" and version_row["source_ref"] == SEED_COVER_SOURCE_REF
     try:

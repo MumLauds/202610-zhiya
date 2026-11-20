@@ -142,7 +142,8 @@ class DatabaseTests(unittest.TestCase):
     def test_schema_constraints(self):
         with closing(connect(self.path)) as db, db:
             business_tables = {row[0] for row in db.execute("SELECT name FROM sqlite_schema WHERE type = 'table'")}
-            self.assertEqual(len(business_tables), 15)
+            self.assertEqual(len(business_tables), 16)
+            self.assertIn("admin_write_receipts", business_tables)
             with self.assertRaises(sqlite3.IntegrityError):
                 db.execute("INSERT INTO accounts VALUES (9007199254740992, 'a', 'digest', 'ADMIN', 0)")
             with self.assertRaises(sqlite3.IntegrityError):
