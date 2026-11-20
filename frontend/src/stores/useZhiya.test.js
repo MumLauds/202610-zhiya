@@ -334,6 +334,94 @@ describe('authoritative reading progress', () => {
     expect(state.readingSyncRequired).toBe(false)
   })
 
+  it('completes one page turn when INITIAL was saved before its response reached the reader', async () => {
+    const response = deferred()
+    const server = detail()
+    const question = { interactionEventId: 4, eventType: 'QUESTION', pageNumber: 1, revision: 2, outputText: '小兔在哪里？', strategyType: 'CONTEXT_QUESTION' }
+    reading.requestReadingGuidance.mockImplementationOnce(() => {
+      server.session.revision = question.revision
+      server.events.push(question)
+      return response.promise
+    })
+    reading.getReadingSession.mockImplementationOnce(async () => structuredClone(server))
+    reading.addReadingEvent.mockImplementation(async (_, payload) => {
+      if (payload.expectedRevision !== server.session.revision) throw new ApiError('changed', { status: 409, code: 'SESSION_CONFLICT' })
+      server.session.currentPage = payload.pageNumber
+      server.session.visitedPageNumbers.push(payload.pageNumber)
+      return { revision: ++server.session.revision }
+    })
+
+    const generating = actions.requestGuidance('INITIAL')
+    expect(state.currentSession.revision).toBe(1)
+    expect(await actions.recordPageChange(3)).toBe(true)
+    const attempts = reading.addReadingEvent.mock.calls.map(([, payload]) => payload)
+    expect(attempts.map(p => [p.eventType, p.pageNumber, p.expectedRevision])).toEqual([['PAGE_CHANGED', 3, 1], ['PAGE_CHANGED', 3, 2]])
+    expect(attempts[1].clientEventId).not.toBe(attempts[0].clientEventId)
+    response.resolve(question)
+    expect(await generating).toBe(false)
+    expect(state.currentSession).toEqual(server.session)
+    expect(state.currentSession.visitedPageNumbers).toEqual([1, 3])
+    expect(state.currentEvents).toEqual([question])
+    expect(state.readingSyncRequired).toBe(false)
+  })
+
+  it.each([
+    ['another kind of event', 'ANSWER', 1, 2, 2],
+    ['a historical question', 'QUESTION', 1, 1, 2],
+    ['a different page', 'QUESTION', 3, 2, 2],
+    ['additional writes', 'QUESTION', 1, 3, 3],
+  ])('does not repeat a page turn when readback shows %s', async (_, eventType, pageNumber, eventRevision, revision) => {
+    const response = deferred()
+    reading.requestReadingGuidance.mockReturnValueOnce(response.promise)
+    const generating = actions.requestGuidance('INITIAL')
+    reading.addReadingEvent.mockRejectedValueOnce(new ApiError('changed', { status: 409, code: 'SESSION_CONFLICT' }))
+    reading.getReadingSession.mockResolvedValueOnce({ ...detail({ revision }), events: [{ eventType, pageNumber, revision: eventRevision }] })
+
+    expect(await actions.recordPageChange(3)).toBe(false)
+    expect(reading.addReadingEvent).toHaveBeenCalledTimes(1)
+    expect(state.currentSession.currentPage).toBe(1)
+    response.resolve({ revision: 2 })
+    expect(await generating).toBe(false)
+  })
+
+  it('keeps the authoritative progress when another write beats the retried turn', async () => {
+    const response = deferred()
+    reading.requestReadingGuidance.mockReturnValueOnce(response.promise)
+    const generating = actions.requestGuidance('INITIAL')
+    const conflict = new ApiError('changed', { status: 409, code: 'SESSION_CONFLICT' })
+    reading.addReadingEvent.mockRejectedValueOnce(conflict).mockRejectedValueOnce(conflict)
+    reading.getReadingSession
+      .mockResolvedValueOnce({ ...detail({ revision: 2 }), events: [{ eventType: 'QUESTION', pageNumber: 1, revision: 2 }] })
+      .mockResolvedValueOnce(detail({ currentPage: 3, visitedPageNumbers: [1, 3], revision: 3 }))
+
+    expect(await actions.recordPageChange(3)).toBe(false)
+    expect(reading.addReadingEvent).toHaveBeenCalledTimes(2)
+    expect(state.currentSession.visitedPageNumbers).toEqual([1, 3])
+    response.resolve({ revision: 2 })
+    expect(await generating).toBe(false)
+  })
+
+  it('drops the old turn when the reader is reopened during the conflict readback', async () => {
+    const response = deferred()
+    const readback = deferred()
+    reading.requestReadingGuidance.mockReturnValueOnce(response.promise)
+    const generating = actions.requestGuidance('INITIAL')
+    reading.addReadingEvent.mockRejectedValueOnce(new ApiError('changed', { status: 409, code: 'SESSION_CONFLICT' }))
+    reading.getReadingSession.mockClear().mockReturnValueOnce(readback.promise)
+
+    const turning = actions.recordPageChange(3)
+    await vi.waitFor(() => expect(reading.getReadingSession).toHaveBeenCalledOnce())
+    reading.getReadingSession.mockResolvedValueOnce(detail({ currentPage: 7, visitedPageNumbers: [1, 3, 7], revision: 5 }))
+    await actions.loadReaderRoute()
+    readback.resolve({ ...detail({ revision: 2 }), events: [{ eventType: 'QUESTION', pageNumber: 1, revision: 2 }] })
+    expect(await turning).toBe(false)
+    response.resolve({ revision: 2 })
+    expect(await generating).toBe(false)
+    expect(reading.addReadingEvent).toHaveBeenCalledTimes(1)
+    expect(state.currentSession.currentPage).toBe(7)
+    expect(state.currentSession.revision).toBe(5)
+  })
+
   it('ignores a question for an older revision after an authoritative refresh', async () => {
     const initial = deferred()
     reading.requestReadingGuidance.mockReturnValueOnce(initial.promise)

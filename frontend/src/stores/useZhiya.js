@@ -1445,11 +1445,20 @@ function readingRequest(operation) {
   return addReadingEvent(operation.sessionId, operation.payload)
 }
 
+function onlyInitialAdvancedSession(initial, expectedRevision, { session, events }) {
+  if (!initial || initial.payload.expectedRevision !== expectedRevision) return false
+  const latest = events?.at(-1)
+  return session.readingSessionId === initial.sessionId && session.status === 'IN_PROGRESS'
+    && session.currentPage === initial.payload.pageNumber && session.revision === expectedRevision + 1
+    && latest?.eventType === 'QUESTION' && latest.pageNumber === session.currentPage && latest.revision === session.revision
+}
+
 async function writeReading(operation) {
   const initial = operation.kind === 'guidance' && operation.payload.feedback === 'INITIAL'
   if (state.sessionBusy || (initial && activeInitialGuidance)) return false
   const epoch = authEpoch
   const generation = readingEpoch
+  const supersededInitial = operation.kind === 'page' ? activeInitialGuidance : null
   // User writes supersede an automatic prompt. The server arbitrates via expectedRevision.
   activeInitialGuidance = initial ? operation : null
   if (!initial) state.sessionBusy = true
@@ -1503,6 +1512,12 @@ async function writeReading(operation) {
         if (!pendingReading || detail.session.revision !== operation.payload.expectedRevision) {
           pendingReading = null
           state.readingSyncRequired = false
+        }
+        if (error.status === 409 && error.code === 'SESSION_CONFLICT'
+            && onlyInitialAdvancedSession(supersededInitial, operation.payload.expectedRevision, detail)) {
+          // Only the automatic question won. Retry the same turn with a fresh revision and key.
+          state.sessionBusy = false
+          return await recordPageChange(operation.payload.pageNumber)
         }
       } catch {
         // Keep writes disabled until the authoritative session can be read.
