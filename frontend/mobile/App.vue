@@ -24,7 +24,8 @@ const books = demoBooks.books.map((book) => ({
   cover: resolveAsset(book.cover),
   pages: book.pages.map((page) => ({ ...page, image: resolveAsset(page.image), audio: resolveAsset(page.audio) })),
 }))
-const mode = ref('demo')
+const publicSite = import.meta.env.MODE === 'public'
+const mode = ref(publicSite ? 'live' : 'demo')
 const activeTab = ref('home')
 const selectedBook = ref(books[0])
 const detailBook = ref(null)
@@ -225,6 +226,7 @@ watch(mode, () => {
 }, { flush: 'sync' })
 watch(activeTab, refreshLiveView)
 onMounted(() => {
+  if (publicSite) syncAccount()
   window.addEventListener('focus', syncAccount)
   document.addEventListener('visibilitychange', syncAccount)
   accountTimer = setInterval(syncAccount, 1000)
@@ -368,7 +370,7 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
       </button>
       <div class="app-header-actions">
         <button class="icon-action" type="button" aria-label="搜索绘本" @click="openSearch">⌕</button>
-        <button class="mode-mini" type="button" @click="mode = mode === 'demo' ? 'live' : 'demo'">{{ mode === 'demo' ? '演示' : '实机' }}</button>
+        <button v-if="!publicSite" class="mode-mini" type="button" @click="mode = mode === 'demo' ? 'live' : 'demo'">{{ mode === 'demo' ? '演示' : '实机' }}</button>
         <button class="avatar-button" type="button" aria-label="家长中心" @click="selectTab('profile')">禾</button>
       </div>
     </header>

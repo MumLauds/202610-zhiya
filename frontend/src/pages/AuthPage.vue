@@ -9,6 +9,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['back'])
+const publicSite = import.meta.env.MODE === 'public'
 const mode = ref('login')
 const account = ref('')
 const password = ref('')
@@ -40,7 +41,7 @@ async function submit() {
         <span class="eyebrow">亲子共读 · 家长空间</span>
         <h1>把每个普通夜晚，读成一段故事</h1>
         <p>登录后读取组内已发布的绘本、儿童档案和真实阅读进度。</p>
-        <button class="text-button" type="button" @click="emit('back')">先看看本地设计预览 →</button>
+        <button v-if="!publicSite" class="text-button" type="button" @click="emit('back')">先看看本地设计预览 →</button>
       </div>
       <form class="auth-card" @submit.prevent="submit">
         <div class="auth-tabs">
@@ -58,9 +59,9 @@ async function submit() {
           <input v-model="password" type="password" :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" placeholder="至少 8 位">
         </label>
         <p v-if="error" class="form-error">{{ error }}</p>
-        <p v-if="health !== 'ready'" class="form-error">后端暂未就绪，仍可返回查看本地预览。</p>
+        <p v-if="health === 'offline'" class="form-error">暂时无法连接服务，请稍后重试。</p>
         <button class="primary auth-submit" type="submit" :disabled="busy">
-          {{ busy ? '正在连接…' : mode === 'login' ? '登录家长空间' : '注册并登录' }}
+          {{ busy ? '正在连接…' : mode === 'login' ? (publicSite ? '登录知芽' : '登录家长空间') : '注册并登录' }}
         </button>
       </form>
     </section>

@@ -122,7 +122,7 @@ const definitions = [
   },
 ]
 
-export const previewBooks = definitions.map((definition) => ({
+export const previewBooks = import.meta.env.MODE === 'public' ? [] : definitions.map((definition) => ({
   ...definition,
   id: `preview-${definition.storyVersionId}`,
   status: 'PREVIEW',

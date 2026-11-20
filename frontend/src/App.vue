@@ -12,6 +12,7 @@ import ChildModePage from './pages/ChildModePage.vue'
 import { activeProfile, totals, zhiya, zhiyaActions } from './stores/useZhiya'
 
 const state = zhiya
+const publicSite = import.meta.env.MODE === 'public'
 const selectedBook = computed(() =>
   state.books.find((book) => book.id === state.selectedBookId) || state.books[0] || null,
 )
@@ -52,7 +53,7 @@ onBeforeUnmount(() => {
 
 <template>
   <ChildModePage
-    v-if="state.route.name === 'child'"
+    v-if="state.route.name === 'child' && (!publicSite || ['child', 'handoff', 'verifying-handoff'].includes(state.auth.status))"
     :child-mode="state.childMode"
     :session="state.currentSession"
     :book="state.currentBook"
@@ -65,13 +66,14 @@ onBeforeUnmount(() => {
   />
   <div v-else :key="state.accountViewKey" class="app">
     <AppHeader
+      v-if="!publicSite || state.auth.authenticated"
       :route="state.route"
       :auth="state.auth"
       @navigate="zhiyaActions.navigate"
     />
 
     <AuthPage
-      v-if="state.route.name === 'auth' || (['account', 'admin'].includes(state.route.name) && !state.auth.authenticated)"
+      v-if="state.route.name === 'auth' || (!state.auth.authenticated && (publicSite || ['account', 'admin'].includes(state.route.name)))"
       :health="state.health"
       :login="zhiyaActions.signIn"
       :register="zhiyaActions.signUp"
