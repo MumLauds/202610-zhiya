@@ -31,6 +31,7 @@ from app.services.story_media import (
     TEMPLATE_VERSION_LICENSE_NOTE,
     MediaDependencyError,
     ensure_generation_illustrations_readable,
+    ensure_media_dependencies,
     ensure_version_pages_media,
     page_image_ref_from_manifest,
     pin_generation_illustrations,
@@ -161,10 +162,12 @@ def reserve_generation(request, payload, digest, image_settings: ImageSettings |
             source_version = db.execute("SELECT * FROM story_versions WHERE id = ?", (source["version_id"],)).fetchone()
             ensure_version_pages_media(db, source_version, prefix)
         age_band = source["age_band"] if source is not None else payload.ageBand
-        new_images = (
-            [] if image_settings
-            else pin_generation_illustrations(age_band, payload.topic, total - len(prefix), len(prefix))
-        )
+        if image_settings:
+            # Preview and approval still require the controlled media service.
+            ensure_media_dependencies()
+            new_images = []
+        else:
+            new_images = pin_generation_illustrations(age_band, payload.topic, total - len(prefix), len(prefix))
         token = str(uuid4())
         now = int(time.time() * 1000)
         deadline = now + 65_000 + ((IMAGE_GENERATION_SECONDS + 5) * 1000 if image_settings else 0)

@@ -370,6 +370,32 @@ def test_ai_illustration_failure_replays_without_creating_a_draft(cont_env, monk
         assert db.execute("SELECT COUNT(*) FROM story_versions").fetchone() == (1,)
 
 
+def test_ai_illustration_checks_media_before_calling_providers(cont_env, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    client, _, db_path, _ = cont_env
+    headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
+    monkeypatch.setenv("IMAGE_API_URL", "https://images.test/generate")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-image-api-key")
+    monkeypatch.setenv("ZHIYA_MEDIA_ROOT", str(tmp_path / "missing-media"))
+    text_provider = AsyncMock()
+    image_provider = AsyncMock()
+    monkeypatch.setattr(client.app.state, "model_adapter", SimpleNamespace(generate=text_provider))
+    monkeypatch.setattr("app.api.v1.story_generations.generate_story_illustrations", image_provider)
+    response = client.post("/api/v1/story-generations", headers=headers, json={
+        "ageBand": "AGE_4_5", "topic": "互助", "characters": ["小兔子"], "scene": "森林",
+        "branching": False, "generateIllustrations": True, "clientRequestId": "ai-missing-media",
+    })
+    assert response.status_code == 503, response.text
+    assert response.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+    assert response.json()["error"]["retryable"] is True
+    text_provider.assert_not_awaited()
+    image_provider.assert_not_awaited()
+    with closing(sqlite3.connect(db_path)) as db:
+        assert db.execute("SELECT COUNT(*) FROM story_versions WHERE status = 'PENDING_REVIEW'").fetchone() == (0,)
+
+
 @pytest.mark.parametrize("locked", [False, True], ids=["missing", "locked"])
 def test_legacy_draft_retries_missing_promised_image_before_preview_or_approval(cont_env, monkeypatch, tmp_path, locked):
     from PIL import Image
