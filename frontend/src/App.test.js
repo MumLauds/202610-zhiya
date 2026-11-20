@@ -909,6 +909,39 @@ it('restores a finished reader route reached while login is pending', async () =
   }
 })
 
+it('loads growth history after reaching it while login is pending', async () => {
+  vi.stubEnv('MODE', 'public')
+  try {
+    listProfiles.mockRejectedValueOnce(new ApiError('请先登录', { status: 401, code: 'AUTH_REQUIRED' }))
+    listReadingSessions.mockResolvedValue([historyRow(55, [1])])
+    let completeLogin
+    login.mockReturnValueOnce(new Promise((resolve) => { completeLogin = resolve }))
+    await open('auth')
+
+    const form = wrapper.get('.auth-card')
+    await form.get('input[autocomplete="username"]').setValue('parent-test')
+    await form.get('input[type="password"]').setValue('password123')
+    await form.trigger('submit')
+    await flushPromises()
+    expect(login).toHaveBeenCalledOnce()
+
+    window.history.replaceState({}, '', '/#account/growth')
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    await flushPromises()
+    expect(listReadingSessions).not.toHaveBeenCalled()
+
+    completeLogin({ data: { accountId: 1 } })
+    await flushPromises()
+    expect(location.hash).toBe('#account/growth')
+    expect(listReadingSessions).toHaveBeenCalledOnce()
+    const row = wrapper.get('.recent-item')
+    expect(row.text()).toContain('阅读记录 #55')
+    expect(row.get('button.secondary').text()).toContain('查看小结')
+  } finally {
+    vi.unstubAllEnvs()
+  }
+})
+
 it('keeps a fresh anonymous visit on login and offers unlock if the server identifies a child device', async () => {
   listProfiles.mockRejectedValueOnce(new ApiError('请先登录', { status: 401, code: 'AUTH_REQUIRED' }))
   login.mockRejectedValueOnce(new ApiError('请先通过家长解锁退出儿童模式', { status: 403, code: 'FORBIDDEN' }))

@@ -1104,6 +1104,8 @@ async function signIn(account, password) {
     if (!readingSameRoute || (!state.sessionLoading && state.currentSession?.readingSessionId !== route.sessionId)) {
       await syncRoute()
     }
+  } else if (route.name === 'account' && ['growth', 'overview'].includes(route.section)) {
+    if (!state.sessionsLoaded && !state.sessionsLoading) await syncRoute()
   } else if (location.hash === entryHash) {
     if (route.name === 'workshop') {
       await handleRoute()
