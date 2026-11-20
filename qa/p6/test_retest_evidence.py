@@ -575,10 +575,13 @@ def test_one_click_resumes_after_seed_commit(tmp_path, monkeypatch):
         with pytest.raises(OSError, match="审核中断"):
             prepare_demo_data.main()
     before = prepare_demo_data.check(path)
-    assert before["story_versions"] > 0 and before["accounts"] == before["publishedVersions"] == 0
+    # Import commits the course publisher and 20 published originals before the interrupted QA transaction.
+    assert before["story_versions"] == 21 and before["publishedVersions"] == 20
+    assert before["accounts"] == 1 and before["child_profiles"] == before["approvedKnowledge"] == 0
     assert prepare_demo_data.main() == 0
     after = prepare_demo_data.check(path)
-    assert after["accounts"] == 2 and after["publishedVersions"] > 0 and after["child_profiles"] == 1
+    assert after["accounts"] == before["accounts"] + 2 and after["child_profiles"] == 1
+    assert after["publishedVersions"] == before["publishedVersions"] and after["approvedKnowledge"] > 0
     monkeypatch.setattr(prepare_demo_data, "approve_content", Mock(side_effect=AssertionError("重复发布")))
     assert prepare_demo_data.main() == 0 and prepare_demo_data.check(path) == after
 
