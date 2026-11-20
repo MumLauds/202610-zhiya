@@ -176,9 +176,7 @@ async function syncReading() {
     const recovered = await session.restore()
     if (!active) return
     currentPageNumber.value = session.state.session.currentPage
-    if (recovered?.result) {
-      interactionResult.value = recovered.result
-    }
+    restorePageQuestion()
     if (recovered?.confirmedAnswer) {
       lastAnswerText.value = recovered.confirmedAnswer
       answerDraft.value = ''

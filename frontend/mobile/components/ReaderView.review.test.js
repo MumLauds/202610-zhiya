@@ -69,6 +69,22 @@ async function clickButton(label) {
 }
 
 describe('ReaderView session recovery and interaction', () => {
+  it('restores a retried ASK only in the story answer card', async () => {
+    const snapshot = { ...inProgress, mode: 'CHILD_SOLO' }
+    const reply = { interactionEventId: 12, revision: 2, status: 'GENERATED',
+      strategyType: 'CONCRETE_RECALL', outputText: '小狐狸举着伞。' }
+    const submitQuestion = vi.fn()
+      .mockRejectedValueOnce(new ApiError('offline', { code: 'REQUEST_OUTCOME_UNKNOWN' }))
+      .mockResolvedValueOnce({ data: reply })
+    await openReader({ snapshot, sessionApi: { submitQuestion,
+      get: vi.fn().mockResolvedValue({ data: { session: snapshot, events: [], report: null } }) } })
+    await clickButton('故事里有谁？')
+    await clickButton('重新核对进度')
+    expect(submitQuestion.mock.calls[1][1]).toEqual(submitQuestion.mock.calls[0][1])
+    expect(wrapper.text()).toContain(reply.outputText)
+    expect(wrapper.getComponent({ name: 'InteractionCard' }).props('questionReady')).toBe(false)
+  })
+
   it('offers child questions without free text and plays the returned story answer', async () => {
     vi.stubGlobal('Audio', class extends EventTarget {
       play = vi.fn().mockResolvedValue(undefined)

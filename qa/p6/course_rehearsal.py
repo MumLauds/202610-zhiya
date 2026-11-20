@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from contextlib import closing
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -55,9 +56,47 @@ def prepare(directory):
             "items": approved}
 
 
-def exercise(page, origin, browser_version, report):
+def verify_answer_audio(answer, synthesis_request, transcript):
+    def normalized(text):
+        return "".join(c for c in unicodedata.normalize("NFKC", text)
+                       if not c.isspace() and not unicodedata.category(c).startswith("P"))
+
+    assert synthesis_request == {"interactionEventId": answer["interactionEventId"]}, "合成请求未绑定本次回答"
+    expected = normalized(answer["outputText"])
+    assert expected and normalized(transcript) == expected, "语音回环转写与本次回答不一致"
+
+
+def check_candidate(root, sha):
+    git = ["git", "-c", "safe.directory=" + root.as_posix(), "-C", str(root)]
+    if (subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip() != sha
+            or subprocess.check_output([*git, "status", "--porcelain", "--untracked-files=normal"])):
+        raise ValueError("请从无改动的候选提交运行，--tested-commit 填写完整 SHA")
+
+
+def build_candidate_frontend(root, sha, dist):
+    check_candidate(root, sha)
+    dist.mkdir()  # Require a fresh output directory for this rehearsal.
+    subprocess.run(["node", "node_modules/vite/bin/vite.js", "build", "--mode", "public",
+                    "--manifest", "--outDir", str(dist)], cwd=root / "frontend", check=True)
+    check_candidate(root, sha)
+    manifest = json.loads((dist / ".vite/manifest.json").read_text("utf-8"))
+    entry = manifest["index.html"]["file"]
+    return {"path": "/" + entry, "sha256": hashlib.sha256((dist / entry).read_bytes()).hexdigest()}
+
+
+def open_candidate(page, origin, entry):
+    with page.expect_response(lambda r: r.request.resource_type == "script" and r.url == origin + entry["path"]) as loaded:
+        page.goto(origin)
+    response = loaded.value
+    digest = hashlib.sha256(response.body()).hexdigest()
+    if response.status != 200 or digest != entry["sha256"]:
+        raise ValueError("浏览器加载的入口脚本与本轮候选构建不一致")
+    return {"path": entry["path"], "sha256": digest}
+
+
+def exercise(page, origin, browser_version, report, entry):
     page.set_default_timeout(45000)
-    page.goto(origin)
+    report["frontendEntry"] = open_candidate(page, origin, entry)
     sid = page.evaluate("""async () => {
       async function post(path, data) {
         const csrf = document.cookie.split('; ').find(c => c.startsWith('zhiya_csrf='))?.slice(11);
@@ -127,8 +166,10 @@ def exercise(page, origin, browser_version, report):
       return [r.status,await r.json(),bytes.size];
     }""", [sid, answer["revision"], tts.value.json()["data"]["audioUrl"]])
     report.update(audioBytes=asr[2], asrHttp=asr[0])
-    assert asr[0] == 200 and asr[1]["data"]["text"].strip(), asr[1]
+    assert asr[0] == 200, asr[1]
     report["recognizedText"] = asr[1]["data"]["text"]
+    report["synthesisRequest"] = tts.value.request.post_data_json
+    verify_answer_audio(answer, report["synthesisRequest"], report["recognizedText"])
 
 
 def main():
@@ -137,10 +178,11 @@ def main():
     parser.add_argument("--directory", required=True, type=Path)
     parser.add_argument("--tested-commit", required=True)
     args = parser.parse_args()
-    git = ["git","-c","safe.directory=" + ROOT.as_posix(),"-C",str(ROOT)]
-    sha = subprocess.check_output([*git,"rev-parse","HEAD"], text=True).strip()
-    if sha != args.tested_commit or subprocess.check_output([*git,"status","--porcelain","--untracked-files=normal"]):
-        parser.error("请从无改动的候选提交运行，--tested-commit 填写完整 SHA")
+    sha = args.tested_commit
+    try:
+        check_candidate(ROOT, sha)
+    except ValueError as exc:
+        parser.error(str(exc))
     directory = args.directory.resolve()
     report = {"testedCommit": sha, "phase": args.phase, "passed": False}
     if args.phase == "prepare":
@@ -168,11 +210,13 @@ def main():
     with target.open("x", encoding="utf-8") as output:
         try:
             app = create_app()
-            with tempfile.TemporaryDirectory(dir=directory) as certs, local_app(Path(certs), application=app) as (origin,pin):
-                with sync_playwright() as driver:
+            with tempfile.TemporaryDirectory(dir=directory) as scratch:
+                dist = Path(scratch) / "dist"
+                entry = build_candidate_frontend(ROOT, sha, dist)
+                with local_app(Path(scratch), application=app, static_directory=dist) as (origin,pin), sync_playwright() as driver:
                     browser = driver.chromium.launch(channel="chrome", args=["--ignore-certificate-errors-spki-list=" + pin])
                     try:
-                        exercise(browser.new_page(locale="zh-CN"), origin, browser.version, report)
+                        exercise(browser.new_page(locale="zh-CN"), origin, browser.version, report, entry)
                     finally:
                         browser.close()
             report["passed"] = True

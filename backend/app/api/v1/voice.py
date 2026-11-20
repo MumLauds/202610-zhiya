@@ -166,26 +166,32 @@ def _unavailable_read() -> ServiceError:
 def _read_story_image(request: Request, version_id: int, page_no: int | None) -> Response:
     try:
         for cache_write in (False, True):
-            with authorized_db(request, cache_write=cache_write) as (db, principal, failure):
+            with authorized_db(request, cache_write=cache_write, allow_admin=True) as (db, principal, failure):
                 if failure is not None:
                     return failure
-                version = readable_story_version(db, principal, version_id)
-                if version is None and page_no is not None and principal.role == "GUARDIAN":
-                    version = owned_generation_version(db, principal.guardian_id, version_id)
-                    if (version is not None
-                            and json.loads(version["approved_page_media_json"] or "{}").get(str(page_no)) is None):
-                        if db.execute("SELECT 1 FROM story_pages WHERE version_id = ? AND page_no = ?",
-                                      (version_id, page_no)).fetchone() is None:
-                            raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
-                        # Recheck under a write lock before binding an unseen legacy page.
-                        if not cache_write:
-                            continue
-                        version = dict(version)
-                        version["approved_page_media_json"] = freeze_approval_page_media(
-                            db, version, preview_page_no=page_no,
-                        )
+                if principal.role == "ADMIN":
+                    version = db.execute(
+                        """SELECT v.* FROM story_versions v JOIN storybooks b ON b.id=v.storybook_id
+                           WHERE v.id=? AND b.source_type='LIBRARY' AND ? IS NOT NULL
+                             AND v.status IN ('DRAFT','PENDING_REVIEW','PUBLISHED')""",
+                        (version_id, page_no),
+                    ).fetchone()
+                    preview = version is not None and version["status"] != "PUBLISHED"
+                else:
+                    version = readable_story_version(db, principal, version_id)
+                    preview = version is None and page_no is not None and principal.role == "GUARDIAN"
+                    if preview:
+                        version = owned_generation_version(db, principal.guardian_id, version_id)
                 if not version:
                     raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
+                if preview and json.loads(version["approved_page_media_json"] or "{}").get(str(page_no)) is None:
+                    if db.execute("SELECT 1 FROM story_pages WHERE version_id = ? AND page_no = ?",
+                                  (version_id, page_no)).fetchone() is None:
+                        raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
+                    if not cache_write:
+                        continue
+                    version = dict(version)
+                    version["approved_page_media_json"] = freeze_approval_page_media(db, version, preview_page_no=page_no)
                 asset = read_pinned_asset_bytes(db, version, page_no)
                 if asset is None:
                     raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)

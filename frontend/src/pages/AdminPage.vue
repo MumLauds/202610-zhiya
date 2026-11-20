@@ -1,5 +1,6 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
+import { mediaUrl } from '../api/client'
 
 const props = defineProps({
   section: { type: String, default: 'storybooks' },
@@ -183,11 +184,14 @@ async function saveRevision() {
           <p v-if="story.validationErrors?.length" class="admin-warning">{{ story.validationErrors.join('；') }}</p>
           <div class="admin-card-actions">
             <button v-if="story.status === 'DRAFT'" class="primary" type="button" :disabled="sectionLoading || admin.busy || story.canPublish === false" @click="setStoryStatusAction(story.storyVersionId, 'PUBLISHED')">审核并发布</button>
-            <button v-if="story.status === 'PUBLISHED'" class="danger" type="button" :disabled="sectionLoading || admin.busy" @click="setStoryStatusAction(story.storyVersionId, 'WITHDRAWN')">撤回</button>
+            <button v-if="['PUBLISHED', 'RETIRED'].includes(story.status)" class="danger" type="button" :disabled="sectionLoading || admin.busy" @click="setStoryStatusAction(story.storyVersionId, 'WITHDRAWN')">撤回</button>
             <details>
               <summary class="secondary">查看页面</summary>
               <ol class="admin-pages">
-                <li v-for="page in story.pages" :key="page.pageNumber"><strong>第 {{ page.pageNumber }} 页</strong><p>{{ page.text }}</p></li>
+                <li v-for="page in story.pages" :key="page.pageNumber">
+                  <strong>第 {{ page.pageNumber }} 页</strong><p>{{ page.text }}</p>
+                  <img v-if="page.imageRef" :src="mediaUrl(page.imageRef)" loading="lazy" width="200" :alt="`第 ${page.pageNumber} 页配图`">
+                </li>
               </ol>
               <ul v-if="story.branches?.length"><li v-for="branch in story.branches" :key="branch.branchId">第 {{ branch.fromPageNumber }} 页 → 第 {{ branch.nextPageNumber }} 页：{{ branch.choiceLabel }}（{{ branch.reviewStatus }}）</li></ul>
             </details>

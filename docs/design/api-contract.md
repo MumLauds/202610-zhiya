@@ -37,7 +37,7 @@
 | API-021 | POST /api/v1/auth/parent-unlocks | 重新认证的家长 |
 | API-022 | POST /api/v1/voice/transcriptions | 本人家长或绑定会话儿童 |
 | API-023 | POST /api/v1/voice/syntheses | 本人家长或绑定会话儿童 |
-| API-024 | GET /api/v1/media/{resource_key} | 有效会话且拥有资源访问权 |
+| API-024 | GET /api/v1/media/{resource_key} | 有效会话且拥有资源访问权；内容管理员可核对资料库草稿、待审核和已发布版本的内页图 |
 | API-025 | POST /api/v1/story-generations | 已认证家长 |
 | API-026 | POST /api/v1/story-versions/{version_id}/approvals | 已认证家长且草稿归本人 |
 | API-027 | POST /api/v1/admin/storybooks | 内容管理员 |

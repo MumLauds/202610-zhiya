@@ -14,6 +14,7 @@ from app.services.reading_agent import SENSITIVE
 from app.services.story_media import (
     MediaDependencyError,
     cover_ref_from_manifest,
+    editorial_preview_ref,
     ensure_media_dependencies,
     freeze_approval_page_media,
     page_image_ref_for,
@@ -105,12 +106,14 @@ VISIBLE = """(v.status = 'PUBLISHED' OR
 def admin_story_object(db, version, *, page_details=False):
     pages = []
     manifest = pin_version_media(db, version, source_type="LIBRARY") if page_details and version["status"] == "PUBLISHED" else None
-    for row in db.execute("""SELECT page_no,body_text,default_next_page_number FROM story_pages
+    for row in db.execute("""SELECT page_no,body_text,image_ref,default_next_page_number FROM story_pages
                              WHERE version_id=? ORDER BY page_no""", (version["id"],)):
         page = {"pageNumber": row["page_no"], "text": row["body_text"]}
         if page_details:
             page["defaultNextPageNumber"] = row["default_next_page_number"]
             page["imageRef"] = page_image_ref_from_manifest(version["id"], row["page_no"], manifest) if manifest else None
+        if version["status"] in ("DRAFT", "PENDING_REVIEW"):
+            page["imageRef"] = editorial_preview_ref(version["id"], row["page_no"], row["image_ref"])
         pages.append(page)
     branches = db.execute("""SELECT id AS branchId, from_page_no AS fromPageNumber, next_page_no AS nextPageNumber,
                             choice_label AS choiceLabel, review_status AS reviewStatus

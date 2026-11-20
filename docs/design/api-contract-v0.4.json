@@ -1955,7 +1955,7 @@
     {
       "method": "GET",
       "path": "/api/v1/media/{resource_key}",
-      "permission": "有效会话且拥有资源访问权",
+      "permission": "有效会话且拥有资源访问权；内容管理员可核对资料库草稿、待审核和已发布版本的内页图",
       "ownerRole": "业务后端与语音接入",
       "requestContentType": null,
       "queryExample": null,

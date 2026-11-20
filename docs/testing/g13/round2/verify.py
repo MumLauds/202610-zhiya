@@ -50,7 +50,7 @@ def seed_fixture(path):
 
 
 @contextmanager
-def local_app(directory, *, application=None):
+def local_app(directory, *, application=None, static_directory=None):
     # Trust only this disposable loopback key in this browser process.
     cert, key = directory / "cert.pem", directory / "key.pem"
     subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
@@ -60,7 +60,7 @@ def local_app(directory, *, application=None):
     pin = base64.b64encode(hashlib.sha256(public_key).digest()).decode("ascii")
     app = application if application is not None else create_app(
         Settings(model_api_url="https://fixture.invalid/model", model_api_key="fixture"), SpeechSettings())
-    app.mount("/", StaticFiles(directory=ROOT / "frontend" / "dist", html=True))
+    app.mount("/", StaticFiles(directory=static_directory or ROOT / "frontend" / "dist", html=True))
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         server = uvicorn.Server(uvicorn.Config(app, ssl_certfile=str(cert), ssl_keyfile=str(key),

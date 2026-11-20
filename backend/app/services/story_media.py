@@ -654,6 +654,10 @@ def page_image_ref_from_manifest(version_id: int, page_no: int, manifest: dict) 
     return f"asset-{version_id}-page-{page_no}" if _pinned_blob_is_readable(entry) else None
 
 
+def editorial_preview_ref(version_id: int, page_no: int, raw_ref: str) -> str | None:
+    return f"asset-{version_id}-page-{page_no}" if _image_path_parts(raw_ref) else None
+
+
 def page_image_ref_for(db: sqlite3.Connection, version_id: int, page_no: int) -> str | None:
     """Ensure the parent story_version is pinned and return a controlled key if page_no has a valid image."""
     row = db.execute(

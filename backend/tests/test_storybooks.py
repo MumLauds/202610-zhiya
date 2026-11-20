@@ -66,7 +66,7 @@ def test_admin_catalogue_lists_only_library_versions(bookshelf):
         db.execute("UPDATE accounts SET role = 'ADMIN' WHERE account = 'guardian-one'")
     items = admin.get(url).json()["data"]["items"]
     assert [item["storyVersionId"] for item in items] == [11, 43, 42, 41]
-    assert items[-1]["pages"] == [{"pageNumber": 1, "text": "text-41"}]
+    assert items[-1]["pages"] == [{"pageNumber": 1, "text": "text-41", "imageRef": None}]
     assert [branch["reviewStatus"] for branch in items[0]["branches"]] == ["APPROVED", "PENDING"]
     assert admin.get(url, params={"page": 2, "pageSize": 2}).json()["data"]["items"] == items[2:]
 

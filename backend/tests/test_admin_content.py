@@ -82,6 +82,12 @@ def test_library_publish_replace_withdraw_and_replay(editorial):
     published = parent.get(f"/api/v1/story-versions/{vid}").json()["data"]
     image = published["pages"][0]["imageRef"]
     assert image and parent.get(f"/api/v1/media/{image}").status_code == 200
+    profile = parent.post("/api/v1/child-profiles", headers=auth(parent),
+                          json={"ageBand": "AGE_4_5", "preferredMinutes": 10}).json()["data"]
+    session = parent.post("/api/v1/reading-sessions", headers=auth(parent), json={
+        "childProfileId": profile["childProfileId"], "storyVersionId": vid, "mode": "PARENT_CHILD",
+    }).json()["data"]["readingSessionId"]
+    session_url = f"/api/v1/reading-sessions/{session}"
     with closing(sqlite3.connect(path)) as db:
         editor_id, = db.execute("SELECT id FROM accounts WHERE role='ADMIN'").fetchone()
         assert db.execute("SELECT reviewed_by_id, reviewed_at IS NOT NULL FROM story_versions WHERE id=?", (vid,)).fetchone() == (editor_id, 1)
@@ -90,7 +96,10 @@ def test_library_publish_replace_withdraw_and_replay(editorial):
     assert status(version["storyVersionId"], "PUBLISHED").status_code == 200
     listed = parent.get("/api/v1/storybooks").json()["data"]["items"]
     assert [item["storyVersionId"] for item in listed] == [version["storyVersionId"]]
+    assert parent.get(session_url).status_code == 200
+    assert parent.get(f"/api/v1/media/{image}").status_code == 200
     assert status(vid, "WITHDRAWN").status_code == 200
+    assert parent.get(session_url).status_code == 404
     assert parent.get(f"/api/v1/media/{image}").status_code == 404
     assert status(vid, "PUBLISHED").status_code == 409
 
@@ -100,6 +109,7 @@ def test_missing_image_can_be_repaired_without_publishing_partial_data(editorial
     (media / "page.png").rename(media / "later.png")
     draft = admin.post(ADMIN + "/storybooks", json=BOOK, headers=auth(admin)).json()["data"]
     url = f"{ADMIN}/story-versions/{draft['storyVersionId']}"
+    assert admin.get("/api/v1/media/" + draft["pages"][0]["imageRef"]).status_code == 404
     for expected in (422, 200):
         result = admin.patch(url, json={"status": "PUBLISHED"}, headers=auth(admin, "release"))
         assert result.status_code == expected, result.text
@@ -107,6 +117,25 @@ def test_missing_image_can_be_repaired_without_publishing_partial_data(editorial
             with closing(sqlite3.connect(path)) as db:
                 assert db.execute("SELECT status,reviewed_at,approved_page_media_json FROM story_versions").fetchone() == ("DRAFT", None, None)
             (media / "later.png").rename(media / "page.png")
+
+
+def test_admin_previews_the_same_page_bytes_that_are_published(editorial):
+    admin, parent, _, media = editorial
+    pages = admin.post(ADMIN + "/storybooks", json=BOOK, headers=auth(admin)).json()["data"]["pages"]
+    listed = admin.get(ADMIN + "/story-versions").json()["data"]["items"][0]
+    assert listed["pages"][0]["imageRef"] == pages[0]["imageRef"]
+    url = "/api/v1/media/" + pages[0]["imageRef"]
+    original = (media / "page.png").read_bytes()
+    assert parent.get(url).status_code == 404
+    preview = admin.get(url)
+    assert preview.status_code == 200 and preview.content == original
+    assert "no-store" in preview.headers["Cache-Control"]
+    assert parent.get(url).status_code == 404
+    Image.new("RGB", (4, 4), "blue").save(media / "page.png")
+    release = admin.patch(f"{ADMIN}/story-versions/{listed['storyVersionId']}",
+                          json={"status": "PUBLISHED"}, headers=auth(admin))
+    assert release.status_code == 200
+    assert parent.get(url).content == original
 
 
 def test_knowledge_revisions_retirement_and_concurrent_replay(editorial):
@@ -157,7 +186,7 @@ def test_seed_cover_and_reviewed_page_keep_their_published_bytes(editorial, monk
 
 
 def test_rejects_unusable_paths_and_excludes_family_owned_versions(editorial):
-    admin, _, path, _ = editorial
+    admin, parent, path, _ = editorial
     pages = [{"pageNumber": 1, "text": "纸船", "imageRef": "page.png", "defaultNextPageNumber": 2},
              {"pageNumber": 2, "text": "湖边", "imageRef": "page.png"}]
     assert admin.post(ADMIN + "/storybooks", json={**BOOK, "pages": pages, "branches": [
@@ -166,9 +195,13 @@ def test_rejects_unusable_paths_and_excludes_family_owned_versions(editorial):
         owner, = db.execute("SELECT id FROM accounts WHERE role='GUARDIAN'").fetchone()
         book = db.execute("INSERT INTO storybooks(owner_guardian_id,source_type,created_at) VALUES(?,'ORIGINAL',1)", (owner,)).lastrowid
         private = db.execute("""INSERT INTO story_versions(storybook_id,version_no,title,topics_json,age_min,age_max,
-            license_note,status,created_at,branching) VALUES(?,1,'家庭私稿','[]',3,4,'自用','DRAFT',1,0)""", (book,)).lastrowid
+            license_note,status,created_at,branching) VALUES(?,1,'家庭私稿','[]',3,4,'自用','PENDING_REVIEW',1,0)""", (book,)).lastrowid
+        db.execute("INSERT INTO story_pages(version_id,page_no,body_text,image_ref) VALUES(?,1,'小船','page.png')", (private,))
     assert admin.post(ADMIN + "/storybooks", json={**BOOK, "storybookId": book}, headers=auth(admin)).status_code == 404
     assert admin.patch(f"{ADMIN}/story-versions/{private}", json={"status": "PUBLISHED"}, headers=auth(admin)).status_code == 404
+    private_image = f"/api/v1/media/asset-{private}-page-1"
+    assert parent.get(private_image).status_code == 200
+    assert admin.get(private_image).status_code == 404
 
 
 def test_old_database_gains_receipts_without_losing_existing_knowledge(editorial):

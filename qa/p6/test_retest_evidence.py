@@ -2,6 +2,7 @@
 
 import copy
 import csv
+import hashlib
 import json
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -22,6 +23,72 @@ import run_model_compare as runner
 import run_p6
 import summarize_model_compare as scoring
 import track_defects
+
+
+def test_candidate_rebuilds_after_commit_change_and_rejects_stale_browser_script(tmp_path, monkeypatch):
+    from course_rehearsal import build_candidate_frontend, open_candidate
+
+    repo = tmp_path / "repo"
+    frontend = repo / "frontend"
+    frontend.mkdir(parents=True)
+    (frontend / ".gitignore").write_text("dist/\n", encoding="utf-8")
+    source = frontend / "main.js"
+
+    def git(*args):
+        return subprocess.check_output(["git", "-c", "user.name=P6", "-c", "user.email=p6@example.invalid",
+                                        "-c", "commit.gpgsign=false", *args], cwd=repo).decode().strip()
+
+    git("init", "-q")
+    source.write_bytes(b"first")
+    git("add", ".")
+    git("commit", "-qm", "first")
+    first = git("rev-parse", "HEAD")
+    stale = frontend / "dist/entry.js"
+    stale.parent.mkdir()
+    stale.write_bytes(source.read_bytes())
+    source.write_bytes(b"second")
+    git("commit", "-qam", "second")
+    second = git("rev-parse", "HEAD")
+    assert not git("status", "--porcelain")
+
+    # Only replace Vite. Keep the two real commits and the ignored old build on disk.
+    run = subprocess.run
+    def run_build(args, **kwargs):
+        if args[0] != "node":
+            return run(args, **kwargs)
+        assert args[1:7] == ["node_modules/vite/bin/vite.js", "build", "--mode", "public", "--manifest", "--outDir"]
+        output = Path(args[7])
+        (output / ".vite").mkdir()
+        (output / ".vite/manifest.json").write_text('{"index.html":{"file":"entry.js"}}', encoding="utf-8")
+        (output / "entry.js").write_bytes((kwargs["cwd"] / "main.js").read_bytes())
+
+    monkeypatch.setattr(subprocess, "run", run_build)
+    dist = tmp_path / "fresh"
+    with pytest.raises(ValueError, match="候选提交"):
+        build_candidate_frontend(repo, first, dist)
+    entry = build_candidate_frontend(repo, second, dist)
+    assert entry == {"path": "/entry.js", "sha256": hashlib.sha256(b"second").hexdigest()}
+    assert stale.read_bytes() == b"first"
+    page = MagicMock()
+    response = page.expect_response.return_value.__enter__.return_value.value
+    response.status = 200
+    response.body.return_value = stale.read_bytes()
+    with pytest.raises(ValueError, match="入口脚本"):
+        open_candidate(page, "https://localhost", entry)
+    response.body.return_value = (dist / "entry.js").read_bytes()
+    assert open_candidate(page, "https://localhost", entry) == entry
+
+
+def test_answer_audio_checks_both_event_and_spoken_words():
+    from course_rehearsal import verify_answer_audio
+
+    answer = {"interactionEventId": 12, "outputText": "小狐狸站在门口，看着外面的雨。"}
+    request = {"interactionEventId": 12}
+    verify_answer_audio(answer, request, "小狐狸站在门口 看着外面的雨！")
+    with pytest.raises(AssertionError, match="转写"):
+        verify_answer_audio(answer, request, "青蛙在池塘边唱歌。")
+    with pytest.raises(AssertionError, match="绑定"):
+        verify_answer_audio(answer, {"interactionEventId": 13}, answer["outputText"])
 
 
 def test_retest_report_preserves_archive_and_previous_run(tmp_path, monkeypatch):
