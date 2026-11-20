@@ -18,7 +18,7 @@
 
 ## 配置与本地联调
 
-从 backend/.env.example 首次复制到 backend/.env，已有文件不要覆盖。在本地把 DeepSeek 官方密钥填入 `MODEL_API_KEY`，把百炼北京地域密钥填入 `DASHSCOPE_API_KEY`。两个字段独立，文本密钥缺失时不再回退到百炼密钥。不要把密钥贴入聊天、任务表或 Git。已有系统环境优先于 .env。各项默认值见示例文件：文本 deepseek-flash，识别 qwen3-asr-flash，合成 qwen-audio-3.1-tts-flash / wenhuaiqing_v3.1；合成地址默认留空，须填百炼北京业务空间的完整 SpeechSynthesizer 地址。采用普通单次请求，文本默认发送 thinking.type=disabled，兼容端点可显式设置 MODEL_SEND_THINKING=false 省略该字段；文本、语音总预算各自默认 20 秒（语音含合成下载）。
+从 backend/.env.example 首次复制到 backend/.env，已有文件不要覆盖。在本地把 DeepSeek 官方密钥填入 `MODEL_API_KEY`，把百炼北京地域密钥填入 `DASHSCOPE_API_KEY`。两个字段独立，文本密钥缺失时不再回退到百炼密钥。不要把密钥贴入聊天、任务表或 Git。已有系统环境优先于 .env。各项默认值见示例文件：文本 deepseek-flash，识别 qwen3-asr-flash，合成 qwen-audio-3.1-tts-flash / wenhuaiqing_v3.1；合成地址默认留空，须填百炼北京业务空间的完整 SpeechSynthesizer 地址。文本默认发送 thinking.type=disabled，兼容端点可显式设置 MODEL_SEND_THINKING=false 省略该字段；文本、语音总预算各自默认 20 秒（语音含合成下载）。
 
 已有百炼文本配置需同步迁移：MODEL_API_URL 改为 `https://api.deepseek.com/chat/completions`，MODEL_NAME 改为 `deepseek-flash`；MODEL_API_KEY 若以前填写过百炼密钥，须由本人换成 DeepSeek 官方密钥。本次声线与模型语速扩展还需迁移 TTS_API_URL、TTS_MODEL、TTS_VOICE，密钥保持原值，详见[声线与语速交接](../docs/design/speech-preferences-handoff.md)。直接在终端导出 DEEPSEEK_API_KEY 不会被当前工程读取，应使用上述 MODEL_API_KEY 字段。当前文本参数固定适配 DeepSeek，不能仅改地址就宣称兼容其他供应商。
 
@@ -64,7 +64,7 @@ ASR 返回内部 Transcription（text、reliable），非空转写仅表明供�
 
 当前只支持 qwen-audio-3.1-tts-flash，声线只保留温怀清、叶知晴、龙牛牛、龙闪闪、龙杰力豆、龙泡泡；完整列表、标识和前后端边界见[交接说明](../docs/design/speech-preferences-handoff.md)。原全量目录及旧模型兼容已移除，语言与场景元数据不透传供应商；模型直接合成不同语速，不改变音频帧或播放器倍速。六种声线已另行生成同文 SLOW=0.9 样本，用户已接受本次听感，见[六声线证据](../docs/testing/g08-live-delivery-checks.md)；其他文本及语速未据此验收。历史真实结果见[声线语速验证](../docs/testing/speech-preferences-checks.md)。
 
-TTS 下载仅允许北京地域指定 OSS 主机，HTTP 链接升级为 HTTPS；拒绝其他主机、凭证、片段、非标准端口和重定向。下载请求不携带 API 密钥；不记录签名 URL、音频、转写或正文。换地域须单独核对下载域名，不能放开任意 URL。JSON 响应限 1 MiB，音频限 10 MiB，拒绝压缩响应；这些是内部资源限制，不代表已经冻结对外上传契约。
+TTS 请求使用百炼 SSE，后端随合成接收音频分块，在成功结束并校验完整 WAV 后提供播放地址。桌面和移动端共用该流程。供应商仅返回完整文件链接时，后端按原规则下载。TTS 下载仅允许北京地域指定 OSS 主机，HTTP 链接升级为 HTTPS；拒绝其他主机、凭证、片段、非标准端口和重定向。下载请求不携带 API 密钥；不记录签名 URL、音频、转写或正文。换地域须单独核对下载域名，不能放开任意 URL。普通 JSON 响应限 1 MiB，包含 Base64 和事件元数据的 SSE 响应限 21 MiB，解码后音频限 10 MiB，拒绝压缩响应；这些是内部资源限制，不代表已经冻结对外上传契约。
 
 百炼真实合成可能返回带占位长度的 24 kHz 单声道、16 位 PCM WAV。适配层只识别本次实测的固定占位头，在完整下载、帧对齐后回填实际长度，再进行 WAV 校验；不修改音频帧，不修复未知损坏格式，也不对用户上传执行该处理。合成输出维持 24 kHz；公开识别路由及 smoke_voice.py asr 现在会先规范化为 16 kHz 单声道 16 位 PCM；支持 WebM、Ogg、MP4、MP3 和 WAV，超过 4 MiB 或 120 秒整段拒绝。内部 VoiceGateway 仍只接收规范音频。离线 convert 命令不读取 .env、不请求供应商，详见接口交接。
 

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import io
 import json
 import struct
@@ -39,7 +40,51 @@ def tts(url=URL):
     return {"output": {"finish_reason": "stop", "audio": {"url": url}}}
 
 
+def stream_response(*events):
+    body = "".join("event: result\r\ndata: " + json.dumps(event) + "\r\n\r\n" for event in events)
+    return httpx.Response(200, text=body, headers={"content-type": "text/event-stream; charset=utf-8"})
+
+
 class VoiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_streamed_wav_completes_in_one_request(self):
+        audio = wav(24000)
+        def handler(request):
+            self.assertEqual(request.method, "POST")
+            self.assertEqual(request.headers["X-DashScope-SSE"], "enable")
+            events = [{"output": {"finish_reason": "null", "audio": {"data": base64.b64encode(part).decode()}}}
+                      for part in (audio[:71], audio[71:])]
+            return stream_response(*events, tts())
+        async with VoiceGateway(SETTINGS, transport=httpx.MockTransport(handler)) as gateway:
+            self.assertEqual(await gateway.synthesize(text="测试"), audio)
+
+    async def test_url_only_stream_uses_existing_download(self):
+        def handler(request):
+            if request.method == "POST":
+                return stream_response(tts())
+            self.assertNotIn("authorization", request.headers)
+            self.assertNotIn("X-DashScope-SSE", request.headers)
+            return httpx.Response(200, content=wav(24000))
+        async with VoiceGateway(SETTINGS, transport=httpx.MockTransport(handler)) as gateway:
+            self.assertEqual(await gateway.synthesize(text="测试"), wav(24000))
+
+    async def test_partial_or_invalid_stream_never_returns_audio(self):
+        encoded = base64.b64encode(wav(24000)).decode()
+        chunk = {"output": {"finish_reason": None, "audio": {"data": encoded}}}
+        bad = {"output": {"finish_reason": None, "audio": {"data": "!!"}}}
+        for events in ([chunk], [chunk, {"code": "Failed"}], [bad, tts()], [chunk, tts(), chunk]):
+            def handler(request):
+                self.assertEqual(request.method, "POST")
+                return stream_response(*events)
+            with self.subTest(events=events), self.assertRaises(ServiceError) as caught:
+                async with VoiceGateway(SETTINGS, transport=httpx.MockTransport(handler)) as gateway:
+                    await gateway.synthesize(text="测试")
+            self.assertEqual(caught.exception.code, "TTS_INVALID_RESPONSE")
+
+        with patch("app.voice_gateway.MAX_DOWNLOAD_BYTES", 100), self.assertRaises(ServiceError) as caught:
+            async with VoiceGateway(SETTINGS, transport=httpx.MockTransport(lambda _: stream_response(chunk, tts()))) as gateway:
+                await gateway.synthesize(text="测试")
+        self.assertEqual(caught.exception.code, "TTS_INVALID_RESPONSE")
+
     async def test_every_selected_voice_works_with_all_rates_in_protocol(self):
         payloads = []
         def handler(request):
