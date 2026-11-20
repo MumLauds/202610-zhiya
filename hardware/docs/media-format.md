@@ -341,7 +341,7 @@ RGB888: width × height × 3 字节
 本次**决定入库全部 40 个 JPEG**（合计 787.2 KiB）：
 
 - 体积小于 1 MiB，对仓库与 16 MiB Flash 都可接受；
-- 让干净克隆无需安装 Pillow 即可校验 Manifest 并直接做 H-Demo；
+- 干净克隆即可取用已生成的 JPEG 做 H-Demo。校验 Manifest 前，在仓库根目录运行 `python -m pip install -r hardware/tools/requirements.txt` 安装锁定的 Pillow；
 - 原图 111.82 MiB 不重复入库，`knowledge-base_v2.5/` 保持唯一权威来源。
 
 若后续引入逐页插画（单套可能数十 MB），改为只入库工具、Manifest 与少量演示样本，并对生成物配置忽略规则。`hardware/.gitignore` 已忽略临时文件与半成品清单。
