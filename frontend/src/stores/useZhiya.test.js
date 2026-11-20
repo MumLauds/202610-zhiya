@@ -117,7 +117,16 @@ describe('cold reader bookshelf fallback', () => {
 })
 
 describe('authoritative reading progress', () => {
-  it('serializes page writes and rejects skipped or already visited pages', async () => {
+  it('preserves each visit after resuming a branch and revisiting the default next page', async () => {
+    reading.getReadingSession.mockResolvedValueOnce(detail({ visitedPageNumbers: [1, 3, 1], revision: 3 }))
+    await actions.loadReaderRoute()
+    reading.addReadingEvent.mockResolvedValueOnce({ revision: 4 })
+    expect(await actions.recordPageChange(3)).toBe(true)
+    expect(state.currentSession.visitedPageNumbers).toEqual([1, 3, 1, 3])
+    expect(state.currentSession.revision).toBe(4)
+  })
+
+  it('serializes page writes and rejects destinations other than the default next page', async () => {
     const request = deferred()
     reading.addReadingEvent.mockReturnValueOnce(request.promise)
     const first = actions.recordPageChange(3)

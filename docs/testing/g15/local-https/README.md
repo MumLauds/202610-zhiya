@@ -39,6 +39,8 @@ Docker Engine 29.9.2、Compose 5.6.1 记录了 `edge`、`backend` 和 `provider`
 
 需要 Docker Compose、Git、OpenSSL、curl、flock（util-linux）、Python 3、Node.js、npm 和安装了 Python Playwright 的 Chrome。以下命令从包含本目录的仓库根目录运行。将首轮状态目录和项目名留给同一轮的后续命令。两个镜像按本轮的项目名打标签，均从 `G15_COMMIT` 的源码构建。
 
+下方提交用于复现本轮归档。若改测 `02ba8d8` 或采用同一小结契约的后续版本，`verify_browser.py` 对空活动列表的历史断言会失败。有已读正文的新 `READY` 小结应包含活动名称、材料与步骤，复测还需核对重启前后这些字段一致。[小结契约](../../../design/api-contract.md)
+
 ```sh
 export G15_COMMIT=e5f32cd9d645c75e03814af55ba5aa531442c8a6
 export G15_PROJECT="zhiya-g15-$(date +%s)"

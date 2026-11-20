@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
+import flipBookScript from '../../public/vendor/openpageflip/index.iife.js?raw'
 import ReaderPage from './ReaderPage.vue'
 import { synthesize, transcribe } from '../api/voice'
 
@@ -15,6 +16,7 @@ const button = (text) => wrapper.findAll('button').find((item) => item.text().in
 function render(props = {}, useRealFlipBook = false) {
   const FlipStub = defineComponent({ name: 'FlipBook', props: ['startPage'], emits: ['page-change'], setup(_, { expose }) { expose({ showPage }); return () => null } })
   wrapper = mount(ReaderPage, {
+    attachTo: useRealFlipBook ? document.body : undefined,
     props: {
       book,
       session: { ...initialSession },
@@ -417,20 +419,21 @@ describe('reader state and visual progress', () => {
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
   })
 
-  it('uses the visited branch for a backward swipe and restores the live book on return', async () => {
+  it('follows the visited branch on a backward swipe and restores live controls on return', async () => {
     let flip
     vi.stubGlobal('OpenPageFlip', { createBook: () => ({
       on: (_, callback) => { flip = callback }, turnTo: vi.fn(), destroy: vi.fn(),
     }) })
     render({ session: { ...initialSession, currentPage: 7, visitedPageNumbers: [1, 7] } }, true)
-    flip({ page: 2 })
+    flip({ page: 0 })
     await flushPromises()
     expect(wrapper.get('.reader-heading p').text()).toContain('第 1 页')
     expect(wrapper.findAll('.flip-page--text')).toHaveLength(2)
     flip({ page: 2 })
     await flushPromises()
     expect(wrapper.get('.reader-heading p').text()).toContain('第 7 页')
-    expect(wrapper.findAll('.flip-page--text')).toHaveLength(3)
+    expect(wrapper.findAll('.flip-page--text')).toHaveLength(2)
+    expect(button('朗读').element.disabled).toBe(false)
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
   })
 
@@ -466,22 +469,212 @@ describe('reader state and visual progress', () => {
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
   })
 
-  it.each([12, 13, 200])('bounds review dots while preserving all %i visits in order', (count) => {
+  it.each([{ visits: [1, 3] }, { visits: [1, 3, 1, 3] }])('returns to live progress through the same branch visits $visits', async ({ visits }) => {
+    const branchedBook = { ...book, pageCount: 4, pages: [
+      { ...book.pages[0], defaultNextPageNumber: 2 },
+      { pageNumber: 2, text: '二', defaultNextPageNumber: 3 },
+      ...book.pages.slice(1),
+    ] }
+    render({ book: branchedBook, session: { ...initialSession, currentPage: 3, visitedPageNumbers: visits } })
+
+    for (let i = visits.length - 2; i >= 0; i--) {
+      await button('上一页').trigger('click')
+      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${visits[i]} 页 ·`)
+      expect(button('朗读').element.disabled).toBe(true)
+    }
+    expect(button('上一页').element.disabled).toBe(true)
+    for (let i = 1; i < visits.length; i++) {
+      await button('下一页').trigger('click')
+      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${visits[i]} 页 ·`)
+      expect(button('朗读').element.disabled).toBe(i < visits.length - 1)
+    }
+
+    expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
+    await button('下一页').trigger('click')
+    expect(wrapper.props('recordPage')).toHaveBeenCalledExactlyOnceWith(7)
+  })
+
+  function renderWithFlipWidget(props) {
+    // Run the shipped widget with a two-page spread and immediate flips in jsdom.
+    vi.stubGlobal('OpenPageFlip', new Function(flipBookScript + '\nreturn OpenPageFlip')())
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+    vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(840)
+    vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(560)
+    render(props, true)
+  }
+
+  async function clickEdge(clientX) {
+    const spread = wrapper.get('.flipbook-book')
+    const position = { clientX, clientY: 280, button: 0, pointerType: 'mouse', pointerId: 1 }
+    await spread.trigger('pointerdown', position)
+    await spread.trigger('pointerup', position)
+  }
+
+  it('follows repeated visits by clicking the book edges, including the physical first page', async () => {
+    const session = { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3, 1, 3] }
+    renderWithFlipWidget({ session })
+    for (const page of wrapper.findAll('.flip-page--text')) {
+      const dots = page.findAll('.page-dots i').map(dot => dot.classes('active'))
+      const label = page.attributes('aria-label')
+      expect(dots).toEqual(book.pages.map(source => label === `第 ${source.pageNumber} 页文字`))
+    }
+
+    for (const page of [1, 3, 1]) {
+      await clickEdge(5)
+      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${page} 页 ·`)
+      expect(button('朗读').element.disabled).toBe(true)
+    }
+    expect(button('上一页').element.disabled).toBe(true)
+    for (const page of [3, 1, 3]) {
+      await clickEdge(835)
+      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${page} 页 ·`)
+    }
+    expect(button('朗读').element.disabled).toBe(false)
+    expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
+    await clickEdge(835)
+    expect(wrapper.props('recordPage')).toHaveBeenCalledExactlyOnceWith(7)
+    await wrapper.setProps({ session: { ...session, currentPage: 7, visitedPageNumbers: [...session.visitedPageNumbers, 7] } })
+    expect(wrapper.get('.reader-heading p').text()).toContain('第 7 页 ·')
+  })
+
+  it('keeps the first visit to page 1 when finishing a repeated branch', async () => {
+    const session = { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3, 1, 3] }
+    render({ session })
+    for (const page of [1, 3, 1]) {
+      await button('上一页').trigger('click')
+      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${page} 页 ·`)
+    }
+    expect(button('上一页').element.disabled).toBe(true)
+    await button('结束本次阅读').trigger('click')
+    await wrapper.setProps({ session: { ...session, status: 'FINISHED' } })
+    expect(wrapper.props('completeReading')).toHaveBeenCalledOnce()
+    expect(wrapper.get('.reader-heading p').text()).toContain('第 1 页 ·')
+    expect(button('上一页').element.disabled).toBe(true)
+    for (const page of [3, 1, 3]) {
+      await button('下一页').trigger('click')
+      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${page} 页 ·`)
+    }
+    expect(button('下一页').element.disabled).toBe(true)
+    expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
+  })
+
+  it.each([12, 13, 200])('uses global visit positions as the window moves through %i finished visits', async (count) => {
     const visits = Array.from({ length: count }, (_, index) => index % 2 === 0 ? 1 : 3)
     vi.stubGlobal('OpenPageFlip', { createBook: () => ({ on: vi.fn(), turnTo: vi.fn(), destroy: vi.fn() }) })
     render({ session: { ...initialSession, status: 'FINISHED', currentPage: visits.at(-1), visitedPageNumbers: visits } }, true)
 
-    const pages = wrapper.findAll('.flip-page--text')
-    expect(pages.map(page => page.attributes('aria-label'))).toEqual(visits.map(number => `第 ${number} 页文字`))
-    if (count === 12) {
-      expect(wrapper.findAll('.page-dots i')).toHaveLength(count * count)
-      expect(wrapper.findAll('.page-dots i.active')).toHaveLength(count)
-    } else {
-      expect(wrapper.findAll('.page-dots i')).toHaveLength(0)
-      pages.forEach((page, index) => {
-        expect(page.get('.page-number').text()).toContain(`回看 ${index + 1} / ${count}`)
+    function expectWindow(firstVisit) {
+      const pages = wrapper.findAll('.flip-page--text')
+      expect(pages).toHaveLength(5)
+      pages.forEach((page, offset) => {
+        const visitIndex = firstVisit + offset
+        expect(page.attributes('aria-label')).toBe(`第 ${visits[visitIndex]} 页文字`)
+        const dots = page.findAll('.page-dots i')
+        if (count === 12) {
+          expect(dots.map(dot => dot.classes('active'))).toEqual(visits.map((_, index) => index === visitIndex))
+        } else {
+          expect(dots).toHaveLength(0)
+          expect(page.get('.page-number').text()).toContain(`回看 ${visitIndex + 1} / ${count}`)
+        }
       })
     }
+    expectWindow(count - 5)
+    for (let step = 0; step < 5; step++) await button('上一页').trigger('click')
+    expectWindow(count - 8)
+  })
+
+  it.each([12, 16])('shows the confirmed visit position while retracing %i live visits', async (count) => {
+    const visits = Array.from({ length: count }, (_, index) => index % 2 === 0 ? 1 : 3)
+    renderWithFlipWidget({ session: { ...initialSession, currentPage: 3, visitedPageNumbers: visits } })
+
+    const visibleFooter = () => wrapper.findAll('.flip-page--text').find(page => page.isVisible()).get('.page-number')
+    for (const position of [count - 1, count - 2, count - 3]) {
+      await button('上一页').trigger('click')
+      const footer = visibleFooter()
+      expect(footer.text()).toContain(`第 ${visits[position - 1]} 页`)
+      if (count === 12) {
+        expect(footer.findAll('.page-dots i').map(dot => dot.classes('active')))
+          .toEqual(visits.map((_, index) => index + 1 === position))
+      } else {
+        expect(footer.text()).toContain(`回看 ${position} / ${count}`)
+        expect(wrapper.text()).not.toContain(`回看 ${count + 1} / ${count}`)
+      }
+    }
+    for (let i = 0; i < 3; i++) await button('下一页').trigger('click')
+    expect(visibleFooter().findAll('.page-dots i').map(dot => dot.classes('active')))
+      .toEqual(book.pages.map(page => page.pageNumber === 3))
+    expect(button('朗读').element.disabled).toBe(false)
+    expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
+  })
+
+  it('keeps the same page indicator when a 15-page book crosses the dot threshold', async () => {
+    const pages = Array.from({ length: 15 }, (_, i) => ({
+      pageNumber: i + 1, text: String(i + 1), defaultNextPageNumber: i < 14 ? i + 2 : null,
+    }))
+    const sessionAt = (currentPage) => ({
+      ...initialSession, currentPage, visitedPageNumbers: pages.slice(0, currentPage).map(page => page.pageNumber),
+    })
+    renderWithFlipWidget({ book: { ...book, pages, pageCount: pages.length }, session: sessionAt(11) })
+    for (const currentPage of [11, 12]) {
+      await wrapper.setProps({ session: sessionAt(currentPage) })
+      const spread = wrapper.get(`[aria-label="第 ${currentPage} 页文字"]`)
+      expect(spread.get('.page-number').text()).toContain(`第 ${currentPage} 页 · 共 15 页`)
+      expect(spread.find('.page-dots').exists()).toBe(false)
+    }
+  })
+
+  it('locks the dock and ignores book gestures until submitted feedback settles', async () => {
+    const feedback = deferred()
+    const requestGuidance = vi.fn(() => feedback.promise)
+    render({ requestGuidance })
+    await button('已理解').trigger('click')
+    expect(requestGuidance).toHaveBeenCalledWith('UNDERSTOOD')
+    expect(button('下一页').element.disabled).toBe(true)
+    expect(button('结束本次阅读').element.disabled).toBe(true)
+    wrapper.findComponent({ name: 'FlipBook' }).vm.$emit('page-change', { storyIndex: 1 })
+    await flushPromises()
+    expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
+    feedback.resolve(true)
+    await flushPromises()
+    await button('下一页').trigger('click')
+    expect(wrapper.props('recordPage')).toHaveBeenCalledExactlyOnceWith(3)
+  })
+
+  it('moves a bounded window through repeated visits and writes only after returning to live progress', async () => {
+    const visits = Array.from({ length: 200 }, (_, index) => index % 2 === 0 ? 1 : 3)
+    visits[194] = 7
+    const session = { ...initialSession, currentPage: 3, visitedPageNumbers: visits }
+    renderWithFlipWidget({ session })
+
+    const mountedPages = () => wrapper.findAll('.flip-page--text').map(page => page.attributes('aria-label'))
+    function expectCurrentPage(pageNumber) {
+      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${pageNumber} 页 ·`)
+      const visibleText = wrapper.findAll('.flip-page--text').filter(page => page.isVisible())
+      expect(visibleText.map(page => page.attributes('aria-label'))).toEqual([`第 ${pageNumber} 页文字`])
+    }
+    expect(mountedPages()).toEqual([1, 3, 1, 3, 7].map(number => `第 ${number} 页文字`))
+    for (const spread of wrapper.findAll('.flip-page--text')) {
+      expect(spread.findAll('.page-dots i')).toHaveLength(book.pageCount)
+    }
+    // Move farther than a full window, including the repeated visits around the detour to page 7.
+    for (let index = 198; index >= 190; index--) {
+      await clickEdge(5)
+      expectCurrentPage(visits[index])
+      expect(mountedPages().length).toBeLessThanOrEqual(5)
+    }
+    expect(button('朗读').element.disabled).toBe(true)
+    for (let index = 191; index < visits.length; index++) {
+      await clickEdge(835)
+      expectCurrentPage(visits[index])
+    }
+    expect(button('朗读').element.disabled).toBe(false)
+    expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
+    await clickEdge(835)
+    expect(wrapper.props('recordPage')).toHaveBeenCalledExactlyOnceWith(7)
+    await wrapper.setProps({ session: { ...session, currentPage: 7, visitedPageNumbers: [...visits, 7] } })
+    expectCurrentPage(7)
+    expect(mountedPages()).toHaveLength(5)
   })
 
   it('keeps the position of each visit when an approved branch revisits a page', async () => {
@@ -499,12 +692,43 @@ describe('reader state and visual progress', () => {
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
   })
 
+  it('records a default next page that was visited before a branch returned to the current page', async () => {
+    render({ session: { ...initialSession, visitedPageNumbers: [1, 3, 1] } })
+    await button('下一页').trigger('click')
+    expect(wrapper.props('recordPage')).toHaveBeenCalledExactlyOnceWith(3)
+  })
+
   it('finishes while reviewing an earlier page without changing the saved progress', async () => {
     const completeReading = vi.fn()
     render({ session: { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3] }, completeReading })
     await button('上一页').trigger('click')
     await button('结束本次阅读').trigger('click')
     expect(completeReading).toHaveBeenCalledTimes(1)
+    expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
+  })
+
+  it('can finish at a branch-only first page while the next visited page remains available', async () => {
+    const session = { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3] }
+    const branchedBook = {
+      ...book,
+      pages: [{ ...book.pages[0], defaultNextPageNumber: null }, ...book.pages.slice(1)],
+      branches: [3, 7].map(nextPageNumber => ({
+        branchId: nextPageNumber, fromPageNumber: 1, nextPageNumber, choiceLabel: `去第${nextPageNumber}页`, reviewStatus: 'APPROVED',
+      })),
+    }
+    render({ session, book: branchedBook })
+    await button('上一页').trigger('click')
+    expect(wrapper.get('.reader-heading p').text()).toContain('第 1 页 ·')
+    expect(button('下一页').element.disabled).toBe(false)
+    expect(button('结束本次阅读')).toBeDefined()
+    expect(button('结束本次阅读').element.disabled).toBe(false)
+    await button('结束本次阅读').trigger('click')
+    await wrapper.setProps({ session: { ...session, status: 'FINISHED' } })
+    expect(wrapper.props('completeReading')).toHaveBeenCalledOnce()
+    expect(wrapper.get('.reader-heading p').text()).toContain('第 1 页 ·')
+    expect(button('上一页').element.disabled).toBe(true)
+    await button('下一页').trigger('click')
+    expect(wrapper.get('.reader-heading p').text()).toContain('第 3 页 ·')
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
   })
 
@@ -537,6 +761,30 @@ describe('reader state and visual progress', () => {
     await button('刷新小结').trigger('click')
     await flushPromises()
     expect(showPage).toHaveBeenLastCalledWith(0)
+  })
+
+  it('shows the activity, materials and ordered steps only when the summary is ready', async () => {
+    const activity = { name: '画出故事中的一幕', materials: ['纸', '彩笔'], steps: ['翻开第 3 页。', '画一画喜欢的角色。'] }
+    const report = { summary: '本次共读阅读了第 1、3 页。', activities: [activity] }
+    render({ session: { ...initialSession, status: 'FINISHED' }, report: { ...report, status: 'PENDING' } })
+    expect(wrapper.text()).not.toContain(activity.name)
+
+    await wrapper.setProps({ report: { ...report, status: 'READY' } })
+    const section = wrapper.get('.report-activity')
+    expect(section.get('h3').text()).toContain(activity.name)
+    expect(section.text()).toContain('纸、彩笔')
+    expect(section.findAll('ol li').map(step => step.text())).toEqual(activity.steps)
+    expect(wrapper.text()).toContain(report.summary)
+
+    await wrapper.setProps({ report: { ...report, status: 'FAILED' } })
+    expect(wrapper.find('.report-activity').exists()).toBe(false)
+    expect(wrapper.text()).toContain(report.summary)
+  })
+
+  it.each([{}, { activities: [] }, { activities: [{ name: '旧活动' }] }])('keeps a ready summary without structured activities readable', (legacy) => {
+    render({ session: { ...initialSession, status: 'FINISHED' }, report: { status: 'READY', summary: '已保存的小结', ...legacy } })
+    expect(wrapper.text()).toContain('已保存的小结')
+    expect(wrapper.find('.report-activity').exists()).toBe(false)
   })
 
   it('waits for a confirmed page and rejects a second gesture during the write', async () => {

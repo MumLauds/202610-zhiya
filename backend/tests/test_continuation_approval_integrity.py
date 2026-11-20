@@ -384,11 +384,14 @@ def test_approval_freezes_image_for_original_without_continuation(cont_env, tmp_
                    CASE WHEN page_no = 1 THEN 'original.png' ELSE image_ref END,
                    default_next_page_number
             FROM story_pages WHERE version_id = 301""")
+        db.execute("""UPDATE story_pages SET image_ref = 'optional-missing.png', image_license_note = 'NO-COMMERCIAL'
+                      WHERE version_id = 302 AND page_no = 2""")
 
     approved = _approve(client)
     assert approved.status_code == 200, approved.text
     assert _version_states(db_path) == [(301, "RETIRED"), (302, "APPROVED_PRIVATE")]
     image_ref = approved.json()["data"]["pages"][0]["imageRef"]
+    assert approved.json()["data"]["pages"][1]["imageRef"] is None
 
     image_file.write_bytes(_png("red"))
     fetched = client.get("/api/v1/story-versions/302")

@@ -162,7 +162,7 @@ def test_generation_approval_and_continuation_switch(cont_env, monkeypatch, tmp_
     assert len(model_contexts) == 1
 
 
-def test_original_generation_checks_and_persists_only_valid_drafts(cont_env, monkeypatch):
+def test_original_generation_checks_and_persists_only_valid_drafts(cont_env, monkeypatch, tmp_path):
     client, other, db_path, _ = cont_env
     headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
     payload = {"ageBand": "AGE_4_5", "topic": "互助", "characters": ["小兔子"], "scene": "森林",
@@ -208,9 +208,27 @@ def test_original_generation_checks_and_persists_only_valid_drafts(cont_env, mon
         ).fetchall()
         assert len(stored_pages) == 5
         assert all(ref != "none" and note == "NO-COMMERCIAL" for _, ref, note in stored_pages)
-    approved = client.post(f"/api/v1/story-versions/{vid}/approvals", headers=headers,
-                           json={"versionNumber": 1, "reviewedAllBranches": True})
-    assert approved.status_code == 200, approved.text
+        manifest = db.execute("SELECT approved_page_media_json FROM story_versions WHERE id = ?", (vid,)).fetchone()[0]
+    blobs = db_path.parent / f".{db_path.name}.media_pins" / "blobs"
+    pinned = blobs / json.loads(manifest)["1"]["blob"]
+    approval_url = f"/api/v1/story-versions/{vid}/approvals"
+    approval = {"versionNumber": 1, "reviewedAllBranches": True}
+    with monkeypatch.context() as missing_templates:
+        missing_templates.setenv("ZHIYA_MEDIA_ROOT", str(tmp_path))
+        offline = pinned.rename(tmp_path / pinned.name)
+        try:
+            unavailable = client.post(approval_url, headers=headers, json=approval)
+            assert unavailable.status_code == 503, unavailable.text
+            assert unavailable.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+            assert unavailable.json()["error"]["retryable"] is True
+            with closing(sqlite3.connect(db_path)) as db:
+                assert db.execute("SELECT status, approved_page_media_json FROM story_versions WHERE id = ?",
+                                  (vid,)).fetchone() == ("PENDING_REVIEW", manifest)
+        finally:
+            offline.rename(pinned)
+        approved = client.post(approval_url, headers=headers, json=approval)
+        assert approved.status_code == 200, approved.text
+        assert client.get(image_url).content == preview.content
     for page in approved.json()["data"]["pages"]:
         url = f"/api/v1/media/{page['imageRef']}"
         img = client.get(url)

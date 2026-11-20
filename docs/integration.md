@@ -1,6 +1,6 @@
 # G13 系统联调记录
 
-首轮验证基础共读，随后复测 Firefox 录音上传。第二轮验证家长共读中的自适应引导，第三轮验证儿童自主阅读中的受限作答和家长解锁。
+首轮验证基础共读，随后复测 Firefox 录音上传。第二、三轮验证自适应引导、儿童受限作答和家长解锁。第四、五轮验证分支阅读和儿童授权自然到期。
 
 | 范围 | 受测提交 | 结果与证据 |
 | --- | --- | --- |
@@ -8,8 +8,12 @@
 | Firefox 录音修复（FR-08、AC-07 的录音确认环节） | [`ce8b2a2`](https://github.com/MumLauds/202610-zhiya/commit/ce8b2a25b8253550e3e51cd494a18f2e3ec70854) 复现，[`9be5439`](https://github.com/MumLauds/202610-zhiya/commit/9be54399bf41ca2f09eb1680456a009ffdd1f169) 复测 | 修复前，Firefox 的 Ogg 音频以 WebM 上传；修复后 Firefox 用 Ogg、Chrome 用 WebM，均返回 200，解码为 16 kHz 单声道，转写可以编辑并确认。实测提交与 [#51](https://github.com/MumLauds/202610-zhiya/pull/51) 合入后的 `a09f9b6` 代码树一致。[双浏览器实测数据](testing/g13/voice-51.json) |
 | 首题、未理解反馈和刷新恢复（第二轮，FR-06、FR-07） | 业务基线 [`a09f9b6`](https://github.com/MumLauds/202610-zhiya/commit/a09f9b669762d3d957be1db8ff70a17e01bc9692)，复测脚本 [`2863223`](https://github.com/MumLauds/202610-zhiya/commit/286322304c276b7a2bcedf879000757f1d067d1c) | 同一会话内新增两条引导事件，刷新后可按序读回。三次原请求重放均未增加写入或模型调用。[第二轮实测数据](testing/g13/round2/result.json) |
 | 儿童授权、选项作答与家长解锁（第三轮，FR-06、FR-07、FR-16） | 业务基线 [`0fd880e`](https://github.com/MumLauds/202610-zhiya/commit/0fd880e421b533529cf800a22f71863eb8dbc47f)，复测脚本 [`2c2715a`](https://github.com/MumLauds/202610-zhiya/commit/2c2715a0057a1257c53a4de4c02117c86fd2cc08) | 首次作答和两次重放均指向数据库中的同一条作答。家长解锁后授权撤销，会话转为 `INTERRUPTED`。[第三轮报告与复跑步骤](testing/g13/round3/README.md) |
+| 分支阅读与小结（第四轮，FR-17、FR-09） | 原测 `0fd880e`，复测 `5a0d0da` | 同一家庭走两个分支，刷新后分别读回第 2、3 页和对应小结。分支由同一浏览器调用 API-018，小结模型使用模拟响应。[第四轮报告与复跑步骤](testing/g13/round4/README.md) |
+| 儿童授权自然到期（第五轮，FR-16、FR-09） | 原测 `0fd880e`，复测 `5a0d0da` | 已开读和待开始的两户在到期后首次请求均收到 401。家长解锁后分别读回 1 份和 0 份小结，重复刷新未多写。使用合成家庭和模拟小结模型。[第五轮报告与补充取证](testing/g13/round5/README.md) |
 
 首轮和 #51 均使用真实浏览器、本机 HTTPS、FastAPI、SQLite 和 FFmpeg。浏览器录音来自虚拟麦克风，ASR 供应商响应由本地模拟。首轮的 TTS 和小结模型也使用本地模拟，绘本、家长和孩子档案均为测试样例。首轮报告中的“阻塞”描述的是当时的提交。
+
+复跑第四轮时请使用报告中指定的应用提交。第四轮脚本和 G15 本地 HTTPS 浏览器脚本都按原契约核对 `READY` 小结的空活动列表。从 `02ba8d8` 起，有已读正文的新小结会返回活动名称、材料和步骤；验收这个版本时应按更新后的契约核对活动，并比较刷新或重启前后的内容。[第四轮断言](testing/g13/round4/branch_flow.py) · [G15 断言](testing/g15/local-https/verify_browser.py) · [小结契约](design/api-contract.md)
 
 ## 第二轮实测
 
