@@ -65,6 +65,25 @@ describe('mobile live mode', () => {
     expect(wrapper.get('input[type=search]').exists()).toBe(true)
   })
 
+  it('keeps the offline demo selection separate from a live detail', async () => {
+    mountApp(async path => {
+      if (path === '/api/v1/story-versions/700') return json(story)
+      if (path === '/api/v1/child-profiles') return json({ items: [child] })
+      if (path.includes('/storybooks?')) return json({ items: [story] })
+      return json({ items: [] })
+    })
+    await wrapper.get('.mode-mini').trigger('click')
+    await flushPromises()
+    await wrapper.get('a[href="#book/700"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.profile-card h1').text()).toBe(story.title)
+
+    await wrapper.get('.mobile-main > .text-button').trigger('click')
+    await wrapper.get('.mode-mini').trigger('click')
+    await wrapper.findAll('.bottom-nav button')[1].trigger('click')
+    expect(wrapper.get('.library-start-bar').text()).not.toContain(story.title)
+  })
+
   it('shows the exact API age range and author on the public mobile card', async () => {
     mountApp(async path => {
       if (path.endsWith('/child-profiles')) return json({ items: [] })

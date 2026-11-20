@@ -170,8 +170,10 @@ async function loadBookDetail(id, routeId) {
       : books.find((item) => item.storyVersionId === id)
     if (navigation !== routeId) return
     if (!book) throw new ApiError('未找到这本绘本')
-    if (mode.value === 'demo') recordRecent(book)
-    chooseBook(book)
+    if (mode.value === 'demo') {
+      recordRecent(book)
+      chooseBook(book)
+    }
     detailBook.value = book
   } catch (error) {
     if (navigation === routeId) readerError.value = error.message
@@ -480,9 +482,9 @@ function useStoryTemplate(book) { chooseBook(book); startDemo(book) }
     </header>
 
     <main class="mobile-main">
-      <p v-if="mode === 'live' && readerError" class="inline-error" role="alert">{{ readerError }}</p>
+      <p v-if="readerError" class="inline-error" role="alert">{{ readerError }}</p>
       <template v-if="mode === 'live' && profileTab">
-        <section class="inner-page-head"><div><h1>{{ { home: '今天和谁一起读？', library: '绘本馆', profile: '我的阅读空间' }[activeTab] }}</h1></div></section>
+        <section v-if="activeTab !== 'detail'" class="inner-page-head"><div><h1>{{ { home: '今天和谁一起读？', library: '绘本馆', profile: '我的阅读空间' }[activeTab] }}</h1></div></section>
         <p v-if="profilesPending" role="status">正在读取儿童档案…</p>
         <div v-else-if="profilesError" role="alert">{{ profilesError }} <button type="button" @click="loadProfiles">重试</button></div>
         <label v-else-if="profiles.length" class="family-profile">儿童档案
