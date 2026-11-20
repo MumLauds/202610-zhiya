@@ -1,9 +1,11 @@
 import { ApiError, requestJson } from './client'
 import { mediaUrl } from '../../src/api/client'
+import { formatBookAge } from '../../src/data/bookMetadata'
 
 function toBook(version, placeholder) {
   return {
     ...version,
+    age: formatBookAge(version),
     cover: mediaUrl(version.coverRef, 'thumbnail') || placeholder,
     pages: version.pages.map((page) => ({
       page: page.pageNumber,

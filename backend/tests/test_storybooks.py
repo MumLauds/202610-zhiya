@@ -100,6 +100,34 @@ def test_filters_pagination_and_safe_media_projection(bookshelf):
     assert [branch["branchId"] for branch in book["branches"]] == [1]
 
 
+def test_public_metadata_requires_seed_source_and_library_type(bookshelf):
+    first, _, path = bookshelf
+    source_ref = "妈妈夸我说的队 · 知芽项目自研绘本"
+    title = "云朵棉花糖"
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_versions SET title = ?, source_ref = ? WHERE id = 22", (title, source_ref))
+        for book_id, source, age_max in ((22, source_ref, 5), (11, "其他绘本来源", 4)):
+            db.execute("INSERT INTO storybooks VALUES (?, NULL, 'LIBRARY', 1)", (book_id,))
+            db.execute("""INSERT INTO story_versions
+                (id, storybook_id, version_no, title, topics_json, age_min, age_max,
+                 source_ref, license_note, status, reviewed_by_id, reviewed_at, created_at, branching)
+                VALUES (?, ?, 1, ?, '[]', 3, ?, ?, 'test', 'PUBLISHED', 1, 1, 1, 0)""",
+                (book_id * 10 + 1, book_id, title, age_max, source))
+
+    response = first.get("/api/v1/storybooks")
+    assert response.status_code == 200
+    items = {item["storyVersionId"]: item for item in response.json()["data"]["items"]}
+    for version_id, expected in (
+        (221, ("以撒（笔名）", 3, 5, None)),
+        (111, (None, 3, 4, "AGE_3_4")),
+        (22, (None, 5, 6, "AGE_5_6")),
+    ):
+        detail = first.get(f"/api/v1/story-versions/{version_id}")
+        assert detail.status_code == 200
+        for book in (items[version_id], detail.json()["data"]):
+            assert (book["author"], book["ageMin"], book["ageMax"], book["ageBand"]) == expected
+
+
 def test_authentication_and_dependency_failure(bookshelf, monkeypatch, tmp_path):
     first, _, _ = bookshelf
     with TestClient(app, base_url="https://testserver") as anonymous:

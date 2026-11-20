@@ -249,6 +249,23 @@ describe('account display labels', () => {
 })
 
 describe('real book metadata', () => {
+  it('shows the author and precise API age range on the book detail', () => {
+    const book = mapApiBook({
+      storyVersionId: 88,
+      title: '后端绘本',
+      status: 'PUBLISHED',
+      author: '纸船（笔名）',
+      ageMin: 3,
+      ageMax: 5,
+      ageBand: 'AGE_3_4',
+      pages: [],
+    })
+    const wrapper = render(BookDetailPage, { book })
+    expect(wrapper.get('.detail-author').text()).toContain('纸船（笔名）')
+    expect(book.ageLabel).toBe('3–5 岁')
+    expect(wrapper.text()).toContain('3–5 岁')
+  })
+
   it('does not borrow author, cover, age or questions from preview books', () => {
     const book = mapApiBook({ storybookId: 101, storyVersionId: 88, title: '后端绘本', status: 'PUBLISHED', pages: [{ pageNumber: 1, text: '真实内容', imageRef: 'page-key' }] })
     expect(book.author).toBe('作者信息暂缺')

@@ -38,6 +38,20 @@ afterEach(() => {
 })
 
 describe('mobile live mode', () => {
+  it('shows the exact API age range and author on the public mobile card', async () => {
+    mountApp(async path => {
+      if (path.endsWith('/child-profiles')) return json({ items: [] })
+      if (path.includes('/storybooks?')) return json({ items: [{
+        ...story, ageMin: 3, ageMax: 5, ageBand: 'AGE_3_4', author: '抹大拉（笔名）',
+      }] })
+      throw new Error(path)
+    }, { publicSite: true })
+    await flushPromises()
+    const metadata = wrapper.get('.library-phone-card small').text()
+    expect(metadata).toContain('3–5 岁')
+    expect(metadata).toContain('抹大拉（笔名）')
+  })
+
   it('opens a real book with the child selected by name on the public home page', async () => {
     mountApp(async path => {
       if (path.endsWith('/child-profiles')) return json({ items: [

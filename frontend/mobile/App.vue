@@ -466,6 +466,7 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
         <div class="library-phone-grid">
           <button v-for="book in displayedBooks" :key="book.storyVersionId" class="library-phone-card" type="button" :disabled="readerPending || (publicSite && !childProfileId)" @click="startLive({ versionId: book.storyVersionId, restoreId: null })">
             <img :key="book.cover" :src="book.cover" :alt="book.title" @error="imageFallback"><strong>{{ book.title }}</strong>
+            <small>{{ book.age }}<template v-if="book.author"> · {{ book.author }}</template></small>
           </button>
         </div>
         <p v-if="readerPending" role="status">加载阅读内容…</p>

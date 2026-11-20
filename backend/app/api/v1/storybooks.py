@@ -4,14 +4,17 @@ import json
 import sqlite3
 import time
 import unicodedata
+from functools import cache
 from typing import Literal
 
 from fastapi import APIRouter, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.api.v1.auth import Principal, authorized_db, error
+from app.core.config import ROOT
 from app.services.reading_agent import SENSITIVE
 from app.services.story_media import (
+    SEED_COVER_SOURCE_REF,
     MediaDependencyError,
     cover_ref_from_manifest,
     editorial_preview_ref,
@@ -26,7 +29,18 @@ router = APIRouter(prefix="/api/v1")
 MAX_ID = 9007199254740991
 AgeBand = Literal["AGE_3_4", "AGE_4_5", "AGE_5_6"]
 AGES = {"AGE_3_4": (3, 4), "AGE_4_5": (4, 5), "AGE_5_6": (5, 6)}
+AGE_BANDS_BY_RANGE = {bounds: band for band, bounds in AGES.items()}
 AGE_LABELS = {"AGE_3_4": "3～4 岁", "AGE_4_5": "4～5 岁", "AGE_5_6": "5～6 岁"}
+SEED_AUTHORS = ROOT / "data" / "seed" / "story_authors.json"
+
+
+@cache
+def seed_authors() -> dict[str, str]:
+    try:
+        authors = json.loads(SEED_AUTHORS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return authors if isinstance(authors, dict) else {}
 
 
 def page_object(db: sqlite3.Connection, page_row, *, manifest: dict | None = None) -> dict:
@@ -59,9 +73,17 @@ def version_object(db, row, principal: Principal):
     cover = cover_ref_from_manifest(row["id"], manifest)
     if cover is None and source_type == "ORIGINAL":
         cover = next((page["imageRef"] for page in page_items if page["imageRef"]), None)
+    author = (
+        seed_authors().get(row["title"])
+        if source_type == "LIBRARY" and row["source_ref"] == SEED_COVER_SOURCE_REF
+        else None
+    )
     data = {
         "storybookId": row["storybook_id"], "storyVersionId": row["id"],
         "versionNumber": row["version_no"], "title": row["title"], "status": row["status"],
+        "author": f"{author}（笔名）" if author else None,
+        "ageMin": row["age_min"], "ageMax": row["age_max"],
+        "ageBand": AGE_BANDS_BY_RANGE.get((row["age_min"], row["age_max"])),
         "coverRef": cover,
         "pages": page_items,
         "branches": [{"branchId": b["id"], "fromPageNumber": b["from_page_no"],
@@ -125,7 +147,7 @@ def admin_story_object(db, version, *, page_details=False):
     age = (version["age_min"], version["age_max"])
     return {"storybookId": version["storybook_id"], "storyVersionId": version["id"], "versionNumber": version["version_no"],
             "title": version["title"], "status": version["status"], "licenseNote": version["license_note"],
-            "ageBand": next((band for band, bounds in AGES.items() if bounds == age), None),
+            "ageBand": AGE_BANDS_BY_RANGE.get(age),
             "topics": json.loads(version["topics_json"]), "pages": pages, "branches": [dict(row) for row in branches]}
 
 

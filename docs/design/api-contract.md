@@ -78,6 +78,8 @@ API-013 的 `view=deletion-status` 按 API-014 的家长归属规则查询。本
 
 API-008/009 保留现有版本对象字段 `storybookId`、`storyVersionId`、`versionNumber`、`title`、`status`、`pages`、`branches`。`coverRef` 为受控资源键或 null。原创绘本没有专用封面时，取按页码顺序第一张可用的内页资源键作为封面。馆藏封面沿用原映射。`pages` 项包含 `pageNumber`、`text`、`imageRef`、`defaultNextPageNumber`，后继页为空时为 null。封面或内页缺图时对应字段返回 null，前端显示本地占位图。有素材时返回服务端分配、绑定该版本的资源键，由 API-024 读取。封面导入可按[封面映射](../../data/seed/cover_mapping.json)的 `storybook_id` 找到素材，仓库路径和种子占位值仅用于导入。素材可用性、授权和发布仍按 DCL-002。
 
+API-008/009 的绘本版本对象提供 `ageMin` 与 `ageMax`（整数，包含两端），标准年龄段同时提供 `ageBand`，其他范围的 `ageBand` 为 null。团队原创馆藏的 `author` 为稳定的展示笔名，按馆藏来源和书名匹配随应用发布的种子映射。没有已知署名时返回 null。
+
 数据库的 `story_pages.image_ref` 保持 `TEXT NOT NULL`。API-008/009 校验版本访问权后，按版本和页号解析该字段。仅当引用能解析为该版本中已核验可用的图片时，`imageRef` 才返回受控媒体键。种子中的 `/assets/placeholder.png`、旧版页面的画面描述，以及确认缺少素材的引用，都序列化为 `imageRef=null`。解析依赖暂不可用时返回下表的 503。API-024 仍逐次核验版本和资源访问权，过期或不可访问的资源键按现有规则处理。
 
 API-024 处理图片时，`thumbnail` 和 `reading` 分别尝试生成最长边不超过 480 和 1280 像素的 WebP，保持宽高比且不放大。服务端仅在转码后更小时发送派生图。省略参数、动图或转码失败时返回原图。响应沿用 `private, no-store`，音频响应沿用现有规则。

@@ -1,4 +1,5 @@
 import { mediaUrl } from '../api/client'
+import { formatBookAge } from './bookMetadata'
 
 const covers = [
   '/assets/figma-prototype/home-main-cover.png',
@@ -130,7 +131,7 @@ export const previewBooks = import.meta.env.MODE === 'public' ? [] : definitions
   pages: pagesFrom(definition, definition.seeds),
 }))
 
-export const ageLabels = { AGE_3_4: '3–4 岁', AGE_4_5: '4–5 岁', AGE_5_6: '5–6 岁' }
+export { ageLabels } from './bookMetadata'
 
 export function mapApiBook(version) {
   const pages = (version.pages || []).map((page) => ({ ...page }))
@@ -143,7 +144,7 @@ export function mapApiBook(version) {
     title: version.title,
     author: version.author || '作者信息暂缺',
     ageBand: version.ageBand || '',
-    ageLabel: ageLabels[version.ageBand] || '适龄信息暂缺',
+    ageLabel: formatBookAge(version),
     topics: version.topics || [],
     cover: mediaUrl(version.coverRef, 'thumbnail') || '/assets/image-placeholder.svg',
     coverRef: version.coverRef,

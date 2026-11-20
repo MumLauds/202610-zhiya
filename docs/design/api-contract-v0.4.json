@@ -1264,7 +1264,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "默认返回有权访问的当前PUBLISHED/APPROVED_PRIVATE版本。scope=mine仅限已认证家长，另包含本人已审核私有RETIRED历史版本；各项以storyVersionId区分，遵守common.versionAccess，不返回WITHDRAWN内容。没有专用封面的原创版本使用第一张可用内页的受控资源键作为coverRef，无可用图片时为null。仅家长的续写版本对象包含sourceStoryVersionId和continuation。",
+      "constraints": "默认返回有权访问的当前PUBLISHED/APPROVED_PRIVATE版本。scope=mine仅限已认证家长，另包含本人已审核私有RETIRED历史版本；各项以storyVersionId区分，遵守common.versionAccess，不返回WITHDRAWN内容。没有专用封面的原创版本使用第一张可用内页的受控资源键作为coverRef，无可用图片时为null。仅家长的续写版本对象包含sourceStoryVersionId和continuation。版本对象的ageMin与ageMax为整数且包含两端；标准范围的ageBand为对应枚举，其他范围为null。团队原创馆藏的author为固定的展示笔名，无已知署名时为null。",
       "interfaceId": "API-008",
       "uniqueKey": "GET /api/v1/storybooks",
       "additionalExamples": [
@@ -1346,7 +1346,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "仅家长的续写版本对象包含sourceStoryVersionId和continuation。儿童只接收已授权的阅读内容。正文和媒体均遵守common.versionAccess；本人已审核私有RETIRED版本可从历史入口复读，LIBRARY退休版本仅限既有有效会话；WITHDRAWN立即拒绝。没有专用封面的原创版本使用第一张可用内页作为coverRef。",
+      "constraints": "仅家长的续写版本对象包含sourceStoryVersionId和continuation。儿童只接收已授权的阅读内容。正文和媒体均遵守common.versionAccess；本人已审核私有RETIRED版本可从历史入口复读，LIBRARY退休版本仅限既有有效会话；WITHDRAWN立即拒绝。没有专用封面的原创版本使用第一张可用内页作为coverRef。版本对象的ageMin与ageMax为整数且包含两端；标准范围的ageBand为对应枚举，其他范围为null。团队原创馆藏的author为固定的展示笔名，无已知署名时为null。",
       "interfaceId": "API-009",
       "uniqueKey": "GET /api/v1/story-versions/{version_id}"
     },
