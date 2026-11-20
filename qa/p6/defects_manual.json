@@ -1,0 +1,249 @@
+{
+  "version": "p6-v1",
+  "updatedAt": "2026-11-18",
+  "defects": [
+    {
+      "id": "DEF-P6-001",
+      "title": "种子绘本与知识全部为 DRAFT，未审核发布时公开书架为空",
+      "severity": "P1",
+      "category": "数据/内容",
+      "ac": "AC-03, AC-05",
+      "status": "待修复",
+      "owner": "张楠（知识工程）/ 姚华俊（后端1）",
+      "foundAt": "2026-11-18",
+      "environment": "本地 SQLite，init_db.py + import_seed.py",
+      "description": "仓库种子 story_versions 与 knowledge_items 的 status 均为 DRAFT。未执行审核发布时，GET /api/v1/storybooks 返回空数组，Agent 知识检索也没有 APPROVED 条目。",
+      "reproduce": "初始化并导入种子后启动后端，注册登录，GET /api/v1/storybooks?pageSize=50。",
+      "expected": "演示环境至少有 8 本已发布绘本可供选择。",
+      "actual": "返回 items=[]；需运行 qa/p6/prepare_demo_data.py --yes 审核发布后才有 12 本。",
+      "evidence": "data/seed/story_versions.json 全部 DRAFT；TC-P6-BOOK-001 在准备数据前不可通过",
+      "fixVersion": "待定",
+      "relatedCases": [
+        "TC-P6-BOOK-001",
+        "TC-P6-AGENT-001"
+      ]
+    },
+    {
+      "id": "DEF-P6-002",
+      "title": "情境提问 API-016 与自适应引导 API-017 尚未实现",
+      "severity": "P1",
+      "category": "功能/接口",
+      "ac": "AC-05, AC-06",
+      "status": "待修复",
+      "owner": "张智文（Agent 知识）/ 姚华俊（后端1）",
+      "foundAt": "2026-11-18",
+      "environment": "main 分支 eb91092",
+      "description": "OpenAPI 中没有 /reading-sessions/{id}/questions 与 /guidance；前端无法获取当前页适龄问题，也无法在“理解/未理解”后走不同引导分支。",
+      "reproduce": "GET /openapi.json，检查 paths；或请求对应路径返回 404。",
+      "expected": "按接口契约 v0.4 提供 API-016/017，返回 AgentResult 与来源。",
+      "actual": "契约 27 条路径中已实现 17 条，上述两条缺失。",
+      "evidence": "TC-P6-API-004 missingPaths；TC-P6-AGENT-001/002 BLOCKED",
+      "fixVersion": "待定",
+      "relatedCases": [
+        "TC-P6-API-004",
+        "TC-P6-AGENT-001",
+        "TC-P6-AGENT-002"
+      ]
+    },
+    {
+      "id": "DEF-P6-003",
+      "title": "原创故事生成与审核接口未实现",
+      "severity": "P1",
+      "category": "功能/接口",
+      "ac": "AC-13, AC-15",
+      "status": "待修复",
+      "owner": "陈烨婷（Agent 工程）/ 姚华俊（后端1）",
+      "foundAt": "2026-11-18",
+      "environment": "main 分支 eb91092",
+      "description": "缺少 API-025 story-generations、API-026 approvals；原创绘本 4～6 页生成、家长审核、保存后复读仍无法端到端验收。API-018 分支选择已在最新 main 实现并通过本轮用例。",
+      "reproduce": "GET /openapi.json 检查对应路径；请求 /api/v1/story-generations 返回 404。",
+      "expected": "按 SRS FR-15～FR-18 与接口契约提供生成、审核、分支接口。",
+      "actual": "接口不存在；模型层只有 G09 内部 ContentDraft，没有业务路由。",
+      "evidence": "TC-P6-API-004 missingPaths；TC-P6-AGENT-003/004 BLOCKED",
+      "fixVersion": "待定",
+      "relatedCases": [
+        "TC-P6-AGENT-003"
+      ]
+    },
+    {
+      "id": "DEF-P6-004",
+      "title": "阅读小结 activities 固定为空数组，AC-09 未完成",
+      "severity": "P1",
+      "category": "功能",
+      "ac": "AC-09",
+      "status": "待修复",
+      "owner": "陈烨婷（Agent 工程）",
+      "foundAt": "2026-11-18",
+      "environment": "本地，结束阅读后 GET API-013",
+      "description": "DCL-026 当前实现只生成事实摘要和固定建议编号，activities 始终为 []，没有 FR-10 要求的活动材料与步骤。",
+      "reproduce": "完成一次阅读后读取 API-013 的 report.activities。",
+      "expected": "至少 1 项与故事相关的亲子活动，含材料和步骤。",
+      "actual": "activities=[]；report 状态 READY/PENDING/FAILED 均如此。",
+      "evidence": "TC-P6-ACT-001 BLOCKED；TC-P6-REPORT-001 WARN",
+      "fixVersion": "待定",
+      "relatedCases": [
+        "TC-P6-ACT-001",
+        "TC-P6-REPORT-001"
+      ]
+    },
+    {
+      "id": "DEF-P6-005",
+      "title": "浏览器端到端自动化未建立",
+      "severity": "P2",
+      "category": "前端/测试",
+      "ac": "AC-04, AC-07, AC-11, AC-12, NFR-01, NFR-02",
+      "status": "待修复",
+      "owner": "张陈雨菲（前端1）/ 吴怡霏（前端2）",
+      "foundAt": "2026-11-18",
+      "environment": "frontend/src/App.vue",
+      "description": "最新 main 已包含登录、书架、详情、阅读、个人中心等 Vue 页面，前端 71 项 Vitest 与构建均通过；但尚未接入 Playwright/真实浏览器全流程，AC-04/07/11/12 的 UI 部分目前只验证了页面可达、组件测试和接口契约。",
+      "reproduce": "npm test、npm run build 通过；run_acceptance.py --frontend-url 仅检查首页 200 与挂载点。",
+      "expected": "用真实浏览器完成登录→选书→共读→语音→儿童模式并留存截图/录屏。",
+      "actual": "页面可达与 71 项组件/Store 测试通过；浏览器 E2E 未自动化。",
+      "evidence": "TC-P6-FE-001 PASS；frontend vitest 71 passed",
+      "fixVersion": "待定",
+      "relatedCases": [
+        "TC-P6-FE-001"
+      ]
+    },
+    {
+      "id": "DEF-P6-006",
+      "title": "尚未提供公网 HTTPS 地址与演示账号",
+      "severity": "P1",
+      "category": "部署",
+      "ac": "AC-11, NFR-08",
+      "status": "待修复",
+      "owner": "林鑫（后端2/部署）/ 刘俊延（验收）",
+      "foundAt": "2026-11-18",
+      "environment": "README、infra/README.md",
+      "description": "仓库注明“尚未部署”，只提供本机 127.0.0.1:8000 与 Docker Compose 初稿，没有公网域名、TLS、反向代理和演示账号。",
+      "reproduce": "检查 README 当前状态与 infra/README.md。",
+      "expected": "提供 HTTPS 公网入口、演示账号、初始化数据和操作说明。",
+      "actual": "无公网 URL；P6 公网验收只能留待部署后执行。",
+      "evidence": "README“尚未部署”；TC-P6-PUB-001/002 BLOCKED",
+      "fixVersion": "待定",
+      "relatedCases": [
+        "TC-P6-PUB-001",
+        "TC-P6-PUB-002"
+      ]
+    },
+    {
+      "id": "DEF-P6-008",
+      "title": "图片媒体解析未实现，coverRef/imageRef 恒为 null",
+      "severity": "P2",
+      "category": "功能/内容",
+      "ac": "AC-03, AC-04",
+      "status": "待修复",
+      "owner": "姚华俊（后端1）/ 林鑫（后端2）",
+      "foundAt": "2026-11-18",
+      "environment": "GET API-008/009",
+      "description": "DCL-005 的受控媒体键尚未实现；绘本列表和详情中 coverRef、imageRef 始终为 null，前端只能显示占位图。",
+      "reproduce": "GET /api/v1/story-versions/1，检查 coverRef 与 pages[].imageRef。",
+      "expected": "有素材时返回版本绑定的受控媒体键，并经 API-024 鉴权读取。",
+      "actual": "全部为 null。",
+      "evidence": "TC-P6-BOOK-003 证据 coverRef=null, imageRef=null",
+      "fixVersion": "待定",
+      "relatedCases": [
+        "TC-P6-BOOK-003"
+      ]
+    },
+    {
+      "id": "DEF-P6-009",
+      "title": "声线/语速偏好未持久化，语音选项接口未实现",
+      "severity": "P2",
+      "category": "功能/接口",
+      "ac": "FR-08",
+      "status": "待修复",
+      "owner": "林鑫（后端2）",
+      "foundAt": "2026-11-18",
+      "environment": "API-023 与档案接口",
+      "description": "DCL-013 的 voice options 与档案 speechPreferences 仍是草案；当前合成固定使用配置默认声线与 NORMAL。",
+      "reproduce": "检查 API-004/006 字段与 API-023 实现；无 speechPreferences。",
+      "expected": "家长可选择并持久化声线与语速，儿童授权不能修改。",
+      "actual": "未实现；六声线只能在脚本/容器中验证。",
+      "evidence": "docs/design/speech-preferences-handoff.md；TC-P6-VOICE-002",
+      "fixVersion": "待定",
+      "relatedCases": [
+        "TC-P6-VOICE-002"
+      ]
+    },
+    {
+      "id": "DEF-P6-010",
+      "title": "安全响应头未设置",
+      "severity": "P2",
+      "category": "安全",
+      "ac": "NFR-04",
+      "status": "待修复",
+      "owner": "林鑫（后端2/部署）",
+      "foundAt": "2026-11-18",
+      "environment": "本地 uvicorn 响应头",
+      "description": "响应未设置 X-Content-Type-Options、X-Frame-Options、Content-Security-Policy、Referrer-Policy；公网部署前应在反向代理或应用层补齐。",
+      "reproduce": "curl -I /api/v1/health，检查响应头。",
+      "expected": "至少设置 nosniff、DENY/SAMEORIGIN 与基础 CSP/Referrer-Policy。",
+      "actual": "四项均缺失；Server 头暴露 uvicorn。",
+      "evidence": "TC-P6-SEC-001 WARN",
+      "fixVersion": "待定",
+      "relatedCases": [
+        "TC-P6-SEC-001"
+      ]
+    },
+    {
+      "id": "DEF-P6-011",
+      "title": "未配置 CORS，跨域浏览器联调受限",
+      "severity": "P2",
+      "category": "接口/部署",
+      "ac": "NFR-02",
+      "status": "待修复",
+      "owner": "林鑫（后端2/部署）",
+      "foundAt": "2026-11-18",
+      "environment": "backend/app/main.py",
+      "description": "后端未配置 CORSMiddleware；若前端与 API 不同源，浏览器请求会被拦截。当前 Vite 代理只覆盖开发环境。",
+      "reproduce": "从不同源调用 API 并检查 Access-Control-Allow-Origin。",
+      "expected": "生产按明确白名单配置 CORS，开发用 Vite 代理。",
+      "actual": "无 CORS 配置。",
+      "evidence": "backend/app/main.py 无 CORSMiddleware",
+      "fixVersion": "待定",
+      "relatedCases": [
+        "TC-P6-FE-001"
+      ]
+    },
+    {
+      "id": "DEF-P6-012",
+      "title": "缺少 CI 测试门禁与覆盖率报告",
+      "severity": "P2",
+      "category": "工程/可维护性",
+      "ac": "NFR-07",
+      "status": "待修复",
+      "owner": "刘俊延（测试）/ 姚华俊（后端1）",
+      "foundAt": "2026-11-18",
+      "environment": "GitHub 仓库",
+      "description": "仓库没有 GitHub Actions 或其他 CI 配置；现有 183 项后端测试依赖人工执行，合并前没有自动门禁与覆盖率趋势。",
+      "reproduce": "检查 .github/workflows；不存在。",
+      "expected": "PR 触发 pytest、数据库测试与前端 build，失败阻止合并。",
+      "actual": "仅本地命令；P6 验收脚本也需人工运行。",
+      "evidence": "仓库无 .github/workflows",
+      "fixVersion": "待定",
+      "relatedCases": []
+    },
+    {
+      "id": "DEF-P6-013",
+      "title": "种子数据没有已审核故事分支，AC-14 演示需临时插入测试分支",
+      "severity": "P2",
+      "category": "数据/内容",
+      "ac": "AC-14",
+      "status": "待修复",
+      "owner": "张楠（知识工程）/ 陈烨婷（Agent 工程）",
+      "foundAt": "2026-11-18",
+      "environment": "本地 SQLite，data/seed 无 story_branches 文件",
+      "description": "API-018 已实现，但种子数据没有 story_branches 记录；prepare_demo_data.py 为本地验收临时插入“P6测试分支”（第 1 页→第 2 页，APPROVED）。生产/公网演示需要正式审核的分支内容。",
+      "reproduce": "初始化导入种子后查询 story_branches 为空；GET 绘本详情的 branches 为 []。",
+      "expected": "至少一本演示绘本含 1～2 个已审核分支，分支后续情节不同且连贯。",
+      "actual": "需测试脚本插入临时分支后才能跑 TC-P6-BRANCH-001。",
+      "evidence": "prepare_demo_data.py ensure_branch；TC-P6-BRANCH-001 PASS",
+      "fixVersion": "待定",
+      "relatedCases": [
+        "TC-P6-BRANCH-001"
+      ]
+    }
+  ]
+}

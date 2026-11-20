@@ -1,0 +1,241 @@
+{
+  "commit": "5a0d0da0a87cb6e5d99d5e8e526c723671377bf4",
+  "atUtc": "2026-11-20T01:27:41+00:00",
+  "browser": "Chrome 154.0.8037.98",
+  "playwright": "1.65.2",
+  "pytest": "9.2.0",
+  "modelTransport": "httpx.MockTransport",
+  "modelCalls": 1,
+  "grantSeconds": 300,
+  "cases": [
+    {
+      "case": "started",
+      "sessionId": 1,
+      "issuedAt": "2026-11-20T01:22:33.551+00:00",
+      "expiresAt": "2026-11-20T01:27:33.551+00:00",
+      "firstExpiredRequestAt": "2026-11-20T01:27:38.398+00:00",
+      "elapsedSinceGrantMs": 304847,
+      "beforeExpiry": {
+        "sessionHttp": 200,
+        "profilesHttp": 403,
+        "sessionStatus": "IN_PROGRESS",
+        "events": 1,
+        "writes": 1,
+        "reports": 0
+      },
+      "firstExpiredProbe": {
+        "path": "/api/v1/reading-sessions/1",
+        "http": 401,
+        "before": {
+          "status": "IN_PROGRESS",
+          "revision": 1,
+          "reason": null,
+          "endedAt": null,
+          "grantRevoked": false,
+          "events": 1,
+          "writes": 1,
+          "reports": 0
+        },
+        "after": {
+          "status": "FINISHED",
+          "revision": 2,
+          "reason": "TIME_LIMIT",
+          "endedAt": "2026-11-20T01:27:33.551+00:00",
+          "grantRevoked": false,
+          "events": 1,
+          "writes": 2,
+          "reports": 1
+        },
+        "peerSessionId": 2,
+        "peerBefore": {
+          "status": "CREATED",
+          "revision": 0,
+          "reason": null,
+          "endedAt": null,
+          "grantRevoked": false,
+          "events": 0,
+          "writes": 0,
+          "reports": 0
+        },
+        "peerAfter": {
+          "status": "CREATED",
+          "revision": 0,
+          "reason": null,
+          "endedAt": null,
+          "grantRevoked": false,
+          "events": 0,
+          "writes": 0,
+          "reports": 0
+        }
+      },
+      "afterExpiryBeforeUnlock": {
+        "denied": {
+          "/api/v1/reading-sessions/1": 401,
+          "/api/v1/child-profiles": 401
+        },
+        "status": "FINISHED",
+        "reason": "TIME_LIMIT",
+        "endedAt": "2026-11-20T01:27:33.551+00:00",
+        "grantRevoked": false,
+        "events": 1,
+        "writes": 2,
+        "reports": 1
+      },
+      "childRefresh": {
+        "profilesHttp": 401,
+        "route": "#child/1",
+        "heading": "请家长解锁设备",
+        "unlockButtonVisible": true,
+        "events": 1,
+        "writes": 2,
+        "reports": 1
+      },
+      "afterUnlock": {
+        "unlockHttp": 200,
+        "profilesHttp": 200,
+        "sessionHttp": 200,
+        "historyLabel": "阅读记录 #1 · 浏览 1 页 · 已完成",
+        "visitedPageNumbers": [
+          1
+        ],
+        "report": {
+          "readingSessionId": 1,
+          "summary": "本次共读阅读了第 1 页。",
+          "activities": [],
+          "status": "READY"
+        }
+      },
+      "guardianRefreshes": [
+        {
+          "historyHttp": 200,
+          "detailHttp": 200,
+          "events": 1,
+          "writes": 2,
+          "reports": 1,
+          "revision": 2,
+          "modelCallsAcrossCases": 1
+        },
+        {
+          "historyHttp": 200,
+          "detailHttp": 200,
+          "events": 1,
+          "writes": 2,
+          "reports": 1,
+          "revision": 2,
+          "modelCallsAcrossCases": 1
+        }
+      ]
+    },
+    {
+      "case": "notStarted",
+      "sessionId": 2,
+      "issuedAt": "2026-11-20T01:22:38.392+00:00",
+      "expiresAt": "2026-11-20T01:27:38.392+00:00",
+      "firstExpiredRequestAt": "2026-11-20T01:27:39.979+00:00",
+      "elapsedSinceGrantMs": 301587,
+      "beforeExpiry": {
+        "sessionHttp": 200,
+        "profilesHttp": 403,
+        "sessionStatus": "CREATED",
+        "events": 0,
+        "writes": 0,
+        "reports": 0
+      },
+      "firstExpiredProbe": {
+        "path": "/api/v1/reading-sessions/2",
+        "http": 401,
+        "before": {
+          "status": "CREATED",
+          "revision": 0,
+          "reason": null,
+          "endedAt": null,
+          "grantRevoked": false,
+          "events": 0,
+          "writes": 0,
+          "reports": 0
+        },
+        "after": {
+          "status": "INTERRUPTED",
+          "revision": 1,
+          "reason": "GRANT_REVOKED",
+          "endedAt": "2026-11-20T01:27:38.392+00:00",
+          "grantRevoked": false,
+          "events": 0,
+          "writes": 0,
+          "reports": 0
+        },
+        "peerSessionId": 1,
+        "peerBefore": {
+          "status": "FINISHED",
+          "revision": 2,
+          "reason": "TIME_LIMIT",
+          "endedAt": "2026-11-20T01:27:33.551+00:00",
+          "grantRevoked": true,
+          "events": 1,
+          "writes": 2,
+          "reports": 1
+        },
+        "peerAfter": {
+          "status": "FINISHED",
+          "revision": 2,
+          "reason": "TIME_LIMIT",
+          "endedAt": "2026-11-20T01:27:33.551+00:00",
+          "grantRevoked": true,
+          "events": 1,
+          "writes": 2,
+          "reports": 1
+        }
+      },
+      "afterExpiryBeforeUnlock": {
+        "denied": {
+          "/api/v1/reading-sessions/2": 401,
+          "/api/v1/child-profiles": 401
+        },
+        "status": "INTERRUPTED",
+        "reason": "GRANT_REVOKED",
+        "endedAt": "2026-11-20T01:27:38.392+00:00",
+        "grantRevoked": false,
+        "events": 0,
+        "writes": 0,
+        "reports": 0
+      },
+      "childRefresh": {
+        "profilesHttp": 401,
+        "route": "#child/2",
+        "heading": "请家长解锁设备",
+        "unlockButtonVisible": true,
+        "events": 0,
+        "writes": 0,
+        "reports": 0
+      },
+      "afterUnlock": {
+        "unlockHttp": 200,
+        "profilesHttp": 200,
+        "sessionHttp": 200,
+        "historyLabel": "阅读记录 #2 · 浏览 0 页 · 已中断",
+        "visitedPageNumbers": [],
+        "report": null
+      },
+      "guardianRefreshes": [
+        {
+          "historyHttp": 200,
+          "detailHttp": 200,
+          "events": 0,
+          "writes": 0,
+          "reports": 0,
+          "revision": 1,
+          "modelCallsAcrossCases": 1
+        },
+        {
+          "historyHttp": 200,
+          "detailHttp": 200,
+          "events": 0,
+          "writes": 0,
+          "reports": 0,
+          "revision": 1,
+          "modelCallsAcrossCases": 1
+        }
+      ]
+    }
+  ]
+}

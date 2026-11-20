@@ -11,6 +11,12 @@
 !data
 !data/seed
 !data/seed/*.json
+!knowledge-base_v2.5
+!knowledge-base_v2.5/图片
+!knowledge-base_v2.5/图片/*.png
+!knowledge-base_v2.5/图片/*.jpg
+!knowledge-base_v2.5/图片/*.jpeg
+!knowledge-base_v2.5/图片/*.webp
 **/__pycache__
 **/.pytest_cache
 **/*.pyc

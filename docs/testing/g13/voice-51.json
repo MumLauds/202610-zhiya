@@ -1,0 +1,141 @@
+{
+  "date": "2026-11-19",
+  "timeZone": "Asia/Shanghai",
+  "pullRequest": "https://github.com/MumLauds/202610-zhiya/pull/51",
+  "mergeCommit": "a09f9b669762d3d957be1db8ff70a17e01bc9692",
+  "fixCommit": "9be54399bf41ca2f09eb1680456a009ffdd1f169",
+  "sharedCodeTree": "8835a2f975830ecd108927eecd5ab83c3d319985",
+  "runtime": {
+    "real": [
+      "Firefox / Chrome MediaRecorder",
+      "HTTPS",
+      "FastAPI",
+      "FFmpeg",
+      "SQLite"
+    ],
+    "simulated": [
+      "Virtual microphone",
+      "Synthetic accounts and story fixture",
+      "ASR provider HTTP response"
+    ]
+  },
+  "trials": [
+    {
+      "run": "firefox-baseline-1795076219440",
+      "testedCommit": "ce8b2a25b8253550e3e51cd494a18f2e3ec70854",
+      "outcome": {
+        "browser": "firefox",
+        "version": "153.0",
+        "status": 422,
+        "code": "AUDIO_INVALID",
+        "upload": {
+          "kind": "upload format",
+          "declaredMime": "audio/webm",
+          "filename": "question.webm",
+          "headerHex": "4f676753",
+          "bytes": 25834,
+          "declaredDecode": {
+            "exit": 3199971767,
+            "pcmBytes": 0
+          },
+          "detectedDecode": {
+            "exit": 0,
+            "pcmBytes": 49152
+          }
+        }
+      },
+      "browserSteps": [
+        {
+          "step": "录音上传结果",
+          "status": 422,
+          "code": "AUDIO_INVALID",
+          "requestId": "476c43ccd4ad43e1852b7745373cfb32"
+        }
+      ]
+    },
+    {
+      "run": "firefox-fixed-1795076408135",
+      "testedCommit": "9be54399bf41ca2f09eb1680456a009ffdd1f169",
+      "outcome": {
+        "browser": "firefox",
+        "version": "153.0",
+        "status": 200,
+        "upload": {
+          "kind": "upload format",
+          "declaredMime": "audio/ogg",
+          "filename": "question.ogg",
+          "headerHex": "4f676753",
+          "bytes": 76868,
+          "declaredDecode": {
+            "exit": 0,
+            "pcmBytes": 150016
+          },
+          "detectedDecode": {
+            "exit": 0,
+            "pcmBytes": 150016
+          }
+        },
+        "asrCall": {
+          "kind": "ASR",
+          "hz": 16000,
+          "channels": 1,
+          "frames": 75008
+        }
+      },
+      "browserSteps": [
+        {
+          "step": "录音上传结果",
+          "status": 200,
+          "requestId": "d5ef15deca58471391ce91ca5901a938"
+        },
+        {
+          "step": "原生录音经识别后可编辑并确认",
+          "original": "小船停在哪里",
+          "confirmed": "纸船为什么停在绿叶旁？"
+        }
+      ]
+    },
+    {
+      "run": "chrome-fixed-1795076410676",
+      "testedCommit": "9be54399bf41ca2f09eb1680456a009ffdd1f169",
+      "outcome": {
+        "browser": "chrome",
+        "version": "154.0.8037.98",
+        "status": 200,
+        "upload": {
+          "kind": "upload format",
+          "declaredMime": "audio/webm",
+          "filename": "question.webm",
+          "headerHex": "1a45dfa3",
+          "bytes": 29074,
+          "declaredDecode": {
+            "exit": 0,
+            "pcmBytes": 72960
+          },
+          "detectedDecode": {
+            "exit": 0,
+            "pcmBytes": 72960
+          }
+        },
+        "asrCall": {
+          "kind": "ASR",
+          "hz": 16000,
+          "channels": 1,
+          "frames": 36480
+        }
+      },
+      "browserSteps": [
+        {
+          "step": "录音上传结果",
+          "status": 200,
+          "requestId": "80bbc8e2e26746f298ae62f0fc3d42c6"
+        },
+        {
+          "step": "原生录音经识别后可编辑并确认",
+          "original": "小船停在哪里",
+          "confirmed": "纸船为什么停在绿叶旁？"
+        }
+      ]
+    }
+  ]
+}

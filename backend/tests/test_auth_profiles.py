@@ -41,6 +41,8 @@ def test_registration_login_csrf_and_logout(client):
     duplicate = client.post("/api/v1/auth/registrations", json={"account": "guardian", "password": "strong-pass-123"})
     assert duplicate.status_code == 409
     with closing(sqlite3.connect(path)) as db:
+        session_id, revoked = db.execute("SELECT id, revoked_at FROM auth_sessions").fetchone()
+        assert revoked is None
         stored = db.execute("SELECT password_hash FROM accounts").fetchone()[0]
         assert stored.startswith("scrypt$") and "strong-pass-123" not in stored
     assert client.post("/api/v1/child-profiles", json={"ageBand": "AGE_4_5", "preferredMinutes": 10}).status_code == 403
@@ -52,6 +54,8 @@ def test_registration_login_csrf_and_logout(client):
     assert profile["nickname"] == "小芽" and profile["interests"] == []
     assert client.delete("/api/v1/auth/sessions/current").status_code == 403
     assert client.delete("/api/v1/auth/sessions/current", headers=headers).status_code == 204
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT revoked_at FROM auth_sessions WHERE id = ?", (session_id,)).fetchone()[0] is not None
     assert client.get("/api/v1/child-profiles").status_code == 401
 
 

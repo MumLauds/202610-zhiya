@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import InteractionCard from './InteractionCard.vue'
 import PageAudioPlayer from './PageAudioPlayer.vue'
 import ReadingText from './ReadingText.vue'
@@ -16,12 +16,14 @@ const props = defineProps({
   childProfileId: { type: Number, default: 1 },
   storyVersionId: { type: Number, required: true },
   initialSessionId: { type: Number, default: null },
+  initialSnapshot: { type: Object, default: null },
 })
 const emit = defineEmits(['exit', 'finished'])
 
 const session = useReadingSession({
   api: props.sessionApi,
   initialSessionId: props.initialSessionId,
+  initialSnapshot: props.initialSnapshot,
   childProfileId: props.childProfileId,
   storyVersionId: props.storyVersionId,
 })
@@ -41,23 +43,40 @@ const localPending = ref(false)
 const answerAudio = useAudioController()
 let requestGeneration = 0
 let pageRequestGeneration = 0
+let active = true
 
 const currentPageIndex = computed(() => {
   const index = props.book.pages.findIndex((page) => page.page === currentPageNumber.value)
-  return index >= 0 ? index : 0
+  return index
 })
 const currentPage = computed(() => props.book.pages[currentPageIndex.value])
 const progressText = computed(() => `${currentPageIndex.value + 1} / ${props.book.pages.length}`)
 const progressPercent = computed(() => ((currentPageIndex.value + 1) / props.book.pages.length) * 100)
-const isLastPage = computed(() => currentPageIndex.value >= props.book.pages.length - 1)
+const visited = computed(() => [...new Set(session.state.session?.visitedPageNumbers ?? [])])
+const reviewing = computed(() => currentPageNumber.value !== session.state.session?.currentPage)
+const nextPageNumber = computed(() => {
+  if (reviewing.value) return visited.value[visited.value.indexOf(currentPageNumber.value) + 1]
+  if (props.mode === 'live') return currentPage.value?.defaultNextPageNumber
+  return props.book.pages[currentPageIndex.value + 1]?.page
+})
+const isLastPage = computed(() => !reviewing.value && nextPageNumber.value == null)
 const isFinished = computed(() => session.state.session?.status === 'FINISHED')
 const pending = computed(() => session.state.pending || localPending.value || session.loading.value)
 const revision = computed(() => session.state.session?.revision ?? 0)
 const sessionId = computed(() => session.state.session?.readingSessionId ?? null)
 const errorMessage = computed(() => session.error.value?.message ?? session.error.value ?? '')
+const creationUnconfirmed = computed(() => !props.initialSessionId && !session.state.session && session.error.value?.code === 'REQUEST_OUTCOME_UNKNOWN')
 const serverErrorHint = computed(() => (session.error.value?.status ?? 0) >= 500 ? '请确认 127.0.0.1:8000 后端已启动、账号已登录且 Cookie 有效；若后端正在运行，请查看服务端日志。' : '')
 
 watch(currentPageNumber, () => resetInteractionForPage())
+watch(() => session.state.session?.currentPage, (page) => {
+  if (page != null) currentPageNumber.value = page
+})
+onBeforeUnmount(() => {
+  active = false
+  pageRequestGeneration += 1
+  requestGeneration += 1
+})
 
 onMounted(async () => {
   await initializeReader()
@@ -66,9 +85,10 @@ onMounted(async () => {
 async function initializeReader() {
   try {
     await session.initialize()
-    currentPageNumber.value = session.state.session?.currentPage ?? currentPage.value.page
+    if (!active) return
+    currentPageNumber.value = session.state.session.currentPage
     if (session.state.session?.status === 'CREATED') await session.start()
-    if (props.mode === 'demo') pageAudioSrc.value = currentPage.value.audio
+    if (props.mode === 'demo') pageAudioSrc.value = currentPage.value?.audio || ''
   } catch {
     // The composable surfaces the concrete API error in the page.
   }
@@ -93,6 +113,23 @@ function resetInteractionForPage() {
   pageAudioSrc.value = props.mode === 'demo' ? (currentPage.value?.audio ?? '') : ''
 }
 
+async function syncReading() {
+  try {
+    await session.restore()
+    currentPageNumber.value = session.state.session.currentPage
+    resetInteractionForPage()
+  } catch {
+    // The read can be retried without sending a new event.
+  }
+}
+
+async function retryStart() {
+  if (pending.value) return
+  await syncReading()
+  if (!active || session.error.value || session.state.session?.status !== 'CREATED') return
+  try { await session.start() } catch { /* the same session remains available for recovery */ }
+}
+
 async function goNext() {
   if (pending.value || !session.state.session) return
   answerAudio.stop()
@@ -100,24 +137,25 @@ async function goNext() {
     await finishReading()
     return
   }
-  const nextPage = props.book.pages[currentPageIndex.value + 1]
-  const serverPage = session.state.session?.currentPage ?? currentPageNumber.value
-  if (nextPage.page <= serverPage) {
-    currentPageNumber.value = nextPage.page
+  const next = nextPageNumber.value
+  if (!props.book.pages.some((page) => page.page === next)) return
+  if (reviewing.value) {
+    currentPageNumber.value = next
     return
   }
   try {
-    await session.changePage(nextPage.page)
-    currentPageNumber.value = nextPage.page
+    await session.changePage(next)
+    currentPageNumber.value = session.state.session.currentPage
   } catch {
     // Conflict recovery is reported through `session.notice`.
   }
 }
 
 function goPrevious() {
-  if (pending.value || currentPageIndex.value <= 0) return
+  const index = visited.value.indexOf(currentPageNumber.value)
+  if (pending.value || index <= 0) return
   answerAudio.stop()
-  currentPageNumber.value = props.book.pages[currentPageIndex.value - 1].page
+  currentPageNumber.value = visited.value[index - 1]
 }
 
 async function finishReading() {
@@ -159,7 +197,7 @@ async function submitFeedback(feedback) {
     interactionResult.value = result
     questionReady.value = true
   } catch (error) {
-    if (error?.code === 'PROMPT_REQUIRED') await generateQuestion()
+    if (error?.code === 'PROMPT_REQUIRED') questionReady.value = false
   } finally {
     localPending.value = false
   }
@@ -172,8 +210,11 @@ async function openAnswerDialog() {
 
 async function handleAnswerConfirmed({ text }) {
   showAnswerDialog.value = false
-  lastAnswerText.value = text
-  await submitFeedback('UNDERSTOOD')
+  if (pending.value || reviewing.value) return
+  try {
+    await session.answer(text)
+    lastAnswerText.value = text
+  } catch { /* the write error or recovery notice is shown below */ }
 }
 
 async function loadPageAudio() {
@@ -204,7 +245,8 @@ async function playAnswerAudio() {
     answerAudioNotice.value = '演示模式没有回答音频；实机模式将在 G10 返回 interactionEventId 后请求 API-023。'
     return
   }
-  if (!interactionResult.value?.interactionEventId) {
+  const eventId = interactionResult.value?.interactionEventId
+  if (!eventId || answerAudioLoading.value || interactionResult.value.revision !== revision.value) {
     answerAudioNotice.value = '当前结果没有可用的 interactionEventId，无法请求回答音频。'
     return
   }
@@ -212,11 +254,11 @@ async function playAnswerAudio() {
   const generation = pageRequestGeneration
   answerAudioLoading.value = true
   try {
-    const response = await props.voiceApi.synthesizeInteraction({
-      interactionEventId: interactionResult.value.interactionEventId,
-    })
-    if (generation !== pageRequestGeneration || page !== currentPageNumber.value) return
-    answerAudioUrl.value = response.data.audioUrl
+    if (!answerAudioUrl.value) {
+      const response = await props.voiceApi.synthesizeInteraction({ interactionEventId: eventId })
+      if (generation !== pageRequestGeneration || page !== currentPageNumber.value || eventId !== interactionResult.value?.interactionEventId || interactionResult.value.revision !== revision.value) return
+      answerAudioUrl.value = response.data.audioUrl
+    }
     await answerAudio.play({ url: answerAudioUrl.value, source: 'answer' })
   } catch (error) {
     if (generation === pageRequestGeneration && page === currentPageNumber.value) {
@@ -227,15 +269,12 @@ async function playAnswerAudio() {
   }
 }
 
-async function exitReading() {
-  if (session.state.session?.status === 'IN_PROGRESS') {
-    try {
-      await session.finish()
-      emit('finished', { book: props.book, session: session.state.session, report: session.state.report })
-    } catch {
-      // Leave the reader even if finishing the session fails.
-    }
-  }
+watch(() => interactionResult.value?.interactionEventId, () => {
+  answerAudio.stop()
+  answerAudioUrl.value = ''
+})
+
+function exitReading() {
   answerAudio.stop()
   emit('exit')
 }
@@ -260,14 +299,24 @@ async function exitReading() {
     </div>
 
     <main v-if="session.state.session" class="reader-content">
+      <section v-if="session.state.syncRequired" class="reader-error-card">
+        <p>上次操作的结果仍待核对。{{ errorMessage }}</p>
+        <button type="button" class="button button-primary" :disabled="pending" @click="syncReading">重新核对进度</button>
+        <p>若服务器尚未记录上次操作，将用同一事件编号重试。</p>
+      </section>
+      <section v-else-if="session.state.session.status === 'CREATED'" class="reader-error-card">
+        <p>{{ errorMessage || session.notice.value || '会话已创建，等待开始阅读。' }}</p>
+        <button type="button" class="button button-primary" :disabled="pending" @click="retryStart">开始本次阅读</button>
+      </section>
       <ReadingSummary
-        v-if="isFinished"
+        v-else-if="isFinished"
         :book="book"
         :session="session.state.session"
         :report="session.state.report"
         @exit="exitReading"
       />
 
+      <p v-else-if="session.state.session.status !== 'IN_PROGRESS' || !currentPage || session.state.session.storyVersionId !== book.storyVersionId">本次会话或对应书页不可用，请返回绘本馆。</p>
       <template v-else>
         <article class="page-card">
           <div class="page-visual">
@@ -275,7 +324,7 @@ async function exitReading() {
             <span class="page-scene">{{ currentPage.scene || `第 ${currentPageIndex + 1} 幕` }}</span>
           </div>
           <div class="page-reading">
-            <div class="page-heading">
+            <div v-if="currentPage.tokens.some((token) => token.pinyin)" class="page-heading">
               <p class="eyebrow">逐字拼音 · {{ showPinyin ? '已显示' : '已隐藏' }}</p>
               <button class="text-button" type="button" @click="showPinyin = !showPinyin">
                 {{ showPinyin ? '隐藏拼音' : '显示拼音' }}
@@ -283,7 +332,7 @@ async function exitReading() {
             </div>
             <ReadingText :tokens="currentPage.tokens" :show-pinyin="showPinyin" :highlight-index="highlightIndex" />
             <button
-              v-if="mode === 'live' && !pageAudioSrc"
+              v-if="mode === 'live' && !reviewing && !pageAudioSrc"
               class="button button-ghost button-small page-audio-request"
               type="button"
               :disabled="pageAudioLoading"
@@ -300,8 +349,10 @@ async function exitReading() {
           </div>
         </article>
 
-        <InteractionCard
+        <p v-if="reviewing" class="inline-notice">正在回看已读页，回到当前进度后可继续互动。</p>
+        <InteractionCard v-else
           :result="interactionResult"
+          :revision="revision"
           :pending="pending"
           :demo="mode === 'demo'"
           :question-ready="questionReady"
@@ -310,20 +361,20 @@ async function exitReading() {
           @generate="generateQuestion"
           @answer="openAnswerDialog"
           @not-understood="submitFeedback('NOT_UNDERSTOOD')"
+          @understood="submitFeedback('UNDERSTOOD')"
           @skip="submitFeedback('SKIPPED')"
           @play-answer="playAnswerAudio"
         />
 
         <p v-if="lastAnswerText" class="answer-confirmation">
           <strong>家长确认文本：</strong>{{ lastAnswerText }}
-          <span>当前接口契约没有答案文本持久化字段，因此只提交本轮 UNDERSTOOD 反馈。</span>
         </p>
         <p v-if="answerAudioNotice" class="inline-notice">{{ answerAudioNotice }}</p>
         <p v-if="session.notice.value" class="inline-notice">{{ session.notice.value }}</p>
         <p v-if="session.error.value" class="inline-error">{{ errorMessage }}</p>
 
         <nav class="page-navigation" aria-label="翻页">
-          <button class="button button-ghost" type="button" :disabled="pending || currentPageIndex <= 0" @click="goPrevious">上一页</button>
+          <button class="button button-ghost" type="button" :disabled="pending || visited.indexOf(currentPageNumber) <= 0" @click="goPrevious">上一页</button>
           <button class="button button-primary" type="button" :disabled="pending" @click="goNext">
             {{ pending ? '同步中…' : (isLastPage ? '完成阅读' : '下一页 →') }}
           </button>
@@ -347,7 +398,8 @@ async function exitReading() {
           <template v-if="session.error.value.requestId"> · {{ session.error.value.requestId }}</template>
         </code>
         <div class="reader-error-actions">
-          <button class="button button-primary" type="button" @click="retryInitialize">重试</button>
+          <p v-if="creationUnconfirmed">请返回成长记录核对刚创建的会话，可从记录继续阅读。</p>
+          <button v-else class="button button-primary" type="button" @click="retryInitialize">重试</button>
           <button class="button button-ghost" type="button" @click="exitReading">返回</button>
         </div>
       </section>

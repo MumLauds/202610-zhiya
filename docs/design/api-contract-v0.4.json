@@ -4,7 +4,7 @@
   "glossary": "../standards/glossary.md",
   "note": "所有示例为格式数据，不是真实模型输出、凭证或测试结果。",
   "common": {
-    "authentication": "服务端Cookie使用Secure/HttpOnly/SameSite=Lax，写入验证CSRF。进入儿童模式时同事务吊销当前设备家长auth_sessions、签发child_grants及版本范围并绑定会话。退出须重新验证账号密码，撤销儿童授权并签发全新家长凭证；旧家长凭证不恢复。",
+    "authentication": "会话 Cookie zhiya_session 使用 Secure、HttpOnly 和 SameSite=Lax。受保护的写请求须在 X-CSRF-Token 中提交可读 Cookie zhiya_csrf 的值。进入儿童模式时，在同一事务内吊销当前设备的家长 auth_sessions、签发 child_grants 及版本范围并绑定会话。恢复家长权限时重新验证账号密码，撤销儿童授权并签发全新家长凭证。",
     "ownership": "私有资源每次执行归属校验；非本人统一404。",
     "pagination": {
       "defaultPageSize": 20,
@@ -1081,7 +1081,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "成功设置服务端会话Cookie；错误凭证401，重复失败限流。",
+      "constraints": "成功设置服务端会话 Cookie。错误凭证返回 401，重复失败限流。持有未吊销儿童凭证时返回 403 FORBIDDEN，请使用 API-021 验证所属家长密码。",
       "interfaceId": "API-002",
       "uniqueKey": "POST /api/v1/auth/sessions"
     },
@@ -1096,7 +1096,7 @@
       "successStatus": 204,
       "responseExample": null,
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "吊销当前登录和儿童授权。",
+      "constraints": "家长退出撤销当前设备的家长登录及该账号名下全部儿童授权，其他设备的家长登录继续有效。儿童退出只撤销当前授权。先结算已到期或内容已撤回的会话，再中断仍未终结的会话。",
       "interfaceId": "API-003",
       "uniqueKey": "DELETE /api/v1/auth/sessions/current"
     },
@@ -1246,7 +1246,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "默认返回有权访问的当前PUBLISHED/APPROVED_PRIVATE版本。scope=mine仅限已认证家长，另包含本人已审核私有RETIRED历史版本；各项以storyVersionId区分，遵守common.versionAccess，不返回WITHDRAWN内容。",
+      "constraints": "默认返回有权访问的当前PUBLISHED/APPROVED_PRIVATE版本。scope=mine仅限已认证家长，另包含本人已审核私有RETIRED历史版本；各项以storyVersionId区分，遵守common.versionAccess，不返回WITHDRAWN内容。仅家长的续写版本对象包含sourceStoryVersionId和continuation。",
       "interfaceId": "API-008",
       "uniqueKey": "GET /api/v1/storybooks",
       "additionalExamples": [
@@ -1328,7 +1328,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "儿童不接收未审核草稿或管理字段。正文和媒体均遵守common.versionAccess；本人已审核私有RETIRED版本可从历史入口复读，LIBRARY退休版本仅限既有有效会话；WITHDRAWN立即拒绝。",
+      "constraints": "仅家长的续写版本对象包含sourceStoryVersionId和continuation。儿童只接收已授权的阅读内容。正文和媒体均遵守common.versionAccess；本人已审核私有RETIRED版本可从历史入口复读，LIBRARY退休版本仅限既有有效会话；WITHDRAWN立即拒绝。",
       "interfaceId": "API-009",
       "uniqueKey": "GET /api/v1/story-versions/{version_id}"
     },
@@ -1389,7 +1389,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "普通创建仅PARENT_CHILD/CREATED；storyVersionId固定到按common.versionAccess可新建会话的版本。本人已审核私有RETIRED版本可复读；LIBRARY退休版本和任何WITHDRAWN版本均禁止新建。儿童模式在STARTED前由mode-settings原子签发授权及绑定。有限续写按flows.continuationSwitch原子切换，属于本期FR-17 P1，验收TC-FR17-04/05；普通主链无需续写即可完成，范围及审批状态见common.deliveryScope。",
+      "constraints": "普通创建须省略sourceReadingSessionId、expectedRevision和clientRequestId，初始为PARENT_CHILD/CREATED。切换须同时提供这三个非空字段，缺项或显式null返回422 VALIDATION_ERROR。storyVersionId固定到按common.versionAccess可新建会话的版本。本人已审核私有RETIRED版本可复读；LIBRARY退休版本和任何WITHDRAWN版本均禁止新建。儿童模式在STARTED前由mode-settings原子签发授权及绑定。有限续写按flows.continuationSwitch原子切换，属于本期FR-17 P1，验收TC-FR17-04/05；普通主链无需续写即可完成，范围及审批状态见common.deliveryScope。",
       "interfaceId": "API-011",
       "uniqueKey": "POST /api/v1/reading-sessions",
       "additionalExamples": [
@@ -1508,10 +1508,17 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "儿童只返回当前进度、可读页面与必要交互，不返回完整历史、管理或个人资料。内容读取遵守common.versionAccess。本人家长可读取当前小结，包括启动恢复后的小结；状态及返回内容见common.reportLifecycle。",
+      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。已保存完整响应的 API-017 引导事件还返回 outputText 和 strategyType，实际反馈事件另含 feedback，供刷新后恢复。儿童在 IN_PROGRESS 时另收到 data.answerOptions 字符串数组，供 API-015 作答。该数组取自当前页最近一道可展示的问题，包括首次 QUESTION 和理解反馈 FEEDBACK 中保存的追问。跳过、拦截及空正文不算作问题。API-017 的儿童问题及回退均可用固定短答作答，最终响应 data.answerOptions 保存实际选项。旧提问未带此字段时使用固定短答“是”“不是”“不知道”。当前页尚无可展示提问时沿用已审核的分支选项文案。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
       "interfaceId": "API-013",
       "uniqueKey": "GET /api/v1/reading-sessions/{session_id}",
       "additionalExamples": [
+        {
+          "name": "家长核对本人阅读记录是否仍存在",
+          "query": { "view": "deletion-status" },
+          "status": 200,
+          "data": { "exists": true },
+          "note": "按 API-014 归属查询，包含绘本已撤回的本人记录。已删除或不属于当前家长时返回 false，仅返回布尔值。响应禁止缓存。有效儿童凭证返回 403，未认证返回 401。省略 view 或使用 reading 时返回默认会话详情。"
+        },
         {
           "name": "小结处理中",
           "status": 200,
@@ -1620,7 +1627,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "类型STARTED/PAGE_CHANGED/ANSWER/FEEDBACK；SKIPPED是feedback取值，不是eventType。QUESTION、ASK、BRANCH_CHOSEN由对应服务写入；同键先重放，新键检查revision。",
+      "constraints": "类型STARTED/PAGE_CHANGED/ANSWER/FEEDBACK；SKIPPED是feedback取值，不是eventType。儿童 ANSWER 的 inputText 去除两端空白后须精确匹配服务端按 API-013 data.answerOptions 计算的当前选项，否则返回 422 VALIDATION_ERROR 并保持进度。家长共读仍可提交文本。QUESTION、ASK、BRANCH_CHOSEN由对应服务写入；同键先重放，新键检查revision。",
       "interfaceId": "API-015",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/events"
     },
@@ -1680,7 +1687,7 @@
         "requestId": "req-initial"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "STARTED成功或翻页/分支/续写切换进入当前页后，前端在需要情境提问且无可恢复问题时发送INITIAL；不由GET或STARTED响应隐式调用模型。首次不要求既往问题或反馈。服务端构造年龄及页面上下文，一次返回一个问题。UNDERSTOOD/NOT_UNDERSTOOD针对当前页最后一个已保存问题，缺失时409 PROMPT_REQUIRED；SKIPPED只写事件，不调用Agent/模型，outputText为空、strategyType=SKIP、status=FALLBACK。执行前按common.requestExecution占位；翻页后晚到结果不得保存或播放。",
+      "constraints": "STARTED成功或翻页/分支/续写切换进入当前页后，前端在需要情境提问且无可恢复问题时发送INITIAL；不由GET或STARTED响应隐式调用模型。首次不要求既往问题或反馈。服务端构造年龄及页面上下文，一次返回一个问题。UNDERSTOOD/NOT_UNDERSTOOD针对当前页最后展示的首题或追问，缺失时409 PROMPT_REQUIRED。SKIPPED不要求已有问题，直接保存反馈并递增revision，outputText为空、strategyType=SKIP、status=FALLBACK。CHILD_SOLO的可作答问题与超时、无知识回退均带已核验的answerOptions。模型TIMEOUT可保存TIMEOUT_FALLBACK。其他API_ERROR返回503 DEPENDENCY_UNAVAILABLE并记录FAILED，原键重放该错误，未写事件或递增revision。执行前按common.requestExecution占位。翻页或跳过先提交后，迟到的问题不得保存或播放。",
       "interfaceId": "API-017",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/guidance",
       "additionalExamples": [
@@ -1700,6 +1707,25 @@
             "strategyType": "CONCRETE_RECALL",
             "status": "FALLBACK",
             "sources": []
+          }
+        },
+        {
+          "name": "儿童模式缺少适用知识时的首题",
+          "request": {
+            "pageNumber": 1,
+            "feedback": "INITIAL",
+            "expectedRevision": 1,
+            "clientEventId": "child-initial"
+          },
+          "status": 201,
+          "data": {
+            "interactionEventId": 805,
+            "revision": 2,
+            "outputText": "你喜欢这一页吗？",
+            "strategyType": "NO_KNOWLEDGE_FALLBACK",
+            "status": "FALLBACK",
+            "sources": [],
+            "answerOptions": ["是", "不是", "不知道"]
           }
         },
         {
@@ -1757,7 +1783,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "分支属于当前故事和当前节点且已审核；原子提交进度及事件。重复相同请求200；标识复用且内容不同409。",
+      "constraints": "分支属于当前故事和当前节点且已审核；原子提交进度及事件。重复相同请求时，复核该正文版本的API-009读取权限，通过后返回200；正文不可读返回404。标识复用且内容不同409。",
       "interfaceId": "API-018",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/branches"
     },
@@ -1797,7 +1823,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "首次结束同事务保存终态、事实记录及PENDING小结。生成、启动恢复及重复结束规则见common.reportLifecycle；用API-013读取最新状态。TIME_LIMIT由服务端触发；CONTINUED仅由续写切换事务设置，客户端不得提交该reason。",
+      "constraints": "首次正常结束同事务保存终态、事实记录及 PENDING 小结，提交成功后派发模型任务。生成、恢复及重复结束见 common.reportLifecycle。儿童阅读已开始且内容可读时，到期按授权截止时刻写 FINISHED/TIME_LIMIT。未开始即到期写 INTERRUPTED/GRANT_REVOKED，未终结时发现内容撤回写 INTERRUPTED/CONTENT_WITHDRAWN，中断不生成小结。TIME_LIMIT 与续写切换的 CONTINUED 均由服务端设置。",
       "interfaceId": "API-019",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/completions",
       "examplePrecondition": "本例承接API-011创建的会话401（CREATED、revision=0、路径[]）。通过API-015提交STARTED后为IN_PROGRESS、currentPage=1、visitedPageNumbers=[1]、revision=1；此时立即主动结束，没有发生其他互动或翻页。"
@@ -1852,7 +1878,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "验证账号密码及儿童授权归属；原子撤销儿童授权，结束未终态会话，创建新家长auth_sessions并设置Cookie。旧家长凭证不恢复；失败401且不提权。",
+      "constraints": "验证所属家长账号密码和 CSRF。儿童 Cookie 保留 24 小时，业务授权到期后，持有未吊销凭证的设备仍可解锁。成功时原子撤销儿童授权，结束未终态会话并签发新家长 Cookie。密码错误返回 401。",
       "interfaceId": "API-021",
       "uniqueKey": "POST /api/v1/auth/parent-unlocks"
     },
@@ -2122,7 +2148,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "再次核验所有检查和版本；不以客户端布尔值代替后端安全检查；成功后私有可读，不能自动公开。 续写草稿的continuation随页面、全部分支和插画一起审核冻结；批准不结束源会话，也不自动创建新会话。新版生效与旧当前版本转RETIRED在同一事务完成；保留旧版审核人和审核时间，本人已审核私有旧版仍按common.versionAccess复读；不得将WITHDRAWN恢复为可读。",
+      "constraints": "再次核验所有检查和版本；不以客户端布尔值代替后端安全检查；成功后私有可读，不能自动公开。 续写源路径每一步须为源版本的默认后继或已审核分支。快照修订号超前或路径与该修订号的实际进度不符时返回422 VALIDATION_ERROR。源会话已推进时依据阅读事件核验旧路径，合法旧快照仍可批准并从头阅读。续写草稿的continuation随页面、全部分支和插画一起审核冻结；批准不结束源会话，也不自动创建新会话。新版生效与旧当前版本转RETIRED在同一事务完成；保留旧版审核人和审核时间，本人已审核私有旧版仍按common.versionAccess复读；不得将WITHDRAWN恢复为可读。",
       "interfaceId": "API-026",
       "uniqueKey": "POST /api/v1/story-versions/{version_id}/approvals",
       "additionalExamples": [
@@ -2484,9 +2510,10 @@
     "continuationSwitch": [
       "本期FR-17 P1验收流程，覆盖TC-FR17-04/05；范围及审批状态见common.deliveryScope。",
       "API-025固定源会话revision=12及路径[1,2]，生成版本302和继续点3",
-      "API-026批准version=2，源会话仍IN_PROGRESS/revision=12",
+      "API-026核对同一绘本、继承页正文与冻结配图，批准version=2，源会话仍IN_PROGRESS/revision=12",
       "API-011提交sourceReadingSessionId和switch-001，在同一事务关闭旧会话并启动会话402第3页",
-      "源快照过期409且旧会话不变；数据库提交失败503且全部回滚；提交后丢响应以同键重放既有会话402，不创建第二个后继"
+      "新请求遇到过期源快照返回409 CONTINUATION_STALE，源会话已切换返回409 CONTINUATION_ALREADY_SWITCHED。提交失败503并回滚，丢响应时按原键重放既有会话402",
+      "后继的完整路径用于导航，小结与成长页数从startPageNumber起计算。删除源记录后保留startPageNumber和carriedPrefixPageCount。删除源快照时关联的DRAFT、PENDING_REVIEW续写转为CHECK_FAILED，后续审批返回409 SESSION_CONFLICT。已批准版本保留冻结配图"
     ]
   },
   "version": "v0.4",

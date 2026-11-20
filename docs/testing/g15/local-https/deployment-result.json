@@ -1,0 +1,148 @@
+{
+  "commit": "e5f32cd9d645c75e03814af55ba5aa531442c8a6",
+  "project": "g15-local-e5f32cd-20261119-verified",
+  "origin": "https://127.0.0.1:18443",
+  "dockerServer": "29.9.2",
+  "businessNetworkInternal": true,
+  "images": {
+    "web": {
+      "id": "sha256:395a083a33eda10662c6e42c8ca814ce3a4b8bd68d977e6ff869080375b0b940",
+      "repoDigests": [
+        "g15-web@sha256:395a083a33eda10662c6e42c8ca814ce3a4b8bd68d977e6ff869080375b0b940"
+      ],
+      "revision": "e5f32cd9d645c75e03814af55ba5aa531442c8a6"
+    },
+    "backend": {
+      "id": "sha256:7e52987d8476043ac3e7270326b8579910173c444712d1daa0d8cd131e0b1bfc",
+      "repoDigests": [
+        "g15-backend@sha256:7e52987d8476043ac3e7270326b8579910173c444712d1daa0d8cd131e0b1bfc"
+      ],
+      "revision": "e5f32cd9d645c75e03814af55ba5aa531442c8a6"
+    }
+  },
+  "containers": {
+    "backend": {
+      "containerId": "4df00af353ac110cb803530e65e728bfedef44b8d9c91e82369e8fa680354596",
+      "image": "sha256:7e52987d8476043ac3e7270326b8579910173c444712d1daa0d8cd131e0b1bfc",
+      "publishedPorts": {},
+      "startedAtBeforeRestart": "2026-11-19T11:34:50.938021372Z",
+      "startedAtAfterRestart": "2026-11-19T11:38:53.284360584Z",
+      "persistentSqliteVolume": "g15-local-e5f32cd-20261119-verified_sqlite-data"
+    },
+    "edge": {
+      "containerId": "770c48e3d601e137890dd24415407bd66a057ef60aee54f16acbdeeb3b7c7af3",
+      "image": "sha256:395a083a33eda10662c6e42c8ca814ce3a4b8bd68d977e6ff869080375b0b940",
+      "publishedPorts": {
+        "8443/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "18443"
+          }
+        ]
+      },
+      "startedAtBeforeRestart": "2026-11-19T11:34:54.993098536Z",
+      "startedAtAfterRestart": "2026-11-19T11:38:52.985312452Z"
+    },
+    "provider": {
+      "containerId": "0f552f06b0fe399859e50474b77dc267c2f6a7e12c0eec8d4231ef68e9a63bce",
+      "image": "sha256:7e52987d8476043ac3e7270326b8579910173c444712d1daa0d8cd131e0b1bfc",
+      "publishedPorts": {},
+      "startedAtBeforeRestart": "2026-11-19T11:34:52.475142653Z",
+      "startedAtAfterRestart": "2026-11-19T11:39:03.776893725Z"
+    }
+  },
+  "beforeRestart": {
+    "database": {
+      "sessionId": 1,
+      "profileId": 1,
+      "versionId": 11,
+      "status": "FINISHED",
+      "endReason": "USER_FINISH",
+      "revision": 2,
+      "pages": [
+        1
+      ],
+      "endedAt": 1795088215445,
+      "reportStatus": "READY",
+      "summary": "本次共读阅读了第 1 页。",
+      "reportUpdatedAt": 1795088215552,
+      "events": [
+        {
+          "id": 1,
+          "eventType": "STARTED",
+          "revision": 1
+        }
+      ]
+    },
+    "counts": {
+      "sessionsByStatus": {
+        "FINISHED": 1
+      },
+      "reports": 1,
+      "events": 1,
+      "executions": 2
+    },
+    "supplierCalls": [
+      {
+        "call": "asr",
+        "frames": 26880,
+        "hz": 16000,
+        "channels": 1,
+        "bits": 16
+      },
+      {
+        "call": "report",
+        "visitedPages": [
+          1
+        ]
+      }
+    ]
+  },
+  "afterBrowserReadback": {
+    "database": {
+      "sessionId": 1,
+      "profileId": 1,
+      "versionId": 11,
+      "status": "FINISHED",
+      "endReason": "USER_FINISH",
+      "revision": 2,
+      "pages": [
+        1
+      ],
+      "endedAt": 1795088215445,
+      "reportStatus": "READY",
+      "summary": "本次共读阅读了第 1 页。",
+      "reportUpdatedAt": 1795088215552,
+      "events": [
+        {
+          "id": 1,
+          "eventType": "STARTED",
+          "revision": 1
+        }
+      ]
+    },
+    "counts": {
+      "sessionsByStatus": {
+        "FINISHED": 1
+      },
+      "reports": 1,
+      "events": 1,
+      "executions": 2
+    },
+    "supplierCalls": [
+      {
+        "call": "asr",
+        "frames": 26880,
+        "hz": 16000,
+        "channels": 1,
+        "bits": 16
+      },
+      {
+        "call": "report",
+        "visitedPages": [
+          1
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,148 @@
+{
+  "verifiedAtUtc": "2026-11-19T13:59:23+00:00",
+  "applicationCommit": "e5f32cd9d645c75e03814af55ba5aa531442c8a6",
+  "origin": "https://127.0.0.1:18443",
+  "browser": "Chrome 154.0.8037.98",
+  "images": {
+    "backend": "sha256:389aa1080ae8311494a9a62b21bf3e38656283bb094cd768fc375bd7dfe8fc06",
+    "web": "sha256:5307e9e16f5d1136a13afd43cc6f730d3cb3382062976cd8034f51a8b8a8ca67"
+  },
+  "httpsDeployment": {
+    "project": "g15-pr58-20261119t134520",
+    "browserVerifiedAtUtc": "2026-11-19T13:52:08+00:00",
+    "transcriptionHttp": 200,
+    "freshLoginHttp": 201,
+    "loginSessionsBeforeRestart": 1,
+    "loginSessionsAfterReadback": 2,
+    "readingCountsBeforeRestart": {
+      "reports": 1,
+      "events": 1,
+      "executions": 2,
+      "sessionsByStatus": {
+        "FINISHED": 1
+      }
+    },
+    "readingCountsAfterReadback": {
+      "reports": 1,
+      "events": 1,
+      "executions": 2,
+      "sessionsByStatus": {
+        "FINISHED": 1
+      }
+    },
+    "supplierCallsBeforeRestart": [
+      {
+        "call": "asr",
+        "status": 200,
+        "frames": 48000,
+        "hz": 16000,
+        "channels": 1,
+        "bits": 16
+      },
+      {
+        "call": "report",
+        "status": 200,
+        "visitedPages": [
+          1
+        ]
+      }
+    ],
+    "supplierCallsAfterReadback": [
+      {
+        "call": "asr",
+        "status": 200,
+        "frames": 48000,
+        "hz": 16000,
+        "channels": 1,
+        "bits": 16
+      },
+      {
+        "call": "report",
+        "status": 200,
+        "visitedPages": [
+          1
+        ]
+      }
+    ]
+  },
+  "restoredFirstVolume": {
+    "sourceVolume": "g15-pr58-20261119t134520_sqlite-data",
+    "backupVolume": "g15-pr58-20261119t134520-r-a-backup",
+    "restoredVolume": "g15-pr58-20261119t134520-r-a-restored-data",
+    "originalUnchanged": true,
+    "matchesBaseline": true,
+    "session": {
+      "sessionId": 1,
+      "profileId": 1,
+      "versionId": 11,
+      "status": "FINISHED",
+      "endReason": "USER_FINISH",
+      "revision": 2,
+      "pages": [
+        1
+      ],
+      "endedAt": 1795096198552,
+      "reportStatus": "READY",
+      "summary": "本次共读阅读了第 1 页。",
+      "reportUpdatedAt": 1795096198641,
+      "events": [
+        {
+          "id": 1,
+          "eventType": "STARTED",
+          "revision": 1
+        }
+      ]
+    },
+    "backupDatabaseSha256": "e3681959265ed19b38367037de27dd696c1683089709b376e8fdfdb12af81d83",
+    "manifestSha256": "a5ccfb0f30bfa49b5b2b9c42a658ca0166f1c4cf8a08f9f552fe09358180388d"
+  },
+  "restoredFamily": {
+    "sourceVolume": "g15-pr58-20261119t134520-r-b-source-data",
+    "backupVolume": "g15-pr58-20261119t134520-r-b-backup",
+    "restoredVolume": "g15-pr58-20261119t134520-r-b-restored-data",
+    "browserDataVolume": "g15-pr58-20261119t134520-r-b-restored-data",
+    "readback": {
+      "verifiedAtUtc": "2026-11-19T13:57:59+00:00",
+      "historyCard": "阅读记录 #1 · 浏览 1 页 · 已完成",
+      "sourceLoginsBeforeStop": 1,
+      "backupGuardianLogins": 1,
+      "restoredGuardianLogins": 2
+    },
+    "anonymousMediaHttp": 401,
+    "freshLoginHttp": 201,
+    "sourceSupplierCalls": [
+      {
+        "call": "report",
+        "status": 200,
+        "visitedPages": [
+          1
+        ]
+      }
+    ],
+    "restoredSupplierCalls": [],
+    "restoredSourceLookup": {
+      "fixtureSourceExists": false,
+      "imageAvailableInMediaRoot": false
+    },
+    "fixture": {
+      "asset": "asset-11-page-1",
+      "width": 128,
+      "height": 80,
+      "bytes": 30868,
+      "sha256": "abecc2668b8b0f9d544f44990c6d95948a102f1140e1f8bc9e1a875c2f3bf2bc",
+      "rgbaSha256": "b2b5e749575b1fe44325218ac508ac7c466eafa3761ad15b34a89efb38562409"
+    },
+    "browserImage": {
+      "path": "/api/v1/media/asset-11-page-1",
+      "http": 200,
+      "mime": "image/png",
+      "naturalWidth": 128,
+      "naturalHeight": 80,
+      "bytes": 30868,
+      "pngSha256": "abecc2668b8b0f9d544f44990c6d95948a102f1140e1f8bc9e1a875c2f3bf2bc",
+      "rgbaSha256": "b2b5e749575b1fe44325218ac508ac7c466eafa3761ad15b34a89efb38562409"
+    },
+    "backupDatabaseSha256": "4f04e56e07149511083e42b75bc60890802e20723a76becc0ab84e0f3c13c159",
+    "manifestSha256": "7b22c25bd95a2b30875fdd300590e31e4226f6310cdf06175ae2f43964bcbf46"
+  }
+}

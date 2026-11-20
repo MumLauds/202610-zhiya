@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError } from '../src/api/client.js'
-import { ReadingSessionMachine, RecoverableSessionError } from '../src/services/readingSessionMachine.js'
+import { ApiError } from '../mobile/api/client.js'
+import { ReadingSessionMachine, RecoverableSessionError } from '../mobile/services/readingSessionMachine.js'
 
 function session(overrides = {}) {
   return {

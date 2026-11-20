@@ -53,7 +53,7 @@ export async function requestJson(path, options = {}) {
     body = JSON.stringify(body)
   }
   if (method !== 'GET' && method !== 'HEAD') {
-    const csrf = readCookie('zhiya_csrf')
+    const csrf = options.csrfToken ?? readCookie('zhiya_csrf')
     if (csrf) headers.set('X-CSRF-Token', csrf)
   }
 
@@ -94,6 +94,9 @@ export async function requestJson(path, options = {}) {
     }
   } catch (error) {
     if (error instanceof ApiError) throw error
+    if (method !== 'GET' && method !== 'HEAD' && !options.signal?.aborted) {
+      throw new ApiError('写入结果尚未确认，请先核对会话。', { code: 'REQUEST_OUTCOME_UNKNOWN' })
+    }
     if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
       throw new ApiError(error.name === 'TimeoutError' ? '请求超时，请稍后重试' : '请求已取消', {
         code: error.name === 'TimeoutError' ? 'REQUEST_TIMEOUT' : 'REQUEST_ABORTED',

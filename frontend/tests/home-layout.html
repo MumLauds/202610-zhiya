@@ -1,0 +1,76 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Home geometry regression</title>
+<iframe title="1056×708 fixture" style="display:none;width:1056px;height:708px;border:0"></iframe>
+<div id="fixture"></div>
+<pre id="result">PENDING</pre>
+<script type="module">
+import { createApp, h, nextTick, ref } from 'vue'
+import HomePage from '/src/pages/HomePage.vue'
+import '/src/styles/app.css'
+
+const frame = document.querySelector('iframe')
+if (location.search === '?fixture') {
+  frame.remove()
+  const books = Array.from({ length: 5 }, (_, i) => ({
+    id: String(i), title: '精选绘本 ' + i, status: 'PUBLISHED', author: '作者',
+    cover: '/assets/figma-prototype/home-book-background.png',
+    ageLabel: '3–6 岁', pageCount: 18, topics: ['友谊', '想象'],
+    summary: '一本适合亲子共读的绘本。'.repeat(7),
+  }))
+  const selected = ref(books[0].id)
+  const actions = []
+  window.homeRegressionActions = actions
+  createApp({
+    setup: () => () => h(HomePage, {
+      books, selectedBookId: selected.value, auth: { authenticated: true },
+      onDetail: (book) => actions.push(['detail', book.id]),
+      onStart: (book) => actions.push(['start', book.id]),
+      onNavigate: (route) => actions.push(['navigate', route]),
+      onSelect: (id) => { actions.push(['select', id]); selected.value = id },
+    }),
+  }).mount(document.querySelector('#fixture'))
+} else {
+  const result = document.querySelector('#result')
+  frame.style.display = 'block'
+  await new Promise((resolve) => {
+    frame.addEventListener('load', resolve, { once: true })
+    frame.src = '?fixture'
+  })
+  try {
+    const doc = frame.contentDocument
+    const win = frame.contentWindow
+    doc.fonts && await doc.fonts.ready
+    if (win.innerWidth !== 1056 || win.innerHeight !== 708) throw Error('Incorrect viewport: ' + win.innerWidth + 'x' + win.innerHeight)
+    const info = doc.querySelector('.home-info-card').getBoundingClientRect()
+    const bottom = doc.querySelector('.home-bottom').getBoundingClientRect()
+    const plan = doc.querySelector('.home-plan').getBoundingClientRect()
+    if (info.bottom >= Math.min(bottom.top, plan.top)) throw Error('Feature card and bottom content overlap')
+    const targets = [
+      ['.hero-book-cover', 'detail', '0'],
+      ['.home-info-card .secondary', 'detail', '0'],
+      ['.home-info-card .primary', 'start', '0'],
+      ['.shelf-title-row .text-button', 'navigate', 'library'],
+      ['.shelf-arrow-hit.next', 'select', '1'],
+      ['.home-plan .primary', 'start', '1'],
+    ]
+    const checked = []
+    for (const [selector, event, value] of targets) {
+      const button = doc.querySelector(selector)
+      button.scrollIntoView({ block: 'center', behavior: 'instant' })
+      const box = button.getBoundingClientRect()
+      const hit = doc.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+      if (hit?.closest('button') !== button) throw Error(selector + ' misses center hit: ' + hit?.outerHTML.slice(0, 170))
+      hit.click()
+      if (JSON.stringify(win.homeRegressionActions.at(-1)) !== JSON.stringify([event, value])) {
+        throw Error(selector + ' emitted the wrong action')
+      }
+      await nextTick()
+      checked.push(selector)
+    }
+    result.textContent = 'PASS 1056x708: ' + checked.join(', ')
+  } catch (error) {
+    result.textContent = 'FAIL: ' + error.message
+  }
+}
+</script>

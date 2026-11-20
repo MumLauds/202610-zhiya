@@ -2,7 +2,9 @@
 
 版本：v0.4；配套系统、数据库设计v1.1；状态：待团队评审。
 
-服务端Cookie使用Secure/HttpOnly/SameSite=Lax，写入验证CSRF。进入儿童模式时同事务吊销当前设备家长auth_sessions、签发child_grants及版本范围并绑定会话。退出须重新验证账号密码，撤销儿童授权并签发全新家长凭证；旧家长凭证不恢复。
+会话 Cookie `zhiya_session` 使用 Secure、HttpOnly 和 SameSite=Lax。受保护的写请求须在 `X-CSRF-Token` 中提交可读 Cookie `zhiya_csrf` 的值。进入儿童模式时，在同一事务内吊销当前设备的家长 auth_sessions、签发 child_grants 及版本范围并绑定会话。恢复家长权限时重新验证账号密码，撤销儿童授权并签发全新家长凭证。
+
+儿童设备的 Cookie 保留 24 小时。业务访问到 `expiresAt` 截止。持有未吊销儿童凭证的设备使用 API-021 验证所属家长密码，业务时限届满后仍可解锁。此时调用普通登录 API-002 返回 403 `FORBIDDEN`。
 
 公共术语、标识语义与枚举见[公共术语表](../standards/glossary.md)。详细请求响应、错误及幂等规则见[接口示例](api-contract-v0.4.json)。
 
@@ -52,19 +54,21 @@
 | 接口 | 请求字段 | 成功响应 `data` |
 | --- | --- | --- |
 | API-001 / 002 注册与登录 | `account`、`password` 必填字符串。建议账号去除两端空白后 3～64 字符并保持大小写，密码 8～128 字符且原样提交 | 201，`accountId` |
-| API-003 退出 | 无请求体 | 204 |
+| API-003 退出 | 无请求体。家长退出会撤销本机家长登录及该账号名下全部儿童授权，其他设备的家长登录继续有效。儿童退出只撤销当前儿童授权 | 204 |
 | API-004 档案列表 | 无请求体 | 200，`items` 为档案对象数组 |
 | API-005 新建档案 | `ageBand`、`preferredMinutes` 必填，`nickname` 和 `interests` 可省略 | 201，档案对象 |
 | API-006 修改档案 | 路径 `profile_id`。至少提供 `nickname`、`ageBand`、`interests`、`preferredMinutes` 之一，省略字段保留原值 | 200，更新后的完整档案对象 |
 | API-007 删除档案 | 路径 `profile_id`，无请求体 | 204，删除范围按现行数据清理策略 |
 | API-008 绘本列表 | 可选查询 `ageBand`、`topic`、`scope=mine`、`page`、`pageSize`。页码默认 1，每页默认 20、最多 50 | 200，`items` 为绘本版本对象数组，附 `page`、`pageSize` |
 | API-009 绘本详情 | 路径 `version_id`，无请求体 | 200，绘本版本对象 |
-| API-011 创建共读会话 | `childProfileId`、`storyVersionId`、`mode=PARENT_CHILD` 必填 | 201，会话对象，`status=CREATED`、`revision=0` |
+| API-011 创建共读会话 | `childProfileId`、`storyVersionId`、`mode=PARENT_CHILD` 必填。续写切换参数见下文 | 201，普通会话为 `CREATED`、`revision=0`，切换后的会话为 `IN_PROGRESS`、`revision=1` |
 | API-012 会话列表 | 可选 `page`、`pageSize`，规则同 API-008 | 200，`items` 为会话对象数组，附 `page`、`pageSize` |
-| API-013 读取或恢复会话 | 路径 `session_id`，无请求体 | 200，`session`、`events`、`report`，未生成小结时 `report=null` |
+| API-013 读取或恢复会话 | 路径 `session_id`。可选查询 `view` 默认为 `reading`。家长可选 `deletion-status` 核对删除结果 | 默认返回 200 及 `session`、`events`、`report`，未生成小结时 `report=null`。删除核对返回 200 及布尔值 `data.exists`，响应带 `Cache-Control: no-store` |
 | API-015 开始与翻页 | 路径 `session_id`。必填 `eventType=STARTED/PAGE_CHANGED`、`pageNumber`、`expectedRevision`、`clientEventId`（1～64 字符） | 首次 201，`interactionEventId`、更新后的 `revision`。同键成功重放 200 |
 | API-019 结束 | 路径 `session_id`。必填 `reason=USER_FINISH`、`expectedRevision`、`clientEventId`（1～64 字符） | 首次和成功重放均为 200，`session`、`report` |
 | API-024 媒体 | 路径 `resource_key`，无请求体 | 200，资源二进制及实际 `Content-Type` |
+
+API-013 的 `view=deletion-status` 按 API-014 的家长归属规则查询。本人名下仍存在的记录返回 `exists=true`，包括绘本已撤回的记录。记录已删除或不属于当前家长时统一返回 `exists=false`。该视图仅返回布尔值。未认证请求返回 401，有效儿童凭证返回 403。普通会话读取继续按版本可见范围返回内容。
 
 ### DCL-005 封面与媒体
 
@@ -113,7 +117,13 @@ JSON 错误统一使用 `{error: {code, message, retryable}, requestId}`。前�
 
 档案对象包含 `childProfileId`、`nickname`（可空）、`ageBand`（`AGE_3_4/AGE_4_5/AGE_5_6`）、`interests`（字符串数组，可为空）、`preferredMinutes`（1～30 整数）。建议昵称去除两端空白后 1～32 字符，创建省略时返回 null，修改时显式 null 清除昵称。兴趣最多 10 项，每项去除两端空白后 1～32 字符。创建省略兴趣时用空数组，修改传空数组清除兴趣。
 
-会话对象包含 `readingSessionId`、`storyVersionId`、`currentPage`、`visitedPageNumbers`、`mode`、`status`、`revision`、`expiresAt`（UTC ISO 8601 字符串或 null）。断线恢复以 API-013 返回的固定版本、当前页、状态及修订号为准。首阶段开始和翻页的 `events` 示例使用 `interactionEventId`、`eventType`、`pageNumber`。家长可查看含 `readingSessionId`、`summary`、`activities`、`status` 的小结。儿童只接收授权范围内的必要交互和进度，API-013 及 API-019 的 `report` 均建议为 null，重放前仍校验调用者权限并按当前角色投影。客户端下一次新写入使用服务端修订号。网络失联或返回 `REQUEST_IN_PROGRESS` 时，可使用原键和原请求体查询式重发。收到明确的 504 后先读取 API-013，由用户根据会话状态决定下一步。
+会话对象包含 `readingSessionId`、`storyVersionId`、`currentPage`、`visitedPageNumbers`、`mode`、`status`、`revision`、`expiresAt`（UTC ISO 8601 字符串或 null）。断线恢复以 API-013 返回的固定版本、当前页、状态及修订号为准。首阶段开始和翻页的 `events` 示例使用 `interactionEventId`、`eventType`、`pageNumber`。已保存完整响应的 API-017 引导事件还返回 `outputText` 和 `strategyType`，实际反馈另含 `feedback`，可用于刷新后恢复问题及跳过状态。家长可查看含 `readingSessionId`、`summary`、`activities`、`status` 的小结。儿童只接收授权范围内的必要交互和进度，API-013 及 API-019 的 `report` 均建议为 null，重放前仍校验调用者权限并按当前角色投影。客户端下一次新写入使用服务端修订号。网络失联或返回 `REQUEST_IN_PROGRESS` 时，可使用原键和原请求体查询式重发。收到明确的 504 后先读取 API-013，由用户根据会话状态决定下一步。
+
+儿童在进行中的会话读取 API-013 时，`data.answerOptions` 列出当前页可以提交的作答文案。选项来自当前会话、绘本版本和页面上最近一道可展示的问题，包括首次 `QUESTION` 和理解反馈 `FEEDBACK` 中已保存的追问。跳过、拦截和没有正文的事件不算作提问。API-017 为儿童模式生成可用“是／不是／不知道”回答的问题，无知识及超时回退也遵守这一约定。该题的最终响应 `data.answerOptions` 保存实际选项，刷新和作答校验使用同一份数据。旧问题省略该字段时提供“是”“不是”“不知道”。页面尚无可展示的问题时，沿用该页已审核的分支选项文案。返回空数组表示当前没有可提交的选项。
+
+API-017 的“已理解／未理解”围绕当前页最近实际展示的问题进行。在首题生成期间，家长可用新事件键和当前修订号提交 `SKIPPED`。跳过先提交即递增修订号，随后返回的旧提问记为可重放的 409 `SESSION_CONFLICT`。模型超时可保存安全回退。模型未配置、鉴权失败或限流等 `API_ERROR` 返回 503 `DEPENDENCY_UNAVAILABLE`，执行记录为 `FAILED`，会话修订号保持原值。同键重放该错误，依赖恢复后可用新键重新提问。
+
+API-015 在同一写事务内重新计算允许的选项。儿童的 `ANSWER.inputText` 去除两端空白后须精确匹配其中一项，超出范围返回 `422 VALIDATION_ERROR`。家长在亲子共读时可提交 1～200 字符的文本。成功作答会记录事件并增加修订号，跳转剧情分支使用 API-018。
 
 ## 本期有限续写范围
 
@@ -124,7 +134,17 @@ JSON 错误统一使用 `{error: {code, message, retryable}, requestId}`。前�
 普通主链路无需触发续写即可完成档案、选书、阅读、互动和结束记录；续写为本期有明确边界的P1流程。
 用户范围确认已记录；组长确认及设计PR审核、合并仍待实际完成，不以本文代替正式审批。
 
+API-008/009 返回已授权的续写版本时，儿童可以读取页面和已审核分支。只有家长的版本对象包含 `sourceStoryVersionId` 和 `continuation` 源进度快照。
+
+API-026 只批准同一绘本的续写。源快照中相邻的两页必须由源版本的默认后继或已审核分支连接。快照修订号不得超前，与源会话修订号相同时，当前页和已读路径也须一致。源会话已推进时，按该修订号之前及当次的阅读事件还原路径。与当时实际进度一致的旧快照仍可批准并从头阅读。按源路径逐页继承正文与已冻结的配图，每个决策节点至少有两个不同的目标页。配图对应的内容摘要随版本审批提交。
+
+API-011 普通创建须省略 `sourceReadingSessionId`、`expectedRevision` 和 `clientRequestId`。切换须同时提交这三个非空字段，缺项或显式传 `null` 返回 422 `VALIDATION_ERROR`。遇到已过期的源进度返回 409 `CONTINUATION_STALE`，源会话已经切换则返回 409 `CONTINUATION_ALREADY_SWITCHED`。同键同请求仍重放原结果。切换自动写入的 STARTED 事件不占用客户端的会话事件键。
+
+后继会话保留完整导航路径。阅读小结和成长统计只计入有效路径中从 `startPageNumber` 起的页面。删除源会话后，后继仍返回起读页和继承页数，同时清理与源关联的创建执行记录。删除源快照时，仍依赖它的 `DRAFT` 和 `PENDING_REVIEW` 续写在同一事务内转为 `CHECK_FAILED`。后续审批返回 409 `SESSION_CONFLICT`。此前已批准的版本仍按冻结配图独立阅读。
+
 ## 小结、历史版本与知识修订
+
+儿童模式按服务端时限结算。家长的请求仅处理本人家庭，儿童的请求仅处理当前授权。会话已开始且绘本仍可读时，到期记为 `FINISHED / TIME_LIMIT`，结束时间取授权截止时刻。在提交终态、事实和小结后才派发模型任务。待开始会话到期记为 `INTERRUPTED / GRANT_REVOKED`。若未终结会话的绘本已撤回，记为 `INTERRUPTED / CONTENT_WITHDRAWN`。这两种中断均不生成小结。API-013 为儿童返回绑定会话当前页的事件和 `report=null`，家长可查看本人会话的全部事件及小结。
 
 首次结束阅读在同一事务保存会话终态、事实记录、PENDING小结和供同键重放的原响应。事务外按既有文本模型调用超时生成；仅当小结仍为PENDING时，成功置READY，确定失败置FAILED并保留事实摘要。
 首版单工作进程启动或重启时，在应用就绪前将遗留的PENDING小结条件更新为FAILED，保留事实摘要并将activities置为空数组。恢复不调用模型，保留会话终态、事实记录及原结束响应。

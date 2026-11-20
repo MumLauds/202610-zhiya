@@ -3,17 +3,22 @@
 import asyncio
 import json
 import re
+import sqlite3
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 from pydantic import ValidationError
+from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 from starlette.exceptions import HTTPException
 
+from app.api.v1.auth import authorized_db
+from app.api.v1.storybooks import readable_story_version
 from app.audio_conversion import MAX_UPLOAD_BYTES, normalize_recording
 from app.errors import ServiceError
 from app.schemas.voice import PageVoiceRequest, SynthesisRequest
+from app.services.story_media import MediaDependencyError, parse_asset_key, read_pinned_asset_bytes
 from app.services.voice_access import VoicePrincipal, read_voice_source, recheck_source
 
 router = APIRouter(prefix="/api/v1")
@@ -150,14 +155,49 @@ async def synthesize(request: Request):
             "requestId": request.state.request_id}
 
 
+def _unavailable_read() -> ServiceError:
+    exc = ServiceError("DEPENDENCY_UNAVAILABLE", "服务暂不可用", 503)
+    exc.retryable = True
+    return exc
+
+
+def _read_story_image(request: Request, version_id: int, page_no: int | None) -> Response:
+    try:
+        with authorized_db(request) as (db, principal, failure):
+            if failure is not None:
+                return failure
+            version = readable_story_version(db, principal, version_id)
+            if not version:
+                raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
+            asset = read_pinned_asset_bytes(db, version, page_no)
+            if asset is None:
+                raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
+            data, media_type = asset
+            return Response(data, media_type=media_type, headers={
+                "Cache-Control": "private, no-store",
+                "X-Content-Type-Options": "nosniff",
+            })
+    except (sqlite3.Error, MediaDependencyError):
+        raise _unavailable_read() from None
+
+
 @router.get("/media/{resource_key}", response_class=Response,
-            responses={200: {"content": {"audio/wav": {"schema": {"type": "string", "format": "binary"}}}}})
+            responses={200: {"content": {"audio/wav": {"schema": {"type": "string", "format": "binary"}},
+                                         "image/png": {"schema": {"type": "string", "format": "binary"}},
+                                         "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+                                         "image/webp": {"schema": {"type": "string", "format": "binary"}}}}})
 async def media(request: Request, resource_key: str):
+    asset_target = parse_asset_key(resource_key)
+    if asset_target is not None:
+        return await run_in_threadpool(_read_story_image, request, *asset_target)
     try:
         principal = await authenticate(request, write=False)
         store = request.app.state.voice_media
-        store.expire()
-        value = store.items.get(resource_key) if re.fullmatch(r"audio-[A-Za-z0-9_-]{32}", resource_key) else None
+        if re.fullmatch(r"audio-[A-Za-z0-9_-]{32}", resource_key):
+            value = store.get(resource_key)
+        else:
+            store.expire()
+            value = None
         if value is None or value.principal != principal:
             raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
         recheck_source(principal, value.snapshot)

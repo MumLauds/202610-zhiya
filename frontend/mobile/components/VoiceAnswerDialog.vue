@@ -31,7 +31,6 @@ watch(recorder.state, (state) => {
 onBeforeUnmount(() => {
   clearInterval(timer)
   requestController?.abort()
-  recorder.cancel()
 })
 
 function close() {
@@ -56,15 +55,17 @@ async function submitTranscription() {
   if (!recorder.blob.value) return
   recorder.markTranscribing()
   requestController?.abort()
-  requestController = new AbortController()
+  const controller = new AbortController()
+  requestController = controller
   try {
     const response = await props.voiceApi.transcribe({
       file: recorder.blob.value,
       readingSessionId: props.sessionId,
       pageNumber: props.pageNumber,
       revision: props.revision,
-      signal: requestController.signal,
+      signal: controller.signal,
     })
+    if (controller.signal.aborted) return
     transcript.value = response.data?.text ?? ''
     reliable.value = response.data?.reliable ?? null
     if (!transcript.value) {
@@ -74,9 +75,11 @@ async function submitTranscription() {
     }
     recorder.markReview({ text: transcript.value, reliable: reliable.value })
   } catch (error) {
-    if (error?.code === 'REQUEST_ABORTED') return
+    if (controller.signal.aborted || error?.code === 'REQUEST_ABORTED') return
     recorder.markError(error?.message ?? '转写失败，请重录或手动输入')
     manualMode.value = true
+  } finally {
+    if (requestController === controller) requestController = null
   }
 }
 
@@ -120,11 +123,11 @@ function formatDuration(seconds) {
           class="record-button"
           :class="{ 'is-recording': recorder.recording.value }"
           type="button"
-          :disabled="recorder.state.value === 'transcribing' || recorder.state.value === 'stopping'"
+          :disabled="recorder.busy.value"
           @click="toggleRecording"
         >
           <span class="record-dot" />
-          {{ recorder.recording.value ? `停止录音 ${formatDuration(elapsedSeconds)}` : '开始录音' }}
+          {{ recorder.recording.value ? `停止录音 ${formatDuration(elapsedSeconds)}` : recorder.state.value === 'requesting' ? '等待麦克风权限…' : '开始录音' }}
         </button>
 
         <audio v-if="recorder.objectUrl.value" class="record-preview" :src="recorder.objectUrl.value" controls />
@@ -170,7 +173,7 @@ function formatDuration(seconds) {
       <p v-if="recorder.error.value && !manualMode && recorder.state.value !== 'review'" class="inline-error">
         {{ recorder.error.value }}
       </p>
-      <button v-if="!manualMode && recorder.state.value === 'idle'" class="text-button" type="button" @click="useManualInput">
+      <button v-if="!manualMode && (recorder.state.value === 'idle' || recorder.recording.value || recorder.busy.value)" class="text-button" type="button" @click="useManualInput">
         改用文字输入
       </button>
     </section>

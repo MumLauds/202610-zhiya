@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS story_versions (
         )
     ),
     branching INTEGER NOT NULL CHECK (branching IN (0, 1)),
+    approved_page_media_json TEXT CHECK (approved_page_media_json IS NULL OR
+        (json_valid(approved_page_media_json) AND json_type(approved_page_media_json) = 'object')),
     UNIQUE (storybook_id, version_no),
     CHECK (status NOT IN ('APPROVED_PRIVATE', 'PUBLISHED')
         OR (reviewed_by_id IS NOT NULL AND reviewed_at IS NOT NULL)),
@@ -160,7 +162,7 @@ CREATE TABLE IF NOT EXISTS interaction_events (
     id INTEGER PRIMARY KEY CHECK (id BETWEEN 1 AND 9007199254740991),
     session_id INTEGER NOT NULL,
     version_id INTEGER NOT NULL,
-    request_key TEXT NOT NULL CHECK (length(request_key) BETWEEN 1 AND 64),
+    request_key TEXT CHECK (length(request_key) BETWEEN 1 AND 64),
     request_digest TEXT NOT NULL,
     response_json TEXT NOT NULL CHECK (json_valid(response_json) AND json_type(response_json) = 'object'),
     page_no INTEGER NOT NULL,
@@ -177,6 +179,7 @@ CREATE TABLE IF NOT EXISTS interaction_events (
     revision_after INTEGER NOT NULL CHECK (revision_after >= 0),
     created_at INTEGER NOT NULL,
     UNIQUE (session_id, request_key),
+    CHECK (request_key IS NOT NULL OR event_type = 'STARTED'),
     FOREIGN KEY (session_id, version_id) REFERENCES reading_sessions(id, version_id),
     FOREIGN KEY (version_id, page_no) REFERENCES story_pages(version_id, page_no),
     FOREIGN KEY (branch_id, version_id, page_no) REFERENCES story_branches(id, version_id, from_page_no)
@@ -208,6 +211,7 @@ CREATE TABLE IF NOT EXISTS request_executions (
     response_status INTEGER,
     response_body TEXT CHECK (response_body IS NULL OR
         (json_valid(response_body) AND json_type(response_body) = 'object')),
+    source_reading_session_id INTEGER REFERENCES reading_sessions(id) ON DELETE CASCADE,
     UNIQUE (scope_type, scope_id, client_request_id),
     CHECK (
         (scope_type = 'SESSION_EVENT' AND session_id IS NOT NULL AND scope_id = session_id)

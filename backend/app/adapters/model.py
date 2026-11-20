@@ -12,10 +12,14 @@ class ModelAdapter:
 
     async def generate(self, request: ModelGenerateRequest) -> ModelGenerateResult:
         try:
+            kwargs = {}
+            if request.timeout_seconds is not None:
+                kwargs["timeout_seconds"] = request.timeout_seconds
             text = await self._gateway.generate(
                 input_text=request.user_input,
                 system_prompt=request.system_prompt,
                 context_text=request.context_text,
+                **kwargs,
             )
         except ServiceError as exc:
             # Keep invalid input and unrelated errors visible to the caller.

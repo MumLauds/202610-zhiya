@@ -27,6 +27,7 @@ class ModelGenerateRequest(BaseModel):
     system_prompt: str
     context_text: str
     user_input: str
+    timeout_seconds: Optional[float] = None
 
 class ModelGenerateResult(BaseModel):
     success: bool

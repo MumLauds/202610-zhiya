@@ -45,6 +45,10 @@ export class DemoReadingSessionsApi {
       if (this.session.status !== 'IN_PROGRESS' || payload.pageNumber < 1 || payload.pageNumber > this.book.pages.length) {
         throw demoError('SESSION_CONFLICT', '当前页面不允许翻到目标页', 409)
       }
+    } else if (payload.eventType === 'ANSWER') {
+      if (this.session.status !== 'IN_PROGRESS' || payload.pageNumber !== this.session.currentPage) {
+        throw demoError('SESSION_CONFLICT', '请在当前页回答', 409)
+      }
     } else {
       throw demoError('VALIDATION_ERROR', '演示接口不支持该事件类型', 422)
     }
@@ -54,6 +58,7 @@ export class DemoReadingSessionsApi {
     const event = {
       interactionEventId: this.events.length + 800,
       eventType: payload.eventType,
+      ...(payload.eventType === 'ANSWER' ? { inputText: payload.inputText } : {}),
       pageNumber: payload.pageNumber,
     }
     this.events.push(event)

@@ -9,14 +9,17 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.background import BackgroundTasks as StarletteBackgroundTasks
 from starlette.exceptions import HTTPException
 
 from app.api.v1.health import router as health_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.profiles import router as profiles_router
 from app.api.v1.storybooks import router as storybooks_router
+from app.api.v1.story_generations import router as story_generations_router
 from app.api.v1.voice import router as voice_router
 from app.api.v1.reading_sessions import router as reading_sessions_router
+from app.api.v1.guidance import router as guidance_router
 from app.adapters.model import ModelAdapter
 from app.config import Settings
 from app.errors import ServiceError
@@ -59,7 +62,7 @@ def create_app(settings: Settings | None = None, speech_settings: SpeechSettings
                 expiry_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await expiry_task
-                app.state.voice_media.items.clear()
+                app.state.voice_media.clear()
 
     app = FastAPI(title="知芽后端", version="0.1.0", lifespan=lifespan)
     app.state.voice_auth = voice_auth if voice_auth is not None else GuardianVoiceAuthenticator()
@@ -69,12 +72,21 @@ def create_app(settings: Settings | None = None, speech_settings: SpeechSettings
     @app.middleware("http")
     async def request_context(request: Request, call_next):
         request.state.request_id = uuid4().hex
+        request.state.deferred_reports = []
         started = perf_counter()
         try:
             response = await call_next(request)
         except Exception:
             error = ServiceError("INTERNAL_ERROR", "服务暂时不可用", 500)
             response = JSONResponse(error.as_response(request.state.request_id), status_code=500)
+        deferred = getattr(request.state, "deferred_reports", None)
+        if deferred:
+            bg = StarletteBackgroundTasks()
+            if response.background is not None:
+                bg.add_task(response.background)
+            for fn, args, kwargs in deferred:
+                bg.add_task(fn, *args, **kwargs)
+            response.background = bg
         response.headers["X-Request-ID"] = request.state.request_id
         route = request.scope.get("route")
         logger.info("http_request request_id=%s route=%s status=%d duration_ms=%d",
@@ -105,8 +117,10 @@ def create_app(settings: Settings | None = None, speech_settings: SpeechSettings
     app.include_router(auth_router)
     app.include_router(profiles_router)
     app.include_router(storybooks_router)
+    app.include_router(story_generations_router)
     app.include_router(voice_router)
     app.include_router(reading_sessions_router)
+    app.include_router(guidance_router)
 
     return app
 

@@ -1,0 +1,8 @@
+services:
+  backend:
+    environment:
+      ZHIYA_MEDIA_ROOT: ${G15_MEDIA_ROOT:-}
+volumes:
+  sqlite-data:
+    external: true
+    name: ${G15_VOLUME:?Set the new rehearsal volume}

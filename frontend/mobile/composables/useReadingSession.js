@@ -1,12 +1,13 @@
 import { computed, reactive, ref } from 'vue'
 import { ReadingSessionMachine, RecoverableSessionError } from '../services/readingSessionMachine'
 
-export function useReadingSession({ api, initialSessionId = null, childProfileId, storyVersionId }) {
+export function useReadingSession({ api, initialSessionId = null, initialSnapshot = null, childProfileId, storyVersionId }) {
   const state = reactive({
     session: null,
     events: [],
     report: null,
     pending: false,
+    syncRequired: false,
     lastRequestId: null,
   })
   const loading = ref(false)
@@ -14,12 +15,13 @@ export function useReadingSession({ api, initialSessionId = null, childProfileId
   const notice = ref('')
   const lastAgentResult = ref(null)
   const machine = new ReadingSessionMachine({
-    api,
+    api, initialSnapshot,
     onChange(snapshot) {
       state.session = snapshot.session
       state.events = snapshot.events
       state.report = snapshot.report
       state.pending = snapshot.pending
+      state.syncRequired = snapshot.syncRequired
       state.lastRequestId = snapshot.lastRequestId
     },
   })
@@ -44,7 +46,8 @@ export function useReadingSession({ api, initialSessionId = null, childProfileId
     loading.value = true
     clearMessages()
     try {
-      if (initialSessionId) await machine.restore(initialSessionId)
+      if (initialSnapshot) Object.assign(state, machine.snapshot())
+      else if (initialSessionId) await machine.restore(initialSessionId)
       else await machine.create({ childProfileId, storyVersionId })
       return state.session
     } catch (cause) {
@@ -85,6 +88,16 @@ export function useReadingSession({ api, initialSessionId = null, childProfileId
     }
   }
 
+  async function answer(text) {
+    clearMessages()
+    try {
+      return await machine.answer(text)
+    } catch (cause) {
+      describeError(cause)
+      throw cause
+    }
+  }
+
   async function guidance(feedback) {
     clearMessages()
     try {
@@ -113,6 +126,7 @@ export function useReadingSession({ api, initialSessionId = null, childProfileId
     if (!state.session) return null
     clearMessages()
     try {
+      if (state.syncRequired) return await machine.reconcile()
       return await machine.restore(state.session.readingSessionId)
     } catch (cause) {
       describeError(cause)
@@ -132,6 +146,7 @@ export function useReadingSession({ api, initialSessionId = null, childProfileId
     start,
     changePage,
     finish,
+    answer,
     guidance,
     askQuestion,
     restore,

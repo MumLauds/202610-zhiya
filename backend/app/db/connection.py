@@ -2,11 +2,20 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
+from app.core.config import database_path
+
 BUSINESS_TABLES = frozenset({
     "accounts", "auth_sessions", "child_profiles", "storybooks", "story_versions",
     "story_pages", "story_branches", "child_grants", "child_grant_books", "reading_sessions",
     "interaction_events", "reading_reports", "request_executions", "knowledge_items", "event_evidence",
 })
+
+
+def connect(timeout: float = 5.0) -> sqlite3.Connection:
+    db = sqlite3.connect(f"{database_path().as_uri()}?mode=rw", uri=True, timeout=timeout)
+    db.row_factory = sqlite3.Row
+    db.execute("PRAGMA foreign_keys = ON")
+    return db
 
 
 def database_ready(path: Path) -> bool:

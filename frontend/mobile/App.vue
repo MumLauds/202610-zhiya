@@ -1,19 +1,23 @@
 <script setup>
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { countReadPages } from '../src/data/readingProgress'
 import demoBooks from './data/demo-books.json'
 import ReaderView from './components/ReaderView.vue'
 import BookDetailView from './components/BookDetailView.vue'
 import { DemoReadingSessionsApi, DemoVoiceApi } from './api/demo'
 import { ReadingSessionsApi } from './api/readingSessions'
 import { VoiceApi } from './api/voice'
+import { ApiError, readCookie, requestJson } from './api/client'
+import { LiveBooksApi } from './api/liveBooks'
 
-const STORAGE_KEY = 'zhiya_vue_reading_records'
+const STORAGE_KEY = 'zhiya_vue_demo_reading_records'
 const SHELF_KEY = 'zhiya_vue_private_shelf'
 const FAVORITE_KEY = 'zhiya_vue_favorites'
 const RECENT_KEY = 'zhiya_vue_recent_books'
 const configuredAssetBase = import.meta.env.VITE_ASSET_BASE || import.meta.env.BASE_URL
 const assetBase = configuredAssetBase.endsWith('/') ? configuredAssetBase : `${configuredAssetBase}/`
 const resolveAsset = (value) => value?.startsWith('/') ? `${assetBase}${value.slice(1)}` : value
+const placeholder = resolveAsset('/assets/image-placeholder.svg')
 const books = demoBooks.books.map((book) => ({
   ...book,
   cover: resolveAsset(book.cover),
@@ -26,7 +30,7 @@ const detailBook = ref(null)
 const detailOrigin = ref('home')
 const readerConfig = ref(null)
 const childProfileId = ref(1)
-const storyVersionId = ref(books[0].storyVersionId)
+const storyVersionId = ref('')
 const sessionId = ref('')
 const searchQuery = ref('')
 const libraryAge = ref('全部')
@@ -38,11 +42,33 @@ const originalTheme = ref('勇气')
 const originalCharacter = ref('小狐狸')
 const originalScene = ref('雨后森林')
 const originalNotice = ref('')
-const readingRecords = ref(loadRecords())
+const demoRecords = ref(loadRecords())
+const liveRecords = ref([])
+const liveBooks = ref([])
+const liveBookPage = ref(0)
+const historyPage = ref(0)
+const moreLiveBooks = ref(true)
+const moreHistory = ref(true)
+const booksPending = ref(false)
+const historyPending = ref(false)
+const readerPending = ref(false)
+const booksError = ref('')
+const historyError = ref('')
+const readerError = ref('')
+const pageSize = 20
+let accountCookie = ''
+let accountScope
+let accountTimer
+let historyGeneration = 0
+const liveFilteredBooks = computed(() => liveBooks.value.filter((book) =>
+  book.title.toLowerCase().includes(searchQuery.value.trim().toLowerCase())))
+const recordCount = computed(() => mode.value === 'live' ? liveRecords.value.length : demoRecords.value.length)
 const shelfIds = ref(loadShelf())
 const favoriteIds = ref(loadFavorites())
 const recentBookIds = ref(loadRecent())
-const liveReady = computed(() => Number.isInteger(childProfileId.value) && childProfileId.value > 0)
+const validId = (value) => Number.isSafeInteger(value) && value > 0
+const liveReady = computed(() => validId(Number(sessionId.value)) ||
+  (validId(childProfileId.value) && validId(storyVersionId.value)))
 const ageOptions = ['全部', '3-4 岁', '4-5 岁', '5-6 岁']
 const themeOptions = ['全部', ...new Set(books.flatMap((book) => book.themes))]
 const shelfBooks = computed(() => books.filter((book) => shelfIds.value.includes(book.storyVersionId)))
@@ -78,7 +104,7 @@ function loadShelf() {
     return Array.isArray(value) ? value : []
   } catch { return [] }
 }
-function saveRecords() { localStorage.setItem(STORAGE_KEY, JSON.stringify(readingRecords.value.slice(0, 30))) }
+function saveRecords() { localStorage.setItem(STORAGE_KEY, JSON.stringify(demoRecords.value.slice(0, 30))) }
 function saveShelf() { localStorage.setItem(SHELF_KEY, JSON.stringify(shelfIds.value)) }
 function loadFavorites() {
   try { const value = JSON.parse(localStorage.getItem(FAVORITE_KEY) || '[]'); return Array.isArray(value) ? value : [] } catch { return [] }
@@ -91,8 +117,8 @@ function recordRecent(book) {
   recentBookIds.value = [book.storyVersionId, ...recentBookIds.value.filter((id) => id !== book.storyVersionId)].slice(0, 12)
   localStorage.setItem(RECENT_KEY, JSON.stringify(recentBookIds.value))
 }
-function selectTab(tab) { activeTab.value = tab; detailBook.value = null }
-function chooseBook(book) { selectedBook.value = book; storyVersionId.value = book.storyVersionId }
+function selectTab(tab) { activeTab.value = tab; detailBook.value = null; readerError.value = '' }
+function chooseBook(book) { selectedBook.value = book }
 function openBookDetail(book, origin = activeTab.value) { chooseBook(book); recordRecent(book); selectedBook.value = book; detailOrigin.value = origin; detailBook.value = book; activeTab.value = 'detail' }
 function closeDetail() { activeTab.value = detailOrigin.value; detailBook.value = null }
 function nextRecommendation() { recommendationIndex.value = (recommendationIndex.value + 1) % books.length }
@@ -122,18 +148,189 @@ function startDemo(book = selectedBook.value) {
   selectedBook.value = book
   readerConfig.value = { key: `demo-${book.storyVersionId}-${Date.now()}`, mode: 'demo', book, sessionApi: new DemoReadingSessionsApi({ book }), voiceApi: new DemoVoiceApi(), childProfileId: 1, storyVersionId: book.storyVersionId, initialSessionId: null }
 }
-function startLive() {
-  const book = books.find((item) => item.storyVersionId === storyVersionId.value) ?? selectedBook.value
-  readerConfig.value = { key: `live-${storyVersionId.value}-${Date.now()}`, mode: 'live', book, sessionApi: new ReadingSessionsApi(), voiceApi: new VoiceApi(), childProfileId: childProfileId.value, storyVersionId: storyVersionId.value, initialSessionId: Number(sessionId.value) || null }
+function imageFallback(event) {
+  if (event.target.getAttribute('src') !== placeholder) event.target.src = placeholder
 }
-function startBook(book) {
-  chooseBook(book)
-  if (mode.value === 'live') startLive()
-  else startDemo(book)
+
+function scopeIsCurrent(scope) {
+  return scope && accountScope === scope && !scope.signal.aborted && mode.value === 'live' &&
+    readCookie('zhiya_csrf') === accountCookie
 }
-function exitReader() { readerConfig.value = null; activeTab.value = 'home' }
+
+function accountRequest(scope) {
+  const csrfToken = accountCookie
+  return async (path, options) => {
+    if (!scopeIsCurrent(scope)) throw new ApiError('登录状态已变更')
+    const signal = options?.signal ? AbortSignal.any([scope.signal, options.signal]) : scope.signal
+    const result = await requestJson(path, { ...options, signal, csrfToken })
+    if (!scopeIsCurrent(scope)) throw new ApiError('登录状态已变更')
+    return result
+  }
+}
+
+function invalidateHistory() {
+  historyGeneration += 1
+  liveRecords.value = []
+  historyPage.value = 0
+  moreHistory.value = true
+  historyPending.value = false
+  historyError.value = ''
+}
+
+function clearLiveData() {
+  invalidateHistory()
+  liveBooks.value = []
+  liveBookPage.value = 0
+  moreLiveBooks.value = true
+  booksPending.value = readerPending.value = false
+  booksError.value = readerError.value = ''
+}
+
+function resetLiveInputs() {
+  childProfileId.value = 1
+  storyVersionId.value = sessionId.value = ''
+}
+
+function refreshLiveView() {
+  if (mode.value !== 'live') return
+  if ((activeTab.value === 'library' || activeTab.value === 'growth') && !liveBookPage.value && !booksError.value) void loadLiveBooks()
+  if (activeTab.value === 'growth' && !historyPage.value && !historyError.value) void loadHistory()
+}
+
+function syncAccount() {
+  const cookie = readCookie('zhiya_csrf')
+  if (mode.value !== 'live' || (accountScope && cookie === accountCookie)) return
+  const changed = Boolean(accountScope)
+  accountScope?.abort()
+  accountCookie = cookie
+  accountScope = new AbortController()
+  if (changed) {
+    resetLiveInputs()
+    if (readerConfig.value) exitReader()
+  }
+  clearLiveData()
+  refreshLiveView()
+  return changed
+}
+
+watch(mode, () => {
+  accountScope?.abort()
+  accountScope = undefined
+  resetLiveInputs()
+  if (readerConfig.value) exitReader()
+  if (activeTab.value === 'detail' || activeTab.value === 'shelf') selectTab('home')
+  clearLiveData()
+  syncAccount()
+}, { flush: 'sync' })
+watch(activeTab, refreshLiveView)
+onMounted(() => {
+  window.addEventListener('focus', syncAccount)
+  document.addEventListener('visibilitychange', syncAccount)
+  accountTimer = setInterval(syncAccount, 1000)
+})
+onUnmounted(() => {
+  window.removeEventListener('focus', syncAccount)
+  document.removeEventListener('visibilitychange', syncAccount)
+  clearInterval(accountTimer)
+  accountScope?.abort()
+})
+
+async function loadLiveBooks() {
+  if (booksPending.value || !moreLiveBooks.value) return
+  const scope = accountScope
+  const page = liveBookPage.value + 1
+  booksPending.value = true
+  booksError.value = ''
+  try {
+    const items = await new LiveBooksApi(placeholder, accountRequest(scope)).list(page, pageSize)
+    if (!scopeIsCurrent(scope)) return
+    liveBooks.value.push(...items)
+    liveBookPage.value = page
+    moreLiveBooks.value = items.length === pageSize
+  } catch (error) {
+    if (scopeIsCurrent(scope)) booksError.value = error.message
+  } finally {
+    if (scopeIsCurrent(scope)) booksPending.value = false
+  }
+}
+
+async function loadHistory() {
+  if (historyPending.value || !moreHistory.value) return
+  const scope = accountScope
+  const page = historyPage.value + 1
+  const generation = ++historyGeneration
+  const isCurrent = () => scopeIsCurrent(scope) && generation === historyGeneration
+  historyPending.value = true
+  historyError.value = ''
+  try {
+    const { data } = await new ReadingSessionsApi(accountRequest(scope)).list({ page, pageSize })
+    if (!isCurrent()) return
+    liveRecords.value.push(...data.items)
+    historyPage.value = page
+    moreHistory.value = data.items.length === pageSize
+  } catch (error) {
+    if (isCurrent()) historyError.value = error.message
+  } finally {
+    if (isCurrent()) historyPending.value = false
+  }
+}
+
+function historyBook(record) {
+  return liveBooks.value.find((book) => book.storyVersionId === record.storyVersionId)
+}
+
+async function startLive({ versionId = storyVersionId.value, restoreId = sessionId.value === '' ? null : Number(sessionId.value) } = {}) {
+  if (syncAccount() || readerPending.value) return
+  const profileId = childProfileId.value
+  if (restoreId !== null && !validId(restoreId)) {
+    readerError.value = '请输入有效的恢复会话 ID'
+    return
+  }
+  if (restoreId === null && (!validId(profileId) || !validId(versionId))) {
+    readerError.value = '请输入有效的儿童档案 ID 和故事版本 ID'
+    return
+  }
+  const scope = accountScope
+  const origin = activeTab.value
+  const request = accountRequest(scope)
+  const sessionApi = new ReadingSessionsApi(request)
+  readerPending.value = true
+  readerError.value = ''
+  try {
+    let initialSnapshot = null
+    if (restoreId !== null) {
+      const result = await sessionApi.get(restoreId)
+      initialSnapshot = result.data
+      if (initialSnapshot?.session?.readingSessionId !== restoreId || !validId(initialSnapshot.session.storyVersionId)) {
+        throw new ApiError('服务端未返回该会话的绘本版本')
+      }
+      versionId = initialSnapshot.session.storyVersionId
+    }
+    const book = await new LiveBooksApi(placeholder, request).get(versionId)
+    if (!scopeIsCurrent(scope) || origin !== activeTab.value) return
+    if (initialSnapshot && !book.pages.some((page) => page.page === initialSnapshot.session.currentPage)) {
+      throw new ApiError('服务端会话的当前页在该绘本版本中不可用')
+    }
+    readerConfig.value = {
+      key: `live-${versionId}-${Date.now()}`, mode: 'live', book, sessionApi,
+      voiceApi: new VoiceApi(request), childProfileId: profileId, storyVersionId: versionId,
+      initialSessionId: initialSnapshot?.session.readingSessionId ?? null, initialSnapshot,
+    }
+  } catch (error) {
+    if (scopeIsCurrent(scope) && origin === activeTab.value) readerError.value = error.message
+  } finally {
+    if (scopeIsCurrent(scope)) readerPending.value = false
+  }
+}
+
+function exitReader() {
+  if (readerConfig.value?.mode === 'live') invalidateHistory()
+  readerConfig.value = null
+  activeTab.value = 'home'
+}
 function handleReadingFinished({ book, session, report }) {
-  readingRecords.value.unshift({ id: `record-${Date.now()}`, title: book.title, cover: book.cover, pages: session.visitedPageNumbers?.length ?? 0, summary: report?.summary || '', date: new Date().toLocaleDateString('zh-CN'), revision: session.revision })
+  if (readerConfig.value?.mode !== 'demo') return
+  demoRecords.value.unshift({ id: `record-${Date.now()}`, title: book.title, cover: book.cover, pages: session.visitedPageNumbers?.length ?? 0, summary: report?.summary || '', date: new Date().toLocaleDateString('zh-CN'), revision: session.revision })
   saveRecords()
 }
 async function openSearch() { activeTab.value = 'library'; detailBook.value = null; await nextTick(); searchInput.value?.focus() }
@@ -142,7 +339,7 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
 </script>
 
 <template>
-  <ReaderView v-if="readerConfig" :key="readerConfig.key" :book="readerConfig.book" :mode="readerConfig.mode" :session-api="readerConfig.sessionApi" :voice-api="readerConfig.voiceApi" :child-profile-id="readerConfig.childProfileId" :story-version-id="readerConfig.storyVersionId" :initial-session-id="readerConfig.initialSessionId" @exit="exitReader" @finished="handleReadingFinished" />
+  <ReaderView v-if="readerConfig" :key="readerConfig.key" :book="readerConfig.book" :mode="readerConfig.mode" :session-api="readerConfig.sessionApi" :voice-api="readerConfig.voiceApi" :child-profile-id="readerConfig.childProfileId" :story-version-id="readerConfig.storyVersionId" :initial-session-id="readerConfig.initialSessionId" :initial-snapshot="readerConfig.initialSnapshot" @exit="exitReader" @finished="handleReadingFinished" />
 
   <div v-else class="library-shell">
     <header v-if="activeTab !== 'detail'" class="app-header">
@@ -157,8 +354,9 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
     </header>
 
     <main class="mobile-main">
+      <p v-if="mode === 'live' && readerError" class="inline-error" role="alert">{{ readerError }}</p>
       <template v-if="activeTab === 'home'">
-        <section class="ranking-section">
+        <section v-if="mode === 'demo'" class="ranking-section">
           <div class="ranking-head">
             <div><p class="eyebrow">知芽精选</p><h1>今日推荐</h1></div>
             <button class="text-button" type="button" @click="selectTab('library')">完整榜单 →</button>
@@ -173,14 +371,15 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
         <section v-if="mode === 'live'" class="live-panel">
           <div class="panel-title"><div><p class="eyebrow">实机会话</p><h2>连接本地后端</h2></div><span class="status-dot">API</span></div>
           <p class="panel-copy">需先登录同一后端。填写已有会话 ID 时优先恢复；留空则创建新的亲子阅读会话。</p>
-          <form class="setup-form" @submit.prevent="startLive">
-            <label><span>儿童档案 ID</span><input v-model.number="childProfileId" type="number" min="1" required inputmode="numeric"></label>
-            <label><span>故事版本 ID</span><input v-model.number="storyVersionId" type="number" min="1" required inputmode="numeric"></label>
+          <form class="setup-form" @submit.prevent="startLive()">
+            <label><span>儿童档案 ID</span><input v-model.number="childProfileId" type="number" min="1" :required="!sessionId" inputmode="numeric"></label>
+            <label><span>故事版本 ID</span><input v-model.number="storyVersionId" type="number" min="1" :required="!sessionId" inputmode="numeric"></label>
             <label class="wide-field"><span>恢复会话 ID（可选）</span><input v-model="sessionId" type="number" min="1" placeholder="例如 401" inputmode="numeric"></label>
-            <button class="button button-primary button-wide" type="submit" :disabled="!liveReady">进入实机阅读</button>
+            <button class="button button-primary button-wide" type="submit" :disabled="!liveReady || readerPending">{{ readerPending ? '加载绘本…' : '进入实机阅读' }}</button>
+            <button class="button button-ghost button-wide" type="button" @click="selectTab('library')">打开实机绘本馆</button>
           </form>
         </section>
-        <section class="recent-section">
+        <section v-if="mode === 'demo'" class="recent-section">
           <div class="ranking-head compact-head"><div><p class="eyebrow">继续上次</p><h1>最近阅读</h1></div><button class="text-button" type="button" @click="selectTab('library')">查看全部 →</button></div>
           <div v-if="recentBooks.length" class="recent-grid">
             <button v-for="book in recentBooks" :key="book.storyVersionId" class="recent-book" type="button" @click="openBookDetail(book, 'home')">
@@ -195,6 +394,22 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
       </template>
 
 
+      <template v-else-if="activeTab === 'library' && mode === 'live'">
+        <section class="inner-page-head"><div><p class="eyebrow">实机绘本馆</p><h1>找一本一起读</h1></div></section>
+        <label class="search-box"><span>⌕</span><input ref="searchInput" v-model="searchQuery" type="search" placeholder="搜索已加载的书名"></label>
+        <label>儿童档案 ID <input v-model.number="childProfileId" type="number" min="1" inputmode="numeric"></label>
+        <p v-if="booksError" class="inline-error" role="alert">{{ booksError }}</p>
+        <p v-if="booksPending" role="status">加载绘本中…</p>
+        <p v-else-if="!liveFilteredBooks.length && !booksError">没有匹配的绘本。</p>
+        <div class="library-phone-grid">
+          <button v-for="book in liveFilteredBooks" :key="book.storyVersionId" class="library-phone-card" type="button" :disabled="readerPending" @click="startLive({ versionId: book.storyVersionId, restoreId: null })">
+            <img :key="book.cover" :src="book.cover" :alt="book.title" @error="imageFallback"><strong>{{ book.title }}</strong>
+          </button>
+        </div>
+        <p v-if="readerPending" role="status">加载阅读内容…</p>
+        <button v-if="moreLiveBooks && !booksPending" class="button button-ghost" type="button" @click="loadLiveBooks">{{ booksError ? '重试' : '加载更多绘本' }}</button>
+      </template>
+
       <template v-else-if="activeTab === 'library'">
         <section class="inner-page-head"><div><p class="eyebrow">绘本馆</p><h1>找一本一起读</h1></div><span>{{ filteredBooks.length }} 本</span></section>
         <label class="search-box"><span>⌕</span><input ref="searchInput" v-model="searchQuery" type="search" placeholder="搜索书名、主题或编号"></label>
@@ -202,7 +417,7 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
         <div class="filter-row secondary"><button v-for="theme in themeOptions" :key="theme" :class="{ active: libraryTheme === theme }" type="button" @click="libraryTheme = theme">{{ theme }}</button></div>
         <div v-if="filteredBooks.length" class="library-phone-grid"><button v-for="book in filteredBooks" :key="book.storyVersionId" class="library-phone-card" :class="{ selected: selectedBook.storyVersionId === book.storyVersionId }" type="button" @click="openBookDetail(book, 'library')"><img :src="book.cover" :alt="book.title"><strong>{{ book.title }}</strong><small>{{ book.age }} · {{ book.themes[0] }}</small></button></div>
         <div v-else class="empty-state compact"><span>⌕</span><strong>没有找到匹配绘本</strong><p>换一个年龄或主题试试。</p></div>
-        <div class="library-start-bar"><div><small>已选择</small><strong>{{ selectedBook.title }}</strong></div><button class="button button-primary" type="button" @click="openReader">开始阅读</button></div>
+        <div class="library-start-bar"><div><small>已选择</small><strong>{{ selectedBook.title }}</strong></div><button class="button button-primary" type="button" @click="startDemo()">开始阅读</button></div>
       </template>
 
       <template v-else-if="activeTab === 'original'">
@@ -215,17 +430,34 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
           <button class="button button-primary button-wide" type="button" @click="generateOriginalDraft">生成故事草稿</button>
         </section>
         <p v-if="originalNotice" class="inline-notice">{{ originalNotice }}</p>
-        <section class="info-panel"><strong>原型模板</strong><p>可以先用现有绘本进入阅读页，检查会话、转写和互动流程。生成式故事接口接入后再替换这里。</p><button class="button button-ghost button-small" type="button" @click="useStoryTemplate(books[0])">用《{{ books[0].title }}》体验</button></section>
+        <section v-if="mode === 'demo'" class="info-panel"><strong>原型模板</strong><p>可以先用现有绘本进入阅读页，检查会话、转写和互动流程。生成式故事接口接入后再替换这里。</p><button class="button button-ghost button-small" type="button" @click="useStoryTemplate(books[0])">用《{{ books[0].title }}》体验</button></section>
       </template>
 
       <template v-else-if="activeTab === 'growth'">
-        <section class="inner-page-head"><div><p class="eyebrow">成长记录</p><h1>每一次共读</h1></div><span>{{ readingRecords.length }} 条</span></section>
-        <div v-if="readingRecords.length" class="record-list"><article v-for="record in readingRecords" :key="record.id" class="record-card"><img :src="record.cover" :alt="record.title"><div><strong>{{ record.title }}</strong><span>{{ record.date }} · {{ record.pages }} 页 · rev {{ record.revision }}</span><p>{{ record.summary || '本次没有可展示的小结内容。' }}</p></div></article></div>
+        <section class="inner-page-head"><div><p class="eyebrow">成长记录</p><h1>每一次共读</h1></div><span>{{ recordCount }} 条</span></section>
+        <template v-if="mode === 'live'">
+          <p v-if="historyError" class="inline-error" role="alert">{{ historyError }}</p>
+          <p v-if="historyPending" role="status">加载阅读记录中…</p>
+          <div v-if="liveRecords.length" class="record-list">
+            <article v-for="record in liveRecords" :key="record.readingSessionId" class="record-card">
+              <img :src="historyBook(record)?.cover || placeholder" alt="" @error="imageFallback">
+              <div>
+                <strong>{{ historyBook(record)?.title || `绘本版本 ${record.storyVersionId}` }}</strong>
+                <span>{{ countReadPages(record) }} 页 · {{ { CREATED: '未开始', IN_PROGRESS: '进行中', FINISHED: '已完成', INTERRUPTED: '已中断' }[record.status] }}</span>
+                <button class="button button-ghost button-small" type="button" :disabled="readerPending" @click="startLive({ restoreId: record.readingSessionId })">打开会话 {{ record.readingSessionId }}</button>
+              </div>
+            </article>
+          </div>
+          <p v-else-if="!historyPending && !historyError">还没有阅读记录。</p>
+          <p v-if="readerPending" role="status">加载阅读内容…</p>
+          <button v-if="moreHistory && !historyPending" class="button button-ghost" type="button" @click="loadHistory">{{ historyError ? '重试' : '加载更多记录' }}</button>
+        </template>
+        <div v-else-if="demoRecords.length" class="record-list"><article v-for="record in demoRecords" :key="record.id" class="record-card"><img :src="record.cover" :alt="record.title"><div><strong>{{ record.title }}</strong><span>{{ record.date }} · {{ record.pages }} 页 · rev {{ record.revision }}</span><p>{{ record.summary || '本次没有可展示的小结内容。' }}</p></div></article></div>
         <div v-else class="empty-state"><span>叶</span><strong>还没有阅读记录</strong><p>完成一次阅读后，记录会出现在这里。</p><button class="button button-primary button-small" type="button" @click="selectTab('library')">去绘本馆</button></div>
       </template>
 
       <template v-else-if="activeTab === 'detail' && detailBook">
-        <BookDetailView :book="detailBook" :in-shelf="isInShelf(detailBook)" :is-favorite="isFavorite(detailBook)" @back="closeDetail" @toggle-shelf="toggleShelf" @toggle-favorite="toggleFavorite" @start="startBook" />
+        <BookDetailView :book="detailBook" :in-shelf="isInShelf(detailBook)" :is-favorite="isFavorite(detailBook)" @back="closeDetail" @toggle-shelf="toggleShelf" @toggle-favorite="toggleFavorite" @start="startDemo" />
       </template>
 
       <template v-else-if="activeTab === 'shelf'">
@@ -242,8 +474,8 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
         <section class="inner-page-head"><div><p class="eyebrow">家长中心</p><h1>芽芽的阅读空间</h1></div></section>
         <article class="profile-card"><span class="profile-avatar">禾</span><div><strong>芽芽</strong><p>3-4 岁 · 喜欢动物和勇气</p></div></article>
         <section class="settings-list">
-          <button class="setting-row" type="button" @click="selectTab('shelf')"><span>我的书架</span><b>{{ shelfBooks.length }} 本 →</b></button>
-          <button class="setting-row" type="button" @click="selectTab('growth')"><span>阅读记录</span><b>{{ readingRecords.length }} 条 →</b></button>
+          <button v-if="mode === 'demo'" class="setting-row" type="button" @click="selectTab('shelf')"><span>我的书架</span><b>{{ shelfBooks.length }} 本 →</b></button>
+          <button class="setting-row" type="button" @click="selectTab('growth')"><span>阅读记录</span><b>{{ mode === 'demo' ? `${recordCount} 条 →` : '查看 →' }}</b></button>
           <div class="setting-row"><span>运行模式</span><b>{{ mode === 'demo' ? '原型演示' : '实机接口' }}</b></div>
           <button class="setting-row" type="button" @click="mode = mode === 'demo' ? 'live' : 'demo'"><span>切换模式</span><b>当前：{{ mode === 'demo' ? '演示' : '实机' }} →</b></button>
         </section>

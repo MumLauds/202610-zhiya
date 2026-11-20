@@ -18,16 +18,18 @@ const RECOVERABLE_CODES = new Set([
 ])
 
 export class ReadingSessionMachine {
-  constructor({ api, onChange, keyFactory = createClientEventId, sleep = defaultSleep }) {
+  constructor({ api, onChange, initialSnapshot, keyFactory = createClientEventId, sleep = defaultSleep }) {
     this.api = api
     this.onChange = onChange ?? (() => {})
     this.keyFactory = keyFactory
     this.sleep = sleep
-    this.session = null
-    this.events = []
-    this.report = null
+    this.session = initialSnapshot?.session ?? null
+    this.events = initialSnapshot?.events ?? []
+    this.report = initialSnapshot?.report ?? null
     this.lastRequestId = null
     this.pending = false
+    this.syncRequired = false
+    this.unconfirmed = null
   }
 
   snapshot() {
@@ -37,6 +39,7 @@ export class ReadingSessionMachine {
       report: this.report,
       lastRequestId: this.lastRequestId,
       pending: this.pending,
+      syncRequired: this.syncRequired,
     }
   }
 
@@ -73,6 +76,8 @@ export class ReadingSessionMachine {
     this._emit()
     try {
       const result = await this.api.get(sessionId, { signal })
+      if (result.data.session.revision !== this.unconfirmed?.revision) this.unconfirmed = null
+      this.syncRequired = Boolean(this.unconfirmed)
       this._setSnapshot(result.data, result.requestId)
       return this.snapshot()
     } finally {
@@ -144,6 +149,20 @@ export class ReadingSessionMachine {
     })
   }
 
+  async answer(inputText) {
+    const text = inputText.trim()
+    if (!text || [...text].length > 200) throw new Error('回答应为 1 至 200 个字符')
+    if (this.session?.status !== 'IN_PROGRESS') throw new Error('请先开始阅读')
+    const payload = {
+      eventType: 'ANSWER', inputText: text, pageNumber: this.session.currentPage,
+      expectedRevision: this.session.revision, clientEventId: this.keyFactory('answer'),
+    }
+    return this._runMutation({
+      request: () => this.api.addEvent(this.session.readingSessionId, payload),
+      apply: (data) => { this.session = { ...this.session, revision: data.revision } },
+    })
+  }
+
   async guidance(feedback, {
     pageNumber = this.session?.currentPage,
     signal,
@@ -188,9 +207,21 @@ export class ReadingSessionMachine {
     })
   }
 
-  async _runMutation({ request, apply, result = false, signal }) {
+  async reconcile() {
+    await this.restore(this.session.readingSessionId)
+    const retry = this.unconfirmed
+    if (!retry) return this.snapshot()
+    if (Date.now() < retry.retryAt) throw new Error('原请求仍在处理，请稍后再核对。')
+    this.unconfirmed = null
+    this.syncRequired = false
+    return this._runMutation(retry.operation)
+  }
+
+  async _runMutation(operation) {
+    const { request, apply, result = false, signal } = operation
     if (!this.session) throw new Error('尚无阅读会话')
     if (this.pending) throw new Error('已有请求正在处理')
+    if (this.syncRequired) throw new Error('请先重新核对会话进度')
     this.pending = true
     this._emit()
     let attempts = 0
@@ -209,7 +240,16 @@ export class ReadingSessionMachine {
             await this.sleep(retryDelay(error))
             continue
           }
-          if (error instanceof ApiError && RECOVERABLE_CODES.has(error.code)) {
+          if (error instanceof ApiError && (RECOVERABLE_CODES.has(error.code) || error.code === 'REQUEST_IN_PROGRESS')) {
+            this.syncRequired = true
+            // A transport failure can precede the server commit. Retain the same event key
+            // if the first read still shows the original revision.
+            if ((error.status === 0 && error.code === 'REQUEST_OUTCOME_UNKNOWN') || error.code === 'REQUEST_IN_PROGRESS') {
+              this.unconfirmed = {
+                operation, revision: this.session.revision,
+                retryAt: Date.now() + (error.retryAfter ? retryDelay(error) : 0),
+              }
+            }
             const recovered = await this.restore(this.session.readingSessionId, { signal })
             throw new RecoverableSessionError(
               error.code === 'REQUEST_OUTCOME_UNKNOWN'

@@ -18,7 +18,7 @@
 
 ## 配置与本地联调
 
-从 backend/.env.example 首次复制到 backend/.env，已有文件不要覆盖。在本地把 DeepSeek 官方密钥填入 `MODEL_API_KEY`，把百炼北京地域密钥填入 `DASHSCOPE_API_KEY`。两个字段独立，文本密钥缺失时不再回退到百炼密钥。不要把密钥贴入聊天、任务表或 Git。已有系统环境优先于 .env。各项默认值见示例文件：文本 deepseek-flash，识别 qwen3-asr-flash，合成 qwen-audio-3.1-tts-flash / wenhuaiqing_v3.1；合成地址默认留空，须填百炼北京业务空间的完整 SpeechSynthesizer 地址。采用普通单次请求，文本固定 thinking.type=disabled；文本、语音总预算各自默认 20 秒（语音含合成下载）。
+从 backend/.env.example 首次复制到 backend/.env，已有文件不要覆盖。在本地把 DeepSeek 官方密钥填入 `MODEL_API_KEY`，把百炼北京地域密钥填入 `DASHSCOPE_API_KEY`。两个字段独立，文本密钥缺失时不再回退到百炼密钥。不要把密钥贴入聊天、任务表或 Git。已有系统环境优先于 .env。各项默认值见示例文件：文本 deepseek-flash，识别 qwen3-asr-flash，合成 qwen-audio-3.1-tts-flash / wenhuaiqing_v3.1；合成地址默认留空，须填百炼北京业务空间的完整 SpeechSynthesizer 地址。采用普通单次请求，文本默认发送 thinking.type=disabled，兼容端点可显式设置 MODEL_SEND_THINKING=false 省略该字段；文本、语音总预算各自默认 20 秒（语音含合成下载）。
 
 已有百炼文本配置需同步迁移：MODEL_API_URL 改为 `https://api.deepseek.com/chat/completions`，MODEL_NAME 改为 `deepseek-flash`；MODEL_API_KEY 若以前填写过百炼密钥，须由本人换成 DeepSeek 官方密钥。本次声线与模型语速扩展还需迁移 TTS_API_URL、TTS_MODEL、TTS_VOICE，密钥保持原值，详见[声线与语速交接](../docs/design/speech-preferences-handoff.md)。直接在终端导出 DEEPSEEK_API_KEY 不会被当前工程读取，应使用上述 MODEL_API_KEY 字段。当前文本参数固定适配 DeepSeek，不能仅改地址就宣称兼容其他供应商。
 

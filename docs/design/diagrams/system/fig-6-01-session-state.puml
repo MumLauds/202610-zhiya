@@ -31,10 +31,10 @@ note left of CREATED
 权限与内容校验通过
 end note
 CREATED -down-> IN_PROGRESS : STARTED\n[授权与内容有效]\n/ 记录开始时间
-CREATED -right-> INTERRUPTED : 放弃，内容撤回
+CREATED -right-> INTERRUPTED : 放弃、内容撤回，\n或开始前授权失效
 IN_PROGRESS : 交互 [未到时且 revision 匹配]\n/ 更新进度
 IN_PROGRESS -down-> FINISHED : 主动结束，正常到时，\n续写切换
-IN_PROGRESS -right-> INTERRUPTED : 确认中断，内容撤回
+IN_PROGRESS -right-> INTERRUPTED : 确认中断、撤销授权，\n或内容撤回
 FINISHED --> [*]
 INTERRUPTED --> [*]
 

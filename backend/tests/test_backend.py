@@ -180,6 +180,24 @@ class ModelGatewayTests(unittest.IsolatedAsyncioTestCase):
         for sensitive in (API_KEY, INPUT_TEXT, SYSTEM_PROMPT, UPSTREAM_BODY):
             self.assertNotIn(sensitive, "\n".join(logs.output))
 
+    async def test_omits_thinking_only_when_explicitly_disabled(self):
+        sent = []
+
+        def provider(request):
+            sent.append(json.loads(request.content))
+            return httpx.Response(200, json=model_response())
+
+        for flag in ("true", "false"):
+            with patch.dict("os.environ", {"MODEL_API_KEY": API_KEY, "MODEL_SEND_THINKING": flag}, clear=True):
+                settings = Settings.from_env()
+            async with ModelGateway(settings, transport=httpx.MockTransport(provider)) as gateway:
+                await gateway.generate(input_text=INPUT_TEXT, system_prompt=SYSTEM_PROMPT)
+        self.assertEqual(sent[0].pop("thinking"), {"type": "disabled"})
+        self.assertEqual(sent[0], sent[1])
+        with patch.dict("os.environ", {"MODEL_SEND_THINKING": "unknown"}, clear=True):
+            with self.assertRaisesRegex(ValueError, "MODEL_SEND_THINKING"):
+                Settings.from_env()
+
     async def test_total_deadline_cancels_provider_without_retry(self):
         calls = []
         stream_started = asyncio.Event()

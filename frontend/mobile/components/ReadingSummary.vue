@@ -1,4 +1,5 @@
 <script setup>
+import { countReadPages } from '../../src/data/readingProgress'
 defineProps({
   book: { type: Object, required: true },
   session: { type: Object, required: true },
@@ -17,7 +18,7 @@ defineEmits(['exit'])
     <dl class="summary-facts">
       <div>
         <dt>访问页数</dt>
-        <dd>{{ session.visitedPageNumbers?.length ?? 0 }}</dd>
+        <dd>{{ countReadPages(session) }}</dd>
       </div>
       <div>
         <dt>会话修订</dt>

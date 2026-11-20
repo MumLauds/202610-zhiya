@@ -4,13 +4,14 @@ import { G10_STATUS_LABELS, STRATEGY_LABELS } from '../api/g10'
 
 const props = defineProps({
   result: { type: Object, default: null },
+  revision: { type: Number, required: true },
   pending: { type: Boolean, default: false },
   demo: { type: Boolean, default: false },
   questionReady: { type: Boolean, default: false },
   answerAudioUrl: { type: String, default: '' },
   answerAudioLoading: { type: Boolean, default: false },
 })
-const emit = defineEmits(['generate', 'answer', 'not-understood', 'skip', 'play-answer'])
+const emit = defineEmits(['generate', 'answer', 'understood', 'not-understood', 'skip', 'play-answer'])
 
 const statusLabel = computed(() => G10_STATUS_LABELS[props.result?.status] ?? '')
 const strategyLabel = computed(() => STRATEGY_LABELS[props.result?.strategyType] ?? '')
@@ -40,10 +41,10 @@ const hasOutput = computed(() => Boolean(props.result?.outputText))
         </li>
       </ul>
       <button
-        v-if="answerAudioUrl"
+        v-if="!demo && result.interactionEventId && result.revision === revision && hasOutput && result.status !== 'BLOCKED'"
         class="button button-ghost button-small"
         type="button"
-        :disabled="answerAudioLoading"
+        :disabled="pending || answerAudioLoading"
         @click="emit('play-answer')"
       >
         {{ answerAudioLoading ? '音频准备中…' : '播放回答音频' }}
@@ -64,6 +65,7 @@ const hasOutput = computed(() => Boolean(props.result?.outputText))
       <button class="button button-soft" type="button" :disabled="pending || !questionReady" @click="emit('not-understood')">
         没听懂
       </button>
+      <button class="button button-soft" type="button" :disabled="pending || !questionReady" @click="emit('understood')">已听懂</button>
       <button class="button button-ghost" type="button" :disabled="pending || !questionReady" @click="emit('skip')">
         跳过
       </button>

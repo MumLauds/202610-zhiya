@@ -14,7 +14,7 @@
 | UTF-8 | Unicode 转换格式（Unicode Transformation Format，8-bit） |
 | MiB | 二进制兆字节（Mebibyte），1 MiB = 1,048,576 字节 |
 
-截至 2026-11-17，已接入 IF-02 内部文本模型、API-032 就绪检查、录音格式转换、API-022/023 语音路由及 API-024 音频分支。家长账号、档案和绘本读取已实现，语音默认复用真实家长 Cookie/CSRF 认证；API-011/012/013 共读会话创建与查询、API-015 开始/翻页、API-019 结束及小结生成已实现，开始/翻页/结束使用持久化的会话内幂等记录。儿童模式认证、图片媒体、声线/语速偏好存储、知识检索、问答与引导、内容审核和完整业务链路仍须协作，不计为 G08 整体验收通过。语音实名分工和验证见[语音接口交接](../docs/design/voice-api-handoff.md)及[检验记录](../docs/testing/voice-api-checks.md)。
+截至 2026-11-18，已接入 IF-02 内部文本模型、API-032 就绪检查、录音格式转换、API-022/023 语音路由及 API-024 音频分支。家长账号、档案和绘本读取已实现，API-020/021 已支持儿童限时授权和家长密码解锁，语音按当前家长身份或儿童授权校验。API-011/012/013 共读会话创建与查询、API-015 开始/翻页、API-019 结束及小结生成已实现，开始/翻页/结束使用持久化的会话内幂等记录。图片媒体、声线/语速偏好存储、知识检索、问答与引导、内容审核和完整业务链路仍须协作，不计为 G08 整体验收通过。语音实名分工和验证见[语音接口交接](../docs/design/voice-api-handoff.md)及[检验记录](../docs/testing/voice-api-checks.md)。
 
 接口以[当前契约](../docs/design/api-contract.md)及其 JSON 示例为准；[验证记录](../docs/testing/backend-bootstrap-checks.md)说明本轮实际验证范围。
 
@@ -40,9 +40,9 @@ Linux/macOS 对应使用 python3.12 创建环境、.venv/bin/python 安装；进
 {"data":{"status":"ok"},"requestId":"服务端生成的追踪标识"}
 ```
 
-X-Request-ID 响应头与响应体一致。/docs 可查看健康、账号、档案、绘本、阅读会话及语音/音频路由。默认应用使用真实家长认证；数据库就绪时，未登录返回 401 AUTH_REQUIRED，缺失或错误 CSRF 的语音写请求返回 403 CSRF_INVALID。显式注入 UnconfiguredVoiceAuthenticator 时仍返回 503 VOICE_AUTH_NOT_CONFIGURED。默认绑定本机、单工作进程。容器包含 FFmpeg；Windows 转换非标准录音需要 PATH 中可用的 FFmpeg。
+X-Request-ID 响应头与响应体一致。/docs 可查看健康、账号、档案、绘本、阅读会话及语音/音频路由。默认应用使用家长会话或儿童授权进行认证。数据库就绪时，未登录返回 401 AUTH_REQUIRED，缺失或错误 CSRF 的语音写请求返回 403 CSRF_INVALID。显式注入 UnconfiguredVoiceAuthenticator 时仍返回 503 VOICE_AUTH_NOT_CONFIGURED。默认绑定本机、单工作进程。容器包含 FFmpeg；Windows 转换非标准录音需要 PATH 中可用的 FFmpeg。
 
-家长联调：先 POST `/api/v1/auth/registrations` 注册，再 POST `/api/v1/auth/sessions` 登录，两者传 `{account,password}`。客户端保留登录返回的 Cookie，将 `zhiya_csrf` 值放入写请求的 `X-CSRF-Token`；`zhiya_session` 为 HttpOnly，不自行读取或构造。Cookie 有 Secure 属性，应使用 HTTPS（本地需 HTTPS 代理或证书），上面的 HTTP 启动命令仅适合健康检查等无凭据请求。跨域浏览器联调尚未配置 CORS。创建本人档案并取得有权读取的已审核绘本版本后，可 POST `/api/v1/reading-sessions`，传 `{childProfileId,storyVersionId,mode:"PARENT_CHILD"}`；再向 `/{session_id}/events` 提交 STARTED 事件。API-022/023 使用返回的真实会话、当前页和最新 revision 或允许的已保存事件，具体字段见接口契约。会话生命周期的离线联调见 `backend/tests/test_storybooks.py`；`backend/tests/test_voice_auth_integration.py` 验证真实家长认证与模拟供应商，其中会话由测试准备。完整浏览器及真实供应商组合流程仍须联调。
+家长联调：先 POST `/api/v1/auth/registrations` 注册，再 POST `/api/v1/auth/sessions` 登录，两者传 `{account,password}`。客户端保留登录返回的 Cookie，将 `zhiya_csrf` 值放入写请求的 `X-CSRF-Token`；`zhiya_session` 为 HttpOnly，不自行读取或构造。Cookie 有 Secure 属性，应使用 HTTPS（本地需 HTTPS 代理或证书），上面的 HTTP 启动命令仅适合健康检查等无凭据请求。跨域浏览器联调尚未配置 CORS。创建本人档案并取得有权读取的已审核绘本版本后，可 POST `/api/v1/reading-sessions`，传 `{childProfileId,storyVersionId,mode:"PARENT_CHILD"}`；再向 `/{session_id}/events` 提交 STARTED 事件。API-022/023 使用返回的真实会话、当前页和最新 revision 或允许的已保存事件，具体字段见接口契约。会话生命周期的离线联调见 `backend/tests/test_storybooks.py`；`backend/tests/test_voice_auth_integration.py` 验证真实家长认证与模拟供应商，其中会话由测试准备。儿童模式联调在会话开始前调用 API-020 切换设备身份。恢复家长权限时，通过 API-021 提交所属家长凭证和当前 CSRF 令牌。到期、解锁和多设备退出见 `backend/tests/test_child_mode.py`。完整浏览器及真实供应商组合流程仍须联调。
 
 阅读小结（FR-09、AI-06、NFR-09）：事实摘要仅取服务端记录的已读页；模型根据已读正文选择固定建议编号，不直接发布模型自由文本。非法结构、额外字段、未知建议、模型失败或超长结果均置 FAILED，保留事实摘要和空 activities，不重试模型。READY 由事实摘要与固定的自愿共读建议组成，不推断答题数、投入程度或儿童能力。当前 activities 仍为空，尚未完成 FR-10/AC-09 要求的含材料与步骤的亲子活动。设计与离线证据见[本轮检验记录](../docs/testing/report-safety-checks.md)。
 
@@ -52,7 +52,7 @@ X-Request-ID 响应头与响应体一致。/docs 可查看健康、账号、档�
 
 ## 模型环境变量
 
-用户于 2026-11-11 将文本改为 DeepSeek 官方服务，语音继续使用百炼。文本默认 deepseek-flash，固定 thinking.type=disabled；识别使用北京地域 Qwen-ASR，合成使用支持模型语速的 Qwen-Audio-3.1-TTS-Flash。新合成接口须填写本人业务空间地址，声线与语速配置见[交接说明](../docs/design/speech-preferences-handoff.md)。详见[文本与语音接入说明](bailian.md)。两个供应商的密钥分别配置；切换语音地域须同步核对密钥、端点与音频下载白名单。
+用户于 2026-11-11 将文本改为 DeepSeek 官方服务，语音继续使用百炼。文本默认 deepseek-flash，默认发送 thinking.type=disabled；识别使用北京地域 Qwen-ASR，合成使用支持模型语速的 Qwen-Audio-3.1-TTS-Flash。新合成接口须填写本人业务空间地址，声线与语速配置见[交接说明](../docs/design/speech-preferences-handoff.md)。详见[文本与语音接入说明](bailian.md)。两个供应商的密钥分别配置；切换语音地域须同步核对密钥、端点与音频下载白名单。
 
 | 环境变量 | 默认值 | 含义 |
 | --- | --- | --- |
@@ -61,6 +61,7 @@ X-Request-ID 响应头与响应体一致。/docs 可查看健康、账号、档�
 | MODEL_API_KEY | 空 | DeepSeek 官方文本凭证；空时禁用文本调用，绝不回退到百炼密钥。 |
 | MODEL_NAME | deepseek-flash | DeepSeek 实际支持的模型标识，必须能编码为 UTF-8。 |
 | MODEL_TIMEOUT_SECONDS | 20 | 请求及响应读取的总预算，必须大于 0 且不超过 20 秒。 |
+| MODEL_SEND_THINKING | true | 默认发送 `thinking.type=disabled`。兼容端点明确拒绝该字段时设为 `false`。 |
 | MODEL_MAX_TOKENS | 512 | 最大输出令牌数，整数 1～4096；供应商需支持 max_tokens。 |
 
 .env 由 Uvicorn 的 --env-file 或本地连通性脚本加载，已有进程环境变量优先；Settings.from_env 本身只读取进程环境。仓库已有规则忽略 .env，保留 .env.example。配置值不出现在健康检查或 OpenAPI 中。此适配器关闭环境代理读取，避免无意将凭证交给本机代理；如运行环境必须经代理，应另行明确配置与信任边界。
@@ -85,7 +86,7 @@ input_text 去除首尾空白后为 1～200 字符，与契约中的用户文本
 | Settings.model_name | 请求 model |
 | system_prompt / input_text | 请求 messages 中 system / user 消息的 content |
 | Settings.model_max_tokens | 请求 max_tokens；stream 固定为 false |
-| 固定非思考模式 | 请求 thinking.type=disabled；不发送百炼的 enable_thinking 字段 |
+| Settings.model_send_thinking | 默认为 true 时发送 `thinking.type=disabled`，设为 false 时省略该字段。 |
 | 响应 choices[0].message.content | 校验后作为字符串返回；本地脚本使用知芽 camelCase 字段 outputText，不透传供应商完整对象 |
 
 适配器仅返回完整的 assistant 文本，不创建业务事件、不生成知识引用、不执行工具。调用方仍需完成领域结果校验和安全回退，写入最终事实记录后才向用户展示。校验 finish_reason、文本结构或供应商 refusal 并不能证明内容适龄或安全。
@@ -140,9 +141,9 @@ result = await request.app.state.model_adapter.generate(ModelGenerateRequest(
 
 示例成功结果为 `{"success": true, "text": "小兔子把雨伞借给了谁？", "error_code": null}`，仅用于说明结构，不代表真实模型输出或适龄验收。ModelGenerateRequest 没有任务类型，适配器无法从空串判断 INITIAL；空白/空 user_input 继续抛出 `INVALID_INPUT`（422），不调用供应商，不自动补默认话。非空指令仍遵守 1～200 字符限制。
 
-**API_ERROR 调用约定：** 供应商鉴权、限流、网络、响应异常或模型未配置时，适配器返回 `{"success": false, "text": "", "error_code": "API_ERROR"}`，符合 #27 Schema；超时返回同结构的 `TIMEOUT`。工作流须先判断 success，失败时不把空 text 当作成功回答保存或合成；API_ERROR 最终映射到何种 AgentResult、策略及提示由工作流负责人决定并确认，G08 不新增枚举或自动重试。真实供应商失败至多调用一次，未配置及非法输入不发出请求。
+**API_ERROR 调用约定：** 供应商鉴权、限流、网络、响应异常或模型未配置时，适配器返回 `{"success": false, "text": "", "error_code": "API_ERROR"}`，符合 #27 Schema；超时返回同结构的 `TIMEOUT`。API-017 对 `TIMEOUT` 保存安全回退，对 `API_ERROR` 返回 503 `DEPENDENCY_UNAVAILABLE` 并记录可重放的失败，保留原修订号。真实供应商失败至多调用一次，未配置及非法输入不发出请求。
 
-上述结构和调用次数已有 `test_model_adapter.py` 中的成功映射、失败映射、未配置与非法输入测试覆盖；测试使用模拟供应商。双方尚未确认 INITIAL 指令与 API_ERROR 最终工作流降级，本说明不将其记为已完成联调。
+上述结构和调用次数已有 `test_model_adapter.py` 中的成功映射、失败映射、未配置与非法输入测试覆盖；测试使用模拟供应商。API-017 的正式 HTTP 入口另有离线测试，验证 INITIAL 指令、非超时错误重放和儿童可选回答。
 
 ## 超时、错误与日志
 
@@ -176,6 +177,8 @@ HTTP 错误沿用契约 envelope：error.code、error.message、error.retryable�
 ```
 
 测试使用 pytest 运行主分支测试及 unittest 用例，使用 TestClient、MockTransport、临时数据库和虚构测试数据，不读取 .env、不访问真实模型。依赖版本及初版验证限制见[骨架检查记录](../docs/testing/backend-bootstrap-checks.md)，当前回归见[文本与语音检查](../docs/testing/bailian-checks.md)。容器基础验证见 [infra](../infra/README.md)，真实供应商短句联调另行记录。
+
+API-017 的回归使用已开始的会话、临时 SQLite 和模拟模型。从项目根目录运行 `python -m pytest -q backend/tests/test_interactions.py -k guidance`，可验证儿童答题与刷新、连续两轮理解反馈、等待首题时跳过、跨页和到期重放、供应商失败、输出安全与证据保存。引导会复用 G09 的主题和年龄筛选。[G05 引导约定](../docs/design/agent-degradation.md)
 
 ## 设计与实现参考
 

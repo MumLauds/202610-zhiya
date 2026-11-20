@@ -1,0 +1,71 @@
+# G13 第五轮：儿童授权自然到期
+
+本轮分别检查已开读和待开始的儿童会话。依据[儿童授权与到期结算契约](../../../design/api-contract.md)，授权截止后由业务请求触发结算。取证时先检查儿童设备的访问权限与数据库中的会话、小结和授权记录，再由家长解锁读回。
+
+## 原测结果
+
+2026 年 11 月 19 日，原测使用应用提交 [`main@0fd880e`](https://github.com/MumLauds/202610-zhiya/commit/0fd880e421b533529cf800a22f71863eb8dbc47f)。Chrome 同时保有两份独立儿童授权，每份时限均为 300 秒。旧版脚本依次请求会话详情和家长档案，随后才采集以下快照，因此原测仅能确认两次请求后已完成结算。快照均在家长解锁前取得，当时两个授权的 `revoked_at` 均为空，两条会话的 `ended_at` 都精确等于各自的授权截止时刻。[含毫秒时间戳的原测数据](result.json)
+
+| 到期前 | 截止时刻（北京时间） | 到期后的状态与原因 | 家长解锁后读回 | 小结数 |
+| --- | --- | --- | --- | ---: |
+| 已开读 `IN_PROGRESS` | 18:54:49.747 | `FINISHED / TIME_LIMIT` | 成长记录显示「浏览 1 页 · 已完成」。会话详情返回 `READY` 小结「本次共读阅读了第 1 页。」 | 1 |
+| 待开始 `CREATED` | 18:54:55.907 | `INTERRUPTED / GRANT_REVOKED` | 成长记录显示「浏览 0 页 · 已中断」。会话详情返回 `report=null` | 0 |
+
+**访问权限。** 到期前两组儿童都能读取自己的会话（200），读取家长档案列表返回 403。到期后，同一设备读取会话和档案列表均返回 `401 AUTH_REQUIRED`。两组在儿童页刷新后均看到「请家长解锁设备」及解锁按钮，页面未显示家长导航。家长在页面输入账号和密码解锁后，API-021、档案列表和本人会话详情均返回 200。页面卡片用于核对记录编号、浏览页数和完成状态，小结内容由同一浏览器的会话详情接口核对。
+
+**刷新与写入。** 每个会话在解锁前刷新儿童页 1 次，解锁后连续刷新成长记录页 2 次。已开读会话始终保留 1 条 `STARTED` 事件、2 条会话执行记录（开读及到期结算）、1 份小结，最终修订号为 2；待开始会话的事件、执行记录、小结均为 0，最终修订号为 1。脚本在刷新前后比对这些记录的字段和两次家长详情返回值。外部模型模拟共收到 1 次小结请求。[验证脚本](verify_expiry.py)
+
+最终浏览器用例 `1 passed in 331.30s`。预演时，脚本按无查询参数的 URL 等待历史接口，未匹配实际发出的分页 GET；修正后另建测试库和两份授权，完整等待自然到期。表格和 JSON 均来自这次完整复跑。
+
+## 最新主干复测
+
+2026 年 11 月 20 日，在 [`main@5a0d0da`](https://github.com/MumLauds/202610-zhiya/commit/5a0d0da0a87cb6e5d99d5e8e526c723671377bf4) 构建前端并运行原验证脚本。Chrome 154.0.8037.98 中的两个家庭各自取得 300 秒授权。下表记录家长解锁前的状态，时间为北京时间。[复测原始数据](retest.json)
+
+| 会话 | 服务端授权截止 | 从授权到首次到期探测 | 到期状态及原因 | 已读页 | 事件 / 会话执行记录 / 小结 |
+| --- | --- | --- | --- | --- | --- |
+| 已开读 #1 | 01:12:30.037 | 312.184 秒 | `FINISHED / TIME_LIMIT` | [1] | 1 / 2 / 1 |
+| 待开始 #2 | 01:12:42.208 | 303.076 秒 | `INTERRUPTED / GRANT_REVOKED` | [] | 0 / 0 / 0 |
+
+这次历史复测也在两个拒绝响应后才首次查库。两个会话的结束时间均精确等于授权截止时间，解锁前 `revoked_at` 均为空。儿童读取会话及家长档案均返回 401。刷新儿童页后仍提示「请家长解锁设备」。家长解锁后读到各自的历史卡片和会话详情，已开读记录带 1 份 `READY` 小结，待开始记录的 `report` 为 `null`。两次刷新成长记录页后，详情、事件、执行记录和小结都保持一致，最终修订号分别为 2 和 1，与原测一致。
+
+浏览器用例 `1 passed in 374.70s`，后端儿童模式回归 10 项通过。前端生产构建通过，按 `child|unlock|handoff` 筛选的 12 项前端用例通过，另有 35 项未选中。
+
+## 首个到期请求的补充取证
+
+在同一应用提交 `5a0d0da` 上真实等待两份 300 秒授权到期。脚本读取两户的 SQLite 快照，只发送当前儿童的一次会话详情 GET，收到 401 后立即再次查库。已开读会话从 `IN_PROGRESS` 变为 `FINISHED / TIME_LIMIT`，另一户仍是 `CREATED`。轮到待开始会话时，它从 `CREATED` 变为 `INTERRUPTED / GRANT_REVOKED`，先前已结束的另一户记录保持一致。每户都在核对首个请求后才继续请求档案和执行家长解锁。两户最终分别有 1 份和 0 份小结。[首个请求前后的快照和刷新结果](first-request-retest.json)
+
+## 环境与取证方式
+
+Chrome 通过回环 HTTPS 加载 Vue 生产构建，使用两个独立浏览器上下文和两个测试家庭，分别在页面上选择 5 分钟儿童授权。绘本、账号和档案都是合成数据。一次使用同一儿童浏览器的 API-015 发送 `STARTED`，另一次保持待开始；两组都按服务端返回的截止时间等待，没有修改时钟或授权记录。
+
+认证、Cookie、CSRF、授权结算、家长解锁、历史查询和临时 SQLite 均走实际实现。已开读会话使用真实小结生成流程，外部模型的 HTTP 响应用 `httpx.MockTransport` 固定为 `suggestionId=NONE`。本轮未调用语音服务或 API-016。
+
+## 复跑
+
+在仓库根目录准备 Python 3.12 测试环境、Node.js、已安装的 Google Chrome、Git 和 OpenSSL，然后运行以下命令。用例复用[第二轮的本地 HTTPS 环境](../round2/verify.py)。
+
+以下命令在 sh 或 Git Bash 中从仓库根目录执行，默认重演复测版本。若重演原测，将 `app_commit` 改为 `0fd880e421b533529cf800a22f71863eb8dbc47f`。为每次运行选择一个尚不存在的工作树目录。
+
+```sh
+set -e
+app_commit=5a0d0da0a87cb6e5d99d5e8e526c723671377bf4
+git fetch https://github.com/MumLauds/202610-zhiya.git refs/pull/63/head
+test_scripts=$(git rev-parse --verify FETCH_HEAD)
+git worktree add --detach "../g13-round5-$app_commit" "$app_commit"
+cd "../g13-round5-$app_commit"
+git restore --source="$test_scripts" --worktree -- docs/testing/g13/round5
+git rev-parse HEAD
+```
+
+在这个新工作树中继续运行。应用和第二轮 HTTPS 夹具来自 `app_commit`，本轮脚本来自 `test_scripts`。复核时一并记录这两个提交号。
+
+```sh
+python -m pip install -r backend/requirements-dev.txt playwright==1.65.2
+npm --prefix frontend ci --include=dev
+npm --prefix frontend run build
+python -m pytest -q -s docs/testing/g13/round5/verify_expiry.py
+```
+
+脚本从当前工作树启动后端并挂载上一步的前端构建，输出 JSON 的 `commit` 取自该工作树的 `HEAD`。成功时终端会打印当次临时 `result.json` 的路径。两组授权并行等待，相同环境下应为一次复跑至少预留 5 分钟。
+
+原测也运行了 `python -m pytest -q backend/tests/test_child_mode.py`，10 项通过。前端相关回归可在 `frontend` 目录运行 `node node_modules/vitest/vitest.mjs run src/App.test.js -t 'child|unlock|handoff'`，按该表达式选择了 12 项，全部通过。前端生产构建通过。

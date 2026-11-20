@@ -3,13 +3,13 @@
 import json
 import sqlite3
 import time
-from contextlib import closing
 from typing import Literal
 
-from fastapi import APIRouter, Path, Request
+from fastapi import APIRouter, Path, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.api.v1.auth import SESSION_COOKIE, connect, error, token_digest, valid_csrf
+from app.api.v1.auth import authorized_db, error
+from app.services.cleanup import delete_session_rows, purge_voice_media
 
 router = APIRouter(prefix="/api/v1/child-profiles")
 AgeBand = Literal["AGE_3_4", "AGE_4_5", "AGE_5_6"]
@@ -65,24 +65,6 @@ class ProfileUpdate(ProfileFields):
         return self
 
 
-def guardian(db, request: Request, *, write: bool):
-    token = request.cookies.get(SESSION_COOKIE)
-    if not token:
-        return None, error(request, 401, "AUTH_REQUIRED", "请先登录")
-    row = db.execute(
-        """SELECT a.id, a.role FROM auth_sessions s JOIN accounts a ON a.id = s.account_id
-           WHERE s.token_digest = ? AND s.revoked_at IS NULL AND s.expires_at > ?""",
-        (token_digest(token), int(time.time() * 1000)),
-    ).fetchone()
-    if not row:
-        return None, error(request, 401, "AUTH_REQUIRED", "请先登录")
-    if row["role"] != "GUARDIAN":
-        return None, error(request, 403, "FORBIDDEN", "当前账号不能操作儿童档案")
-    if write and not valid_csrf(request, token):
-        return None, error(request, 403, "CSRF_INVALID", "请求校验失败")
-    return row["id"], None
-
-
 def serialize(row):
     return {
         "childProfileId": row["id"], "nickname": row["nickname"], "ageBand": row["age_band"],
@@ -93,11 +75,10 @@ def serialize(row):
 @router.get("")
 def list_profiles(request: Request):
     try:
-        with closing(connect()) as db:
-            owner, failure = guardian(db, request, write=False)
+        with authorized_db(request, guardian_only=True) as (db, principal, failure):
             if failure:
                 return failure
-            rows = db.execute("SELECT * FROM child_profiles WHERE guardian_id = ? ORDER BY id", (owner,))
+            rows = db.execute("SELECT * FROM child_profiles WHERE guardian_id = ? ORDER BY id", (principal.guardian_id,))
             return {"data": {"items": [serialize(row) for row in rows]}, "requestId": request.state.request_id}
     except sqlite3.Error:
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用", retryable=True)
@@ -106,11 +87,10 @@ def list_profiles(request: Request):
 @router.post("", status_code=201)
 def create_profile(payload: ProfileCreate, request: Request):
     try:
-        with closing(connect()) as db, db:
-            db.execute("BEGIN IMMEDIATE")
-            owner, failure = guardian(db, request, write=True)
+        with authorized_db(request, write=True, guardian_only=True) as (db, principal, failure):
             if failure:
                 return failure
+            owner = principal.guardian_id
             now = int(time.time() * 1000)
             cursor = db.execute(
                 """INSERT INTO child_profiles
@@ -129,11 +109,10 @@ def create_profile(payload: ProfileCreate, request: Request):
 def update_profile(payload: ProfileUpdate, request: Request,
                    profile_id: int = Path(ge=1, le=9007199254740991)):
     try:
-        with closing(connect()) as db, db:
-            db.execute("BEGIN IMMEDIATE")
-            owner, failure = guardian(db, request, write=True)
+        with authorized_db(request, write=True, guardian_only=True) as (db, principal, failure):
             if failure:
                 return failure
+            owner = principal.guardian_id
             row = db.execute(
                 "SELECT * FROM child_profiles WHERE id = ? AND guardian_id = ?", (profile_id, owner)
             ).fetchone()
@@ -152,3 +131,34 @@ def update_profile(payload: ProfileUpdate, request: Request,
             return {"data": serialize(updated), "requestId": request.state.request_id}
     except sqlite3.Error:
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用")
+
+
+@router.delete("/{profile_id}", status_code=204)
+def delete_profile(request: Request, profile_id: int = Path(ge=1, le=9007199254740991)):
+    """API-007: delete a guardian-owned child profile and all associated sessions, grants and derived data."""
+    session_ids: list[int] = []
+    try:
+        with authorized_db(request, write=True, guardian_only=True, settle_guardian=False) as (db, principal, failure):
+            if failure:
+                return failure
+            owner = principal.guardian_id
+            row = db.execute(
+                "SELECT id FROM child_profiles WHERE id = ? AND guardian_id = ?", (profile_id, owner)
+            ).fetchone()
+            if not row:
+                return error(request, 404, "RESOURCE_NOT_FOUND", "档案不可用")
+            session_ids = [
+                r[0] for r in db.execute("SELECT id FROM reading_sessions WHERE profile_id = ?", (profile_id,))
+            ]
+            for sid in session_ids:
+                delete_session_rows(db, sid)
+            db.execute(
+                "DELETE FROM child_grant_books WHERE grant_id IN (SELECT id FROM child_grants WHERE profile_id = ?)",
+                (profile_id,),
+            )
+            db.execute("DELETE FROM child_grants WHERE profile_id = ?", (profile_id,))
+            db.execute("DELETE FROM child_profiles WHERE id = ? AND guardian_id = ?", (profile_id, owner))
+    except sqlite3.Error:
+        return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用")
+    purge_voice_media(request.app.state, session_ids)
+    return Response(status_code=204)

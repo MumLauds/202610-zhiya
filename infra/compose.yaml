@@ -13,6 +13,7 @@ services:
       MODEL_NAME: ${MODEL_NAME:-deepseek-flash}
       MODEL_TIMEOUT_SECONDS: ${MODEL_TIMEOUT_SECONDS:-20}
       MODEL_MAX_TOKENS: ${MODEL_MAX_TOKENS:-512}
+      MODEL_SEND_THINKING: ${MODEL_SEND_THINKING:-true}
       ASR_API_URL: ${ASR_API_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}
       ASR_MODEL: ${ASR_MODEL:-qwen3-asr-flash}
       TTS_API_URL: ${TTS_API_URL:-}
