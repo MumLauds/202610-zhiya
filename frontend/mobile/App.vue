@@ -309,7 +309,7 @@ async function startLive({ versionId = storyVersionId.value, restoreId = session
       if (initialSnapshot.session.status === 'FINISHED') {
         if (scopeIsCurrent(scope) && origin === activeTab.value) {
           readerConfig.value = {
-            mode: 'live', initialSnapshot,
+            mode: 'live', initialSnapshot, sessionApi,
             book: historyBook(initialSnapshot.session) ?? { title: `绘本版本 ${versionId}` },
           }
         }
@@ -350,7 +350,14 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
 
 <template>
   <main v-if="readerConfig?.initialSnapshot?.session.status === 'FINISHED'" class="reader-view reader-content">
-    <ReadingSummary :book="readerConfig.book" :session="readerConfig.initialSnapshot.session" :report="readerConfig.initialSnapshot.report" @exit="exitReader" />
+    <ReadingSummary
+      :key="readerConfig.initialSnapshot.session.readingSessionId"
+      v-model:report="readerConfig.initialSnapshot.report"
+      :book="readerConfig.book"
+      :session="readerConfig.initialSnapshot.session"
+      :session-api="readerConfig.sessionApi"
+      @exit="exitReader"
+    />
   </main>
   <ReaderView v-else-if="readerConfig" :key="readerConfig.key" :book="readerConfig.book" :mode="readerConfig.mode" :session-api="readerConfig.sessionApi" :voice-api="readerConfig.voiceApi" :child-profile-id="readerConfig.childProfileId" :story-version-id="readerConfig.storyVersionId" :initial-session-id="readerConfig.initialSessionId" :initial-snapshot="readerConfig.initialSnapshot" @exit="exitReader" @finished="handleReadingFinished" />
 
