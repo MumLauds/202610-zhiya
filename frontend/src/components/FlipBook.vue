@@ -22,10 +22,14 @@ const windowStart = computed(() => Math.max(0, Math.min(
 const visiblePages = computed(() => props.pages.slice(windowStart.value, windowStart.value + SPREADS_PER_WINDOW))
 const dotPages = computed(() => props.visitPages ?? props.bookPages ?? props.pages)
 const container = ref(null)
-const settledImages = ref(new Set())
+const settledImages = ref(new Map())
 const imageErrors = ref(new Set())
 const currentImage = computed(() => props.pages[props.startPage]?.imageRef)
+const currentImageSettled = computed(() => !currentImage.value ||
+  imageErrors.value.has(currentImage.value) ||
+  settledImages.value.get(props.startPage) === currentImage.value)
 let book = null
+let mountedFrames = []
 let syncing = false
 
 function showPage(storyIndex) {
@@ -35,31 +39,26 @@ function showPage(storyIndex) {
   try { book?.turnTo(localIndex * 2) } finally { syncing = false }
 }
 
-watch([() => props.startPage, windowStart], ([index]) => showPage(index), { flush: 'post' })
-
-watch([() => props.startPage, windowStart], ([index, start], [, previousStart]) => {
-  if (start !== previousStart || !settledImages.value.has(currentImage.value)) {
-    settledImages.value.clear()
-    return
-  }
-  const nearby = props.pages.slice(Math.max(0, index - 1), index + 2).map((page) => page.imageRef)
-  for (const imageRef of settledImages.value) {
-    if (!nearby.includes(imageRef)) settledImages.value.delete(imageRef)
+watch([() => props.startPage, visiblePages], () => {
+  for (const [index, imageRef] of settledImages.value) {
+    if (props.pages[index]?.imageRef !== imageRef || !shouldLoadImage(index)) {
+      settledImages.value.delete(index)
+    }
   }
 })
 
 function shouldLoadImage(index) {
-  const distance = Math.abs(windowStart.value + index - props.startPage)
-  return distance === 0 || (
-    distance === 1 && (
-      !currentImage.value || settledImages.value.has(currentImage.value) || imageErrors.value.has(currentImage.value)
-    )
-  )
+  const distance = Math.abs(index - props.startPage)
+  return distance === 0 || (distance === 1 && currentImageSettled.value)
 }
 
-function settleImage(imageRef, failed = false) {
-  settledImages.value.add(imageRef)
+function settleImage(index, imageRef, failed = false) {
   if (failed) imageErrors.value.add(imageRef)
+  else settledImages.value.set(index, imageRef)
+}
+
+function pageFrames() {
+  return Array.from(container.value.querySelectorAll(':scope > .flip-page:not([data-opf-clone])'))
 }
 
 function mountBook() {
@@ -68,7 +67,10 @@ function mountBook() {
     return
   }
   try {
+    const frames = pageFrames()
+    if (!frames.length) return
     book = window.OpenPageFlip.createBook(container.value, {
+      pages: frames,
       width: 420,
       height: 560,
       size: 'stretch',
@@ -86,6 +88,7 @@ function mountBook() {
       hover: true,
       click: 'edges',
     })
+    mountedFrames = frames
     book.on('flip', ({ page }) => {
       if (syncing) return
       const bookPage = windowStart.value * 2 + page
@@ -97,11 +100,29 @@ function mountBook() {
 }
 
 onMounted(mountBook)
-// The widget captures its page elements at mount. Sliding a full window reuses the same slots.
-watch(() => visiblePages.value.length, () => {
-  book?.destroy()
-  book = null
-  mountBook()
+// Keep overlapping frames mounted and tell the widget when the window's elements change.
+watch([() => props.startPage, visiblePages], ([index]) => {
+  if (!book) {
+    mountBook()
+    return
+  }
+  const frames = pageFrames()
+  if (!frames.length) {
+    book.destroy()
+    book = null
+    mountedFrames = []
+    return
+  }
+  if (frames.length !== mountedFrames.length || frames.some((frame, offset) => frame !== mountedFrames[offset])) {
+    syncing = true
+    try {
+      book.setPages(frames)
+      mountedFrames = frames
+    } finally {
+      syncing = false
+    }
+  }
+  showPage(index)
 }, { flush: 'post' })
 
 onBeforeUnmount(() => {
@@ -116,20 +137,20 @@ defineExpose({
 
 <template>
   <div ref="container" class="flipbook-book" :inert="disabled" :aria-label="`${title}软页绘本`">
-    <template v-for="(page, index) in visiblePages" :key="index">
+    <template v-for="(page, index) in visiblePages" :key="windowStart + index">
       <section class="flip-page flip-page--illustration" data-density="soft" :aria-label="`第 ${page.pageNumber} 页插图`">
         <div v-if="!page.imageRef || imageErrors.has(page.imageRef)" class="flip-page-empty">
           <div><h2>{{ page.imageRef ? '插图暂时无法显示' : '本页暂无插图' }}</h2><p>文字内容仍可继续阅读。</p></div>
         </div>
         <img
-          v-else-if="shouldLoadImage(index)"
+          v-else-if="shouldLoadImage(windowStart + index)"
           :key="page.imageRef"
           :src="mediaUrl(page.imageRef, 'reading')"
           :alt="`${title} · 第 ${page.pageNumber} 页`"
           :fetchpriority="windowStart + index === startPage ? 'high' : 'low'"
           draggable="false"
-          @load="settleImage(page.imageRef)"
-          @error="settleImage(page.imageRef, true)"
+          @load="settleImage(windowStart + index, page.imageRef)"
+          @error="settleImage(windowStart + index, page.imageRef, true)"
         >
       </section>
       <section class="flip-page flip-page--text" data-density="soft" :aria-label="`第 ${page.pageNumber} 页文字`">

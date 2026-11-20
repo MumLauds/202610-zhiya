@@ -430,7 +430,7 @@ describe('reader state and visual progress', () => {
   it('follows the visited branch on a backward swipe and restores live controls on return', async () => {
     let flip
     vi.stubGlobal('OpenPageFlip', { createBook: () => ({
-      on: (_, callback) => { flip = callback }, turnTo: vi.fn(), destroy: vi.fn(),
+      on: (_, callback) => { flip = callback }, turnTo: vi.fn(), setPages: vi.fn(), destroy: vi.fn(),
     }) })
     render({ session: { ...initialSession, currentPage: 7, visitedPageNumbers: [1, 7] } }, true)
     flip({ page: 0 })
@@ -453,7 +453,7 @@ describe('reader state and visual progress', () => {
       ...book.pages.slice(1),
     ] }
     let onFlip
-    const widget = { on: (_, callback) => { onFlip = callback }, turnTo: vi.fn(), destroy: vi.fn() }
+    const widget = { on: (_, callback) => { onFlip = callback }, turnTo: vi.fn(), setPages: vi.fn(), destroy: vi.fn() }
     vi.stubGlobal('OpenPageFlip', { createBook: () => widget })
     render({ book: branchedBook, session }, true)
     await button('结束本次阅读').trigger('click')
@@ -569,7 +569,7 @@ describe('reader state and visual progress', () => {
 
   it.each([12, 13, 200])('uses global visit positions as the window moves through %i finished visits', async (count) => {
     const visits = Array.from({ length: count }, (_, index) => index % 2 === 0 ? 1 : 3)
-    vi.stubGlobal('OpenPageFlip', { createBook: () => ({ on: vi.fn(), turnTo: vi.fn(), destroy: vi.fn() }) })
+    vi.stubGlobal('OpenPageFlip', { createBook: () => ({ on: vi.fn(), turnTo: vi.fn(), setPages: vi.fn(), destroy: vi.fn() }) })
     render({ session: { ...initialSession, status: 'FINISHED', currentPage: visits.at(-1), visitedPageNumbers: visits } }, true)
 
     function expectWindow(firstVisit) {

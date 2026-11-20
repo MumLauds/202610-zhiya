@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import flipBookScript from '../../public/vendor/openpageflip/index.iife.js?raw'
 import FlipBook from './FlipBook.vue'
 
 let wrapper
@@ -59,4 +60,46 @@ it('prioritizes the current image and limits later image requests to both neighb
     ['/api/v1/media/page-5?variant=reading', 'low'],
   ])
   expect(wrapper.findAll('.flip-page')).toHaveLength(10)
+})
+
+it('keeps the prefetched image when a long reading window advances past a repeated page number', async () => {
+  const widget = new Function(flipBookScript + '\nreturn OpenPageFlip')()
+  const createBook = vi.spyOn(widget, 'createBook')
+  vi.stubGlobal('OpenPageFlip', widget)
+  vi.stubGlobal('matchMedia', () => ({ matches: true }))
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const width = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(840)
+  const height = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(560)
+  try {
+    const pages = [1, 2, 3, 2, 5, 6, 7].map((pageNumber) => ({
+      pageNumber,
+      imageRef: `page-${pageNumber}`,
+    }))
+    wrapper = mount(FlipBook, { props: { pages, visitPages: pages, startPage: 2 } })
+    const imageSlots = () => wrapper.findAll('.flip-page--illustration')
+    const book = createBook.mock.results[0].value
+    const setPages = vi.spyOn(book, 'setPages')
+    await imageSlots()[2].get('img').trigger('load')
+    const previousVisit = imageSlots()[1].get('img').element
+    const currentVisit = imageSlots()[3].get('img')
+    expect(currentVisit.element).not.toBe(previousVisit)
+    expect(currentVisit.attributes('fetchpriority')).toBe('low')
+    await currentVisit.trigger('load')
+
+    await wrapper.setProps({ startPage: 3 })
+
+    expect(createBook).toHaveBeenCalledTimes(1)
+    expect(setPages).toHaveBeenCalledTimes(1)
+    expect(imageSlots()).toHaveLength(5)
+    expect(imageSlots()[0].attributes('aria-label')).toBe('第 2 页插图')
+    expect(imageSlots()[0].find('img').exists()).toBe(false)
+    expect(wrapper.element.contains(previousVisit)).toBe(false)
+    expect(imageSlots()[2].get('img').element).toBe(currentVisit.element)
+    expect(imageSlots()[2].get('img').attributes('fetchpriority')).toBe('high')
+    expect(imageSlots()[3].get('img').attributes('src')).toBe('/api/v1/media/page-5?variant=reading')
+    expect(imageSlots()[3].get('img').attributes('fetchpriority')).toBe('low')
+  } finally {
+    width.mockRestore()
+    height.mockRestore()
+  }
 })
