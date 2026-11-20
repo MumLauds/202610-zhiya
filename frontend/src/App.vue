@@ -100,6 +100,7 @@ onBeforeUnmount(() => {
     />
     <LibraryPage
       v-else-if="state.route.name === 'library'"
+      :starting="state.sessionBusy"
       :books="state.books"
       :selected-id="(state.booksSource === 'api' && state.pendingBookRestore) || state.selectedBookId"
       :loading="state.booksLoading"

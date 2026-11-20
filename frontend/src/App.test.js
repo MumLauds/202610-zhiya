@@ -77,6 +77,18 @@ it('opens cold-start growth history before the saved bookshelf selection is rest
   expect(listReadingSessions).toHaveBeenCalledTimes(1)
 })
 
+it('opens the saved summary from a finished history row', async () => {
+  const finished = { ...historyRow(11, [1]), currentPage: 1 }
+  listReadingSessions.mockResolvedValue([finished])
+  getReadingSession.mockResolvedValue({ session: finished, events: [], report: { status: 'READY', summary: '今天读了第一页' } })
+  listStorybooks.mockResolvedValue([book])
+  await open('account/growth')
+  await wrapper.get('.recent-item button.secondary').trigger('click')
+  await vi.waitFor(() => expect(wrapper.text()).toContain('今天读了第一页'))
+  expect(getReadingSession).toHaveBeenCalledWith(11)
+  expect(createReadingSession).not.toHaveBeenCalled()
+})
+
 it('opens cold-start book details after identity verification while the bookshelf restores', async () => {
   const releaseSecondPage = holdBookshelfPage(2)
   let verifyIdentity

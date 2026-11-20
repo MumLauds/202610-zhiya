@@ -110,7 +110,7 @@ function move(step) {
         >
           <span class="wheel-book-shell">
             <img class="book-shell" src="/assets/figma-prototype/book-shell.png" alt="">
-            <span class="wheel-cover"><img :src="book.cover" :alt="`${book.title}封面`"></span>
+            <span class="wheel-cover"><img v-if="Math.abs(offsetFor(index)) <= 2" :src="book.cover" :alt="`${book.title}封面`"></span>
           </span>
         </button>
       </div>

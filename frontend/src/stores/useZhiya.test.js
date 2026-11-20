@@ -378,6 +378,26 @@ describe('authoritative reading progress', () => {
     expect(state.readingSyncRequired).toBe(false)
   })
 
+  it('finishes once on the revision saved by a concurrent initial question', async () => {
+    const delayed = deferred()
+    const question = { eventType: 'QUESTION', pageNumber: 1, revision: 2 }
+    const report = { status: 'READY', summary: '已阅读第 1 页' }
+    reading.requestReadingGuidance.mockReturnValueOnce(delayed.promise)
+    reading.getReadingSession.mockResolvedValueOnce({ ...detail({ revision: 2 }), events: [question] })
+    reading.completeReadingSession
+      .mockRejectedValueOnce(new ApiError('changed', { status: 409, code: 'SESSION_CONFLICT' }))
+      .mockResolvedValueOnce({ session: session({ status: 'FINISHED', revision: 3 }), report })
+    const generating = actions.requestGuidance('INITIAL')
+    expect(await actions.completeReading()).toBe(true)
+    const attempts = reading.completeReadingSession.mock.calls.map(([, payload]) => payload)
+    expect(attempts.map(p => p.expectedRevision)).toEqual([1, 2])
+    expect(attempts[0].clientEventId).not.toBe(attempts[1].clientEventId)
+    delayed.resolve(question)
+    expect(await generating).toBe(false)
+    expect(state.currentReport).toEqual(report)
+    expect(state.currentSession.status).toBe('FINISHED')
+  })
+
   it.each([
     ['another kind of event', 'ANSWER', 1, 2, 2],
     ['a historical question', 'QUESTION', 1, 1, 2],
@@ -495,6 +515,26 @@ describe('authoritative reading progress', () => {
 })
 
 describe('recommendations and content operations', () => {
+  it('keeps the report opened while login recommendations are pending', async () => {
+    window.history.replaceState({}, '', '/#auth')
+    await actions.syncRoute()
+    const pending = deferred()
+    const started = deferred()
+    books.recommendStorybooks.mockImplementationOnce(() => {
+      started.resolve()
+      return pending.promise
+    })
+    const login = actions.signIn('parent-a', 'password123')
+    await started.promise
+    const report = { status: 'READY', summary: '本次读了两页' }
+    reading.getReadingSession.mockResolvedValueOnce({ ...detail({ status: 'FINISHED' }), report })
+    window.history.replaceState({}, '', '/#reader/55')
+    await actions.syncRoute()
+    pending.resolve([])
+    await login
+    expect(location.hash).toBe('#reader/55')
+    expect(state.currentReport).toEqual(report)
+  })
   it('loads recommendations for the active profile and resolves their shelf records', async () => {
     books.recommendStorybooks.mockResolvedValueOnce([
       { storyVersionId: 88, reason: '符合 4～5 岁与兴趣「动物」', sources: [] },

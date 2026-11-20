@@ -7,6 +7,7 @@ const props = defineProps({
   books: { type: Array, default: () => [] },
   selectedId: { type: String, default: '' },
   loading: { type: Boolean, default: false },
+  starting: { type: Boolean, default: false },
   nextPage: { type: Number, default: null },
   source: { type: String, default: 'preview' },
   error: { type: String, default: '' },
@@ -105,7 +106,7 @@ function chooseFilter(value) {
             </div>
             <div class="feature-actions">
               <button class="primary" type="button" @click="emit('detail', selected)">查看详情</button>
-              <button class="secondary" type="button" @click="emit('start', selected)">开始阅读</button>
+              <button class="secondary" type="button" :disabled="starting" @click="emit('start', selected)">{{ starting ? '正在创建阅读会话…' : '开始阅读' }}</button>
             </div>
           </div>
         </article>

@@ -272,6 +272,7 @@ async function confirmDelete() {
               <div><strong>{{ sessionTitle(session) }}</strong><p>{{ sessionRecordLabel(session) }} · 浏览 {{ countReadPages(session) }} 页 · {{ sessionStatusLabels[session.status] || '状态待确认' }}</p></div>
               <div class="recent-item-actions">
                 <span class="pill">修订 {{ session.revision }}</span>
+                <button v-if="session.status === 'FINISHED'" class="secondary" type="button" @click="emit('navigate', `reader/${session.readingSessionId}`)">查看小结</button>
                 <button class="danger" type="button" :disabled="deleteBusy" @click="askDeleteSession(session)">删除记录</button>
               </div>
             </article>
