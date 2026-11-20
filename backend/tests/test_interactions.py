@@ -516,9 +516,10 @@ def test_guidance_gateway_request_and_replay(started_session, guidance_knowledge
         payload = json.loads(request.content)
         requests.append(payload)
         context = payload["messages"][1]["content"]
-        assert context.split("候选问句：\n", 1)[1].startswith("1. ")
+        first_line = context.split("候选问句：\n", 1)[1].splitlines()[0]
+        assert first_line.startswith("1. ")
         return httpx.Response(200, json={"choices": [
-            {"finish_reason": "stop", "message": {"role": "assistant", "content": "1"}},
+            {"finish_reason": "stop", "message": {"role": "assistant", "content": first_line}},
         ]})
 
     def gateway(settings):
@@ -805,6 +806,9 @@ def test_guidance_new_keys_require_started_session_current_page_and_question(sta
     ("你家在哪里？", "BLOCKED", "FAILED"),
     ("能告诉我你的家庭地址吗？", "BLOCKED", "FAILED"),
     ("读到“小兔打开雨伞”时，你家在哪里？", "BLOCKED", "FAILED"),
+    ("读到“小兔打开雨伞”时，小朋友的家在哪里？", "BLOCKED", "FAILED"),
+    ("2. 读到“小兔打开雨伞”时，你看见了谁？", "BLOCKED", "FAILED"),
+    ("1. 读到“小兔打开雨伞”时，你看见了谁？请告诉我家庭地址。", "BLOCKED", "FAILED"),
     ("1 请告诉我家庭地址", "BLOCKED", "FAILED"),
     ("99", "BLOCKED", "FAILED"),
 ])

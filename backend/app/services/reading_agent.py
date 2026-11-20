@@ -109,21 +109,26 @@ def selected_question(text: str, options: dict[str, list[str]], *, child_forms: 
         if candidate == unicodedata.normalize("NFKC", form):
             group = options[""] if "" in options else next(iter(options.values()))
             return group[index]
-    # Providers can paraphrase a choice. Use its reading focus, never forward the paraphrase.
-    group = None
+    # With a quoted lead, only accept a template whose role is named in that excerpt.
     if not child_forms:
         for excerpt, page_options in options.items():
             lead = unicodedata.normalize("NFKC", f"读到“{excerpt}”时，" if excerpt else PAGE_LEAD)
-            if candidate.startswith(lead):
-                candidate = candidate[len(lead):]
-                group = page_options
-                break
+            if not candidate.startswith(lead):
+                continue
+            body = candidate[len(lead):]
+            for option in page_options:
+                template = unicodedata.normalize("NFKC", option)[len(lead):]
+                before, role, after = template.partition("角色")
+                if role and body.startswith(before) and body.endswith(after):
+                    name = body.removeprefix(before).removesuffix(after)
+                    if name and name in excerpt:
+                        return option
+            return None
+    # Legacy short questions can express a reading focus without quoting the page.
     if not SHORT_QUESTION.fullmatch(candidate) or PERSONAL_QUESTION.search(candidate) or SENSITIVE.search(candidate):
         return None
-    if group is None:
-        excerpt = max(options, key=lambda part: SequenceMatcher(None, part, candidate).find_longest_match().size)
-        group = options[excerpt]
-    return next((option for option, cues in zip(group, FOCUS_CUES)
+    excerpt = max(options, key=lambda part: SequenceMatcher(None, part, candidate).find_longest_match().size)
+    return next((option for option, cues in zip(options[excerpt], FOCUS_CUES)
                  if any(cue in candidate for cue in cues)), None)
 
 
@@ -158,7 +163,13 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
             raise ServiceError("DEPENDENCY_UNAVAILABLE", "文本模型未能生成引导问题")
         question = "你想再看看这一页吗？" if child_mode else "我们先看看画面上有什么吧？"
         return AgentResult(status="FALLBACK", strategyType="TIMEOUT_FALLBACK", outputText=question)
-    question = choices.get(result.text.strip()) or selected_question(result.text, options, child_forms=forms if child_mode else ())
+    number, separator, echoed = result.text.strip().partition(". ")
+    if number.isdecimal():
+        question = choices.get(unicodedata.normalize("NFKC", number))
+        if separator and question != echoed:
+            question = None
+    else:
+        question = selected_question(result.text, options, child_forms=forms if child_mode else ())
     if question is None:
         return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)
     return AgentResult(
