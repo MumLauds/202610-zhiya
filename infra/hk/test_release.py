@@ -77,13 +77,17 @@ class ReleaseTests(unittest.TestCase):
                 db.executescript("""
                     create table accounts(id, created_at);
                     create table child_profiles(id, guardian_id, created_at, nickname);
-                    create table reading_sessions(id, profile_id, version_id, created_at);
+                    create table reading_sessions(id, profile_id, version_id, created_at, status, current_page_no,
+                                                  visited_pages_json, revision, started_at, ended_at, end_reason);
                     create table interaction_events(id, session_id, version_id, page_no, event_type, created_at,
                                                     input_text, output_text, feedback, response_json);
                     create table reading_reports(session_id, status, summary, activities_json);
                     insert into accounts values (1,10);
                     insert into child_profiles values (2,1,20,'first');
-                    insert into reading_sessions values (3,2,4,30);
+                    insert into reading_sessions values
+                        (3,2,4,30,'FINISHED',3,'[1,2,3]',8,31,40,'USER_FINISH'),
+                        (6,2,4,30,'IN_PROGRESS',1,'[1]',1,31,NULL,NULL),
+                        (7,2,4,30,'INTERRUPTED',NULL,'[]',1,NULL,40,'GRANT_REVOKED');
                     insert into interaction_events values (5,3,4,1,'ASK',31,'question','answer',NULL,'{}');
                     insert into reading_reports values (3,'READY','original','[]'), (6,'PENDING',NULL,NULL);
                 """)
@@ -91,8 +95,12 @@ class ReleaseTests(unittest.TestCase):
                 db.executescript("""
                     insert into accounts values (9,99);
                     update child_profiles set nickname='second';
+                    update reading_sessions set current_page_no=2, visited_pages_json='[1,2]', revision=2 where id=6;
                     update reading_reports set status='READY', summary='new' where session_id=6;
                 """)
+                verify_history(live, saved)
+                db.execute("update reading_sessions set status='FINISHED', ended_at=45, end_reason='USER_FINISH' where id=6")
+                db.commit()
                 verify_history(live, saved)
                 for table in ("accounts", "child_profiles", "reading_sessions", "interaction_events", "reading_reports"):
                     with self.subTest(table=table):
@@ -103,6 +111,13 @@ class ReleaseTests(unittest.TestCase):
                         with closing(sqlite3.connect(saved)) as restore:
                             restore.backup(db)
                 for change, expected in [
+                    ("update reading_sessions set visited_pages_json='[1]' where id=3", "Ended reading session"),
+                    ("update reading_sessions set current_page_no=1 where id=3", "Ended reading session"),
+                    ("update reading_sessions set revision=1 where id=3", "Ended reading session"),
+                    ("update reading_sessions set status='IN_PROGRESS' where id=3", "Ended reading session"),
+                    ("update reading_sessions set started_at=32 where id=3", "Ended reading session"),
+                    ("update reading_sessions set ended_at=41 where id=7", "Ended reading session"),
+                    ("update reading_sessions set end_reason='USER_CANCEL' where id=7", "Ended reading session"),
                     ("update interaction_events set output_text='changed'", "interaction_events"),
                     ("update interaction_events set session_id=7", "interaction_events"),
                     ("update reading_reports set status='FAILED',summary=NULL where session_id=3", "Completed"),

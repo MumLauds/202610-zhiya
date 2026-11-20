@@ -19,7 +19,10 @@ receipt=public/current.json
 last_success=last-success.json
 image_id() { docker inspect --format '{{.Image}}' "$1"; }
 db_volume() { docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/zhiya"}}{{.Name}}{{end}}{{end}}' "$backend"; }
-db_inode() { docker exec "$backend" stat -c '%i' /var/lib/zhiya/zhiya.sqlite3; }
+db_file_id() { docker exec "$backend" stat -c '%d:%i' /var/lib/zhiya/zhiya.sqlite3; }
+same_db() {
+    [[ $1 =~ ^[0-9]+:[0-9]+$ && $(db_volume) == "${project}_sqlite-data" && $(db_file_id) == "$1" ]]
+}
 main_sha() { git ls-remote --exit-code "$repo" refs/heads/main | cut -f1; }
 revision() { docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$1"; }
 switch_images() {
@@ -32,17 +35,24 @@ probe() {
 }
 recover() {
     # pending is written atomically before either live container is replaced.
-    read -r target old_api old_web pending_run < pending
+    local expected_file_id committed=false
+    read -r target old_api old_web pending_run expected_file_id < pending
     if [[ -s "$last_success" ]] && jq -e --arg sha "$target" --arg run "$pending_run" \
         '.revision == $sha and .run == $run' "$last_success" >/dev/null; then
-        rm pending
-        return
+        committed=true
+    else
+        rm -f "$receipt" || return 1
+        echo "Restoring images recorded before $target" >&2
+        switch_images "$old_api" "$old_web" || return 1
+        [[ $(image_id "$backend") == "$old_api" && $(image_id "$web") == "$old_web" ]] || return 1
     fi
-    rm -f "$receipt" || return 1
-    echo "Restoring images recorded before $target" >&2
-    switch_images "$old_api" "$old_web" || return 1
-    [[ $(image_id "$backend") == "$old_api" && $(image_id "$web") == "$old_web" ]] || return 1
-    [[ $(db_volume) == "${project}_sqlite-data" ]] || return 1
+    if ! same_db "$expected_file_id"; then
+        rm -f "$receipt" || return 1
+        mv -f pending history-hold || return 1
+        echo "Cannot confirm original SQLite file during recovery; see history-hold" >&2
+        return 1
+    fi
+    if [[ $committed == true ]]; then rm pending; return; fi
     probe /api/v1/health -f | jq -e '.data.status == "ok"' >/dev/null || return 1
     # A crash may have interrupted the candidate before its history check.
     # Always use the original baseline when completing an interrupted switch.
@@ -104,7 +114,8 @@ for id in "${images[@]}"; do
     [[ $id =~ ^sha256:[[:xdigit:]]{64}$ && $(revision "$id") == "$sha" ]]
 done
 [[ $(db_volume) == "${project}_sqlite-data" ]]
-inode=$(db_inode)
+file_id=$(db_file_id)
+[[ $file_id =~ ^[0-9]+:[0-9]+$ ]]
 old_api=$(image_id "$backend")
 old_web=$(image_id "$web")
 previous=$(revision "$old_api")
@@ -119,12 +130,12 @@ latest=$(main_sha)
 if [[ $latest != "$sha" ]]; then echo "Superseded $sha"; exit 0; fi
 current_run=$(python3 gate.py "$sha")
 if [[ $current_run != "$run" ]]; then echo "Run $run no longer authorizes release"; exit 0; fi
-printf '%s %s %s %s\n' "$sha" "$old_api" "$old_web" "$run" > pending.tmp
+printf '%s %s %s %s %s\n' "$sha" "$old_api" "$old_web" "$run" "$file_id" > pending.tmp
 mv pending.tmp pending
 trap 'rc=$?; if [[ -f pending ]]; then recover || echo "Review recovery state and service journal" >&2; fi; exit "$rc"' EXIT
 rm -f "$receipt"
 switch_images "${images[@]}"
-[[ $(db_volume) == "${project}_sqlite-data" && $(db_inode) == "$inode" ]]
+same_db "$file_id"
 [[ $(image_id "$backend") == "${images[0]}" && $(image_id "$web") == "${images[1]}" ]]
 for page in index.html mobile.html; do
     docker exec "$web" cat "/srv/www/$page" > "$release/$page"

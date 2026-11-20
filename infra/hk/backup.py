@@ -46,6 +46,15 @@ def verify_history(live, saved):
             if missing is not None:
                 raise RuntimeError(f"Pre-release record missing or reassigned in {table}")
         if db.execute("""
+            SELECT id, status, current_page_no, json(visited_pages_json), revision, started_at, ended_at, end_reason
+            FROM prior.reading_sessions WHERE status IN ('FINISHED', 'INTERRUPTED')
+            EXCEPT
+            SELECT id, status, current_page_no, json(visited_pages_json), revision, started_at, ended_at, end_reason
+            FROM main.reading_sessions WHERE status IN ('FINISHED', 'INTERRUPTED')
+            LIMIT 1
+        """).fetchone() is not None:
+            raise RuntimeError("Ended reading session changed after cutover")
+        if db.execute("""
             SELECT session_id, summary, activities_json FROM prior.reading_reports WHERE status = 'READY'
             EXCEPT
             SELECT session_id, summary, activities_json FROM main.reading_reports WHERE status = 'READY'
