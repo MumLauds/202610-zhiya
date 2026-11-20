@@ -47,7 +47,9 @@ def prepare(directory):
     model_db = directory / "g14-input.sqlite3"
     with closing(connect(db_path)) as source, closing(sqlite3.connect(model_db)) as snapshot:
         source.backup(snapshot)
-    return {"database": db_path.name, "modelDatabase": model_db.name,
+    with closing(connect(db_path)) as db:
+        published = db.execute("SELECT count(*) FROM story_versions WHERE status='PUBLISHED'").fetchone()[0]
+    return {"database": db_path.name, "publishedInFixture": published, "modelDatabase": model_db.name,
             "modelDatabaseSha256": hashlib.sha256(model_db.read_bytes()).hexdigest(),
             "reviewScope": "automated QA in an isolated SQLite database",
             "items": approved}
@@ -75,7 +77,9 @@ def exercise(page, origin, browser_version, report):
     report.update(browser="Chrome " + browser_version, sessionId=sid)
     path = f"/api/v1/reading-sessions/{sid}"
     page.goto(origin + f"/#reader/{sid}")
-    page.reload()
+    with page.expect_response(lambda r: "/api/v1/storybooks?" in r.url and r.request.method == "GET") as shelf:
+        page.reload()
+    assert shelf.value.status == 200 and shelf.value.finished() is None
     button = lambda name: page.get_by_role("button", name=name, exact=True)
     with page.expect_response(lambda r: r.url.endswith("/guidance") and r.request.method == "POST") as event:
         button("开始本次阅读").click()

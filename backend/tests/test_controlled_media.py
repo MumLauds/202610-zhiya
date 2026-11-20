@@ -32,7 +32,7 @@ from app.services.story_media import (  # noqa: E402
     verify_and_detect_image,
 )
 from app.speech_config import SpeechSettings  # noqa: E402
-from import_seed import import_seed  # noqa: E402
+from import_seed import SEED_PUBLISHER, import_seed  # noqa: E402
 
 SCHEMA = ROOT / "database" / "schema.sql"
 
@@ -640,26 +640,45 @@ def test_import_seed_pins_cover_assets_before_mapping_changes(tmp_path, monkeypa
     alt_map = tmp_path / "empty-mapping.json"
     alt_map.write_text("[]", encoding="utf-8")
     monkeypatch.setenv("ZHIYA_COVER_MAPPING_PATH", str(alt_map))
-    with closing(sqlite3.connect(seed_db)) as db, db:
-        db.execute("INSERT INTO accounts VALUES (99, 'seed-reader', 'h', 'GUARDIAN', 1)")
-        db.execute("UPDATE story_versions SET status = 'PUBLISHED', reviewed_by_id = 99, reviewed_at = 1 WHERE status = 'DRAFT'")
 
     _login_attempts.clear()
     with TestClient(app, base_url="https://testserver") as client:
+        assert client.post("/api/v1/auth/sessions", json={
+            "account": SEED_PUBLISHER, "password": "never-a-login-password",
+        }).status_code == 401
         creds = {"account": "seed-u1", "password": "strong-pass-123"}
         assert client.post("/api/v1/auth/registrations", json=creds).status_code == 201
         assert client.post("/api/v1/auth/sessions", json=creds).status_code == 201
+        items = client.get("/api/v1/storybooks").json()["data"]["items"]
+        assert [book["storyVersionId"] for book in items] == list(range(2, 22))
+        assert sum(len(book["pages"]) for book in items) == 104
+        assert client.get("/api/v1/story-versions/1").status_code == 404
+        for book in items:
+            keys = [book["coverRef"], *(page["imageRef"] for page in book["pages"])]
+            for key in keys:
+                response = client.get(f"/api/v1/media/{key}")
+                assert response.status_code == 200, key
+                assert response.headers["content-type"] == "image/png"
         resp = client.get("/api/v1/media/asset-2-cover")
         expected = (REPO_ROOT / "knowledge-base_v2.5" / "图片" / "PIC-B01_小狐狸的雨伞.png").read_bytes()
         assert resp.status_code == 200 and resp.content == expected
     _login_attempts.clear()
 
 
+def copy_draft_seed(destination):
+    shutil.copytree(ROOT / "data" / "seed", destination)
+    versions = destination / "story_versions.json"
+    records = json.loads(versions.read_bytes())
+    for record in records:
+        record["status"] = "DRAFT"
+    versions.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+
+
 @pytest.mark.parametrize("legacy_draft", [False, True], ids=["new-seed", "old-seed"])
 def test_seed_draft_picks_up_pages_added_before_publication(media_env, monkeypatch, legacy_draft):
     client, _, db_path, root = media_env
     seed_dir = root / "seed"
-    shutil.copytree(ROOT / "data" / "seed", seed_dir)
+    copy_draft_seed(seed_dir)
     pages_file = seed_dir / "story_pages.json"
     pages = json.loads(pages_file.read_bytes())
     draft_pages = [page for page in pages if page["version_id"] == 2]
@@ -798,7 +817,9 @@ def test_seed_upgrade_fills_missing_snapshots_and_preserves_existing_ones(media_
     ]), encoding="utf-8")
     monkeypatch.setenv("ZHIYA_MEDIA_ROOT", str(tmp_path))
     monkeypatch.setenv("ZHIYA_COVER_MAPPING_PATH", str(mapping))
-    assert import_seed(db_path) is True
+    old_seed = tmp_path / "old-seed"
+    copy_draft_seed(old_seed)
+    assert import_seed(db_path, old_seed) is True
 
     # Version 2 predates snapshots. Version 3 was already published under the old layout.
     versions = db_path.parent / f".{db_path.name}.media_pins" / "versions"

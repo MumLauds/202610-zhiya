@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from import_seed import SEED_DIR, import_seed
+from import_seed import SEED_DIR, SEED_PUBLISHER, import_seed
 from init_db import SEED_TABLES, connect, initialize
 
 
@@ -27,7 +27,13 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(db.execute("PRAGMA foreign_key_check").fetchall(), [])
             counts = [db.execute(f"SELECT count(*) FROM {table}").fetchone()[0] for table in SEED_TABLES]
             self.assertEqual(counts, [21, 21, 110, 20])
-            self.assertEqual(db.execute("SELECT DISTINCT status FROM story_versions").fetchall(), [("DRAFT",)])
+            self.assertEqual(db.execute("SELECT id, reviewed_by_id, reviewed_at FROM story_versions "
+                                        "WHERE status='DRAFT'").fetchall(), [(1, None, None)])
+            self.assertEqual(db.execute(
+                "SELECT v.id FROM story_versions v JOIN accounts a ON a.id=v.reviewed_by_id "
+                "WHERE v.status='PUBLISHED' AND v.reviewed_at > 0 AND a.account=? AND a.role='ADMIN' "
+                "AND a.password_hash='!' ORDER BY v.id", (SEED_PUBLISHER,)
+            ).fetchall(), [(i,) for i in range(2, 22)])
             self.assertEqual(
                 db.execute("SELECT DISTINCT source_visited_pages_json FROM story_versions").fetchall(),
                 [(None,)],
@@ -56,10 +62,12 @@ class DatabaseTests(unittest.TestCase):
                     ("兔妈妈背着背包，拿着登山杖在爬山。",),
                 ],
             )
+            db.execute("UPDATE story_versions SET status='WITHDRAWN' WHERE id=2")
             db.execute("UPDATE knowledge_items SET status = 'APPROVED', reviewed_at = 1 WHERE id = 1")
         initialize(self.path)
         self.assertFalse(import_seed(self.path))
         with closing(connect(self.path)) as db:
+            self.assertEqual(db.execute("SELECT status FROM story_versions WHERE id=2").fetchone(), ("WITHDRAWN",))
             self.assertEqual(
                 db.execute("SELECT status, reviewed_at FROM knowledge_items WHERE id = 1").fetchone(),
                 ("APPROVED", 1),
@@ -69,6 +77,11 @@ class DatabaseTests(unittest.TestCase):
         placeholder = "/assets/placeholder.png"
         seed_dir = self.path.parent / "old_seed"
         shutil.copytree(SEED_DIR, seed_dir)
+        versions = seed_dir / "story_versions.json"
+        old_versions = json.loads(versions.read_text(encoding="utf-8"))
+        for version in old_versions:
+            version["status"] = "DRAFT"
+        versions.write_text(json.dumps(old_versions, ensure_ascii=False), encoding="utf-8")
         pages = seed_dir / "story_pages.json"
         records = json.loads(pages.read_text(encoding="utf-8"))
         seed_images = {}
@@ -117,6 +130,18 @@ class DatabaseTests(unittest.TestCase):
             self.assertFalse(import_seed(self.path))
             with closing(connect(self.path)) as db:
                 self.assertEqual(db.execute(page_query).fetchall(), expected)
+
+    def test_missing_release_media_rolls_back_and_can_retry(self):
+        from unittest.mock import patch
+        from app.services.story_media import MediaDependencyError
+
+        with patch.dict("os.environ", {"ZHIYA_MEDIA_ROOT": str(self.path.parent)}):
+            with self.assertRaises(MediaDependencyError):
+                import_seed(self.path)
+        with closing(connect(self.path)) as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM story_versions").fetchone(), (0,))
+            self.assertEqual(db.execute("SELECT count(*) FROM accounts").fetchone(), (0,))
+        self.assertTrue(import_seed(self.path))
 
     def test_invalid_page_reference_rolls_back_import(self):
         seed_dir = self.path.parent / "seed"

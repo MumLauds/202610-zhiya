@@ -66,8 +66,12 @@ def local_app(directory, *, application=None):
         server = uvicorn.Server(uvicorn.Config(app, ssl_certfile=str(cert), ssl_keyfile=str(key),
                                                timeout_keep_alive=1, timeout_graceful_shutdown=8,
                                                access_log=False, log_level="warning"))
+        loop_factory = asyncio.SelectorEventLoop
+        if application is not None and sys.platform == "win32":
+            # Live ASR needs a subprocess-capable loop for FFmpeg.
+            loop_factory = asyncio.ProactorEventLoop
         thread = Thread(target=asyncio.run, args=(server.serve(sockets=[sock]),),
-                        kwargs={"loop_factory": asyncio.SelectorEventLoop}, daemon=True)
+                        kwargs={"loop_factory": loop_factory}, daemon=True)
         thread.start()
         deadline = time.monotonic() + 20
         try:

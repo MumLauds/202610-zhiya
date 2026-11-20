@@ -179,10 +179,29 @@ def test_only_unmodified_seed_content_is_approved(tmp_path, monkeypatch, capsys)
     assert "local-fixture-password" not in capsys.readouterr().out
     with closing(demo.connect(path)) as db:
         statuses = dict(db.execute("SELECT id,status FROM story_versions"))
-        assert [statuses[v["id"]] for v in (first, second, third)] == ["DRAFT", "PUBLISHED", "DRAFT"]
+        assert [statuses[v["id"]] for v in (first, second, third)] == ["DRAFT", "PUBLISHED", "PUBLISHED"]
+        assert db.execute("SELECT COUNT(*) FROM story_versions v JOIN accounts a ON a.id=v.reviewed_by_id "
+                          "WHERE a.account='seed:course-originals' AND v.status='PUBLISHED'").fetchone()[0] == 20
         assert statuses[9876] == "DRAFT"
         draft_keys = set(row[0] for row in db.execute("SELECT item_key FROM knowledge_items WHERE status='DRAFT'"))
         assert draft_keys == {knowledge["item_key"], "qa-review-fixture"}
+
+
+def test_demo_reports_only_new_publications_and_branches(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "demo.sqlite3"
+    demo.ensure_database(path)
+    with closing(demo.connect(path)) as db, db:
+        # One legacy draft and one already-published original both need demo branches.
+        db.execute("UPDATE story_versions SET status='DRAFT', reviewed_by_id=NULL, reviewed_at=NULL WHERE id=2")
+    monkeypatch.setattr(sys, "argv", ["prepare", "--db", str(path), "--yes", "--limit", "2"])
+
+    for expected_ids, expected_branches in (([2], 2), ([], 0)):
+        assert demo.main() == 0
+        result = json.loads(capsys.readouterr().out)
+        assert result["storyVersionIds"] == expected_ids
+        assert result["publishedCount"] == len(expected_ids)
+        assert result["demoBranchesCreated"] == expected_branches
+        assert result["check"]["publishedVersions"] == 20
 
 
 def test_preserve_manual_scores_and_reject_changed_plan(tmp_path):
@@ -430,4 +449,4 @@ def test_demo_role_conflict_rolls_back(tmp_path, monkeypatch, account, role):
     with closing(demo.connect(path)) as db:
         rows = db.execute("SELECT account, role FROM accounts WHERE account LIKE 'fixture%'").fetchall()
         assert [tuple(row) for row in rows] == [(account, role)]
-        assert db.execute("SELECT count(*) FROM story_versions WHERE status='PUBLISHED'").fetchone()[0] == 0
+        assert db.execute("SELECT count(*) FROM story_versions WHERE status='PUBLISHED'").fetchone()[0] == 20

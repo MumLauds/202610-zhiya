@@ -474,7 +474,7 @@ def pin_version_media(db: sqlite3.Connection, version_row: sqlite3.Row | dict, *
         raise MediaDependencyError("Version media snapshot storage is unavailable") from exc
 
 
-def pin_database_versions(db: sqlite3.Connection, *, db_path: Path) -> None:
+def pin_database_versions(db: sqlite3.Connection, *, db_path: Path, require_images_for: set[int] | None = None) -> None:
     """Reserve draft covers and bind released versions to their current page images during import or upgrade."""
     cur = db.cursor()
     cur.row_factory = sqlite3.Row
@@ -483,7 +483,10 @@ def pin_database_versions(db: sqlite3.Connection, *, db_path: Path) -> None:
            JOIN storybooks b ON b.id = v.storybook_id ORDER BY v.id"""
     ).fetchall()
     for row in versions:
-        pin_version_media(db, row, source_type=row["storybook_source_type"], db_path=db_path, backfill=True)
+        manifest = pin_version_media(db, row, source_type=row["storybook_source_type"], db_path=db_path, backfill=True)
+        if require_images_for and row["id"] in require_images_for:
+            if not manifest["cover"] or not manifest["pages"] or not all(manifest["pages"].values()):
+                raise MediaDependencyError(f"Missing licensed seed illustration for {row['title']}")
 
 
 def _file_state(stream) -> tuple[int, ...]:

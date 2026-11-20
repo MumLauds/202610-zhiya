@@ -1,4 +1,4 @@
-"""Import draft seeds or backfill media snapshots for existing versions."""
+"""Import course seeds or backfill media snapshots for existing versions."""
 import argparse
 import json
 import sqlite3
@@ -16,6 +16,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from app.services.story_media import SEED_COVER_SOURCE_REF, pin_database_versions  # noqa: E402
 
 SEED_DIR = ROOT.parent / "data" / "seed"
+SEED_PUBLISHER = "seed:course-originals"
 IDENTITIES = {
     "storybooks": ("id",),
     "story_versions": ("id", "storybook_id", "version_no"),
@@ -43,8 +44,14 @@ def load_seed(seed_dir: Path) -> dict:
         columns = set(fields.split())
         records = json.loads((seed_dir / f"{table}.json").read_text(encoding="utf-8"))
         for row in records:
-            if table in ("story_versions", "knowledge_items") and row["status"] != "DRAFT":
-                raise ValueError(f"{table}: seed records must be DRAFT")
+            if table == "knowledge_items" and row["status"] != "DRAFT":
+                raise ValueError("Knowledge seed records must be DRAFT")
+            if table == "story_versions" and row["status"] != "DRAFT":
+                if not (row["status"] == "PUBLISHED" and row["id"] == row["storybook_id"]
+                        and 2 <= row["id"] <= 21 and row["version_no"] == 1
+                        and row["source_ref"] == SEED_COVER_SOURCE_REF
+                        and row["license_note"] == "团队原创，仅限课程学习与演示，禁止商用"):
+                    raise ValueError("Only the reviewed course originals may be published by seed import")
             if table == "knowledge_items" and row["reviewed_at"] is not None:
                 raise ValueError("Knowledge seed records must be unreviewed")
             if "created_at" in columns:
@@ -98,8 +105,26 @@ def import_seed(path: Path, seed_dir: Path = SEED_DIR) -> bool:
             pin_database_versions(db, db_path=path)
             return False
 
+        released = {row["id"] for row in data["story_versions"] if row["status"] == "PUBLISHED"}
+        if released:
+            library_ids = {book["id"] for book in data["storybooks"] if book["source_type"] == "LIBRARY"}
+            if not released <= library_ids or any(
+                page["image_license_note"] != "NO-COMMERCIAL" for page in data["story_pages"]
+                if page["version_id"] in released
+            ):
+                raise ValueError("Published course originals require licensed library pages")
+            now = time_ns() // 1_000_000
+            reviewer = db.execute(
+                "INSERT INTO accounts (account, password_hash, role, created_at) VALUES (?, '!', 'ADMIN', ?)",
+                (SEED_PUBLISHER, now),
+            ).lastrowid
+            for row in data["story_versions"]:
+                row["reviewed_by_id"] = reviewer if row["id"] in released else None
+                row["reviewed_at"] = now if row["id"] in released else None
         for table, fields in FIELDS.items():
             columns = fields.split()
+            if table == "story_versions" and released:
+                columns.extend(("reviewed_by_id", "reviewed_at"))
             placeholders = ", ".join(f":{column}" for column in columns)
             db.executemany(
                 f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",
@@ -107,7 +132,7 @@ def import_seed(path: Path, seed_dir: Path = SEED_DIR) -> bool:
             )
         check_foreign_keys(db)
         clear_pin_store(path)
-        pin_database_versions(db, db_path=path)
+        pin_database_versions(db, db_path=path, require_images_for=released)
         return True
 
 

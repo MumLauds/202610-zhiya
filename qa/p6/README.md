@@ -19,9 +19,11 @@ python -m venv .venv
 .venv/Scripts/python.exe qa/p6/run_p6.py --start-local --db qa/p6/instance/zhiya.sqlite3
 ```
 
-首次运行会创建数据库、审核发布 12 本种子绘本与 20 条知识、创建演示账号
+首次运行会创建数据库并导入 20 本已发布的课程原创，默认给其中 12 本准备演示分支、审核发布 20 条演示知识、创建演示账号
 `p6demo / Zhiya-demo-2026`。数据库默认位于 `qa/p6/instance/zhiya.sqlite3`。脚本只发布与仓库种子逐项一致的候选绘本、页面和知识，
-也可用 `--db` 指定到仓库外，避免提交数据库文件。一键入口会继续完成自己上次中断的准备事务。对没有准备标记、只有草稿种子且没有账号的旧库，请先确认用途，再执行 `python qa/p6/prepare_demo_data.py --db <数据库路径> --yes`。
+也可用 `--db` 指定到仓库外，避免提交数据库文件。一键入口会继续完成自己上次中断的准备事务。对没有准备标记、仅有种子、尚未创建演示账号的库，请先确认用途，再执行 `python qa/p6/prepare_demo_data.py --db <数据库路径> --yes`。
+
+准备命令输出的 `publishedCount` 和 `storyVersionIds` 只统计本轮由草稿转为已发布的绘本；`demoBranchesCreated` 统计本轮实际新增的演示分支。书架的已发布总数见 `check.publishedVersions`。
 
 ## 分步执行
 
@@ -110,8 +112,7 @@ python qa/p6/summarize_model_compare.py
 - 结束阅读后，验收会在 `--timeout` 秒内读取会话详情，记录小结终态，并核对已就绪活动的材料和步骤。
 - 儿童模式 API-020 会吊销当前设备的家长会话，脚本为此使用独立客户端；手工演示时
   请先用另一台设备/另一个浏览器保留家长入口。
-- 种子默认全部 DRAFT，未执行 `prepare_demo_data.py` 时书架为空；这是数据状态，
-  不是接口故障。
+- 新库导入后即可阅读 20 本课程原创。旧库保留原有审核状态。
 
 - Windows 系统代理可能接管本机 POST 请求并返回 422；测试程序默认 `trust_env=False`。如确需代理，设置 `ZHIYA_USE_ENV_PROXY=1`。
 
