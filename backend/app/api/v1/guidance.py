@@ -1,4 +1,4 @@
-"""API-017: claim an event, generate outside the write transaction, then commit its result."""
+"""API-016/017: claim an event, generate outside the write transaction, then commit its result."""
 
 import json
 import logging
@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Path, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.api.v1.auth import authorized_db, error
 from app.api.v1.reading_sessions import (
@@ -17,21 +17,35 @@ from app.api.v1.reading_sessions import (
     replay_session_event, request_digest,
 )
 from app.schemas.agent import AgentResult
-from app.services.reading_agent import run_agent
+from app.services.reading_agent import CHILD_QUESTIONS, run_agent, answer_question
 
 router = APIRouter(prefix="/api/v1/reading-sessions")
 logger = logging.getLogger("zhiya.guidance")
 
 
-class GuidanceRequest(BaseModel):
+class PageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     pageNumber: int = Field(ge=1, le=MAX_ID, strict=True)
-    feedback: Literal["INITIAL", "UNDERSTOOD", "NOT_UNDERSTOOD", "SKIPPED"]
     expectedRevision: int = Field(ge=0, le=MAX_ID, strict=True)
     clientEventId: str = Field(min_length=1, max_length=64)
 
 
-def matches_page(session, payload: GuidanceRequest) -> bool:
+class GuidanceRequest(PageRequest):
+    feedback: Literal["INITIAL", "UNDERSTOOD", "NOT_UNDERSTOOD", "SKIPPED"]
+
+
+class QuestionRequest(PageRequest):
+    inputText: str = Field(min_length=1, max_length=200)
+
+    @field_validator("inputText")
+    @classmethod
+    def confirmed_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("请提交已确认的问题")
+        return value.strip()
+
+
+def matches_page(session, payload: PageRequest) -> bool:
     return (session["status"] == "IN_PROGRESS"
             and session["current_page_no"] == payload.pageNumber
             and session["revision"] == payload.expectedRevision)
@@ -39,21 +53,23 @@ def matches_page(session, payload: GuidanceRequest) -> bool:
 
 def save_event(db, request, session, payload, digest, result: AgentResult, now):
     revision = session["revision"] + 1
-    initial = payload.feedback == "INITIAL"
+    ask = isinstance(payload, QuestionRequest)
+    feedback = None if ask or payload.feedback == "INITIAL" else payload.feedback
+    event_type = "ASK" if ask else "FEEDBACK" if feedback else "QUESTION"
     status = {"GENERATED": "SUCCESS", "FALLBACK": "FALLBACK", "BLOCKED": "FAILED"}[result.status]
     cursor = db.execute(
         """INSERT INTO interaction_events
            (session_id, version_id, request_key, request_digest, response_json, page_no, event_type,
-            feedback, output_text, strategy_type, result_status, revision_after, created_at)
-           VALUES (?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, ?, ?, ?)""",
+            feedback, input_text, output_text, strategy_type, result_status, revision_after, created_at)
+           VALUES (?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (session["id"], session["version_id"], payload.clientEventId, digest, payload.pageNumber,
-         "QUESTION" if initial else "FEEDBACK", None if initial else payload.feedback,
+         event_type, feedback, payload.inputText if ask and result.status != "BLOCKED" else None,
          result.outputText, result.strategyType, status, revision, now),
     )
     event_id = cursor.lastrowid
     response = {"data": {**result.model_dump(), "interactionEventId": event_id, "revision": revision},
                 "requestId": request.state.request_id}
-    if session["mode"] == "CHILD_SOLO" and result.status != "BLOCKED" and result.outputText:
+    if not ask and session["mode"] == "CHILD_SOLO" and result.status != "BLOCKED" and result.outputText:
         response["data"]["answerOptions"] = list(CHILD_SHORT_ANSWERS)
     db.execute("UPDATE interaction_events SET response_json = ? WHERE id = ?",
                (json.dumps(response, ensure_ascii=False), event_id))
@@ -106,7 +122,18 @@ def finish_guidance(request, session_id, payload, digest, token, result: AgentRe
 
 @router.post("/{session_id}/guidance", status_code=201)
 async def get_guidance(payload: GuidanceRequest, request: Request, session_id: int = Path(ge=1, le=MAX_ID)):
-    digest = request_digest(f"/api/v1/reading-sessions/{session_id}/guidance", payload.model_dump())
+    return await process_question_or_guidance(payload, request, session_id)
+
+
+@router.post("/{session_id}/questions", status_code=201)
+async def ask_question(payload: QuestionRequest, request: Request, session_id: int = Path(ge=1, le=MAX_ID)):
+    return await process_question_or_guidance(payload, request, session_id)
+
+
+async def process_question_or_guidance(payload: GuidanceRequest | QuestionRequest, request: Request, session_id: int):
+    ask = isinstance(payload, QuestionRequest)
+    endpoint = "questions" if ask else "guidance"
+    digest = request_digest(f"/api/v1/reading-sessions/{session_id}/{endpoint}", payload.model_dump())
     key = payload.clientEventId
     try:
         with authorized_db(request, write=True) as (db, principal, failure):
@@ -115,6 +142,8 @@ async def get_guidance(payload: GuidanceRequest, request: Request, session_id: i
             session = owned_session(db, session_id, principal)
             if session is None:
                 return error(request, 404, "RESOURCE_NOT_FOUND", "会话不可用")
+            if ask and principal.role == "CHILD" and payload.inputText not in CHILD_QUESTIONS:
+                return error(request, 422, "VALIDATION_ERROR", "请使用本页提供的短问题")
             replay = replay_session_event(db, request, session_id, key, digest, principal)
             if replay is not None:
                 return replay
@@ -123,7 +152,7 @@ async def get_guidance(payload: GuidanceRequest, request: Request, session_id: i
                 return fail_session_event(db, request, owner, session_id, key, digest, 409,
                                           "SESSION_CONFLICT", "当前状态或页面不允许此操作")
             previous_question = ""
-            if payload.feedback in ("UNDERSTOOD", "NOT_UNDERSTOOD"):
+            if not ask and payload.feedback in ("UNDERSTOOD", "NOT_UNDERSTOOD"):
                 question = current_question(db, session)
                 if question is None:
                     return fail_session_event(db, request, owner, session_id, key, digest, 409,
@@ -131,7 +160,7 @@ async def get_guidance(payload: GuidanceRequest, request: Request, session_id: i
                 previous_question = question["output_text"]
 
             now = int(time.time() * 1000)
-            if payload.feedback == "SKIPPED":
+            if not ask and payload.feedback == "SKIPPED":
                 skipped = AgentResult(status="FALLBACK", strategyType="SKIP", outputText="")
                 response = save_event(db, request, session, payload, digest, skipped, now)
                 record_session_event(db, owner, session_id, key, digest, now, 201, response)
@@ -158,10 +187,14 @@ async def get_guidance(payload: GuidanceRequest, request: Request, session_id: i
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用", retryable=True)
 
     try:
-        result = await run_agent(request.app.state.model_adapter, feedback=payload.feedback,
-                                 age_band=context["age_band"], topics=json.loads(context["topics_json"]),
-                                 page_text=context["body_text"], previous_question=previous_question,
-                                 child_mode=session["mode"] == "CHILD_SOLO")
+        context_args = dict(age_band=context["age_band"], topics=json.loads(context["topics_json"]),
+                            page_text=context["body_text"])
+        if ask:
+            result = await answer_question(request.app.state.model_adapter, input_text=payload.inputText, **context_args)
+        else:
+            result = await run_agent(request.app.state.model_adapter, feedback=payload.feedback,
+                                     previous_question=previous_question, child_mode=session["mode"] == "CHILD_SOLO",
+                                     **context_args)
     except Exception as exc:
         # Keep private prompts and provider messages out of logs; record a definite failure for this key.
         logger.warning("guidance generation failed request_id=%s error=%s", request.state.request_id, type(exc).__name__)

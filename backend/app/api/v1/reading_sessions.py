@@ -332,7 +332,7 @@ def list_sessions(request: Request, page: int = Query(default=1, ge=1, le=MAX_ID
 def session_event_object(event: sqlite3.Row) -> dict:
     data = {"interactionEventId": event["id"], "eventType": event["event_type"], "pageNumber": event["page_no"]}
     # Only project a finalized guidance response; older rows may contain unverified text.
-    if (event["event_type"] in ("QUESTION", "FEEDBACK") and event["strategy_type"]
+    if (event["event_type"] in ("QUESTION", "FEEDBACK", "ASK") and event["strategy_type"]
             and event["saved_id"] == event["id"]):
         data.update(outputText=event["output_text"], strategyType=event["strategy_type"], revision=event["revision_after"])
         if event["feedback"] is not None:

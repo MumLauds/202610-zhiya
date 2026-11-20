@@ -162,6 +162,13 @@ def ensure_startup_recovered() -> bool:
             with closing(connect(timeout=0.3)) as db, db:
                 migrate_continuations(db)
                 db.execute("BEGIN IMMEDIATE")
+                db.execute("""CREATE TABLE IF NOT EXISTS admin_write_receipts (
+                    admin_id INTEGER NOT NULL REFERENCES accounts(id),
+                    request_key TEXT NOT NULL CHECK (length(request_key) BETWEEN 1 AND 64),
+                    digest TEXT NOT NULL,
+                    response_json TEXT NOT NULL CHECK (json_valid(response_json)),
+                    PRIMARY KEY (admin_id, request_key)
+                ) STRICT""")
                 db.execute(
                     """UPDATE reading_reports SET status = 'FAILED', activities_json = '[]', updated_at = ?
                        WHERE status = 'PENDING'""",

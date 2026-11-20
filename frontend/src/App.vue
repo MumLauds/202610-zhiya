@@ -133,6 +133,7 @@ onBeforeUnmount(() => {
       :can-retry-load="state.readerLoadRetryable"
       :request-guidance="zhiyaActions.requestGuidance"
       :submit-answer="zhiyaActions.submitAnswer"
+      :ask-question="zhiyaActions.askQuestion"
       :choose-branch="zhiyaActions.chooseBranch"
       :record-page="zhiyaActions.recordPageChange"
       :complete-reading="zhiyaActions.completeReading"

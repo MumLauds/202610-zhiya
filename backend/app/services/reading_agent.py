@@ -11,6 +11,7 @@ from app.errors import ServiceError
 from app.schemas.agent import AgentResult, AgentSource, KnowledgeQuery
 
 HANDOFF = "这个问题我们请爸爸妈妈来一起说好吗？"
+CHILD_QUESTIONS = ("这一页发生了什么？", "故事里有谁？")
 PAGE_LEAD = "看看这一页，"
 INSTRUCTIONS = {
     "INITIAL": "针对当前页提出一个适龄的情境问题。",
@@ -59,6 +60,39 @@ def question_options(page_text: str, forms: tuple[str, ...]) -> dict[str, list[s
         lead = f"读到“{excerpt}”时，" if excerpt else PAGE_LEAD
         options[excerpt] = [lead + form for form in forms]
     return options
+
+
+async def answer_question(model_adapter: ModelAdapter, *, input_text: str, age_band: str | None,
+                          topics: list[str], page_text: str) -> AgentResult:
+    if SENSITIVE.search(unicodedata.normalize("NFKC", input_text)):
+        return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)
+    knowledge = retrieve_knowledge(KnowledgeQuery(age_band=age_band, topics=topics,
+                                                  task_type="RETRIEVAL", query_text=input_text))
+    selected = select_knowledge_items(knowledge.items, 5)
+    fallback = "我们一起看看这一页的图和文字，找找线索吧。"
+    if not selected:
+        return AgentResult(status="FALLBACK", strategyType="NO_KNOWLEDGE_FALLBACK", outputText=fallback)
+
+    # Only display a sentence from the approved page. Model text is never spoken directly.
+    answers = [sentence.strip() for sentence in re.findall(r"[^。！？\n]+[。！？]?", page_text)
+               if 1 <= len(sentence.strip()) <= 100 and not SENSITIVE.search(sentence)]
+    request = build_prompt("STORY_ANSWER", age_band=age_band, page_text=page_text, items=selected,
+                           user_input=input_text)
+    request.system_prompt += "请从候选答案中选择能回答所问的一句，逐字返回。如果无法回答，选择最后的提示。"
+    request.context_text += "\n候选答案：\n" + "\n".join([*answers, fallback])
+    result = await model_adapter.generate(request)
+    if not result.success:
+        if result.error_code == "TIMEOUT":
+            return AgentResult(status="FALLBACK", strategyType="TIMEOUT_FALLBACK", outputText=fallback)
+        raise ServiceError("DEPENDENCY_UNAVAILABLE", "暂时无法回答问题")
+    answer = result.text.strip()
+    if answer == fallback:
+        return AgentResult(status="FALLBACK", strategyType="CONCRETE_RECALL", outputText=fallback)
+    if answer not in answers:
+        return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)
+    return AgentResult(status="GENERATED", strategyType="CONCRETE_RECALL", outputText=answer,
+                       sources=[AgentSource(knowledgeItemId=item.knowledge_item_id, sourceTitle=item.source_title)
+                                for item in selected])
 
 
 def selected_question(text: str, options: dict[str, list[str]], *, child_forms: tuple[str, ...] = ()) -> str | None:

@@ -19,6 +19,7 @@ from app.main import app, create_app
 from app.model_gateway import ModelGateway
 from app.schemas.agent import ModelGenerateResult
 from app.services import reading_agent
+from app.speech_config import SpeechSettings
 
 SCHEMA = Path(__file__).resolve().parents[2] / "database" / "schema.sql"
 
@@ -402,6 +403,83 @@ def guidance(client, headers, session_id, key, *, feedback="INITIAL", page=1, re
     return client.post(f"/api/v1/reading-sessions/{session_id}/guidance", headers=headers, json={
         "pageNumber": page, "feedback": feedback, "expectedRevision": revision, "clientEventId": key,
     })
+
+
+def test_story_question_replay_readback_and_answer_audio(started_session, guidance_model, env, monkeypatch):
+    client, headers, path, sid = started_session
+    _, other, _ = env
+    page_text = "小兔打开雨伞，走到小熊身边。"
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("""UPDATE knowledge_items SET task_types_json='["RETRIEVAL"]' WHERE id=81""")
+    url = f"/api/v1/reading-sessions/{sid}"
+    payload = {"pageNumber": 1, "expectedRevision": 1, "clientEventId": "ask", "inputText": "谁打开雨伞？"}
+    assert client.post(url + "/questions", json=payload).status_code == 403
+    assert other.post(url + "/questions", headers={"X-CSRF-Token": other.cookies["zhiya_csrf"]}, json=payload).status_code == 404
+
+    async def model(request):
+        assert request.user_input == payload["inputText"] and page_text in request.context_text
+        ongoing = await asyncio.to_thread(client.post, url + "/questions", headers=headers, json=payload)
+        assert ongoing.status_code == 409 and ongoing.json()["error"]["code"] == "REQUEST_IN_PROGRESS"
+        return ModelGenerateResult(success=True, text=page_text)
+
+    guidance_model.side_effect = model
+    response = client.post(url + "/questions", headers=headers, json=payload)
+    assert response.status_code == 201
+    answer = response.json()["data"]
+    assert answer["status"] == "GENERATED" and answer["outputText"] == page_text
+    assert answer["sources"] == [{"knowledgeItemId": 81, "sourceTitle": "共读手册"}]
+    replay = client.post(url + "/questions", headers=headers, json=payload)
+    assert replay.status_code == 200 and replay.json()["data"] == answer
+    assert guidance(client, headers, sid, "ask").json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+    guidance_model.assert_awaited_once()
+    detail = client.get(url).json()["data"]
+    assert detail["session"]["revision"] == 2 and len(detail["events"]) == 2
+    assert detail["events"][1]["eventType"] == "ASK" and detail["events"][1]["outputText"] == page_text
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT input_text FROM interaction_events WHERE id=?", (answer["interactionEventId"],)).fetchone() == (payload["inputText"],)
+        assert db.execute("SELECT knowledge_item_id FROM event_evidence WHERE event_id=?", (answer["interactionEventId"],)).fetchone() == (81,)
+    voice = AsyncMock(return_value=b"test-audio-bytes")
+    monkeypatch.setattr(app.state, "speech_settings", SpeechSettings(api_key="fixture", tts_api_url="https://example.test/voice"))
+    monkeypatch.setattr(app.state.voice_gateway, "synthesize", voice)
+    tts = client.post("/api/v1/voice/syntheses", headers=headers, json={"interactionEventId": answer["interactionEventId"]})
+    assert tts.status_code == 201 and voice.await_args.kwargs["text"] == page_text
+    media = tts.json()["data"]["audioUrl"]
+    assert client.get(media).content == b"test-audio-bytes" and other.get(media).status_code == 404
+
+
+def test_child_questions_only_accept_short_choices_and_never_open_free_text(child_guidance_session, guidance_model):
+    client, _, _, sid, headers = child_guidance_session
+    url = f"/api/v1/reading-sessions/{sid}/questions"
+    payload = {"inputText": "任意自由文本", "pageNumber": 1, "clientEventId": "child", "expectedRevision": 1}
+    assert client.post(url, headers=headers, json=payload).status_code == 422
+    res = client.post(url, headers=headers, json={**payload, "inputText": "故事里有谁？"})
+    assert res.status_code == 201 and res.json()["data"]["strategyType"] == "NO_KNOWLEDGE_FALLBACK"
+    guidance_model.assert_not_awaited()
+
+
+def test_story_question_safety_and_model_failure(started_session, guidance_model):
+    client, headers, path, sid = started_session
+    url = f"/api/v1/reading-sessions/{sid}/questions"
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("""UPDATE knowledge_items SET task_types_json='["RETRIEVAL"]' WHERE id=81""")
+    def post(key, revision, text):
+        return client.post(url, headers=headers, json={"pageNumber": 1, "expectedRevision": revision,
+                           "clientEventId": key, "inputText": text})
+
+    blocked = post("private", 1, "我家的电话号码是什么？").json()["data"]
+    assert blocked["status"] == "BLOCKED"
+    guidance_model.assert_not_awaited()
+    assert client.post("/api/v1/voice/syntheses", headers=headers, json={"interactionEventId": blocked["interactionEventId"]}).status_code == 404
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT input_text FROM interaction_events WHERE request_key='private'").fetchone() == (None,)
+    guidance_model.return_value = ModelGenerateResult(success=False, error_code="API_ERROR")
+    for _ in range(2):
+        assert post("unavailable", 2, "雨伞是什么？").status_code == 503
+    guidance_model.assert_awaited_once()
+    guidance_model.return_value = ModelGenerateResult(success=False, error_code="TIMEOUT")
+    assert post("timeout", 2, "雨伞是什么？").json()["data"]["strategyType"] == "TIMEOUT_FALLBACK"
+    guidance_model.return_value = ModelGenerateResult(success=True, text="泄露未审核的内容")
+    assert post("unsafe-output", 3, "雨伞是什么？").json()["data"]["status"] == "BLOCKED"
 
 
 @pytest.fixture

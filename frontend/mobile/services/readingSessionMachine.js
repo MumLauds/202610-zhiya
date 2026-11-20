@@ -200,18 +200,20 @@ export class ReadingSessionMachine {
     signal,
     clientEventId = this.keyFactory('question'),
   } = {}) {
-    if (!this.session) throw new Error('尚无阅读会话')
+    if (this.session?.status !== 'IN_PROGRESS') throw new Error('请先开始阅读')
+    const expectedRevision = this.session.revision
     return this._runMutation({
       clientEventId,
       signal,
       request: () => this.api.submitQuestion(this.session.readingSessionId, {
         pageNumber,
         inputText,
-        expectedRevision: this.session.revision,
+        expectedRevision,
         clientEventId,
       }, { signal }),
       apply: (data) => {
         this.session = { ...this.session, revision: data.revision }
+        this.events = [...this.events, { ...data, pageNumber, eventType: 'ASK' }]
       },
       result: true,
     })

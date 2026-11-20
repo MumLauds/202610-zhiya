@@ -43,6 +43,11 @@ export async function requestReadingGuidance(sessionId, payload) {
   return result.data
 }
 
+export async function askReadingQuestion(sessionId, payload) {
+  const result = await apiRequest(`/reading-sessions/${sessionId}/questions`, { method: 'POST', body: payload })
+  return result.data
+}
+
 export async function chooseReadingBranch(sessionId, payload) {
   const result = await apiRequest(`/reading-sessions/${sessionId}/branches`, {
     method: 'POST',

@@ -11,6 +11,7 @@ const props = defineProps({
   submitting: { type: Boolean, default: false },
   initialText: { type: String, default: '' },
   submitError: { type: String, default: '' },
+  asking: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close', 'confirmed'])
 
@@ -116,7 +117,7 @@ function formatDuration(seconds) {
       <header class="dialog-header">
         <div>
           <p class="eyebrow">G08 语音转写</p>
-          <h2 id="answer-title">听听孩子的回答</h2>
+          <h2 id="answer-title">{{ asking ? '问问芽芽' : '听听孩子的回答' }}</h2>
         </div>
         <button class="icon-button" type="button" aria-label="关闭" :disabled="submitting" @click="close">×</button>
       </header>
@@ -158,14 +159,14 @@ function formatDuration(seconds) {
           :disabled="submitting"
           rows="4"
           maxlength="200"
-          placeholder="可以修改识别结果，或直接输入孩子的回答"
+          :placeholder="asking ? '可以修改识别结果，或输入孩子的问题' : '可以修改识别结果，或直接输入孩子的回答'"
         />
         <p v-if="reliable === false" class="warning-note">识别结果未标记为可靠，请家长仔细核对。</p>
         <p v-if="recorder.error.value" class="inline-error">{{ recorder.error.value }}</p>
         <p v-if="submitError" class="inline-error" role="alert">{{ submitError }}</p>
         <div class="dialog-actions">
           <button class="button button-primary" type="button" :disabled="submitting || !transcript.trim()" @click="confirmAnswer">
-            {{ submitting ? '正在提交…' : '确认回答' }}
+            {{ submitting ? '正在提交…' : asking ? '确认提问' : '确认回答' }}
           </button>
           <button class="button button-ghost" type="button" :disabled="submitting" @click="manualMode = false; recorder.cancel(); transcript = ''">
             重新录制

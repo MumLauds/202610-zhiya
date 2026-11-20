@@ -37,6 +37,9 @@ const questionReady = computed(() => {
     !['SKIP', 'SAFETY_BLOCK'].includes(result.strategyType) && result.feedback !== 'SKIPPED'
 })
 const showAnswerDialog = ref(false)
+const asking = ref(false)
+const storyAnswer = computed(() => session.state.events.findLast(event =>
+  event.eventType === 'ASK' && event.pageNumber === currentPageNumber.value && event.outputText))
 const lastAnswerText = ref('')
 const answerDraft = ref('')
 const pageAudioSrc = ref('')
@@ -249,12 +252,13 @@ async function submitFeedback(feedback) {
   }
 }
 
-async function openAnswerDialog() {
-  if (!interactionResult.value) {
+async function openAnswerDialog(question = false) {
+  asking.value = question
+  if (!question && !interactionResult.value) {
     const result = await submitFeedback('INITIAL')
     if (!result) return
   }
-  if (questionReady.value) {
+  if (question || questionReady.value) {
     cancelPageAudioRequest()
     pagePlayer.value?.stop()
     stopAnswerAudio()
@@ -263,17 +267,25 @@ async function openAnswerDialog() {
 }
 
 async function handleAnswerConfirmed({ text }) {
-  if (!questionReady.value || pending.value || reviewing.value || session.state.syncRequired) return
+  if ((!asking.value && !questionReady.value) || pending.value || reviewing.value || session.state.syncRequired) return
   answerDraft.value = text
   try {
-    await session.answer(text)
-    lastAnswerText.value = text
+    if (asking.value) await session.askQuestion(text)
+    else {
+      await session.answer(text)
+      lastAnswerText.value = text
+    }
     answerDraft.value = ''
     showAnswerDialog.value = false
   } catch {
     // Keep the edited text for a rejected write. Uncertain writes use session reconciliation.
     if (session.state.syncRequired || session.notice.value) showAnswerDialog.value = false
   }
+}
+
+async function askShortQuestion(text) {
+  if (pending.value || reviewing.value || session.state.syncRequired) return
+  try { await session.askQuestion(text) } catch { /* Error and reconciliation appear in the reader. */ }
 }
 
 async function loadPageAudio() {
@@ -318,15 +330,15 @@ function discardPageAudio(url) {
   answerAudioNotice.value = '本页音频已不可用，可重新准备朗读。'
 }
 
-async function playAnswerAudio() {
-  if (showAnswerDialog.value || !questionReady.value) return
+async function playAnswerAudio(result = interactionResult.value) {
+  if (showAnswerDialog.value || !result?.outputText || result.strategyType === 'SAFETY_BLOCK') return
   answerAudioNotice.value = ''
   if (props.mode === 'demo') {
     answerAudioNotice.value = '演示模式没有回答音频；实机模式将在 G10 返回 interactionEventId 后请求 API-023。'
     return
   }
-  const eventId = interactionResult.value?.interactionEventId
-  if (!eventId || answerAudioLoading.value || interactionResult.value.revision !== revision.value) {
+  const eventId = result.interactionEventId
+  if (!eventId || answerAudioLoading.value || result.revision !== revision.value) {
     answerAudioNotice.value = '当前结果没有可用的 interactionEventId，无法请求回答音频。'
     return
   }
@@ -339,7 +351,7 @@ async function playAnswerAudio() {
   try {
     if (!answerAudioUrl.value || Date.now() >= answerAudioExpiresAt) {
       const response = await props.voiceApi.synthesizeInteraction({ interactionEventId: eventId, signal: controller.signal })
-      if (controller.signal.aborted || generation !== pageRequestGeneration || page !== currentPageNumber.value || eventId !== interactionResult.value?.interactionEventId || interactionResult.value.revision !== revision.value) return
+      if (controller.signal.aborted || generation !== pageRequestGeneration || page !== currentPageNumber.value || result.revision !== revision.value) return
       answerAudioUrl.value = response.data.audioUrl
       answerAudioExpiresAt = Date.parse(response.data.expiresAt)
     }
@@ -451,12 +463,21 @@ function exitReading() {
           :answer-audio-url="answerAudioUrl"
           :answer-audio-loading="answerAudioLoading"
           @generate="submitFeedback('INITIAL')"
-          @answer="openAnswerDialog"
+          @answer="openAnswerDialog()"
           @not-understood="submitFeedback('NOT_UNDERSTOOD')"
           @understood="submitFeedback('UNDERSTOOD')"
           @skip="submitFeedback('SKIPPED')"
-          @play-answer="playAnswerAudio"
+          @play-answer="playAnswerAudio()"
         />
+        <section v-if="mode === 'live' && !reviewing" class="interaction-card">
+          <h2>问问芽芽</h2>
+          <template v-if="session.state.session.mode === 'CHILD_SOLO'">
+            <button v-for="question in ['这一页发生了什么？', '故事里有谁？']" :key="question" type="button" class="button button-soft" :disabled="pending || session.state.syncRequired" @click="askShortQuestion(question)">{{ question }}</button>
+          </template>
+          <button v-else class="button button-soft" type="button" :disabled="pending || session.state.syncRequired" @click="openAnswerDialog(true)">提出本页问题</button>
+          <p v-if="storyAnswer">{{ storyAnswer.outputText }}</p>
+          <button v-if="storyAnswer && storyAnswer.revision === revision && storyAnswer.strategyType !== 'SAFETY_BLOCK'" class="button button-ghost" type="button" :disabled="pending || answerAudioLoading" @click="playAnswerAudio(storyAnswer)">播放故事回答</button>
+        </section>
 
         <p v-if="lastAnswerText" class="answer-confirmation">
           <strong>家长确认文本：</strong>{{ lastAnswerText }}
@@ -508,6 +529,7 @@ function exitReading() {
       :submitting="pending"
       :initial-text="answerDraft"
       :submit-error="errorMessage"
+      :asking="asking"
       @close="showAnswerDialog = false; answerDraft = ''"
       @confirmed="handleAnswerConfirmed"
     />

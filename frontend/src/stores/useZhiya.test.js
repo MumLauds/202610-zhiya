@@ -14,6 +14,7 @@ vi.mock('../api/reading', () => ({
   createReadingSession: vi.fn(),
   getReadingSession: vi.fn(),
   addReadingEvent: vi.fn(),
+  askReadingQuestion: vi.fn(),
   requestReadingGuidance: vi.fn(),
   chooseReadingBranch: vi.fn(),
   completeReadingSession: vi.fn(),
@@ -267,6 +268,18 @@ describe('authoritative reading progress', () => {
       outputText: '你能指一指小兔吗？',
       strategyType: 'CONCRETE_RECALL',
     })
+  })
+
+  it('uses the dedicated question endpoint and retains the answer event for playback', async () => {
+    reading.askReadingQuestion.mockResolvedValueOnce({ interactionEventId: 17, revision: 2,
+      status: 'GENERATED', outputText: '小兔打开雨伞。', strategyType: 'CONCRETE_RECALL', sources: [] })
+    expect(await actions.askQuestion(' 谁打开雨伞？ ')).toBe(true)
+    expect(reading.askReadingQuestion).toHaveBeenCalledWith(55, {
+      inputText: '谁打开雨伞？', pageNumber: 1, expectedRevision: 1, clientEventId: expect.any(String),
+    })
+    expect(reading.addReadingEvent).not.toHaveBeenCalled()
+    expect(state.currentEvents.at(-1)).toMatchObject({ eventType: 'ASK', pageNumber: 1, interactionEventId: 17, revision: 2 })
+    expect(state.currentSession.revision).toBe(2)
   })
 
   it('records understanding feedback as recoverable FEEDBACK without advancing the page', async () => {

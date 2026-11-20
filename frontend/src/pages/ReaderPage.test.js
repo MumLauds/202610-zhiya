@@ -847,6 +847,27 @@ describe('reader state and visual progress', () => {
 })
 
 describe('guided reading interactions', () => {
+  it('submits a guardian-confirmed question separately and plays only its saved event', async () => {
+    const askQuestion = vi.fn().mockResolvedValue(true)
+    const submitAnswer = vi.fn()
+    render({ askQuestion, submitAnswer })
+    await button('问问芽芽').trigger('click')
+    await wrapper.get('textarea').setValue(' 谁拿着伞？ ')
+    await button('确认文字').trigger('click')
+    expect(askQuestion).not.toHaveBeenCalled()
+    await button('提交问题').trigger('click')
+    await flushPromises()
+    expect(askQuestion).toHaveBeenCalledWith('谁拿着伞？')
+    expect(submitAnswer).not.toHaveBeenCalled()
+    const answer = { eventType: 'ASK', pageNumber: 1, outputText: '小狐狸举着伞。', interactionEventId: 19, revision: 2 }
+    await wrapper.setProps({ session: { ...initialSession, revision: 2 }, events: [questionEvent, answer] })
+    synthesize.mockResolvedValueOnce({ audioUrl: '/api/v1/media/audio-test' })
+    await button('播放故事回答').trigger('click')
+    await flushPromises()
+    expect(synthesize).toHaveBeenCalledWith({ interactionEventId: 19 }, expect.any(AbortSignal))
+    expect(audios.at(-1).play).toHaveBeenCalledOnce()
+  })
+
   it('requests an initial question once when a confirmed page has no recoverable prompt', async () => {
     const requestGuidance = vi.fn().mockResolvedValue(true)
     render({ events: [], requestGuidance })
