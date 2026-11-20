@@ -333,12 +333,15 @@ class _FakeAdapter:
         return self.result
 
 
-@pytest.mark.parametrize("suggestion_id, suggestion", [
-    ("NONE", ""),
-    ("REVISIT_PAGE", "可以和孩子再看一页已读内容，由孩子自愿选择是否聊一聊。"),
-    ("TALK_ABOUT_STORY", "可以邀请孩子聊聊故事中喜欢的部分，不必要求回答正确。"),
+@pytest.mark.parametrize("suggestion_id, suggestion, activity_name, materials", [
+    ("NONE", "", "一起演一演", ["本次共读的绘本"]),
+    ("REVISIT_PAGE", "可以和孩子再看一页已读内容，由孩子自愿选择是否聊一聊。", "一起演一演", ["本次共读的绘本"]),
+    ("TALK_ABOUT_STORY", "可以邀请孩子聊聊故事中喜欢的部分，不必要求回答正确。", "一起演一演", ["本次共读的绘本"]),
+    ("DRAW_PICTURE", "可以请孩子画一画今天最喜欢的一页，不用要求画得像。", "画出故事中的一幕", ["纸", "彩笔"]),
+    ("FIND_IN_HOME", "可以和孩子在家里找一找和故事里一样的东西。", "找找故事里的物品", ["本次共读的绘本", "家中安全的小物品"]),
 ])
-def test_finish_generates_ready_report_once_with_model(bookshelf, monkeypatch, suggestion_id, suggestion):
+def test_finish_generates_ready_report_once_with_model(bookshelf, monkeypatch, suggestion_id, suggestion,
+                                                      activity_name, materials):
     from app.schemas.agent import ModelGenerateResult
     first, _, path = bookshelf
     headers = {"X-CSRF-Token": first.cookies["zhiya_csrf"]}
@@ -352,11 +355,40 @@ def test_finish_generates_ready_report_once_with_model(bookshelf, monkeypatch, s
     assert first.post(url, headers=headers, json=body).json()["data"]["report"]["status"] == "PENDING"
     report = first.get(f"/api/v1/reading-sessions/{session}").json()["data"]["report"]
     assert report["status"] == "READY" and report["summary"] == "本次共读阅读了第 1 页。" + suggestion
+    activity, = report["activities"]
+    assert set(activity) == {"name", "materials", "steps"}
+    assert activity["name"] == activity_name and activity["materials"] == materials
+    steps = activity["steps"]
+    assert isinstance(steps, list) and len(steps) >= 2 and all(isinstance(step, str) and step.strip() for step in steps)
+    assert "第 1 页" in steps[0]
     assert len(adapter.calls) == 1 and adapter.calls[0].user_input == "本次共读阅读了第 1 页。"
     assert "text-11" in adapter.calls[0].context_text
     # Replay and new-key repeats never call the model again.
     first.post(url, headers=headers, json=body)
-    first.post(url, headers=headers, json={**body, "clientEventId": "again", "expectedRevision": 2})
+    repeat = first.post(url, headers=headers, json={**body, "clientEventId": "again", "expectedRevision": 2})
+    assert repeat.json()["data"]["report"] == report
+    assert len(adapter.calls) == 1
+
+
+@pytest.mark.parametrize("suggestion_id, expected_status", [("NONE", "READY"), ("DRAW_PICTURE", "FAILED")])
+def test_report_without_readable_text_has_no_activity(bookshelf, monkeypatch, suggestion_id, expected_status):
+    from app.schemas.agent import ModelGenerateResult
+    client, _, path = bookshelf
+    headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
+    adapter = _FakeAdapter(ModelGenerateResult(success=True, text=json.dumps({"suggestionId": suggestion_id})))
+    monkeypatch.setattr(app.state, "model_adapter", adapter, raising=False)
+    session = _started_session(client, headers, path, pages=1)
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET body_text = '  ' WHERE version_id = "
+                   "(SELECT version_id FROM reading_sessions WHERE id = ?) AND page_no = 1", (session,))
+    url = f"/api/v1/reading-sessions/{session}"
+    assert client.post(f"{url}/events", headers=headers, json={
+        "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "start"}).status_code == 201
+    assert client.post(f"{url}/completions", headers=headers, json={
+        "reason": "USER_FINISH", "expectedRevision": 1, "clientEventId": "end"}).status_code == 200
+    assert client.get(url).json()["data"]["report"] == {
+        "readingSessionId": session, "summary": "本次共读阅读了第 1 页。", "status": expected_status, "activities": [],
+    }
     assert len(adapter.calls) == 1
 
 

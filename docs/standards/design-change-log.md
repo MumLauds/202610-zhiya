@@ -246,6 +246,8 @@
 - **确认依据：** 用户指出文档过时和 AI-06 安全缺口；本轮实施修复，团队评审待完成。
 - **验证与后续：** 见[小结安全检验](../testing/report-safety-checks.md)。不调用真实模型；真实模型结构遵循率、人工适龄评价及完整业务链路尚未验证。
 
+2026-11-20，[PR #62](https://github.com/MumLauds/202610-zhiya/pull/62) 补充 FR-10/AC-09。模型继续只选择建议编号，服务端为有已读正文的新生成小结填充活动名称、材料和步骤。API-013 回读与 API-019 重放用例见 [test_storybooks.py](../../backend/tests/test_storybooks.py)。
+
 ### DCL-027｜儿童授权到期、家长退出与小结生成
 
 2026-11-18，G07 会话与 G08 语音、模型接入。关联 FR-09、FR-16、NFR-11 和 AC-12。状态为 PR 评审中。[PR #43](https://github.com/MumLauds/202610-zhiya/pull/43)

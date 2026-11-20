@@ -44,7 +44,7 @@ X-Request-ID 响应头与响应体一致。/docs 可查看健康、账号、档�
 
 家长联调：先 POST `/api/v1/auth/registrations` 注册，再 POST `/api/v1/auth/sessions` 登录，两者传 `{account,password}`。客户端保留登录返回的 Cookie，将 `zhiya_csrf` 值放入写请求的 `X-CSRF-Token`；`zhiya_session` 为 HttpOnly，不自行读取或构造。Cookie 有 Secure 属性，应使用 HTTPS（本地需 HTTPS 代理或证书），上面的 HTTP 启动命令仅适合健康检查等无凭据请求。跨域浏览器联调尚未配置 CORS。创建本人档案并取得有权读取的已审核绘本版本后，可 POST `/api/v1/reading-sessions`，传 `{childProfileId,storyVersionId,mode:"PARENT_CHILD"}`；再向 `/{session_id}/events` 提交 STARTED 事件。API-022/023 使用返回的真实会话、当前页和最新 revision 或允许的已保存事件，具体字段见接口契约。会话生命周期的离线联调见 `backend/tests/test_storybooks.py`；`backend/tests/test_voice_auth_integration.py` 验证真实家长认证与模拟供应商，其中会话由测试准备。儿童模式联调在会话开始前调用 API-020 切换设备身份。恢复家长权限时，通过 API-021 提交所属家长凭证和当前 CSRF 令牌。到期、解锁和多设备退出见 `backend/tests/test_child_mode.py`。完整浏览器及真实供应商组合流程仍须联调。
 
-阅读小结（FR-09、AI-06、NFR-09）：事实摘要仅取服务端记录的已读页；模型根据已读正文选择固定建议编号，不直接发布模型自由文本。非法结构、额外字段、未知建议、模型失败或超长结果均置 FAILED，保留事实摘要和空 activities，不重试模型。READY 由事实摘要与固定的自愿共读建议组成，不推断答题数、投入程度或儿童能力。当前 activities 仍为空，尚未完成 FR-10/AC-09 要求的含材料与步骤的亲子活动。设计与离线证据见[本轮检验记录](../docs/testing/report-safety-checks.md)。
+阅读小结（FR-09、AI-06、NFR-09）：事实摘要仅取服务端记录的已读页；模型根据已读正文选择固定建议编号，不直接发布模型自由文本。非法结构、额外字段、未知建议、模型失败或超长结果均置 FAILED，保留事实摘要和空 activities，不重试模型。READY 由事实摘要与固定的自愿共读建议组成，不推断答题数、投入程度或儿童能力。生成成功且有已读正文时，activities 包含一项与已读页关联的活动，含名称、材料和步骤。无已读正文时活动为空。接口说明见[阅读小结契约](../docs/design/api-contract.md)，早期事实摘要的验证见[小结安全检验](../docs/testing/report-safety-checks.md)。
 
 健康检查沿用主分支的数据库就绪规则：数据库缺失、不可读或缺表时返回 503 / DEPENDENCY_UNAVAILABLE（retryable 为 true），不会自动创建数据库；结构就绪时返回 200。它不探测供应商，也不代表业务链路或种子内容已通过验收。三个模型配置均留空时可启动；真实调用会在发送请求之前报告 MODEL_NOT_CONFIGURED。无效的非空 URL、超时或令牌配置会阻止启动，以便及时发现配置错误。
 

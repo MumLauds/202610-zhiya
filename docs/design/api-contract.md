@@ -84,7 +84,7 @@ API-008/009 保留现有版本对象字段 `storybookId`、`storyVersionId`、`v
 
 API-019 仍先提交含事实摘要的 PENDING 小结；API-013 读取最新状态，同键重放和新键重复结束的规则不变。依据 FR-09、AI-06、NFR-09，当前实现仅用服务端已读页记录组成事实摘要，不能从页面正文或模型输出推断答题数、情绪、投入程度或能力诊断。
 
-模型只在固定的温和共读建议中选择编号，内部返回 `{"suggestionId":"NONE"}`、`REVISIT_PAGE` 或 `TALK_ABOUT_STORY`；该字段不加入公共 API。服务端校验 JSON 对象仅有 suggestionId、编号有效、有已读正文才可选择非 NONE 建议，组合后的 summary 不超过 500 字符。自由文本、额外字段、未知编号及模型失败均转 FAILED，保留原事实摘要，不发布模型原文，也不再次调用模型。READY 仅发布服务端事实与固定建议；activities 仍为空，FR-10/AC-09 的材料和步骤尚未实现。
+模型返回的 JSON 对象只含内部字段 `suggestionId`。允许的编号为 `NONE`、`REVISIT_PAGE`、`TALK_ABOUT_STORY`、`DRAW_PICTURE` 和 `FIND_IN_HOME`。服务端校验 JSON 对象仅有 suggestionId、编号有效、有已读正文才可选择非 NONE 建议，组合后的 summary 不超过 500 字符。自由文本、额外字段、未知编号及模型失败均转 FAILED，保留原事实摘要，不发布模型原文，也不再次调用模型。生成成功且有已读正文时，READY 小结的 `activities` 返回一项服务端活动，字段为 `name`、`materials` 和 `steps`。步骤指向本次已读页。画画和找物使用各自的活动，其余合法编号使用故事重演活动。`NONE` 保留纯事实摘要，无已读正文时活动为空。
 
 这是一项限制输出范围的安全修复，不是通用自由文本事实核验器。外部字段、数据库结构与状态枚举不变；不改写既有 READY 历史记录。验证和后续范围见[小结安全检验](../testing/report-safety-checks.md)。
 

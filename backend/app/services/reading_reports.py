@@ -77,7 +77,22 @@ def validated_summary(text: str, facts: str, has_pages: bool) -> tuple[str, str]
     return (summary, suggestion_id) if len(summary) <= MAX_SUMMARY_CHARS else None
 
 
-def _settle(session_id: int, status: str, summary: str | None = None, activities: list[str] | None = None,
+def report_activity(suggestion_id: str, facts: str) -> dict:
+    choose_page = f"{facts}和孩子从刚读过的页面中选一页，翻到那里。"
+    if suggestion_id == "DRAW_PICTURE":
+        return {"name": "画出故事中的一幕", "materials": ["纸", "彩笔"],
+                "steps": [choose_page, "请孩子选一个喜欢的角色或场景，一起把它画下来。",
+                          "把画放在绘本旁，请孩子指出自己画的是哪一处。"]}
+    if suggestion_id == "FIND_IN_HOME":
+        return {"name": "找找故事里的物品", "materials": ["本次共读的绘本", "家中安全的小物品"],
+                "steps": [choose_page, "请孩子指一指画面里的物品，一起在家中找形状或颜色相似的东西。",
+                          "把找到的物品放在绘本旁，一起看看哪里相似。"]}
+    return {"name": "一起演一演", "materials": ["本次共读的绘本"],
+            "steps": [choose_page, "各选一个角色，用动作一起演出这一页的情景。",
+                      "回到画面，请孩子指出刚才演的是哪一幕。"]}
+
+
+def _settle(session_id: int, status: str, summary: str | None = None, activities: list[dict] | None = None,
             *, generation_token: str | None = None) -> bool:
     now = int(time.time() * 1000)
     token_clause = (
@@ -117,10 +132,11 @@ async def generate_report(session_id: int, facts: str, page_texts: list[str], ad
             logger.warning("report_generation_failed session_id=%s", session_id)
             text = ""
     try:
-        summary_result = validated_summary(text, facts, bool(page_texts))
+        has_text = any(page.strip() for page in page_texts)
+        summary_result = validated_summary(text, facts, has_text)
         if summary_result is not None:
             summary, suggestion_id = summary_result
-            activities = [REPORT_SUGGESTIONS[suggestion_id]] if suggestion_id != "NONE" else []
+            activities = [report_activity(suggestion_id, facts)] if has_text else []
             _settle(session_id, "READY", summary, activities, generation_token=generation_token)
         else:
             _settle(session_id, "FAILED", generation_token=generation_token)
