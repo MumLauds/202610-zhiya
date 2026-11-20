@@ -2,7 +2,7 @@
 # Host-installed entry point. Only application build contexts come from main.
 set -euo pipefail
 umask 077
-cd /opt/zhiya-release
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 root=$PWD
 exec 9>release.lock
 flock -n 9 || exit 0
@@ -31,8 +31,9 @@ probe() {
 }
 recover() {
     # pending is written atomically before either live container is replaced.
-    read -r target old_api old_web < pending
-    if [[ -s "$receipt" && $(jq -r .revision "$receipt") == "$target" ]]; then
+    read -r target old_api old_web pending_run < pending
+    if [[ -s "$receipt" ]] && jq -e --arg sha "$target" --arg run "$pending_run" \
+        '.revision == $sha and .run == $run' "$receipt" >/dev/null; then
         rm pending
         return
     fi
@@ -43,13 +44,15 @@ recover() {
     probe /api/v1/health -f | jq -e '.data.status == "ok"' >/dev/null || return 1
     rm pending
 }
+python3 receipt.py "$receipt" "$project"
 if [[ -f pending ]]; then recover; fi
 sha=$(main_sha)
 [[ $sha =~ ^[0-9a-f]{40}$ ]]
-if [[ -s "$receipt" ]] && jq -e --arg sha "$sha" '.revision == $sha' "$receipt" >/dev/null; then exit 0; fi
 run=$(python3 gate.py "$sha")
 [[ -n "$run" ]] || exit 0
 [[ $run =~ ^[0-9]+-[0-9]+$ ]]
+if [[ -s "$receipt" ]] && jq -e --arg sha "$sha" --arg run "$run" \
+    '.revision == $sha and .run == $run' "$receipt" >/dev/null; then exit 0; fi
 release="$root/releases/$sha"
 mkdir -p "$release"
 # A failed cutover needs a new validated run/attempt to try this SHA again.
@@ -81,12 +84,17 @@ old_api=$(image_id "$backend")
 old_web=$(image_id "$web")
 previous=$(revision "$old_api")
 [[ $previous =~ ^[0-9a-f]{40}$ && $(revision "$old_web") == "$previous" ]]
-backup=$(docker exec -i "$backend" python - < backup.py)
+attempt="$release/attempt-$run"
+# Claim this attempt before writing to the production volume, even on failure.
+printf 'backup-started\n' > "$attempt"
+backup=$(docker exec -i "$backend" python - create < backup.py)
 [[ -n $backup ]]
+printf '%s\n' "$backup" "$old_api" "$old_web" "$previous" > "$attempt"
 latest=$(main_sha)
 if [[ $latest != "$sha" ]]; then echo "Superseded $sha"; exit 0; fi
-printf '%s\n' "$backup" "$old_api" "$old_web" "$previous" > "$release/attempt-$run"
-printf '%s %s %s\n' "$sha" "$old_api" "$old_web" > pending.tmp
+current_run=$(python3 gate.py "$sha")
+if [[ $current_run != "$run" ]]; then echo "Run $run no longer authorizes release"; exit 0; fi
+printf '%s %s %s %s\n' "$sha" "$old_api" "$old_web" "$run" > pending.tmp
 mv pending.tmp pending
 trap 'rc=$?; if [[ -f pending ]]; then recover || echo "Recovery incomplete; see pending" >&2; fi; exit "$rc"' EXIT
 switch_images "${images[@]}"
@@ -101,6 +109,7 @@ for path in /api/v1/storybooks /api/v1/admin/story-versions; do
     [[ $(probe "$path" -D "$release/headers" -o /dev/null -w '%{http_code}') == 401 ]]
     if grep -qi '^www-authenticate: *Basic' "$release/headers"; then exit 1; fi
 done
+docker exec -i "$backend" python - verify "$backup" < backup.py
 jq -n --arg revision "$sha" --arg backend "${images[0]}" --arg web "${images[1]}" \
     --arg previous "$previous" --arg run "$run" '{ $revision, $backend, $web, $previous, $run }' > "$release/current.json"
 install -m 0644 "$release/current.json" public/.current.tmp

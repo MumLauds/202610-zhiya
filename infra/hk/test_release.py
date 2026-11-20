@@ -1,6 +1,5 @@
 import io
 import json
-import os
 import runpy
 import sqlite3
 import sys
@@ -10,6 +9,9 @@ from contextlib import closing, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+from backup import create_backup, verify_history
+from receipt import check_receipt
+
 SCRIPTS = Path(__file__).resolve().parent
 
 
@@ -17,12 +19,15 @@ class ReleaseTests(unittest.TestCase):
     def test_gate_requires_successful_job_on_trusted_main_attempt(self):
         sha = "a" * 40
         run = dict(path=".github/workflows/deploy-hk.yml", event="push",
-                   head_sha=sha, head_branch="main", id=123, run_attempt=2,
+                   head_sha=sha, head_branch="main", id=123, run_attempt=2, status="in_progress", conclusion=None,
                    head_repository={"full_name": "MumLauds/202610-zhiya"})
         for change, conclusion, expected in [
             ({}, "success", "123-2"),
             ({"event": "workflow_dispatch"}, "success", "123-2"),
             ({}, "failure", ""), ({}, None, ""),
+            ({"status": "completed", "conclusion": "cancelled"}, "success", ""),
+            ({"status": "completed", "conclusion": "timed_out"}, "success", ""),
+            ({"status": "queued"}, "success", ""),
             ({"head_sha": "b" * 40}, "success", ""),
             ({"event": "pull_request"}, "success", ""),
             ({"head_repository": {"full_name": "fork/test"}}, "success", ""),
@@ -48,14 +53,59 @@ class ReleaseTests(unittest.TestCase):
                 conn.execute("create table samples(id integer primary key)")
                 conn.execute("insert into samples values (42)")
                 conn.commit()
-                with patch.dict(os.environ, ZHIYA_DB_PATH=str(live)), redirect_stdout(io.StringIO()) as out:
-                    previous_mask = os.umask(0o077)
-                    try:
-                        runpy.run_path(str(SCRIPTS / "backup.py"))
-                    finally:
-                        os.umask(previous_mask)
-                with closing(sqlite3.connect(out.getvalue().strip())) as saved:
+                with closing(sqlite3.connect(create_backup(live))) as saved:
                     self.assertEqual(saved.execute("select id from samples").fetchall(), [(42,)])
+
+    def test_failed_backup_removes_only_its_own_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live = Path(tmp) / "live.db"
+            with closing(sqlite3.connect(live)) as db:
+                db.executescript("create table p(id primary key); create table c(pid references p(id));")
+                good = create_backup(live)
+                db.executescript("insert into c values(1);")
+                for _ in range(2):
+                    with self.assertRaisesRegex(RuntimeError, "Invalid backup"):
+                        create_backup(live)
+                self.assertEqual(list(live.parent.glob(".before-release-*")), [good.parent])
+                self.assertTrue(good.is_file())
+
+    def test_verify_history_allows_new_rows_and_checks_every_original_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live = Path(tmp) / "live.db"
+            with closing(sqlite3.connect(live)) as db:
+                db.executescript("""
+                    create table accounts(id, created_at);
+                    create table child_profiles(id, guardian_id, created_at, nickname);
+                    create table reading_sessions(id, profile_id, version_id, created_at);
+                    create table reading_reports(session_id);
+                    insert into accounts values (1,10);
+                    insert into child_profiles values (2,1,20,'first');
+                    insert into reading_sessions values (3,2,4,30);
+                    insert into reading_reports values (3);
+                """)
+                saved = create_backup(live)
+                db.executescript("insert into accounts values (9,99); update child_profiles set nickname='second';")
+                verify_history(live, saved)
+                for table in ("accounts", "child_profiles", "reading_sessions", "reading_reports"):
+                    with self.subTest(table=table):
+                        db.execute(f"delete from {table}")
+                        db.commit()
+                        with self.assertRaisesRegex(RuntimeError, table):
+                            verify_history(live, saved)
+                        with closing(sqlite3.connect(saved)) as restore:
+                            restore.backup(db)
+
+    def test_receipt_is_withdrawn_on_drift(self):
+        sha = "a" * 40
+        api, web = ("sha256:" + digit * 64 for digit in "12")
+        for frontend_state, keep in [(f"true {web} {sha}", True), (f"true {api} {sha}", False),
+                                     (f"false {web} {sha}", False), (f"true {web} {'b' * 40}", False)]:
+            with self.subTest(frontend_state=frontend_state), tempfile.TemporaryDirectory() as tmp:
+                receipt = Path(tmp) / "current.json"
+                receipt.write_text(json.dumps(dict(revision=sha, backend=api, web=web)))
+                with patch("receipt.subprocess.check_output", side_effect=[f"true {api} {sha}", frontend_state]):
+                    check_receipt(receipt, "test")
+                self.assertEqual(receipt.exists(), keep)
 
 
 if __name__ == "__main__":

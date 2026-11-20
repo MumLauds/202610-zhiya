@@ -20,6 +20,10 @@ for run in runs["workflow_runs"]:
         or run["head_sha"] != sha or run["head_branch"] != "main"
         or (run.get("head_repository") or {}).get("full_name") != repo):
         continue
+    # Only the newest matching attempt can authorize a switch. A completed
+    # or cancelled run must not fall through to an older successful run.
+    if run["status"] != "in_progress" or run["conclusion"] is not None:
+        break
     jobs = get(f"/runs/{run['id']}/attempts/{run['run_attempt']}/jobs")
     if any(j["name"] == "Validate release" and j["conclusion"] == "success" for j in jobs["jobs"]):
         print(f"{run['id']}-{run['run_attempt']}")

@@ -9,7 +9,7 @@ PR 运行 `Validate release`。合入 main 后，香港 ECS 每三分钟检查�
 ```sh
 install -d -m 0750 /opt/zhiya-release
 install -m 0750 infra/hk/deploy.sh /opt/zhiya-release/
-install -m 0644 infra/hk/{gate.py,backup.py,Web.Dockerfile,receipt.yaml} /opt/zhiya-release/
+install -m 0644 infra/hk/{gate.py,backup.py,receipt.py,Web.Dockerfile,receipt.yaml} /opt/zhiya-release/
 install -m 0644 infra/hk/zhiya-deploy.{service,timer} /etc/systemd/system/
 ```
 
@@ -33,6 +33,10 @@ journalctl -u zhiya-deploy.service -n 60
 ```
 
 ## 验收与恢复
+
+每次轮询先核对运行容器的状态、镜像 ID 和修订号，发生偏差时撤下公网回执。Actions 只接受匹配本次运行编号、尝试次数和提交号的回执。开始构建和切换前，ECS 均要求同一次主线工作流仍在运行且测试已通过。
+
+备份前会在主机登记本次尝试。备份校验失败会清理本次副本；修复原因后请重跑全部作业或重新手动触发。切换后将备份中的账号、档案、会话和小结标识与当前库比对，同时核验归属和外键。遇到缺失或归属变化会阻止签发回执并触发应用回退。若期间发生用户主动删除或经批准的身份迁移，由负责人核对变更后再发起新尝试，保留用户最新数据。
 
 - 访问 `https://zhiya.47-238-246-210.sslip.io/_deployment/current.json`，将 revision 与 Actions 的 main SHA 核对。backend、web 是运行容器的本地镜像 ID。previous 为上一版本，run 为 GitHub 运行编号和尝试次数。切换到其他域名时同时更新主机配置与工作流中的 SITE。
 - 技术检查覆盖桌面和移动入口内容、健康接口、匿名书架和后台访问。首次业务验收另用家长账号登录，逐页核对 20 本原创，打开原档案、历史和小结，再用管理员账号验证后台。记录「还没懂」的实际引导、语音及小结服务模式。

@@ -30,7 +30,10 @@ jobs:
           npm test -- --maxWorkers=2
           npm run test:mobile
           npm run build -- --mode public
-      - run: bash -n infra/hk/deploy.sh && python infra/hk/test_release.py
+      - run: |
+          bash -n infra/hk/deploy.sh
+          python infra/hk/test_release.py
+          bash infra/hk/test_cutover.sh
 
   verify:
     name: Verify Hong Kong release
@@ -50,8 +53,9 @@ jobs:
               echo "Superseded by a newer main" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
-            if curl -fsS --max-time 10 "$SITE/_deployment/current.json?v=$GITHUB_SHA" -o receipt.json &&
-               jq -e --arg sha "$GITHUB_SHA" '.revision == $sha' receipt.json >/dev/null; then
+            run="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            if curl -fsS --max-time 10 "$SITE/_deployment/current.json?v=$run-$attempt" -o receipt.json &&
+               jq -e --arg sha "$GITHUB_SHA" --arg run "$run" '.revision == $sha and .run == $run' receipt.json >/dev/null; then
               curl -fsS --max-time 10 "$SITE/api/v1/health" | jq -e '.data.status == "ok"'
               test "$(curl -sS --max-time 10 -D headers -o /dev/null -w '%{http_code}' "$SITE/api/v1/admin/story-versions")" = 401
               ! grep -qi '^www-authenticate: *Basic' headers || exit 1
