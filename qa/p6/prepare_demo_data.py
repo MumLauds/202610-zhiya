@@ -1,7 +1,7 @@
 """准备 P6 验收/演示用的本地数据。
 
 做三件事：
-1. 初始化并导入仓库种子（种子默认全是 DRAFT，公开书架为空）；
+1. 初始化仓库种子，导入课程书架；
 2. 审核发布绘本与知识条目，使书架、推荐和 Agent 检索可用；
 3. 创建演示家长账号和幼儿档案（已存在则复用）。
 
@@ -26,7 +26,7 @@ if str(BACKEND) not in sys.path:
 from app.api.v1.auth import password_hash  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "database"))
-from import_seed import SEED_DIR, import_seed, load_seed  # noqa: E402
+from import_seed import SEED_DIR, SEED_PUBLISHER, import_seed, load_seed  # noqa: E402
 
 SCHEMA = ROOT / "database" / "schema.sql"
 DEFAULT_DB = Path(__file__).resolve().parent / "instance" / "zhiya.sqlite3"
@@ -109,19 +109,22 @@ def approve_content(db: sqlite3.Connection, reviewer_id: int, limit: int | None)
     books = {row["id"]: row for row in seed["storybooks"]}
     approved = []
     now = int(time.time() * 1000)
-    for version in seed["story_versions"][:limit]:
+    course_versions = [v for v in seed["story_versions"] if v["status"] == "PUBLISHED"]
+    for version in course_versions[:limit]:
         version_id = version["id"]
         book = books[version["storybook_id"]]
         if book["source_type"] != "LIBRARY" or not matches_seed(db, "storybooks", book):
             continue
-        if not matches_seed(db, "story_versions", version):
+        already_published = matches_seed(db, "story_versions", version)
+        if not already_published and not matches_seed(db, "story_versions", {**version, "status": "DRAFT"}):
             continue
         pages = [row for row in seed["story_pages"] if row["version_id"] == version_id]
         count = db.execute("SELECT COUNT(*) FROM story_pages WHERE version_id=?", (version_id,)).fetchone()[0]
         if count != len(pages) or not all(matches_seed(db, "story_pages", page) for page in pages):
             continue
-        db.execute("UPDATE story_versions SET status='PUBLISHED', reviewed_by_id=?, reviewed_at=? WHERE id=?",
-                   (reviewer_id, now, version_id))
+        if not already_published:
+            db.execute("UPDATE story_versions SET status='PUBLISHED', reviewed_by_id=?, reviewed_at=? WHERE id=?",
+                       (reviewer_id, now, version_id))
         ensure_branch(db, version_id)
         approved.append({"storyVersionId": version_id, "title": version["title"],
                          "ageMin": version["age_min"], "ageMax": version["age_max"]})
@@ -174,7 +177,7 @@ def main() -> int:
     parser.add_argument("--account", default=DEFAULT_ACCOUNT, help="演示家长账号")
     parser.add_argument("--password", default=DEFAULT_PASSWORD, help="演示家长密码")
     parser.add_argument("--nickname", default="小芽", help="演示幼儿昵称")
-    parser.add_argument("--limit", type=int, default=12, help="最多发布多少本绘本；0 表示全部")
+    parser.add_argument("--limit", type=int, default=12, help="最多准备多少本原创绘本用于演示分支；0 表示全部")
     parser.add_argument("--yes", action="store_true", help="确认修改数据库")
     parser.add_argument("--if-empty", action="store_true", help="一键启动时仅准备新库或未导入数据的空库")
     parser.add_argument("--check-only", action="store_true", help="只查看当前数据库状态")
@@ -201,9 +204,9 @@ def main() -> int:
         with closing(connect(path)) as db:
             tables = {row[0] for row in db.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
             if {"accounts", "story_versions"} <= tables and db.execute(
-                    "SELECT NOT EXISTS(SELECT 1 FROM accounts) AND EXISTS(SELECT 1 FROM story_versions) "
-                    "AND NOT EXISTS(SELECT 1 FROM story_versions WHERE status='PUBLISHED')").fetchone()[0]:
-                print("已有种子库缺少演示账号和已发布绘本。确认它用于演示后，请用 --db 指定该库并加 --yes 单独准备。",
+                    "SELECT NOT EXISTS(SELECT 1 FROM accounts WHERE account <> ?) AND EXISTS(SELECT 1 FROM story_versions)",
+                    (SEED_PUBLISHER,)).fetchone()[0]:
+                print("已有种子库缺少演示账号。确认它用于演示后，请用 --db 指定该库并加 --yes 单独准备。",
                       file=sys.stderr)
                 return 2
         print(f"复用已有数据库：{path}")

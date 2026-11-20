@@ -179,7 +179,9 @@ def test_only_unmodified_seed_content_is_approved(tmp_path, monkeypatch, capsys)
     assert "local-fixture-password" not in capsys.readouterr().out
     with closing(demo.connect(path)) as db:
         statuses = dict(db.execute("SELECT id,status FROM story_versions"))
-        assert [statuses[v["id"]] for v in (first, second, third)] == ["DRAFT", "PUBLISHED", "DRAFT"]
+        assert [statuses[v["id"]] for v in (first, second, third)] == ["DRAFT", "PUBLISHED", "PUBLISHED"]
+        assert db.execute("SELECT COUNT(*) FROM story_versions v JOIN accounts a ON a.id=v.reviewed_by_id "
+                          "WHERE a.account='seed:course-originals' AND v.status='PUBLISHED'").fetchone()[0] == 20
         assert statuses[9876] == "DRAFT"
         draft_keys = set(row[0] for row in db.execute("SELECT item_key FROM knowledge_items WHERE status='DRAFT'"))
         assert draft_keys == {knowledge["item_key"], "qa-review-fixture"}
@@ -430,4 +432,4 @@ def test_demo_role_conflict_rolls_back(tmp_path, monkeypatch, account, role):
     with closing(demo.connect(path)) as db:
         rows = db.execute("SELECT account, role FROM accounts WHERE account LIKE 'fixture%'").fetchall()
         assert [tuple(row) for row in rows] == [(account, role)]
-        assert db.execute("SELECT count(*) FROM story_versions WHERE status='PUBLISHED'").fetchone()[0] == 0
+        assert db.execute("SELECT count(*) FROM story_versions WHERE status='PUBLISHED'").fetchone()[0] == 20
