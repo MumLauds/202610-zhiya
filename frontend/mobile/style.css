@@ -528,6 +528,8 @@ body {
 .story-form { display: grid; gap: .72rem; padding: 1rem; background: #f3f6ef; border-radius: 22px; }
 .story-form label { display: grid; gap: .32rem; color: var(--ink-soft); font-size: .68rem; }
 .story-form select, .story-form input { width: 100%; padding: .72rem .75rem; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 13px; font-size: .8rem; }
+.family-profile { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; font-weight: 600; }
+.family-profile select { min-width: 0; flex: 1; padding: .75rem; color: var(--ink); background: white; border: 1px solid var(--line); border-radius: 13px; font: inherit; }
 .info-panel { display: grid; gap: .55rem; justify-items: start; padding: 1rem; background: #fff8ea; border: 1px solid #f0dfbf; border-radius: 18px; }
 .info-panel strong { font-size: .86rem; }
 .info-panel p { margin: 0; color: var(--ink-soft); font-size: .72rem; line-height: 1.65; }

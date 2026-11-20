@@ -24,14 +24,17 @@ const books = demoBooks.books.map((book) => ({
   cover: resolveAsset(book.cover),
   pages: book.pages.map((page) => ({ ...page, image: resolveAsset(page.image), audio: resolveAsset(page.audio) })),
 }))
-const publicSite = import.meta.env.MODE === 'public'
+const { publicSite } = defineProps({ publicSite: Boolean })
 const mode = ref(publicSite ? 'live' : 'demo')
 const activeTab = ref('home')
 const selectedBook = ref(books[0])
 const detailBook = ref(null)
 const detailOrigin = ref('home')
 const readerConfig = ref(null)
-const childProfileId = ref(1)
+const childProfileId = ref(publicSite ? null : 1)
+const profiles = ref([])
+const profilesPending = ref(false)
+const profilesError = ref('')
 const storyVersionId = ref('')
 const sessionId = ref('')
 const searchQuery = ref('')
@@ -64,6 +67,7 @@ let accountTimer
 let historyGeneration = 0
 const liveFilteredBooks = computed(() => liveBooks.value.filter((book) =>
   book.title.toLowerCase().includes(searchQuery.value.trim().toLowerCase())))
+const displayedBooks = computed(() => activeTab.value === 'home' ? liveBooks.value : liveFilteredBooks.value)
 const recordCount = computed(() => mode.value === 'live' ? liveRecords.value.length : demoRecords.value.length)
 const shelfIds = ref(loadShelf())
 const favoriteIds = ref(loadFavorites())
@@ -189,13 +193,13 @@ function clearLiveData() {
 }
 
 function resetLiveInputs() {
-  childProfileId.value = 1
+  childProfileId.value = publicSite ? null : 1
   storyVersionId.value = sessionId.value = ''
 }
 
 function refreshLiveView() {
   if (mode.value !== 'live') return
-  if ((activeTab.value === 'library' || activeTab.value === 'growth') && !liveBookPage.value && !booksError.value) void loadLiveBooks()
+  if ((activeTab.value === 'library' || activeTab.value === 'growth' || (publicSite && activeTab.value === 'home')) && !liveBookPage.value && !booksError.value) void loadLiveBooks()
   if (activeTab.value === 'growth' && !historyPage.value && !historyError.value) void loadHistory()
 }
 
@@ -211,6 +215,10 @@ function syncAccount() {
     if (readerConfig.value) exitReader()
   }
   clearLiveData()
+  if (publicSite) {
+    profiles.value = []
+    void loadProfiles()
+  }
   refreshLiveView()
   return changed
 }
@@ -237,6 +245,24 @@ onUnmounted(() => {
   clearInterval(accountTimer)
   accountScope?.abort()
 })
+
+async function loadProfiles() {
+  const scope = accountScope
+  profilesPending.value = true
+  profilesError.value = ''
+  try {
+    const { data } = await accountRequest(scope)('/api/v1/child-profiles')
+    if (!scopeIsCurrent(scope)) return
+    profiles.value = data.items
+    childProfileId.value = data.items.length === 1 ? data.items[0].childProfileId : null
+  } catch (error) {
+    if (!scopeIsCurrent(scope)) return
+    if (error.status === 401) window.location.replace('/?entry=mobile#auth')
+    else profilesError.value = error.message
+  } finally {
+    if (scopeIsCurrent(scope)) profilesPending.value = false
+  }
+}
 
 async function loadLiveBooks() {
   if (booksPending.value || !moreLiveBooks.value) return
@@ -377,7 +403,7 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
 
     <main class="mobile-main">
       <p v-if="mode === 'live' && readerError" class="inline-error" role="alert">{{ readerError }}</p>
-      <template v-if="activeTab === 'home'">
+      <template v-if="activeTab === 'home' && !publicSite">
         <section v-if="mode === 'demo'" class="ranking-section">
           <div class="ranking-head">
             <div><p class="eyebrow">知芽精选</p><h1>今日推荐</h1></div>
@@ -416,15 +442,29 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
       </template>
 
 
-      <template v-else-if="activeTab === 'library' && mode === 'live'">
-        <section class="inner-page-head"><div><p class="eyebrow">实机绘本馆</p><h1>找一本一起读</h1></div></section>
-        <label class="search-box"><span>⌕</span><input ref="searchInput" v-model="searchQuery" type="search" placeholder="搜索已加载的书名"></label>
-        <label>儿童档案 ID <input v-model.number="childProfileId" type="number" min="1" inputmode="numeric"></label>
+      <template v-else-if="mode === 'live' && (activeTab === 'library' || activeTab === 'home')">
+        <section class="inner-page-head"><div><h1>{{ activeTab === 'home' ? '今天和谁一起读？' : '绘本馆' }}</h1></div></section>
+        <template v-if="publicSite">
+          <p v-if="profilesPending" role="status">正在读取儿童档案…</p>
+          <div v-else-if="profilesError" role="alert">{{ profilesError }} <button type="button" @click="loadProfiles">重试</button></div>
+          <label v-else-if="profiles.length" class="family-profile">儿童档案
+            <select v-model="childProfileId" :disabled="readerPending">
+              <option disabled :value="null">请选择孩子</option>
+              <option v-for="(profile, index) in profiles" :key="profile.childProfileId" :value="profile.childProfileId">{{ profile.nickname || ('孩子 ' + (index + 1)) }}</option>
+            </select>
+          </label>
+          <div v-else class="empty-state compact"><strong>先为孩子建一份阅读档案</strong>
+            <a href="/#account/children" target="_blank" rel="noopener">去创建儿童档案</a>
+            <button class="text-button" type="button" @click="loadProfiles">已创建，刷新档案</button>
+          </div>
+        </template>
+        <label v-else>儿童档案 ID <input v-model.number="childProfileId" type="number" min="1" inputmode="numeric"></label>
+        <label v-if="activeTab === 'library'" class="search-box"><span>⌕</span><input ref="searchInput" v-model="searchQuery" type="search" placeholder="搜索已加载的书名"></label>
         <p v-if="booksError" class="inline-error" role="alert">{{ booksError }}</p>
         <p v-if="booksPending" role="status">加载绘本中…</p>
-        <p v-else-if="!liveFilteredBooks.length && !booksError">没有匹配的绘本。</p>
+        <p v-else-if="!displayedBooks.length && !booksError">暂无可展示的绘本。</p>
         <div class="library-phone-grid">
-          <button v-for="book in liveFilteredBooks" :key="book.storyVersionId" class="library-phone-card" type="button" :disabled="readerPending" @click="startLive({ versionId: book.storyVersionId, restoreId: null })">
+          <button v-for="book in displayedBooks" :key="book.storyVersionId" class="library-phone-card" type="button" :disabled="readerPending || (publicSite && !childProfileId)" @click="startLive({ versionId: book.storyVersionId, restoreId: null })">
             <img :key="book.cover" :src="book.cover" :alt="book.title" @error="imageFallback"><strong>{{ book.title }}</strong>
           </button>
         </div>
@@ -493,15 +533,16 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
       </template>
 
       <template v-else-if="activeTab === 'profile'">
-        <section class="inner-page-head"><div><p class="eyebrow">家长中心</p><h1>芽芽的阅读空间</h1></div></section>
-        <article class="profile-card"><span class="profile-avatar">禾</span><div><strong>芽芽</strong><p>3-4 岁 · 喜欢动物和勇气</p></div></article>
+        <section class="inner-page-head"><div><p class="eyebrow">家长中心</p><h1>{{ publicSite ? '我的阅读空间' : '芽芽的阅读空间' }}</h1></div></section>
+        <article v-if="!publicSite" class="profile-card"><span class="profile-avatar">禾</span><div><strong>芽芽</strong><p>3-4 岁 · 喜欢动物和勇气</p></div></article>
         <section class="settings-list">
           <button v-if="mode === 'demo'" class="setting-row" type="button" @click="selectTab('shelf')"><span>我的书架</span><b>{{ shelfBooks.length }} 本 →</b></button>
           <button class="setting-row" type="button" @click="selectTab('growth')"><span>阅读记录</span><b>{{ mode === 'demo' ? `${recordCount} 条 →` : '查看 →' }}</b></button>
-          <div class="setting-row"><span>运行模式</span><b>{{ mode === 'demo' ? '原型演示' : '实机接口' }}</b></div>
-          <button class="setting-row" type="button" @click="mode = mode === 'demo' ? 'live' : 'demo'"><span>切换模式</span><b>当前：{{ mode === 'demo' ? '演示' : '实机' }} →</b></button>
+          <a v-if="publicSite" class="setting-row" href="/#account/children">管理儿童档案 →</a>
+          <div v-else class="setting-row"><span>运行模式</span><b>{{ mode === 'demo' ? '原型演示' : '实机接口' }}</b></div>
+          <button v-if="!publicSite" class="setting-row" type="button" @click="mode = mode === 'demo' ? 'live' : 'demo'"><span>切换模式</span><b>当前：{{ mode === 'demo' ? '演示' : '实机' }} →</b></button>
         </section>
-        <p class="profile-note">账号、头像与儿童档案的真实读写仍以业务后端接口为准；此处保留移动端入口和交互位置。</p>
+        <p v-if="!publicSite" class="profile-note">账号、头像与儿童档案的真实读写仍以业务后端接口为准；此处保留移动端入口和交互位置。</p>
       </template>
     </main>
 

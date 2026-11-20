@@ -1092,6 +1092,10 @@ async function signIn(account, password) {
     setToast('已登录内容管理空间')
     return
   }
+  if (state.route.name === 'auth' && new URLSearchParams(location.search).get('entry') === 'mobile') {
+    window.location.replace('/mobile.html')
+    return
+  }
   await loadProfiles()
   if (epoch !== authEpoch) return
   await loadBooks()

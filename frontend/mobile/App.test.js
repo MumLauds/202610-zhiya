@@ -23,10 +23,10 @@ function login(cookie) {
   window.dispatchEvent(new Event('focus'))
 }
 
-function mountApp(handler) {
+function mountApp(handler, props = {}) {
   const fetch = vi.fn(handler)
   vi.stubGlobal('fetch', fetch)
-  wrapper = mount(App, { global: { stubs: { ReaderView: true } } })
+  wrapper = mount(App, { props, global: { stubs: { ReaderView: true } } })
   return fetch
 }
 
@@ -38,6 +38,40 @@ afterEach(() => {
 })
 
 describe('mobile live mode', () => {
+  it('opens a real book with the child selected by name on the public home page', async () => {
+    mountApp(async path => {
+      if (path.endsWith('/child-profiles')) return json({ items: [
+        { childProfileId: 13, nickname: '安安' }, { childProfileId: 25, nickname: '乐乐' },
+      ] })
+      if (path.includes('/storybooks?')) return json({ items: [story] })
+      if (path.endsWith('/story-versions/700')) return json(story)
+      throw new Error(path)
+    }, { publicSite: true })
+    await flushPromises()
+    expect(wrapper.find('input[type="number"]').exists()).toBe(false)
+    expect(wrapper.get('.library-phone-card').element.disabled).toBe(true)
+    await wrapper.get('select').setValue('25')
+    await wrapper.get('.library-phone-card').trigger('click')
+    await flushPromises()
+    expect(wrapper.getComponent(ReaderView).props()).toMatchObject({ childProfileId: 25, storyVersionId: 700 })
+  })
+
+  it('clears the previous family selection and offers profile creation for an empty account', async () => {
+    login('guardian-a')
+    mountApp(async path => {
+      if (path.endsWith('/child-profiles')) return json({ items: document.cookie.includes('guardian-a')
+        ? [{ childProfileId: 42, nickname: '安安' }] : [] })
+      return json({ items: [story] })
+    }, { publicSite: true })
+    await flushPromises()
+    expect(wrapper.get('select').element.value).toBe('42')
+    login('guardian-b')
+    await flushPromises()
+    expect(wrapper.find('select').exists()).toBe(false)
+    expect(wrapper.get('a[href="/#account/children"]').text()).toContain('创建')
+    expect(wrapper.get('.library-phone-card').element.disabled).toBe(true)
+  })
+
   it('restores the version bound by API-013 and keeps real pages and media', async () => {
     const snapshot = { session: session(73, 700), events: [], report: null }
     const fetch = mountApp(async (path) => {

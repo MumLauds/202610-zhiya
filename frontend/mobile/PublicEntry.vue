@@ -8,7 +8,7 @@ async function checkSession() {
   try {
     const response = await fetch('/api/v1/storybooks?pageSize=1', { cache: 'no-store' })
     if (response.status === 401) {
-      window.location.replace('/#auth')
+      window.location.replace('/?entry=mobile#auth')
       return
     }
     state.value = response.ok ? 'ready' : 'unavailable'
@@ -20,7 +20,7 @@ onMounted(checkSession)
 </script>
 
 <template>
-  <App v-if="state === 'ready'" />
+  <App v-if="state === 'ready'" public-site />
   <main v-else class="mobile-main">
     <p v-if="state === 'checking'" role="status">正在连接书架…</p>
     <template v-else>

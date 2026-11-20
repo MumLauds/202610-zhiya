@@ -25,7 +25,7 @@ it('redirects an expired session to sign-in', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 401 })))
   const view = shallowMount(PublicEntry)
   await flushPromises()
-  expect(window.location.replace).toHaveBeenCalledWith('/#auth')
+  expect(window.location.replace).toHaveBeenCalledWith('/?entry=mobile#auth')
   expect(view.find('app-stub').exists()).toBe(false)
   view.unmount()
 })
