@@ -23,6 +23,8 @@ python -m venv .venv
 `p6demo / Zhiya-demo-2026`。数据库默认位于 `qa/p6/instance/zhiya.sqlite3`。脚本只发布与仓库种子逐项一致的候选绘本、页面和知识，
 也可用 `--db` 指定到仓库外，避免提交数据库文件。一键入口会继续完成自己上次中断的准备事务。对没有准备标记、仅有种子、尚未创建演示账号的库，请先确认用途，再执行 `python qa/p6/prepare_demo_data.py --db <数据库路径> --yes`。
 
+准备命令输出的 `publishedCount` 和 `storyVersionIds` 只统计本轮由草稿转为已发布的绘本；`demoBranchesCreated` 统计本轮实际新增的演示分支。书架的已发布总数见 `check.publishedVersions`。
+
 ## 分步执行
 
 ```bash

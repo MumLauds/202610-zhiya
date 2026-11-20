@@ -16,7 +16,7 @@
 
 检查项：JSON 结构与字段完整性、`book_no`/`storybook_id` 重复、源文件存在性、完整解码（`Pillow.verify()` + `load()`）、扩展名与真实编码是否一致、尺寸 / 色彩模式 / 透明通道 / 帧数 / EXIF 方向、字节数与 SHA-256、异常尺寸、路径是否越界或指向素材目录之外、以及 `storybook_id → story_version_id` 的种子对照。
 
-**结果：20/20 通过，0 个错误。** 唯一告警是种子内 21 个版本全部为 `DRAFT`，因此这些封面只能作为本地演示素材。
+**结果：20/20 通过，0 个错误，0 个告警。** 封面映射覆盖 20 本已上架的课程原创。
 
 | bookNo | storybookId | storyVersionId | 封面文件 | 源尺寸 | 源字节 | 模式 | SHA-256 前 12 位 |
 | --- | ---: | ---: | --- | --- | ---: | --- | --- |
@@ -57,7 +57,7 @@
 - 20 条映射的 `storybook_id` 全部存在于 `data/seed/storybooks.json`（21 本，含联调用《逃家小兔》）。
 - 每个 `storybook_id` 在 `data/seed/story_versions.json` 中恰好有 1 个版本，因此 `storyVersionId` **可可靠确定**，脚本通过 `storybook_id` 查找得到，而不是直接把 `storybookId` 当作 `storyVersionId`。
 - 当前种子里两者的数值恰好相等（2→2、21→21）。这是**数据巧合，不是语义等价**：转换工具用字典查找，校验工具用种子反查并专门比对，测试里也构造了「id=1901 / storybook=901」的数据来防止该错误回流。
-- 21 个版本状态均为 `DRAFT`，所以 Manifest 的每条资源都带 `storyVersionStatus: "DRAFT"`，全局 `notice` 明确标注为本地 DEMO 素材。
+- 20 本课程原创的缩略图和详情图均记录 `storyVersionStatus: "PUBLISHED"`。联调用《逃家小兔》仍为 `DRAFT`，未列入封面映射。
 
 ---
 
@@ -72,7 +72,7 @@
 | 合计 | 111.82 MiB | 787.2 KiB（40 个文件） |
 | 用途 | 内容源、审计对象 | 800×480 屏的书架缩略图与详情页封面 |
 | 变更权限 | 任何人不得改名/覆盖/删除/重压缩 | 由脚本重生成，可随时丢弃重建 |
-| 授权状态 | 团队原创，仅限课程学习与演示 | 同上；`DRAFT`，不是已发布内容 |
+| 授权状态 | 团队原创，仅限课程学习与演示 | 沿用课程学习与演示许可 |
 
 设备资源不是「原图的副本」，而是**重新编码的派生物**：像素经过等比缩放与 JPEG 有损压缩，无法从设备资源还原原图质量。原图仍是唯一权威来源。
 
@@ -111,7 +111,7 @@
 
 ## 5. Manifest 字段说明与示例
 
-文件：`hardware/assets/generated/assets-manifest.json`（36.8 KiB，UTF-8，LF，无生成时间戳以保证可复现与可 diff）。
+文件：`hardware/assets/generated/assets-manifest.json`（36.1 KiB，UTF-8，LF，无生成时间戳以保证可复现与可 diff）。
 
 ### 5.1 顶层字段
 
@@ -137,7 +137,7 @@
 | `bookNo` | 书号，直接取自映射，如 `B-002` |
 | `storybookId` | 绘本本体整数主键，取自映射 |
 | `storyVersionId` | 版本整数主键，由 `storybook_id` 在种子中唯一匹配得到；无法唯一确定时为 `null` |
-| `storyVersionStatus` | 种子版本状态，当前全为 `DRAFT` |
+| `storyVersionStatus` | 种子版本状态，本批映射的原创版本均为 `PUBLISHED` |
 | `title` | 种子标题（UTF-8），供 UI 显示，不参与文件名 |
 | `assetRole` | `THUMBNAIL` 或 `DETAIL` |
 | `sourcePath` | 原图仓库相对路径（只读） |
@@ -158,7 +158,7 @@
   "bookNo": "B-002",
   "storybookId": 2,
   "storyVersionId": 2,
-  "storyVersionStatus": "DRAFT",
+  "storyVersionStatus": "PUBLISHED",
   "title": "小狐狸的雨伞",
   "assetRole": "THUMBNAIL",
   "sourcePath": "knowledge-base_v2.5/图片/PIC-B01_小狐狸的雨伞.png",
@@ -243,7 +243,7 @@ python -m unittest discover -s hardware/tests/assets -v
 - 20 张缩略图：5,964～12,677 B，合计 **198,512 B**
 - 20 张详情图：16,856～39,543 B，合计 **607,578 B**
 - 40 个资源合计 **806,090 B（787.2 KiB）**，为原图 117,248,465 B 的 **0.69%**
-- Manifest 36,826 B，两者合计约 **823 KiB**
+- Manifest 36,986 B，两者合计约 **823 KiB**
 
 估算方法：
 
@@ -331,8 +331,8 @@ RGB888: width × height × 3 字节
 ### 9.3 使用约束
 
 - **不要把 `assetPath` 当作 API-024 的 `resource_key`**，也不要把仓库路径暴露成公网 URL。线上受控媒体由后端按版本与授权签发，与本地演示资源是两套体系。
-- 本地演示仅覆盖**封面**；`data/seed/story_pages.json` 的 104 页正文配图仍为占位标记 `/assets/placeholder.png`，**不存在逐页插画**。不能用同一张封面反复充当正文页。
-- `storyVersionStatus` 全为 `DRAFT`：界面必须保留 `DEMO` 标识，不得呈现为「已发布绘本」。
+- 本地设备演示包仅包含封面。20 本课程原创另有 104 张内页插画，由 `data/seed/story_pages.json` 逐页引用，家长书架通过 API-024 读取。
+- 设备端按每条资源的 `storyVersionStatus` 展示内容状态。本批 20 本已上架，使用范围仍限非商业课程学习与演示。
 - 书架一屏建议只解码可见项；滚动/翻页时释放不可见缩略图，避免 20 张同时驻留。
 - 图片解码必须放在独立任务或分块流程中，不在 LVGL 绘制回调里做文件 IO 与解码（H06/H08 责任）。
 
@@ -344,7 +344,7 @@ RGB888: width × height × 3 字节
 - 干净克隆即可取用已生成的 JPEG 做 H-Demo。校验 Manifest 前，在仓库根目录运行 `python -m pip install -r hardware/tools/requirements.txt` 安装锁定的 Pillow；
 - 原图 111.82 MiB 不重复入库，`knowledge-base_v2.5/` 保持唯一权威来源。
 
-若后续引入逐页插画（单套可能数十 MB），改为只入库工具、Manifest 与少量演示样本，并对生成物配置忽略规则。`hardware/.gitignore` 已忽略临时文件与半成品清单。
+若后续在设备包中引入逐页插画（单套可能数十 MB），改为只入库工具、Manifest 与少量演示样本，并对生成物配置忽略规则。`hardware/.gitignore` 已忽略临时文件与半成品清单。
 
 ---
 

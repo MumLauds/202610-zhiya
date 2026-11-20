@@ -187,6 +187,23 @@ def test_only_unmodified_seed_content_is_approved(tmp_path, monkeypatch, capsys)
         assert draft_keys == {knowledge["item_key"], "qa-review-fixture"}
 
 
+def test_demo_reports_only_new_publications_and_branches(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "demo.sqlite3"
+    demo.ensure_database(path)
+    with closing(demo.connect(path)) as db, db:
+        # One legacy draft and one already-published original both need demo branches.
+        db.execute("UPDATE story_versions SET status='DRAFT', reviewed_by_id=NULL, reviewed_at=NULL WHERE id=2")
+    monkeypatch.setattr(sys, "argv", ["prepare", "--db", str(path), "--yes", "--limit", "2"])
+
+    for expected_ids, expected_branches in (([2], 2), ([], 0)):
+        assert demo.main() == 0
+        result = json.loads(capsys.readouterr().out)
+        assert result["storyVersionIds"] == expected_ids
+        assert result["publishedCount"] == len(expected_ids)
+        assert result["demoBranchesCreated"] == expected_branches
+        assert result["check"]["publishedVersions"] == 20
+
+
 def test_preserve_manual_scores_and_reject_changed_plan(tmp_path):
     args = ["--outdir", str(tmp_path), "--limit", "1"]
     assert run_model_compare.main(args) == 0

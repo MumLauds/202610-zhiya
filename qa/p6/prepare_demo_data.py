@@ -77,7 +77,7 @@ def ensure_account(db: sqlite3.Connection, account: str, password: str, role: st
     return int(cursor.lastrowid)
 
 
-def ensure_branch(db: sqlite3.Connection, version_id: int) -> None:
+def ensure_branch(db: sqlite3.Connection, version_id: int) -> bool:
     """为验收准备一条已审核分支（第 1 页 -> 第 2 页）。
 
     种子没有 story_branches 记录；没有分支就无法验证 API-018。这里只在本地
@@ -85,16 +85,16 @@ def ensure_branch(db: sqlite3.Connection, version_id: int) -> None:
     """
     if db.execute("SELECT 1 FROM story_branches WHERE version_id = ? AND review_status = 'APPROVED'",
                   (version_id,)).fetchone():
-        return
+        return False
     if not db.execute("SELECT 1 FROM story_pages WHERE version_id = ? AND page_no = 2",
                       (version_id,)).fetchone():
-        return
-    db.execute(
+        return False
+    return db.execute(
         """INSERT INTO story_branches (version_id, from_page_no, next_page_no, choice_label, review_status)
            VALUES (?, 1, 2, 'P6测试分支', 'APPROVED')
            ON CONFLICT(version_id, from_page_no, choice_label) DO NOTHING""",
         (version_id,),
-    )
+    ).rowcount == 1
 
 
 def matches_seed(db: sqlite3.Connection, table: str, record: dict) -> bool:
@@ -107,7 +107,8 @@ def matches_seed(db: sqlite3.Connection, table: str, record: dict) -> bool:
 def approve_content(db: sqlite3.Connection, reviewer_id: int, limit: int | None) -> dict:
     seed = load_seed(SEED_DIR)
     books = {row["id"]: row for row in seed["storybooks"]}
-    approved = []
+    published_ids = []
+    branches_created = 0
     now = int(time.time() * 1000)
     course_versions = [v for v in seed["story_versions"] if v["status"] == "PUBLISHED"]
     for version in course_versions[:limit]:
@@ -125,9 +126,9 @@ def approve_content(db: sqlite3.Connection, reviewer_id: int, limit: int | None)
         if not already_published:
             db.execute("UPDATE story_versions SET status='PUBLISHED', reviewed_by_id=?, reviewed_at=? WHERE id=?",
                        (reviewer_id, now, version_id))
-        ensure_branch(db, version_id)
-        approved.append({"storyVersionId": version_id, "title": version["title"],
-                         "ageMin": version["age_min"], "ageMax": version["age_max"]})
+            published_ids.append(version_id)
+        if ensure_branch(db, version_id):
+            branches_created += 1
     knowledge = 0
     for item in seed["knowledge_items"]:
         if matches_seed(db, "knowledge_items", item):
@@ -135,7 +136,8 @@ def approve_content(db: sqlite3.Connection, reviewer_id: int, limit: int | None)
                 "UPDATE knowledge_items SET status='APPROVED', reviewed_at=? WHERE item_key=? AND version_no=? AND status='DRAFT'",
                 (now, item["item_key"], item["version_no"]),
             ).rowcount
-    return {"storyVersions": approved, "knowledgeApproved": knowledge}
+    return {"storyVersionIds": published_ids, "publishedCount": len(published_ids),
+            "demoBranchesCreated": branches_created, "knowledgeApproved": knowledge}
 
 
 def ensure_profile(db: sqlite3.Connection, guardian_id: int, nickname: str) -> dict:
@@ -222,16 +224,13 @@ def main() -> int:
         profile = ensure_profile(db, guardian_id, args.nickname)
         db.execute("DROP TABLE IF EXISTS p6_demo_setup_pending")
 
-    story_ids = [item["storyVersionId"] for item in approved["storyVersions"]]
     result = {
         "path": str(path),
         "databaseCreated": not existed,
         "demoAccount": args.account,
         "guardianId": guardian_id,
         "profile": profile,
-        "publishedCount": len(story_ids),
-        "storyVersionIds": story_ids,
-        "knowledgeApproved": approved["knowledgeApproved"],
+        **approved,
         "check": check(path),
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
