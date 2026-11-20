@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { countReadPages } from '../src/data/readingProgress'
 import demoBooks from './data/demo-books.json'
 import ReaderView from './components/ReaderView.vue'
+import ReadingSummary from './components/ReadingSummary.vue'
 import BookDetailView from './components/BookDetailView.vue'
 import { DemoReadingSessionsApi, DemoVoiceApi } from './api/demo'
 import { ReadingSessionsApi } from './api/readingSessions'
@@ -305,6 +306,15 @@ async function startLive({ versionId = storyVersionId.value, restoreId = session
         throw new ApiError('服务端未返回该会话的绘本版本')
       }
       versionId = initialSnapshot.session.storyVersionId
+      if (initialSnapshot.session.status === 'FINISHED') {
+        if (scopeIsCurrent(scope) && origin === activeTab.value) {
+          readerConfig.value = {
+            mode: 'live', initialSnapshot,
+            book: historyBook(initialSnapshot.session) ?? { title: `绘本版本 ${versionId}` },
+          }
+        }
+        return
+      }
     }
     const book = await new LiveBooksApi(placeholder, request).get(versionId)
     if (!scopeIsCurrent(scope) || origin !== activeTab.value) return
@@ -339,7 +349,10 @@ function generateOriginalDraft() { originalNotice.value = `已保留创作参数
 </script>
 
 <template>
-  <ReaderView v-if="readerConfig" :key="readerConfig.key" :book="readerConfig.book" :mode="readerConfig.mode" :session-api="readerConfig.sessionApi" :voice-api="readerConfig.voiceApi" :child-profile-id="readerConfig.childProfileId" :story-version-id="readerConfig.storyVersionId" :initial-session-id="readerConfig.initialSessionId" :initial-snapshot="readerConfig.initialSnapshot" @exit="exitReader" @finished="handleReadingFinished" />
+  <main v-if="readerConfig?.initialSnapshot?.session.status === 'FINISHED'" class="reader-view reader-content">
+    <ReadingSummary :book="readerConfig.book" :session="readerConfig.initialSnapshot.session" :report="readerConfig.initialSnapshot.report" @exit="exitReader" />
+  </main>
+  <ReaderView v-else-if="readerConfig" :key="readerConfig.key" :book="readerConfig.book" :mode="readerConfig.mode" :session-api="readerConfig.sessionApi" :voice-api="readerConfig.voiceApi" :child-profile-id="readerConfig.childProfileId" :story-version-id="readerConfig.storyVersionId" :initial-session-id="readerConfig.initialSessionId" :initial-snapshot="readerConfig.initialSnapshot" @exit="exitReader" @finished="handleReadingFinished" />
 
   <div v-else class="library-shell">
     <header v-if="activeTab !== 'detail'" class="app-header">

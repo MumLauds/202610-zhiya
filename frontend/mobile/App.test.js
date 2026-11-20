@@ -151,4 +151,25 @@ describe('mobile live mode', () => {
     expect(wrapper.get('.record-card').text()).toContain('2 页 · 进行中')
     expect(fetch.mock.calls.filter(([path]) => path === '/api/v1/reading-sessions?page=1&pageSize=20')).toHaveLength(2)
   })
+
+  it('PR41 followup shows the finished history summary without requesting restricted story content', async () => {
+    const finished = { ...session(73, 700), status: 'FINISHED' }
+    const report = { summary: '服务端保存的本次小结', status: 'READY', activities: [] }
+    login('guardian-a')
+    const fetch = mountApp(async (path) => {
+      if (path === '/api/v1/reading-sessions/73') return json({ session: finished, events: [], report })
+      if (path === '/api/v1/reading-sessions?page=1&pageSize=20') return json({ items: [finished] })
+      if (path.startsWith('/api/v1/story-versions/')) return json(null, 404)
+      return json({ items: [] })
+    })
+    await wrapper.get('.mode-mini').trigger('click')
+    await wrapper.findAll('.bottom-nav button')[3].trigger('click')
+    await flushPromises()
+    await wrapper.get('.record-card button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.summary-panel').text()).toContain(report.summary)
+    expect(fetch.mock.calls.filter(([path]) => path === '/api/v1/reading-sessions/73')).toHaveLength(1)
+    expect(fetch.mock.calls.some(([path]) => path.startsWith('/api/v1/story-versions/'))).toBe(false)
+  })
 })

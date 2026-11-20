@@ -34,6 +34,7 @@ const interactionResult = ref(null)
 const questionReady = ref(false)
 const showAnswerDialog = ref(false)
 const lastAnswerText = ref('')
+const answerDraft = ref('')
 const pageAudioSrc = ref('')
 const pageAudioLoading = ref(false)
 const answerAudioUrl = ref('')
@@ -68,7 +69,11 @@ const errorMessage = computed(() => session.error.value?.message ?? session.erro
 const creationUnconfirmed = computed(() => !props.initialSessionId && !session.state.session && session.error.value?.code === 'REQUEST_OUTCOME_UNKNOWN')
 const serverErrorHint = computed(() => (session.error.value?.status ?? 0) >= 500 ? '请确认 127.0.0.1:8000 后端已启动、账号已登录且 Cookie 有效；若后端正在运行，请查看服务端日志。' : '')
 
-watch(currentPageNumber, () => resetInteractionForPage())
+watch(currentPageNumber, () => {
+  resetInteractionForPage()
+  restorePageQuestion()
+})
+watch(() => session.state.events, () => restorePageQuestion())
 watch(() => session.state.session?.currentPage, (page) => {
   if (page != null) currentPageNumber.value = page
 })
@@ -108,16 +113,38 @@ function resetInteractionForPage() {
   interactionResult.value = null
   questionReady.value = false
   lastAnswerText.value = ''
+  answerDraft.value = ''
   showAnswerDialog.value = false
   highlightIndex.value = -1
   pageAudioSrc.value = props.mode === 'demo' ? (currentPage.value?.audio ?? '') : ''
 }
 
+function restorePageQuestion() {
+  if (reviewing.value || session.state.session?.status !== 'IN_PROGRESS') return
+  const question = session.state.events.findLast((event) =>
+    event.pageNumber === currentPageNumber.value && event.outputText?.trim() &&
+    !['SKIP', 'SAFETY_BLOCK'].includes(event.strategyType) &&
+    (event.eventType === 'QUESTION' ||
+      (event.eventType === 'FEEDBACK' && ['UNDERSTOOD', 'NOT_UNDERSTOOD'].includes(event.feedback))))
+  if (question) {
+    interactionResult.value = question
+    questionReady.value = true
+  }
+}
+
 async function syncReading() {
   try {
-    await session.restore()
+    const recovered = await session.restore()
+    if (!active) return
     currentPageNumber.value = session.state.session.currentPage
-    resetInteractionForPage()
+    if (recovered?.result) {
+      interactionResult.value = recovered.result
+      questionReady.value = true
+    }
+    if (recovered?.confirmedAnswer) {
+      lastAnswerText.value = recovered.confirmedAnswer
+      answerDraft.value = ''
+    }
   } catch {
     // The read can be retried without sending a new event.
   }
@@ -209,12 +236,17 @@ async function openAnswerDialog() {
 }
 
 async function handleAnswerConfirmed({ text }) {
-  showAnswerDialog.value = false
-  if (pending.value || reviewing.value) return
+  if (pending.value || reviewing.value || session.state.syncRequired) return
+  answerDraft.value = text
   try {
     await session.answer(text)
     lastAnswerText.value = text
-  } catch { /* the write error or recovery notice is shown below */ }
+    answerDraft.value = ''
+    showAnswerDialog.value = false
+  } catch {
+    // Keep the edited text for a rejected write. Uncertain writes use session reconciliation.
+    if (session.state.syncRequired || session.notice.value) showAnswerDialog.value = false
+  }
 }
 
 async function loadPageAudio() {
@@ -413,7 +445,10 @@ function exitReading() {
       :page-number="currentPageNumber"
       :revision="revision"
       :demo="mode === 'demo'"
-      @close="showAnswerDialog = false"
+      :submitting="pending"
+      :initial-text="answerDraft"
+      :submit-error="errorMessage"
+      @close="showAnswerDialog = false; answerDraft = ''"
       @confirmed="handleAnswerConfirmed"
     />
   </div>

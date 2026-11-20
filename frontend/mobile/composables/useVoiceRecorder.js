@@ -111,10 +111,6 @@ export function useVoiceRecorder() {
     return { text, reliable }
   }
 
-  function markConfirmed() {
-    state.value = 'confirmed'
-  }
-
   function markError(message) {
     state.value = 'error'
     error.value = message || '转写失败，请重录或手动输入'
@@ -148,7 +144,6 @@ export function useVoiceRecorder() {
     reset,
     markTranscribing,
     markReview,
-    markConfirmed,
     markError,
   }
 }

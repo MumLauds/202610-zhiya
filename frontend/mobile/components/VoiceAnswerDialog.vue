@@ -8,13 +8,16 @@ const props = defineProps({
   pageNumber: { type: Number, required: true },
   revision: { type: Number, required: true },
   demo: { type: Boolean, default: false },
+  submitting: { type: Boolean, default: false },
+  initialText: { type: String, default: '' },
+  submitError: { type: String, default: '' },
 })
 const emit = defineEmits(['close', 'confirmed'])
 
 const recorder = useVoiceRecorder()
-const transcript = ref('')
+const transcript = ref(props.initialText)
 const reliable = ref(null)
-const manualMode = ref(false)
+const manualMode = ref(Boolean(props.initialText))
 const elapsedSeconds = ref(0)
 let timer = null
 let requestController = null
@@ -34,6 +37,7 @@ onBeforeUnmount(() => {
 })
 
 function close() {
+  if (props.submitting) return
   requestController?.abort()
   recorder.cancel()
   emit('close')
@@ -93,8 +97,7 @@ function useManualInput() {
 
 function confirmAnswer() {
   const text = transcript.value.trim()
-  if (!text) return
-  recorder.markConfirmed()
+  if (!text || props.submitting) return
   emit('confirmed', { text, reliable: reliable.value })
 }
 
@@ -111,7 +114,7 @@ function formatDuration(seconds) {
           <p class="eyebrow">G08 语音转写</p>
           <h2 id="answer-title">听听孩子的回答</h2>
         </div>
-        <button class="icon-button" type="button" aria-label="关闭" @click="close">×</button>
+        <button class="icon-button" type="button" aria-label="关闭" :disabled="submitting" @click="close">×</button>
       </header>
 
       <p class="dialog-copy">
@@ -148,26 +151,22 @@ function formatDuration(seconds) {
         <textarea
           id="transcript"
           v-model="transcript"
+          :disabled="submitting"
           rows="4"
           maxlength="200"
           placeholder="可以修改识别结果，或直接输入孩子的回答"
         />
         <p v-if="reliable === false" class="warning-note">识别结果未标记为可靠，请家长仔细核对。</p>
         <p v-if="recorder.error.value" class="inline-error">{{ recorder.error.value }}</p>
+        <p v-if="submitError" class="inline-error" role="alert">{{ submitError }}</p>
         <div class="dialog-actions">
-          <button class="button button-primary" type="button" :disabled="!transcript.trim()" @click="confirmAnswer">
-            确认回答
+          <button class="button button-primary" type="button" :disabled="submitting || !transcript.trim()" @click="confirmAnswer">
+            {{ submitting ? '正在提交…' : '确认回答' }}
           </button>
-          <button class="button button-ghost" type="button" @click="manualMode = false; recorder.cancel(); transcript = ''">
+          <button class="button button-ghost" type="button" :disabled="submitting" @click="manualMode = false; recorder.cancel(); transcript = ''">
             重新录制
           </button>
         </div>
-      </div>
-
-      <div v-if="recorder.state.value === 'confirmed'" class="confirmed-panel">
-        <span class="success-mark">✓</span>
-        <p>回答已确认。正在提交本轮互动反馈。</p>
-        <button class="button button-primary" type="button" @click="close">返回阅读</button>
       </div>
 
       <p v-if="recorder.error.value && !manualMode && recorder.state.value !== 'review'" class="inline-error">

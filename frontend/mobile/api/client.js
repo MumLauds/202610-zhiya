@@ -42,6 +42,7 @@ function mergeAbortSignals(signal, timeoutMs) {
 
 export async function requestJson(path, options = {}) {
   const method = (options.method ?? 'GET').toUpperCase()
+  const isWrite = method !== 'GET' && method !== 'HEAD'
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const merged = mergeAbortSignals(options.signal, timeoutMs)
   const headers = new Headers(options.headers ?? {})
@@ -52,7 +53,7 @@ export async function requestJson(path, options = {}) {
     headers.set('Content-Type', 'application/json')
     body = JSON.stringify(body)
   }
-  if (method !== 'GET' && method !== 'HEAD') {
+  if (isWrite) {
     const csrf = options.csrfToken ?? readCookie('zhiya_csrf')
     if (csrf) headers.set('X-CSRF-Token', csrf)
   }
@@ -76,6 +77,12 @@ export async function requestJson(path, options = {}) {
       }
     }
     const requestId = payload?.requestId ?? response.headers.get('X-Request-Id')
+    if (isWrite && !payload?.error?.code &&
+        ([502, 503, 504].includes(response.status) || (response.ok && payload?.data == null))) {
+      throw new ApiError('写入结果尚未确认，请先核对会话。', {
+        status: response.status, code: 'REQUEST_OUTCOME_UNKNOWN', requestId,
+      })
+    }
     if (!response.ok) {
       throw new ApiError(payload?.error?.message ?? (response.status >= 500 ? `后端服务异常（${response.status}）` : `请求失败（${response.status}）`), {
         status: response.status,
@@ -94,7 +101,7 @@ export async function requestJson(path, options = {}) {
     }
   } catch (error) {
     if (error instanceof ApiError) throw error
-    if (method !== 'GET' && method !== 'HEAD' && !options.signal?.aborted) {
+    if (isWrite && !options.signal?.aborted) {
       throw new ApiError('写入结果尚未确认，请先核对会话。', { code: 'REQUEST_OUTCOME_UNKNOWN' })
     }
     if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {

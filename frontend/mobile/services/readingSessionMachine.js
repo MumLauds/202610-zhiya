@@ -158,6 +158,7 @@ export class ReadingSessionMachine {
       expectedRevision: this.session.revision, clientEventId: this.keyFactory('answer'),
     }
     return this._runMutation({
+      answerText: text,
       request: () => this.api.addEvent(this.session.readingSessionId, payload),
       apply: (data) => { this.session = { ...this.session, revision: data.revision } },
     })
@@ -214,7 +215,8 @@ export class ReadingSessionMachine {
     if (Date.now() < retry.retryAt) throw new Error('原请求仍在处理，请稍后再核对。')
     this.unconfirmed = null
     this.syncRequired = false
-    return this._runMutation(retry.operation)
+    const recovered = await this._runMutation(retry.operation)
+    return { ...recovered, confirmedAnswer: retry.operation.answerText }
   }
 
   async _runMutation(operation) {
@@ -244,7 +246,8 @@ export class ReadingSessionMachine {
             this.syncRequired = true
             // A transport failure can precede the server commit. Retain the same event key
             // if the first read still shows the original revision.
-            if ((error.status === 0 && error.code === 'REQUEST_OUTCOME_UNKNOWN') || error.code === 'REQUEST_IN_PROGRESS') {
+            const transportUnconfirmed = error.code === 'REQUEST_OUTCOME_UNKNOWN' && !error.payload?.error?.code
+            if (transportUnconfirmed || error.code === 'REQUEST_IN_PROGRESS') {
               this.unconfirmed = {
                 operation, revision: this.session.revision,
                 retryAt: Date.now() + (error.retryAfter ? retryDelay(error) : 0),

@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
+import { ReadingSessionsApi } from '../api/readingSessions'
 import ReaderView from './ReaderView.vue'
 
 const book = {
@@ -37,7 +38,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-async function openReader({ snapshot = inProgress, sessionApi = {}, voiceApi = {} } = {}) {
+async function openReader({ snapshot = inProgress, events = [], sessionApi = {}, voiceApi = {} } = {}) {
   const api = {
     create: vi.fn(),
     get: vi.fn(),
@@ -51,7 +52,7 @@ async function openReader({ snapshot = inProgress, sessionApi = {}, voiceApi = {
       book,
       mode: 'live',
       storyVersionId: book.storyVersionId,
-      initialSnapshot: snapshot ? { session: snapshot, events: [], report: null } : null,
+      initialSnapshot: snapshot ? { session: snapshot, events, report: null } : null,
       sessionApi: api,
       voiceApi,
     },
@@ -214,5 +215,125 @@ describe('ReaderView session recovery and interaction', () => {
       42, expect.objectContaining({ eventType: 'PAGE_CHANGED', pageNumber: 3, expectedRevision: 2 }),
     ])
     expect(wrapper.get('.page-scene').text()).toBe('第三页')
+  })
+
+  it('PR41 followup prompts account history after an HTML 504 without offering another create', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('<h1>Gateway Timeout</h1>', { status: 504 }))
+    vi.stubGlobal('fetch', fetch)
+    const api = new ReadingSessionsApi()
+    await openReader({ snapshot: null, sessionApi: { create: api.create.bind(api) } })
+
+    expect(wrapper.text()).toContain('请返回成长记录核对刚创建的会话')
+    expect(wrapper.findAll('button').map((button) => button.text())).not.toContain('重试')
+    expect(fetch).toHaveBeenCalledExactlyOnceWith('/api/v1/reading-sessions', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('PR41 followup preserves the answer after a business 503 and closes the dialog on success', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: { code: 'DEPENDENCY_UNAVAILABLE', message: '暂时无法保存回答', retryable: false },
+      }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { revision: 3 } }), { status: 201 }))
+    vi.stubGlobal('fetch', fetch)
+    const api = new ReadingSessionsApi()
+    const addEvent = vi.fn(api.addEvent.bind(api))
+    await openReader({ sessionApi: { addEvent } })
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue('小兔子在树下')
+    await clickButton('确认回答')
+
+    expect(wrapper.get('[role="dialog"]').text()).toContain('暂时无法保存回答')
+    expect(wrapper.get('textarea').element.value).toBe('小兔子在树下')
+    expect(addEvent).toHaveBeenCalledTimes(1)
+    await clickButton('确认回答')
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.get('.answer-confirmation').text()).toContain('小兔子在树下')
+    expect(addEvent).toHaveBeenCalledTimes(2)
+    expect(addEvent.mock.calls.map(([, payload]) => payload.inputText)).toEqual(['小兔子在树下', '小兔子在树下'])
+  })
+
+  it('PR41 followup restores a question from a same-key recheck and opens the answer without asking again', async () => {
+    const submitGuidance = vi.fn()
+      .mockRejectedValueOnce(new ApiError('响应丢失', { code: 'REQUEST_OUTCOME_UNKNOWN' }))
+      .mockResolvedValueOnce({ data: initialQuestion })
+    const get = vi.fn().mockResolvedValue({ data: { session: inProgress, events: [], report: null } })
+    await openReader({ sessionApi: { submitGuidance, get } })
+    await clickButton('生成本页共读问题')
+    expect(submitGuidance).toHaveBeenCalledTimes(1)
+    await clickButton('重新核对进度')
+
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(submitGuidance).toHaveBeenCalledTimes(2)
+    expect(submitGuidance.mock.calls[0][1].clientEventId).toEqual(expect.any(String))
+    expect(submitGuidance.mock.calls[1].slice(0, 2)).toEqual(submitGuidance.mock.calls[0].slice(0, 2))
+    expect(wrapper.text()).toContain(initialQuestion.outputText)
+    await clickButton('孩子回答')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+    expect(submitGuidance).toHaveBeenCalledTimes(2)
+  })
+
+  it('PR41 followup recovers the current page question from an API-013 snapshot', async () => {
+    const events = [
+      { eventType: 'QUESTION', pageNumber: 1, interactionEventId: 21, strategyType: 'CONTEXT_QUESTION', outputText: '上一页的问题' },
+      { eventType: 'QUESTION', pageNumber: 2, interactionEventId: 22, strategyType: 'CONTEXT_QUESTION', outputText: initialQuestion.outputText },
+    ]
+    const api = await openReader({ snapshot: pageTwo, events })
+
+    expect(wrapper.text()).toContain(initialQuestion.outputText)
+    expect(wrapper.text()).not.toContain('上一页的问题')
+    await clickButton('孩子回答')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+    expect(api.submitGuidance).not.toHaveBeenCalled()
+  })
+
+  it('PR41 followup terminal unknown releases the reader after checking the same revision without replay', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { code: 'REQUEST_OUTCOME_UNKNOWN', message: '提交结果未知', retryable: false },
+    }), { status: 504 }))
+    vi.stubGlobal('fetch', fetch)
+    const api = new ReadingSessionsApi()
+    const get = vi.fn().mockResolvedValue({ data: { session: inProgress, events: [], report: null } })
+    await openReader({ sessionApi: { get, submitGuidance: api.submitGuidance.bind(api) } })
+    await clickButton('生成本页共读问题')
+
+    expect(get).toHaveBeenCalledExactlyOnceWith(42, expect.any(Object))
+    expect(wrapper.text()).not.toContain('重新核对进度')
+    expect(wrapper.get('.page-scene').text()).toBe('第一页')
+    expect(wrapper.find('.interaction-card').exists()).toBe(true)
+    expect(fetch).toHaveBeenCalledExactlyOnceWith('/api/v1/reading-sessions/42/guidance', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('PR41 followup gateway answer recovers the original text by replaying the same event key', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response('<h1>Gateway Timeout</h1>', { status: 504 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { revision: 3 } }), { status: 201 }))
+    vi.stubGlobal('fetch', fetch)
+    const api = new ReadingSessionsApi()
+    const get = vi.fn().mockResolvedValue({
+      data: { session: { ...inProgress, revision: 2 }, events: [], report: null },
+    })
+    await openReader({ sessionApi: { get, addEvent: api.addEvent.bind(api) } })
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue('小兔子在草地上')
+    await clickButton('确认回答')
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.answer-confirmation').exists()).toBe(false)
+    await clickButton('重新核对进度')
+
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const firstBody = JSON.parse(fetch.mock.calls[0][1].body)
+    expect(firstBody).toMatchObject({
+      eventType: 'ANSWER', inputText: '小兔子在草地上', pageNumber: 1,
+      expectedRevision: 2, clientEventId: expect.any(String),
+    })
+    expect(fetch.mock.calls.map(([path]) => path)).toEqual(Array(2).fill('/api/v1/reading-sessions/42/events'))
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual(firstBody)
+    expect(wrapper.get('.answer-confirmation').text()).toContain('小兔子在草地上')
+    expect(wrapper.text()).not.toContain('重新核对进度')
   })
 })

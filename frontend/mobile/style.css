@@ -274,9 +274,6 @@ h1, h2, h3, p { margin-top: 0; }
 .review-panel { display: grid; gap: .6rem; }
 .review-panel label { font-size: .78rem; font-weight: 800; }
 .review-panel textarea { width: 100%; resize: vertical; padding: .85rem; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 16px; line-height: 1.6; }
-.confirmed-panel { display: grid; justify-items: center; gap: .8rem; padding: 2rem 0 1rem; text-align: center; }
-.success-mark { display: grid; width: 64px; height: 64px; place-items: center; color: #fff; background: var(--leaf); border-radius: 50%; font-size: 1.7rem; box-shadow: 0 12px 25px rgba(47, 106, 74, .24); }
-.confirmed-panel p { margin: 0; color: var(--ink-soft); }
 
 /* Summary */
 .summary-panel { display: grid; justify-items: center; padding: clamp(30px, 8vw, 64px) 22px; text-align: center; }
