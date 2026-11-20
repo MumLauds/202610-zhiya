@@ -20,6 +20,8 @@ services:
       TTS_MODEL: ${TTS_MODEL-qwen-audio-3.1-tts-flash}
       TTS_VOICE: ${TTS_VOICE-wenhuaiqing_v3.1}
       VOICE_TIMEOUT_SECONDS: ${VOICE_TIMEOUT_SECONDS:-20}
+      IMAGE_API_URL: ${IMAGE_API_URL:-}
+      IMAGE_MODEL: ${IMAGE_MODEL-qwen-image-2.1-turbo}
     volumes:
       - sqlite-data:/var/lib/zhiya
     healthcheck:

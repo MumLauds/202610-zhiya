@@ -24,6 +24,7 @@ DEFAULT_TEMPLATE_PAGES = REPO_ROOT / "data" / "seed" / "story_pages.json"
 SEED_COVER_SOURCE_REF = "妈妈夸我说的队 · 知芽项目自研绘本"
 TEMPLATE_VERSION_LICENSE_NOTE = "模型生成原创文字，配合知芽项目自研非商用模板插画（NO-COMMERCIAL），待家长审核"
 TEMPLATE_PAGE_LICENSE = "NO-COMMERCIAL"
+GENERATED_PAGE_LICENSE = "AI_GENERATED · 仅供私人共读，待家长审核"
 AGE_BAND_BOUNDS = {"AGE_3_4": (3, 4), "AGE_4_5": (4, 5), "AGE_5_6": (5, 6)}
 ALLOWED_IMAGE_TYPES = {
     ".png": "image/png",
@@ -683,6 +684,32 @@ def pin_generation_illustrations(age_band: str, topic: str, new_page_count: int,
 def ensure_generation_illustrations_readable(images: list[dict | None]) -> None:
     if any(not _pinned_blob_is_readable(image) for image in images if image is not None):
         raise MediaDependencyError("Pinned template illustration is unavailable")
+
+
+def pin_generated_illustrations(images: list[bytes]) -> list[dict]:
+    """Validate generated files and bind their bytes with the existing private media store."""
+    verified = []
+    for data in images:
+        try:
+            with Image.open(BytesIO(data), formats=IMAGE_FORMATS) as image:
+                if max(image.size) > 2048 or getattr(image, "is_animated", False):
+                    raise MediaDependencyError("Unexpected generated image dimensions or frames")
+        except (OSError, ValueError, Image.DecompressionBombError):
+            raise MediaDependencyError("Generated image could not be decoded") from None
+        media_type = verify_and_detect_image(data)
+        if media_type is None:
+            raise MediaDependencyError("Generated image could not be decoded")
+        verified.append((data, media_type))
+    store = _pin_store_root()
+    result = []
+    try:
+        for data, media_type in verified:
+            blob = _write_blob_once(store, hashlib.sha256(data).hexdigest(), media_type, data)
+            result.append({"blob": blob, "mediaType": media_type, "rawRef": f"generated:{blob}"})
+    except OSError as exc:
+        raise MediaDependencyError("Generated images could not be stored") from exc
+    ensure_generation_illustrations_readable(result)
+    return result
 
 
 def cover_ref_from_manifest(version_id: int, manifest: dict) -> str | None:

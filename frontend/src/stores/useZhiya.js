@@ -625,6 +625,7 @@ function workshopPayload(form) {
       characters,
       scene,
       branching: Boolean(form?.branching),
+      ...(form?.generateIllustrations ? { generateIllustrations: true } : {}),
       clientRequestId: createClientEventId('story'),
     },
   }
@@ -668,7 +669,9 @@ async function runWorkshopGeneration(payload, checking = false) {
       || error.code === 'REQUEST_OUTCOME_UNKNOWN'
       || error.status === 504
     state.workshop.generationStatus = unresolved ? 'unknown' : 'failed'
-    state.workshop.generationError = `${describeApiError(error)}${
+    const message = payload.generateIllustrations && error.code === 'DEPENDENCY_UNAVAILABLE'
+      ? error.message : describeApiError(error)
+    state.workshop.generationError = `${message}${
       unresolved ? ' 可稍后使用同一请求确认生成结果。' : ''
     }`
     if (!unresolved) state.workshop.pendingGeneration = null

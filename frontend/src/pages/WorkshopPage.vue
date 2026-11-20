@@ -33,6 +33,7 @@ function initialForm() {
     characters: ['小兔'],
     scene: '森林',
     branching: true,
+    generateIllustrations: false,
   }
 }
 
@@ -182,7 +183,7 @@ function startApprovedStory() {
 
 function pageImage(page) {
   if (page?.imageUrl) return page.imageUrl
-  return mediaUrl(page?.imageRef) || '/assets/image-placeholder.svg'
+  return mediaUrl(page?.imageRef, 'reading') || '/assets/image-placeholder.svg'
 }
 
 function branchTarget(branch) {
@@ -200,7 +201,7 @@ function branchTarget(branch) {
           保留已经读过的正文和配图，再从故事停下的地方接上新内容。审核通过后才会回到亲子阅读。
         </p>
         <p v-else>
-          设置适读年龄、主题、角色和场景，生成 4–6 页个性化故事草稿。逐页核对正文、模板配图和剧情分支后，才会进入私人书架。
+          设置适读年龄、主题、角色和场景，生成 4–6 页个性化故事草稿。逐页核对正文、配图和剧情分支后，才会进入私人书架。
         </p>
         <div class="workshop-heading-actions">
           <button class="secondary" type="button" @click="emit('navigate', 'library')">回到绘本馆</button>
@@ -349,6 +350,14 @@ function branchTarget(branch) {
               已读内容已达到 6 页上限，当前会话不能继续续写。
             </p>
 
+            <label class="branch-switch">
+              <input v-model="form.generateIllustrations" type="checkbox" :disabled="formLocked">
+              <span class="switch-track"><span /></span>
+              <span>
+                <strong>使用 AI 生成专属插画</strong>
+                <small>{{ isContinuation ? '只为续写的新页面生成。' : '按每页正文生成。' }} 需要已配置的生图服务，耗时较长。</small>
+              </span>
+            </label>
             <button
               class="primary workshop-submit"
               type="submit"
@@ -357,7 +366,7 @@ function branchTarget(branch) {
               {{ submitLabel }}
             </button>
             <p class="workshop-form-note">
-              生成通常需要一段时间。插图来自已经审核的模板，不会实时生成专属图片。
+              {{ form.generateIllustrations ? '文字和 AI 插画完成后，请逐页核对画面。' : '默认使用已经审核的模板插图。' }}
             </p>
           </form>
         </template>
@@ -423,12 +432,12 @@ function branchTarget(branch) {
           <div class="review-pages">
             <article v-for="page in draft.pages" :key="page.pageNumber" class="review-page">
               <figure>
-                <img :src="pageImage(page)" :alt="`第 ${page.pageNumber} 页模板配图`">
+                <img :src="pageImage(page)" :alt="`第 ${page.pageNumber} 页${page.imageSource === 'AI_GENERATED' ? ' AI 插画' : '配图'}`">
                 <span v-if="isContinuation && page.pageNumber < resumePageNumber" class="page-origin">保留前文</span>
                 <span v-else-if="isContinuation" class="page-origin new">续写内容</span>
               </figure>
               <div class="review-page-copy">
-                <span>第 {{ page.pageNumber }} 页</span>
+                <span>第 {{ page.pageNumber }} 页<span v-if="page.imageSource === 'AI_GENERATED'"> · AI 插画</span></span>
                 <p>{{ page.text }}</p>
               </div>
             </article>
@@ -456,7 +465,7 @@ function branchTarget(branch) {
             <div>
               <p class="eyebrow">家长审核</p>
               <h3>确认后才会进入私人书架</h3>
-              <p>请核对全部 {{ draft.pages.length }} 页正文、模板配图和剧情分支。审核通过前，儿童模式无法读取这本故事。</p>
+              <p>请核对全部 {{ draft.pages.length }} 页正文、配图和剧情分支。审核通过前，儿童模式无法读取这本故事。</p>
             </div>
             <label class="approval-check">
               <input v-model="reviewedAll" type="checkbox" :disabled="props.workshop.approvalBusy">
@@ -520,7 +529,7 @@ function branchTarget(branch) {
           </div>
           <p class="eyebrow">你的故事空白页</p>
           <h2>设置一个孩子熟悉的世界</h2>
-          <p>这里会展示生成的标题、4–6 页正文、模板配图、剧情选项与内容检查结果。只有你确认后，故事才会进入阅读。</p>
+          <p>这里会展示生成的标题、4–6 页正文、配图、剧情选项与内容检查结果。只有你确认后，故事才会进入阅读。</p>
           <div class="blank-facts">
             <span><strong>{{ selectedAge }}</strong>适龄故事</span>
             <span><strong>{{ pageLabel }}</strong>完整结构</span>

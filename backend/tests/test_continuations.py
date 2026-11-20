@@ -243,6 +243,133 @@ def test_original_generation_checks_and_persists_only_valid_drafts(cont_env, mon
     assert len(contexts) == 2
 
 
+def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(cont_env, monkeypatch, tmp_path):
+    from io import BytesIO
+
+    from PIL import Image
+    from app.services.story_media import pin_generated_illustrations
+
+    client, other, _, profile = cont_env
+    headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
+    monkeypatch.setenv("IMAGE_API_URL", "https://images.test/generate")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-image-api-key")
+    monkeypatch.setenv("ZHIYA_MEDIA_ROOT", str(tmp_path))
+    title = "森林里的朋友"
+    original_pages = ["兔子到森林散步。", "兔子遇见了松鼠。", "兔子和松鼠一起找松果。", "他们带着松果回家。"]
+    continued_pages = ["兔子和松鼠读了一本书。", "他们约好明天再见。"]
+    model_calls = []
+    image_calls = []
+    png_batches = []
+    for colors in (("red", "green", "blue", "yellow"), ("orange", "purple")):
+        batch = []
+        for color in colors:
+            output = BytesIO()
+            Image.new("RGB", (2, 2), color).save(output, format="PNG")
+            batch.append(output.getvalue())
+        png_batches.append(batch)
+
+    class StoryModel:
+        async def generate(self, request):
+            context = json.loads(request.context_text)
+            model_calls.append(context["newPageCount"])
+            pages = continued_pages if context["previousPages"] else original_pages
+            return ModelGenerateResult(success=True, text=json.dumps({"title": title, "pages": pages}))
+
+    async def generate_images(settings, title, pages):
+        batch = png_batches[len(image_calls)]
+        image_calls.append((title, pages))
+        return pin_generated_illustrations(batch)
+
+    monkeypatch.setattr(client.app.state, "model_adapter", StoryModel())
+    monkeypatch.setattr("app.api.v1.story_generations.generate_story_illustrations", generate_images)
+    generations = "/api/v1/story-generations"
+    payload = {"topic": "互助", "characters": ["小兔子"], "scene": "森林", "branching": False,
+               "generateIllustrations": True}
+    original = {**payload, "ageBand": "AGE_4_5", "clientRequestId": "ai-original"}
+    generated = client.post(generations, headers=headers, json=original)
+    assert generated.status_code == 201, generated.text
+    draft = generated.json()["data"]
+    version = draft["storyVersionId"]
+    assert [page["imageSource"] for page in draft["pages"]] == ["AI_GENERATED"] * 4
+    refs = [page["imageRef"] for page in draft["pages"]]
+    assert refs == [f"asset-{version}-page-{page}" for page in range(1, 5)]
+    for ref, expected in zip(refs, png_batches[0], strict=True):
+        url = f"/api/v1/media/{ref}"
+        preview = client.get(url)
+        assert preview.status_code == 200 and preview.headers["content-type"] == "image/png"
+        assert preview.content == expected
+        assert other.get(url).status_code == 404
+
+    replay = client.post(generations, headers=headers, json=original)
+    assert replay.status_code == 200 and replay.json()["data"] == draft
+    assert model_calls == [4]
+    assert image_calls == [(title, original_pages)]
+    approved = client.post(f"/api/v1/story-versions/{version}/approvals", headers=headers,
+                           json={"versionNumber": draft["versionNumber"], "reviewedAllBranches": True})
+    assert approved.status_code == 200, approved.text
+    assert [page["imageRef"] for page in approved.json()["data"]["pages"]] == refs
+    assert [client.get(f"/api/v1/media/{ref}").content for ref in refs] == png_batches[0]
+
+    created = client.post("/api/v1/reading-sessions", headers=headers, json={
+        "childProfileId": profile, "storyVersionId": version, "mode": "PARENT_CHILD",
+    })
+    assert created.status_code == 201, created.text
+    session_id = created.json()["data"]["readingSessionId"]
+    for page, event in ((1, "STARTED"), (2, "PAGE_CHANGED")):
+        response = client.post(f"/api/v1/reading-sessions/{session_id}/events", headers=headers, json={
+            "eventType": event, "pageNumber": page, "expectedRevision": page - 1, "clientEventId": f"read-{page}",
+        })
+        assert response.status_code == 201, response.text
+    extension = client.post(generations, headers=headers, json={
+        **payload, "sourceReadingSessionId": session_id, "expectedRevision": 2, "clientRequestId": "ai-extension",
+    })
+    assert extension.status_code == 201, extension.text
+    extension_draft = extension.json()["data"]
+    assert extension_draft["continuation"]["resumePageNumber"] == 3
+    extended_pages = extension_draft["pages"]
+    assert [page["imageRef"] for page in extended_pages[:2]] == refs[:2]
+    assert [page["imageSource"] for page in extended_pages[2:]] == ["AI_GENERATED"] * 2
+    assert [client.get(f"/api/v1/media/{page['imageRef']}").content for page in extended_pages] == (
+        png_batches[0][:2] + png_batches[1]
+    )
+    assert model_calls == [4, 2]
+    assert image_calls == [(title, original_pages), (title, continued_pages)]
+
+
+def test_ai_illustration_failure_replays_without_creating_a_draft(cont_env, monkeypatch):
+    from app.services.image_generation import ImageGenerationError
+
+    client, _, db_path, _ = cont_env
+    headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
+    monkeypatch.setenv("IMAGE_API_URL", "https://images.test/generate")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-image-api-key")
+    calls = []
+
+    class StoryModel:
+        async def generate(self, request):
+            calls.append("text")
+            return ModelGenerateResult(success=True, text=json.dumps({
+                "title": "森林里的朋友", "pages": ["兔子到森林散步。", "它见到了松鼠。", "它们一同玩耍。", "它们回家了。"],
+            }))
+
+    async def generate_images(settings, title, pages):
+        calls.append("image")
+        raise ImageGenerationError("image provider unavailable")
+
+    monkeypatch.setattr(client.app.state, "model_adapter", StoryModel())
+    monkeypatch.setattr("app.api.v1.story_generations.generate_story_illustrations", generate_images)
+    payload = {"ageBand": "AGE_4_5", "topic": "互助", "characters": ["小兔子"], "scene": "森林",
+               "branching": False, "generateIllustrations": True, "clientRequestId": "ai-failure"}
+    for _ in range(2):
+        response = client.post("/api/v1/story-generations", headers=headers, json=payload)
+        assert response.status_code == 503, response.text
+        assert response.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+    assert calls == ["text", "image"]
+    with closing(sqlite3.connect(db_path)) as db:
+        assert db.execute("SELECT COUNT(*) FROM storybooks").fetchone() == (1,)
+        assert db.execute("SELECT COUNT(*) FROM story_versions").fetchone() == (1,)
+
+
 @pytest.mark.parametrize("locked", [False, True], ids=["missing", "locked"])
 def test_legacy_draft_retries_missing_promised_image_before_preview_or_approval(cont_env, monkeypatch, tmp_path, locked):
     from PIL import Image

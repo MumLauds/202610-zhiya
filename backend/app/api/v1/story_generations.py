@@ -17,8 +17,16 @@ from app.api.v1.auth import authorized_db, error
 from app.api.v1.reading_sessions import MAX_ID, fail_execution, replay_execution, request_digest
 from app.api.v1.storybooks import AGES, AgeBand, _verify_version_for_approval
 from app.schemas.agent import ModelGenerateRequest
+from app.services.image_generation import (
+    IMAGE_GENERATION_SECONDS,
+    ImageGenerationError,
+    ImageSettings,
+    generate_story_illustrations,
+    image_generation_settings,
+)
 from app.services.reading_agent import SENSITIVE
 from app.services.story_media import (
+    GENERATED_PAGE_LICENSE,
     TEMPLATE_PAGE_LICENSE,
     TEMPLATE_VERSION_LICENSE_NOTE,
     MediaDependencyError,
@@ -47,6 +55,7 @@ class StoryGeneration(BaseModel):
     characters: list[ShortText] = Field(min_length=1, max_length=8)
     scene: ShortText
     branching: bool = Field(strict=True)
+    generateIllustrations: bool = Field(default=False, strict=True)
     clientRequestId: str = Field(min_length=1, max_length=64)
 
     @model_validator(mode="after")
@@ -98,7 +107,7 @@ def _extract_json_text(raw: str) -> str:
     return text
 
 
-def reserve_generation(request, payload, digest):
+def reserve_generation(request, payload, digest, image_settings: ImageSettings | None):
     with authorized_db(request, write=True, guardian_only=True) as (db, principal, failure):
         if failure:
             return failure
@@ -112,6 +121,8 @@ def reserve_generation(request, payload, digest):
         )
         if replay is not None:
             return replay
+        if payload.generateIllustrations and image_settings is None:
+            return error(request, 503, "DEPENDENCY_UNAVAILABLE", "AI 插画服务尚未配置", retryable=True)
         prefix = []
         if source is not None:
             if source["status"] != "IN_PROGRESS" or source["revision"] != payload.expectedRevision:
@@ -150,15 +161,19 @@ def reserve_generation(request, payload, digest):
             source_version = db.execute("SELECT * FROM story_versions WHERE id = ?", (source["version_id"],)).fetchone()
             ensure_version_pages_media(db, source_version, prefix)
         age_band = source["age_band"] if source is not None else payload.ageBand
-        new_images = pin_generation_illustrations(age_band, payload.topic, total - len(prefix), len(prefix))
+        new_images = (
+            [] if image_settings
+            else pin_generation_illustrations(age_band, payload.topic, total - len(prefix), len(prefix))
+        )
         token = str(uuid4())
         now = int(time.time() * 1000)
+        deadline = now + 65_000 + ((IMAGE_GENERATION_SECONDS + 5) * 1000 if image_settings else 0)
         db.execute(
             """INSERT INTO request_executions
                (owner_account_id, scope_type, scope_id, client_request_id, request_digest, status,
                 execution_token, started_at, deadline_at, source_reading_session_id)
                VALUES (?, ?, ?, ?, ?, 'RUNNING', ?, ?, ?, ?)""",
-            (owner, SCOPE, owner, payload.clientRequestId, digest, token, now, now + 65_000, source_id),
+            (owner, SCOPE, owner, payload.clientRequestId, digest, token, now, deadline, source_id),
         )
         return owner, token, new_images, source, carried_pages, total, decision
 
@@ -215,7 +230,7 @@ def save_draft(db, request, payload, owner, source, carried_pages, total, decisi
         continuation = {}
         source_manifest = None
         carried_images = []
-        license_note = TEMPLATE_VERSION_LICENSE_NOTE
+        license_note = GENERATED_PAGE_LICENSE if payload.generateIllustrations else TEMPLATE_VERSION_LICENSE_NOTE
     else:
         book_id = source["storybook_id"]
         number = db.execute(
@@ -235,6 +250,8 @@ def save_draft(db, request, payload, owner, source, carried_pages, total, decisi
         source_manifest = ensure_version_pages_media(db, source_version, prefix)
         carried_images = [source_manifest["pages"].get(str(page)) for page in prefix]
         license_note = source["license_note"]
+        if payload.generateIllustrations and GENERATED_PAGE_LICENSE not in license_note:
+            license_note = f"{license_note}；续写新增页：{GENERATED_PAGE_LICENSE}"
     ensure_generation_illustrations_readable(new_images)
     page_media = dict(enumerate(carried_images + new_images, start=1))
     version_id = db.execute(
@@ -257,7 +274,8 @@ def save_draft(db, request, payload, owner, source, carried_pages, total, decisi
             image = page_image_ref_from_manifest(source["version_id"], carried["page_no"], source_manifest)
         else:
             asset = page_media[page_no]
-            image_ref, image_license_note = (asset["rawRef"], TEMPLATE_PAGE_LICENSE) if asset else ("none", None)
+            note = GENERATED_PAGE_LICENSE if payload.generateIllustrations else TEMPLATE_PAGE_LICENSE
+            image_ref, image_license_note = (asset["rawRef"], note) if asset else ("none", None)
             image = f"asset-{version_id}-page-{page_no}" if asset else None
         db.execute(
             """INSERT INTO story_pages (version_id, page_no, body_text, image_ref, image_license_note,
@@ -266,6 +284,8 @@ def save_draft(db, request, payload, owner, source, carried_pages, total, decisi
         )
         pages.append({"pageNumber": page_no, "text": page_text, "imageRef": image,
                       "defaultNextPageNumber": next_page})
+        if image and image_license_note == GENERATED_PAGE_LICENSE:
+            pages[-1]["imageSource"] = "AI_GENERATED"
     branches = []
     if decision is not None:
         for target, label in zip((decision + 1, decision + 2), draft.choices):
@@ -354,9 +374,12 @@ def finish_generation(request, payload, digest, reserved, result, execution_stat
 
 @router.post("/story-generations", status_code=201)
 async def generate_story(payload: StoryGeneration, request: Request):
-    digest = request_digest(PATH, payload.model_dump())
+    image_settings = image_generation_settings() if payload.generateIllustrations else None
+    # Preserve previously recorded keys for requests that use template illustrations.
+    digest = request_digest(PATH, payload.model_dump(exclude=None if payload.generateIllustrations
+                                                     else {"generateIllustrations"}))
     try:
-        reserved = reserve_generation(request, payload, digest)
+        reserved = reserve_generation(request, payload, digest, image_settings)
     except MediaDependencyError:
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "绘本媒体暂不可用", retryable=True)
     except sqlite3.Error:
@@ -366,6 +389,12 @@ async def generate_story(payload: StoryGeneration, request: Request):
     status = "SUCCEEDED"
     try:
         result = await generate_text(request, payload, *reserved[3:])
+        if image_settings is not None:
+            if any(SENSITIVE.search(unicodedata.normalize("NFKC", value))
+                   for value in (result.title, *result.pages, *result.choices)):
+                raise ValueError("generated draft did not pass content checks")
+            images = await generate_story_illustrations(image_settings, result.title, result.pages)
+            reserved = (*reserved[:2], images, *reserved[3:])
     except TimeoutError:
         status = "UNKNOWN"
         result = error(request, 504, "REQUEST_OUTCOME_UNKNOWN", "生成结果未知")
@@ -374,6 +403,10 @@ async def generate_story(payload: StoryGeneration, request: Request):
                        request.state.request_id, type(exc).__name__)
         status = "FAILED"
         result = error(request, 422, "VALIDATION_ERROR", "生成内容不符合绘本要求")
+    except ImageGenerationError:
+        status = "FAILED"
+        result = error(request, 503, "DEPENDENCY_UNAVAILABLE", "AI 插画未能生成，请稍后重试或改用模板配图",
+                       retryable=True)
     except Exception as exc:
         logger.warning("story generation failed request_id=%s error=%s",
                        request.state.request_id, type(exc).__name__)

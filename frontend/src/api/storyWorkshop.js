@@ -4,8 +4,8 @@ export async function generateStory(payload) {
   const result = await apiRequest('/story-generations', {
     method: 'POST',
     body: payload,
-    // The backend reserves 65 seconds and allows its model call 60 seconds.
-    timeoutMs: 70000,
+    // Allow a separate image generation window for an explicit opt-in.
+    timeoutMs: payload.generateIllustrations ? 120000 : 70000,
   })
   return result.data
 }

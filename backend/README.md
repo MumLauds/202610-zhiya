@@ -59,7 +59,7 @@ X-Request-ID 响应头与响应体一致。/docs 可查看健康、账号、档�
 | 环境变量 | 默认值 | 含义 |
 | --- | --- | --- |
 | MODEL_API_URL | https://api.deepseek.com/chat/completions | 完整 HTTPS 请求地址，包含 /chat/completions 路径；不自动拼接或去除空白。禁止 URL 用户名、密码、查询参数、fragment、空白和控制字符。 |
-| DASHSCOPE_API_KEY | 空 | 百炼北京地域凭证，仅供语音；不得提交或写入日志。 |
+| DASHSCOPE_API_KEY | 空 | 用于百炼语音和可选的 AI 插画；不得提交或写入日志。 |
 | MODEL_API_KEY | 空 | DeepSeek 官方文本凭证；空时禁用文本调用，绝不回退到百炼密钥。 |
 | MODEL_NAME | deepseek-flash | DeepSeek 实际支持的模型标识，必须能编码为 UTF-8。 |
 | MODEL_TIMEOUT_SECONDS | 20 | 请求及响应读取的总预算，必须大于 0 且不超过 20 秒。 |
@@ -67,6 +67,12 @@ X-Request-ID 响应头与响应体一致。/docs 可查看健康、账号、档�
 | MODEL_MAX_TOKENS | 512 | 最大输出令牌数，整数 1～4096；供应商需支持 max_tokens。 |
 
 .env 由 Uvicorn 的 --env-file 或本地连通性脚本加载，已有进程环境变量优先；Settings.from_env 本身只读取进程环境。仓库已有规则忽略 .env，保留 .env.example。配置值不出现在健康检查或 OpenAPI 中。此适配器关闭环境代理读取，避免无意将凭证交给本机代理；如运行环境必须经代理，应另行明确配置与信任边界。
+
+## 工坊 AI 插画（可选）
+
+保留 `IMAGE_API_URL` 为空时，工坊可以继续使用既有的授权模板。启用时填入百炼业务空间的完整 HTTPS 文生图同步接口，使用与该地域匹配的 `DASHSCOPE_API_KEY`。默认模型是 `qwen-image-2.1-turbo`，可通过 `IMAGE_MODEL` 换成同一请求格式的千问图像模型。使用 Compose 或现有部署文件时也要给后端容器传入这两个图像变量。[示例配置](.env.example) · [百炼文生图说明](https://www.alibabacloud.com/help/en/model-studio/text-to-image)
+
+家长在工坊勾选「使用 AI 生成专属插画」才会调用文生图。每个新增页调用一次，调用受百炼额度和计费约束。续写沿用已读页的冻结配图。生成结果保存在数据库同卷的媒体存储，只有本人家长可在审核前预览。请逐页核对画面后再审核，生成失败可在工坊取消该选项并改用模板。
 
 ## 调用内部文本模型
 
