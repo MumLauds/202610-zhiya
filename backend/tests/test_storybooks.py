@@ -347,6 +347,52 @@ class _FakeAdapter:
         return self.result
 
 
+def test_finish_uses_latest_parent_answer_in_local_report(bookshelf, monkeypatch):
+    first, second, path = bookshelf
+    headers = {"X-CSRF-Token": first.cookies["zhiya_csrf"]}
+    other_headers = {"X-CSRF-Token": second.cookies["zhiya_csrf"]}
+    adapter = _FakeAdapter(exc=AssertionError("answer-based report must not call the model"))
+    monkeypatch.setattr(app.state, "model_adapter", adapter, raising=False)
+    session = _started_session(first, headers, path)
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET body_text=? WHERE version_id=11 AND page_no=1", ("小兔打开雨伞。",))
+    base = f"/api/v1/reading-sessions/{session}"
+    for revision, (event_type, page, fields) in enumerate([
+        ("STARTED", 1, {}),
+        ("ANSWER", 1, {"inputText": "之前的回答"}),
+        ("ANSWER", 1, {"inputText": "我喜欢小兔"}),
+        ("PAGE_CHANGED", 2, {}),
+    ]):
+        saved = first.post(f"{base}/events", headers=headers, json={
+            "eventType": event_type, "pageNumber": page,
+            "expectedRevision": revision, "clientEventId": f"event-{revision}", **fields,
+        })
+        assert saved.status_code == 201
+
+    body = {"reason": "USER_FINISH", "expectedRevision": 4, "clientEventId": "finish-with-answer"}
+    done = first.post(f"{base}/completions", headers=headers, json=body)
+    assert done.status_code == 200
+    assert done.headers["Cache-Control"] == "private, no-store"
+    data = done.json()["data"]
+    assert data["session"]["status"] == "FINISHED"
+    report = data["report"]
+    assert report["status"] == "READY"
+    assert "孩子在第 1 页的回答：“我喜欢小兔”" in report["summary"]
+    assert "之前的回答" not in report["summary"]
+    activity, = report["activities"]
+    steps = " ".join(activity["steps"])
+    assert "第 1 页" in steps and "小兔打开雨伞" in steps
+
+    replay = first.post(f"{base}/completions", headers=headers, json=body)
+    assert replay.status_code == 200 and replay.json()["data"] == data
+    assert replay.headers["Cache-Control"] == "private, no-store"
+    detail = first.get(base)
+    assert detail.status_code == 200 and detail.json()["data"]["report"] == report
+    assert second.get(base).status_code == 404
+    assert second.post(f"{base}/completions", headers=other_headers, json=body).status_code == 404
+    assert not adapter.calls
+
+
 @pytest.mark.parametrize("suggestion_id, suggestion, activity_name, materials", [
     ("NONE", "", "一起演一演", ["本次共读的绘本"]),
     ("REVISIT_PAGE", "可以和孩子再看一页已读内容，由孩子自愿选择是否聊一聊。", "一起演一演", ["本次共读的绘本"]),

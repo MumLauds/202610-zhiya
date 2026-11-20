@@ -967,10 +967,17 @@ describe('guided reading interactions', () => {
     await wrapper.setProps({
       events: [
         questionEvent,
-        { interactionEventId: 12, eventType: 'ANSWER', pageNumber: 1 },
+        { interactionEventId: 12, eventType: 'ANSWER', pageNumber: 1, inputText: '小兔躲在树后。' },
       ],
     })
-    expect(wrapper.text()).toContain('本页回答已保存')
+    expect(wrapper.text()).toContain('孩子的回答：')
+    expect(wrapper.text()).toContain('小兔躲在树后。')
+
+    await wrapper.setProps({
+      session: { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3], revision: 4 },
+    })
+    expect(wrapper.get('.reader-heading p').text()).toContain('第 3 页')
+    expect(wrapper.text()).not.toContain('小兔躲在树后。')
   })
 
   it('offers only approved branches from the current page', async () => {

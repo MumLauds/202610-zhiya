@@ -373,7 +373,9 @@ def test_child_can_answer_a_question_on_a_linear_page(env):
     accepted = first.post(url + "/events", headers=headers, json=answer)
     assert accepted.status_code == 201
     assert accepted.json()["data"]["revision"] == revision + 1
-    assert first.get(url).json()["data"]["answerOptions"] == ["滴答滴答", "轰隆轰隆"]
+    child_detail = first.get(url).json()["data"]
+    assert child_detail["answerOptions"] == ["滴答滴答", "轰隆轰隆"]
+    assert "inputText" not in next(event for event in child_detail["events"] if event["eventType"] == "ANSWER")
 
     for index, label in enumerate(("风声", "失效选项", "不是", "别的答案")):
         refused = first.post(url + "/events", headers=headers, json={
@@ -579,6 +581,40 @@ def test_guidance_parent_paraphrase_uses_page_wide_question_without_excerpt(star
     assert (data["status"], data["strategyType"], data["outputText"]) == (
         "GENERATED", "CONTEXT_QUESTION", "看看这一页，角色在做什么？"
     )
+
+
+def test_guidance_uses_current_parent_answer_without_sending_it_to_model(started_session, guidance_model):
+    client, headers, _, sid = started_session
+    url = f"/api/v1/reading-sessions/{sid}"
+    question = guidance(client, headers, sid, "initial-answer-context")
+    assert question.status_code == 201
+    raw_answer = "我觉得小兔，另外这是私人例子"
+    answer = client.post(url + "/events", headers=headers, json={
+        "eventType": "ANSWER", "pageNumber": 1, "expectedRevision": question.json()["data"]["revision"],
+        "clientEventId": "current-answer", "inputText": raw_answer,
+    })
+    assert answer.status_code == 201
+    saved = client.get(url).json()["data"]["events"][-1]
+    assert saved["eventType"] == "ANSWER" and saved["inputText"] == raw_answer
+
+    follow = guidance(client, headers, sid, "follow-current-answer", feedback="UNDERSTOOD",
+                      revision=answer.json()["data"]["revision"])
+    assert follow.status_code == 201
+    result = follow.json()["data"]
+    controlled = "读到“小兔打开雨伞”时，你从画面里的哪个细节看出来的？"
+    assert (result["status"], result["strategyType"], result["outputText"], result["sources"]) == (
+        "GENERATED", "CONTEXT_QUESTION", controlled, [],
+    )
+    guidance_model.assert_awaited_once()
+
+    guidance_model.return_value = ModelGenerateResult(success=True, text="2")
+    next_follow = guidance(client, headers, sid, "follow-without-current-answer",
+                           feedback="UNDERSTOOD", revision=result["revision"])
+    assert next_follow.status_code == 201
+    assert next_follow.json()["data"]["outputText"] != controlled
+    assert guidance_model.await_count == 2
+    request = guidance_model.await_args.args[0]
+    assert "私人例子" not in request.system_prompt + request.context_text
 
 
 def test_guidance_persistence_feedback_skip_and_replay(started_session, guidance_model, monkeypatch):

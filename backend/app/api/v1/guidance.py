@@ -151,13 +151,26 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
             if not matches_page(session, payload):
                 return fail_session_event(db, request, owner, session_id, key, digest, 409,
                                           "SESSION_CONFLICT", "当前状态或页面不允许此操作")
-            previous_question = ""
+            previous_question = confirmed_answer = ""
             if not ask and payload.feedback in ("UNDERSTOOD", "NOT_UNDERSTOOD"):
                 question = current_question(db, session)
                 if question is None:
                     return fail_session_event(db, request, owner, session_id, key, digest, 409,
                                               "PROMPT_REQUIRED", "当前页尚未有引导问题")
                 previous_question = question["output_text"]
+                if principal.role == "GUARDIAN" and session["mode"] == "PARENT_CHILD":
+                    # An answer only follows the latest question in the current visit.
+                    answer = db.execute(
+                        """SELECT input_text FROM interaction_events
+                           WHERE session_id = ? AND version_id = ? AND page_no = ?
+                             AND event_type = 'ANSWER' AND result_status = 'SUCCESS'
+                             AND id > (SELECT MAX(id) FROM interaction_events WHERE session_id = ?
+                                       AND event_type IN ('STARTED', 'PAGE_CHANGED', 'BRANCH_CHOSEN', 'QUESTION', 'FEEDBACK'))
+                           ORDER BY id DESC LIMIT 1""",
+                        (session_id, session["version_id"], session["current_page_no"], session_id),
+                    ).fetchone()
+                    if answer:
+                        confirmed_answer = answer["input_text"] or ""
 
             now = int(time.time() * 1000)
             if not ask and payload.feedback == "SKIPPED":
@@ -194,6 +207,7 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
         else:
             result = await run_agent(request.app.state.model_adapter, feedback=payload.feedback,
                                      previous_question=previous_question, child_mode=session["mode"] == "CHILD_SOLO",
+                                     confirmed_answer=confirmed_answer,
                                      **context_args)
     except Exception as exc:
         # Keep private prompts and provider messages out of logs; record a definite failure for this key.

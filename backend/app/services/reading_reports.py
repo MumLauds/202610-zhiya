@@ -19,6 +19,7 @@ from uuid import uuid4
 from app.core.config import database_path
 from app.db.connection import connect, database_ready
 from app.db.continuation_migration import migrate_continuations
+from app.services.reading_agent import matching_answer_excerpt
 
 logger = logging.getLogger("zhiya.reports")
 MAX_SUMMARY_CHARS = 500
@@ -49,6 +50,45 @@ def fact_summary(visited_pages: list[int]) -> str:
     if not pages:
         return "本次共读尚未阅读页面。"
     return "本次共读阅读了第 " + "、".join(str(page) for page in pages) + " 页。"
+
+
+def answer_based_report(db: sqlite3.Connection, session, visited_pages: list[int]) -> tuple[str, list[dict]] | None:
+    """Use one saved answer from this co-reading session. No model receives the answer."""
+    pages = list(dict.fromkeys(visited_pages))
+    if session["mode"] != "PARENT_CHILD" or not pages:
+        return None
+    placeholders = ",".join("?" for _ in pages)
+    answer = db.execute(
+        f"""SELECT e.page_no, e.input_text, p.body_text
+            FROM interaction_events e
+            JOIN story_pages p ON p.version_id = e.version_id AND p.page_no = e.page_no
+            WHERE e.session_id = ? AND e.version_id = ? AND e.page_no IN ({placeholders})
+              AND e.event_type = 'ANSWER' AND e.result_status = 'SUCCESS' AND trim(e.input_text) <> ''
+            ORDER BY e.id DESC LIMIT 1""",
+        (session["id"], session["version_id"], *pages),
+    ).fetchone()
+    if answer is None:
+        return None
+
+    page = answer["page_no"]
+    text = answer["input_text"]
+    quote = f"孩子在第 {page} 页的回答：“{text}”。"
+    facts = fact_summary(pages)
+    if len(facts) + len(quote) > MAX_SUMMARY_CHARS:
+        facts = f"本次共读阅读了 {len(pages)} 页。"
+    body = answer["body_text"]
+    if not body.strip():
+        return facts + quote, []
+    excerpt = matching_answer_excerpt(body, text)
+    prompt = (
+        f"一起找到“{excerpt}”对应的画面，请孩子说说哪个细节让自己这么想。"
+        if excerpt else "请孩子用自己的话再说说刚才的回答，一起找找画面中的线索。"
+    )
+    return facts + quote, [{
+        "name": "顺着孩子的回答聊一聊",
+        "materials": ["本次共读的绘本"],
+        "steps": [f"翻回孩子回答过的第 {page} 页。", prompt],
+    }]
 
 
 def report_object(session_id: int, row) -> dict | None:

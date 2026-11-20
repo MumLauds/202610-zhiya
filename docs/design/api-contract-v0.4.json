@@ -104,8 +104,8 @@
         "READY",
         "FAILED"
       ],
-      "completion": "首次结束阅读在同一事务保存会话终态、事实记录、PENDING小结和供同键重放的原响应。事务外按既有文本模型调用超时生成；仅当小结仍为PENDING时，成功置READY，确定失败置FAILED并保留事实摘要。",
-      "contentValidation": "AI-06/NFR-09要求不伪造儿童表现、不提供能力诊断。DCL-026当前实现由服务端已读页记录生成事实摘要，模型仅选择固定的温和建议编号；自由文本、非法结构、额外字段、未知编号或超长内容均视为失败并保留事实摘要。生成成功的READY小结保留事实摘要与选中的建议。有已读正文时，activities返回含name、materials和steps的服务端活动，步骤引用本次已读页。DRAW_PICTURE和FIND_IN_HOME各有对应活动，其他合法编号（含NONE）使用故事重演活动。无已读正文时仅接受NONE并返回空活动。不改变公共响应字段、状态及重放规则，不追溯改写历史READY。",
+      "completion": "首次结束阅读在同一事务保存会话终态、事实记录、小结和供同键重放的原响应。亲子共读有符合条件的回答时在服务端直接生成并保存READY小结，其余小结保存为PENDING并在事务外按既有调用超时调用文本模型。仅当小结仍为PENDING时，成功置READY，确定失败置FAILED并保留事实摘要。",
+      "contentValidation": "AI-06/NFR-09要求不伪造儿童表现、不提供能力诊断。亲子共读小结引用本次会话已读页上最近一条成功保存的回答并注明页码。有可读正文时，活动引导家长回看作答页，匹配到绘本原文时引用该片段。这个流程不调用模型，续写切换关闭源会话时也适用。无符合条件的回答时，DCL-026现有流程由服务端已读页记录生成事实摘要，模型仅选择固定的温和建议编号；自由文本、非法结构、额外字段、未知编号或超长内容均视为失败并保留事实摘要。生成成功的READY小结保留事实摘要与选中的建议。有已读正文时，activities返回含name、materials和steps的服务端活动，步骤引用本次已读页。DRAW_PICTURE和FIND_IN_HOME各有对应活动，其他合法编号（含NONE）使用故事重演活动。无已读正文时仅接受NONE并返回空活动。不改变公共响应字段、状态及重放规则，不追溯改写历史READY。",
       "startupRecovery": "首版单工作进程启动或重启时，在应用就绪前将遗留的PENDING小结条件更新为FAILED，保留事实摘要并将activities置为空数组。恢复不调用模型，保留会话终态、事实记录及原结束响应。",
       "read": "API-013读取当前小结。READY返回已生成内容；PENDING或FAILED返回事实摘要及空活动数组。FALLBACK仅用于模型/互动结果，不是ReadingReport.status。",
       "repeat": "同键重放原结束响应，可能仍含PENDING；新键重复结束只返回既有终态及当前小结，不再次调用模型。本阶段不提供失败小结重新生成入口。"
@@ -1528,7 +1528,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。已保存完整响应的 API-017 引导事件还返回 outputText、strategyType 和事件写入后的 revision，实际反馈事件另含 feedback，供刷新后恢复。儿童在 IN_PROGRESS 时另收到 data.answerOptions 字符串数组，供 API-015 作答。该数组取自当前页最近一道可展示的问题，包括首次 QUESTION 和理解反馈 FEEDBACK 中保存的追问。跳过、拦截及空正文不算作问题。API-017 的儿童问题及回退均可用固定短答作答，最终响应 data.answerOptions 保存实际选项。旧提问未带此字段时使用固定短答“是”“不是”“不知道”。当前页尚无可展示提问时沿用已审核的分支选项文案。默认阅读详情仅向家长返回 data.session.childProfileId 和 data.session.sourceType（ORIGINAL 或 LIBRARY），用于确认续写来源和切换档案。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
+      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。已保存完整响应的 API-017 引导事件还返回 outputText、strategyType 和事件写入后的 revision，实际反馈事件另含 feedback，供刷新后恢复。儿童在 IN_PROGRESS 时另收到 data.answerOptions 字符串数组，供 API-015 作答。该数组取自当前页最近一道可展示的问题，包括首次 QUESTION 和理解反馈 FEEDBACK 中保存的追问。跳过、拦截及空正文不算作问题。API-017 的儿童问题及回退均可用固定短答作答，最终响应 data.answerOptions 保存实际选项。旧提问未带此字段时使用固定短答“是”“不是”“不知道”。当前页尚无可展示提问时沿用已审核的分支选项文案。默认阅读详情仅向家长返回 data.session.childProfileId 和 data.session.sourceType（ORIGINAL 或 LIBRARY），用于确认续写来源和切换档案。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。ANSWER 事件的 inputText 仅向本人家长返回。阅读详情响应使用 private, no-store。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
       "interfaceId": "API-013",
       "uniqueKey": "GET /api/v1/reading-sessions/{session_id}",
       "additionalExamples": [
@@ -1707,7 +1707,7 @@
         "requestId": "req-initial"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "STARTED成功或翻页/分支/续写切换进入当前页后，前端在需要情境提问且无可恢复问题时发送INITIAL；不由GET或STARTED响应隐式调用模型。首次不要求既往问题或反馈。服务端构造年龄及页面上下文，一次返回一个问题。UNDERSTOOD/NOT_UNDERSTOOD针对当前页最后展示的首题或追问，缺失时409 PROMPT_REQUIRED。SKIPPED不要求已有问题，直接保存反馈并递增revision，outputText为空、strategyType=SKIP、status=FALLBACK。CHILD_SOLO的可作答问题与超时、无知识回退均带已核验的answerOptions。模型TIMEOUT可保存TIMEOUT_FALLBACK。其他API_ERROR返回503 DEPENDENCY_UNAVAILABLE并记录FAILED，原键重放该错误，未写事件或递增revision。执行前按common.requestExecution占位。翻页或跳过先提交后，迟到的问题不得保存或播放。",
+      "constraints": "STARTED成功或翻页/分支/续写切换进入当前页后，前端在需要情境提问且无可恢复问题时发送INITIAL；不由GET或STARTED响应隐式调用模型。首次不要求既往问题或反馈。服务端构造年龄及页面上下文，一次返回一个问题。UNDERSTOOD/NOT_UNDERSTOOD针对当前页最后展示的首题或追问，缺失时409 PROMPT_REQUIRED。家长提交反馈时，可用本次到达当前页、且在最新提问或反馈后保存的最后一条回答，在服务端选取当前页匹配的短引文并生成受控追问。回答原文不发送给模型。SKIPPED不要求已有问题，直接保存反馈并递增revision，outputText为空、strategyType=SKIP、status=FALLBACK。CHILD_SOLO的可作答问题与超时、无知识回退均带已核验的answerOptions。模型TIMEOUT可保存TIMEOUT_FALLBACK。其他API_ERROR返回503 DEPENDENCY_UNAVAILABLE并记录FAILED，原键重放该错误，未写事件或递增revision。执行前按common.requestExecution占位。翻页或跳过先提交后，迟到的问题不得保存或播放。",
       "interfaceId": "API-017",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/guidance",
       "additionalExamples": [
@@ -1843,7 +1843,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "首次正常结束同事务保存终态、事实记录及 PENDING 小结，提交成功后派发模型任务。生成、恢复及重复结束见 common.reportLifecycle。儿童阅读已开始且内容可读时，到期按授权截止时刻写 FINISHED/TIME_LIMIT。未开始即到期写 INTERRUPTED/GRANT_REVOKED，未终结时发现内容撤回写 INTERRUPTED/CONTENT_WITHDRAWN，中断不生成小结。TIME_LIMIT 与续写切换的 CONTINUED 均由服务端设置。",
+      "constraints": "首次正常结束同事务保存终态、事实记录及小结。亲子共读有符合条件的回答时直接保存 READY，其余先保存 PENDING，提交成功后派发模型任务。生成、恢复及重复结束见 common.reportLifecycle。儿童阅读已开始且内容可读时，到期按授权截止时刻写 FINISHED/TIME_LIMIT。未开始即到期写 INTERRUPTED/GRANT_REVOKED，未终结时发现内容撤回写 INTERRUPTED/CONTENT_WITHDRAWN，中断不生成小结。TIME_LIMIT 与续写切换的 CONTINUED 均由服务端设置。",
       "interfaceId": "API-019",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/completions",
       "examplePrecondition": "本例承接API-011创建的会话401（CREATED、revision=0、路径[]）。通过API-015提交STARTED后为IN_PROGRESS、currentPage=1、visitedPageNumbers=[1]、revision=1；此时立即主动结束，没有发生其他互动或翻页。"

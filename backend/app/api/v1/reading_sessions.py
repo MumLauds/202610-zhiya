@@ -24,6 +24,7 @@ from app.api.v1.auth import (
 from app.api.v1.storybooks import VISIBLE, owned_generation_version, page_object, readable_story_version
 from app.services.cleanup import delete_session_rows, purge_voice_media
 from app.services.reading_reports import (
+    answer_based_report,
     fact_summary,
     generate_report,
     report_object,
@@ -235,10 +236,12 @@ def _switch_continuation_session(db, request: Request, owner: int, payload: Sess
     )
     if closed.rowcount != 1:
         return reject_switch("CONTINUATION_STALE", "源阅读进度已变化，请从当前进度重新生成续写")
+    visited = session_read_pages(src)
+    summary, activities = answer_based_report(db, src, visited) or (fact_summary(visited), [])
     db.execute(
         """INSERT OR IGNORE INTO reading_reports (session_id, status, summary, activities_json, updated_at)
-           VALUES (?, 'READY', ?, '[]', ?)""",
-        (src["id"], fact_summary(session_read_pages(src)), now),
+           VALUES (?, 'READY', ?, ?, ?)""",
+        (src["id"], summary, json.dumps(activities, ensure_ascii=False), now),
     )
     # Carried prefix pages are renumbered 1..k in the continuation version, resuming at k+1.
     new_visited = [*range(1, len(prefix) + 1), resume_page]
@@ -329,8 +332,10 @@ def list_sessions(request: Request, page: int = Query(default=1, ge=1, le=MAX_ID
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用", retryable=True)
 
 
-def session_event_object(event: sqlite3.Row) -> dict:
+def session_event_object(event: sqlite3.Row, *, include_answer: bool) -> dict:
     data = {"interactionEventId": event["id"], "eventType": event["event_type"], "pageNumber": event["page_no"]}
+    if include_answer and event["event_type"] == "ANSWER" and event["input_text"] is not None:
+        data["inputText"] = event["input_text"]
     # Only project a finalized guidance response; older rows may contain unverified text.
     if (event["event_type"] in ("QUESTION", "FEEDBACK", "ASK") and event["strategy_type"]
             and event["saved_id"] == event["id"]):
@@ -341,7 +346,7 @@ def session_event_object(event: sqlite3.Row) -> dict:
 
 
 @router.get("/{session_id}")
-def get_session(request: Request, session_id: int = Path(ge=1, le=MAX_ID),
+def get_session(request: Request, response: Response, session_id: int = Path(ge=1, le=MAX_ID),
                 view: Literal["reading", "deletion-status"] = "reading"):
     deletion_check = view == "deletion-status"
     try:
@@ -359,7 +364,7 @@ def get_session(request: Request, session_id: int = Path(ge=1, le=MAX_ID),
             row = owned_session(db, session_id, principal)
             if not row:
                 return error(request, 404, "RESOURCE_NOT_FOUND", "会话不可用")
-            event_query = """SELECT id, event_type, page_no, feedback, output_text, strategy_type, revision_after,
+            event_query = """SELECT id, event_type, page_no, feedback, input_text, output_text, strategy_type, revision_after,
                                     json_extract(response_json, '$.data.interactionEventId') AS saved_id
                              FROM interaction_events WHERE session_id = ?"""
             event_params = [session_id]
@@ -374,10 +379,11 @@ def get_session(request: Request, session_id: int = Path(ge=1, le=MAX_ID),
                 report_row = db.execute("SELECT * FROM reading_reports WHERE session_id = ?", (session_id,)).fetchone()
                 report = report_object(session_id, report_row)
             data = {"session": session,
-                    "events": [session_event_object(event) for event in events],
+                    "events": [session_event_object(event, include_answer=principal.role == "GUARDIAN") for event in events],
                     "report": report}
             if principal.role == "CHILD" and row["status"] == "IN_PROGRESS":
                 data["answerOptions"] = child_answer_options(db, row)
+            response.headers["Cache-Control"] = "private, no-store"
             return {"data": data, "requestId": request.state.request_id}
     except sqlite3.Error:
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用", retryable=True)
@@ -789,6 +795,7 @@ def finish_session(payload: Completion, request: Request, background: Background
                 return error(request, 404, "RESOURCE_NOT_FOUND", "会话不可用")
             replay = replay_session_event(db, request, session_id, payload.clientEventId, digest, principal)
             if replay is not None:
+                replay.headers["Cache-Control"] = "private, no-store"
                 return replay
             now = int(time.time() * 1000)
             generation = None
@@ -798,18 +805,24 @@ def finish_session(payload: Completion, request: Request, background: Background
                 report = db.execute("SELECT * FROM reading_reports WHERE session_id = ?", (session_id,)).fetchone()
             elif row["status"] == "IN_PROGRESS" and row["revision"] == payload.expectedRevision:
                 visited = session_read_pages(row)
-                facts = fact_summary(visited)
-                generation_token = str(uuid4())
                 db.execute("""UPDATE reading_sessions SET status = 'FINISHED', end_reason = 'USER_FINISH',
                            ended_at = ?, revision = revision + 1 WHERE id = ? AND revision = ?""",
                            (now, session_id, row["revision"]))
+                answered_report = answer_based_report(db, row, visited)
+                if answered_report is not None:
+                    summary, activities = answered_report
+                    report_status = "READY"
+                else:
+                    summary, activities, report_status = fact_summary(visited), [], "PENDING"
+                    generation_token = str(uuid4())
+                    pages = list(dict.fromkeys(visited))
+                    texts = [r[0] for r in db.execute(
+                        "SELECT body_text FROM story_pages WHERE version_id = ? AND page_no IN (%s) ORDER BY page_no"
+                        % ",".join("?" * len(pages)), (row["version_id"], *pages))] if pages else []
+                    generation = (summary, texts)
                 db.execute("""INSERT INTO reading_reports (session_id, status, summary, activities_json, updated_at)
-                           VALUES (?, 'PENDING', ?, '[]', ?)""", (session_id, facts, now))
-                pages = list(dict.fromkeys(visited))
-                texts = [r[0] for r in db.execute(
-                    "SELECT body_text FROM story_pages WHERE version_id = ? AND page_no IN (%s) ORDER BY page_no"
-                    % ",".join("?" * len(pages)), (row["version_id"], *pages))] if pages else []
-                generation = (facts, texts)
+                           VALUES (?, ?, ?, ?, ?)""",
+                           (session_id, report_status, summary, json.dumps(activities, ensure_ascii=False), now))
                 report = db.execute("SELECT * FROM reading_reports WHERE session_id = ?", (session_id,)).fetchone()
             else:
                 return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
@@ -831,4 +844,4 @@ def finish_session(payload: Completion, request: Request, background: Background
         background.add_task(generate_report, session_id, *generation,
                             getattr(request.app.state, "model_adapter", None),
                             generation_token=generation_token)
-    return JSONResponse(status_code=200, content=response)
+    return JSONResponse(status_code=200, content=response, headers={"Cache-Control": "private, no-store"})
