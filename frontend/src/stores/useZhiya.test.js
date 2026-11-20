@@ -401,7 +401,7 @@ describe('authoritative reading progress', () => {
     expect(await generating).toBe(false)
   })
 
-  it('drops the old turn when the reader is reopened during the conflict readback', async () => {
+  it.each(['reader', 'library'])('drops the old turn when navigating to %s during the conflict readback', async (destination) => {
     const response = deferred()
     const readback = deferred()
     reading.requestReadingGuidance.mockReturnValueOnce(response.promise)
@@ -411,15 +411,24 @@ describe('authoritative reading progress', () => {
 
     const turning = actions.recordPageChange(3)
     await vi.waitFor(() => expect(reading.getReadingSession).toHaveBeenCalledOnce())
-    reading.getReadingSession.mockResolvedValueOnce(detail({ currentPage: 7, visitedPageNumbers: [1, 3, 7], revision: 5 }))
-    await actions.loadReaderRoute()
+    if (destination === 'reader') {
+      reading.getReadingSession.mockResolvedValueOnce(detail({ currentPage: 7, visitedPageNumbers: [1, 3, 7], revision: 5 }))
+      await actions.loadReaderRoute()
+    } else {
+      actions.navigate('library')
+      await actions.syncRoute()
+    }
     readback.resolve({ ...detail({ revision: 2 }), events: [{ eventType: 'QUESTION', pageNumber: 1, revision: 2 }] })
     expect(await turning).toBe(false)
     response.resolve({ revision: 2 })
     expect(await generating).toBe(false)
     expect(reading.addReadingEvent).toHaveBeenCalledTimes(1)
-    expect(state.currentSession.currentPage).toBe(7)
-    expect(state.currentSession.revision).toBe(5)
+    if (destination === 'reader') {
+      expect(state.currentSession.currentPage).toBe(7)
+      expect(state.currentSession.revision).toBe(5)
+    } else {
+      expect(state.route.name).toBe('library')
+    }
   })
 
   it('ignores a question for an older revision after an authoritative refresh', async () => {

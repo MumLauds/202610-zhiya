@@ -1458,6 +1458,7 @@ async function writeReading(operation) {
   if (state.sessionBusy || (initial && activeInitialGuidance)) return false
   const epoch = authEpoch
   const generation = readingEpoch
+  const routeHash = location.hash
   const supersededInitial = operation.kind === 'page' ? activeInitialGuidance : null
   // User writes supersede an automatic prompt. The server arbitrates via expectedRevision.
   activeInitialGuidance = initial ? operation : null
@@ -1514,6 +1515,7 @@ async function writeReading(operation) {
           state.readingSyncRequired = false
         }
         if (error.status === 409 && error.code === 'SESSION_CONFLICT'
+            && routeHash === location.hash && state.route.name === 'reader' && state.route.sessionId === operation.sessionId
             && onlyInitialAdvancedSession(supersededInitial, operation.payload.expectedRevision, detail)) {
           // Only the automatic question won. Retry the same turn with a fresh revision and key.
           state.sessionBusy = false
