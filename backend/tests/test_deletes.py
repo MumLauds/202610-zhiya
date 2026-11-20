@@ -242,7 +242,7 @@ def test_concurrent_deletes_and_non_guardian_forbidden(env):
 
 
 @pytest.mark.parametrize("delete_target, stale_result, stale_exc", [
-    ("session", ModelGenerateResult(success=True, text=json.dumps({"suggestionId": "TALK_ABOUT_STORY"})), None),
+    ("session", ModelGenerateResult(success=True, text=json.dumps({"suggestionId": "DRAW_PICTURE"})), None),
     ("profile", None, RuntimeError("stale boom")),
 ])
 def test_stale_report_task_does_not_overwrite_reused_session_id(env, monkeypatch, delete_target, stale_result, stale_exc):
@@ -322,10 +322,12 @@ def test_stale_report_task_does_not_overwrite_reused_session_id(env, monkeypatch
         assert f2.result(timeout=10).status_code == 200
 
     final_view = second.get(f"/api/v1/reading-sessions/{sid2}").json()["data"]["report"]
+    activity, = final_view.pop("activities")
+    assert activity["name"] == "一起演一演"
+    assert activity["materials"] == ["本次共读的绘本"] and "第 1 页" in activity["steps"][0]
     assert final_view == {
         "readingSessionId": sid2,
         "summary": "本次共读阅读了第 1 页。可以和孩子再看一页已读内容，由孩子自愿选择是否聊一聊。",
-        "activities": [],
         "status": "READY",
     }
 
