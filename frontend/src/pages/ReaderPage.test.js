@@ -14,7 +14,7 @@ let wrapper, track, getUserMedia, recorders, audios, showPage
 const button = (text) => wrapper.findAll('button').find((item) => item.text().includes(text))
 
 function render(props = {}, useRealFlipBook = false) {
-  const FlipStub = defineComponent({ name: 'FlipBook', props: ['startPage'], emits: ['page-change'], setup(_, { expose }) { expose({ showPage }); return () => null } })
+  const FlipStub = defineComponent({ name: 'FlipBook', props: ['pages', 'startPage'], emits: ['page-change'], setup(_, { expose }) { expose({ showPage }); return () => null } })
   wrapper = mount(ReaderPage, {
     attachTo: useRealFlipBook ? document.body : undefined,
     props: {
@@ -33,6 +33,11 @@ function render(props = {}, useRealFlipBook = false) {
     global: { stubs: { FlipBook: useRealFlipBook ? false : FlipStub } },
   })
   return wrapper
+}
+
+function displayedPageNumber() {
+  const { pages, startPage } = wrapper.getComponent({ name: 'FlipBook' }).props()
+  return pages[startPage]?.pageNumber
 }
 
 async function startRecording() {
@@ -90,6 +95,8 @@ it('places page turns on the book and offers one answer entry with text and reco
     expect.stringContaining('阅读模式'), expect.stringContaining('共读小提问'), expect.stringContaining('家长的共读提示'),
   ])
   expect(sidebar.find('.reader-edge').exists()).toBe(false)
+  expect(wrapper.find('.reader-heading p').exists()).toBe(false)
+  expect(wrapper.find('.flip-hint').exists()).toBe(false)
   expect(wrapper.get('.reader-book-area .reader-edge--previous').element.disabled).toBe(true)
   expect(wrapper.get('.reader-book-area .reader-edge--next').element.disabled).toBe(false)
   expect(sidebar.get('.reader-narration-button').text()).toContain('朗读')
@@ -98,6 +105,16 @@ it('places page turns on the book and offers one answer entry with text and reco
   expect(wrapper.get('.reader-answer textarea').element.value).toBe('')
   expect(wrapper.get('.reader-answer .mic-button').element.disabled).toBe(false)
   expect(getUserMedia).not.toHaveBeenCalled()
+})
+
+it('keeps the inline recording controls in the same SVG when switching to stop', async () => {
+  render()
+  const mic = wrapper.get('.reader-answer .mic-button')
+  const icon = mic.get('svg').element
+  await startRecording()
+  expect(mic.attributes('aria-label')).toBe('停止并识别')
+  expect(mic.get('svg').element).toBe(icon)
+  expect(mic.get('svg rect').attributes()).toMatchObject({ x: '6', y: '6', width: '12', height: '12' })
 })
 
 it('starts page narration and stops it when switching to free reading', async () => {
@@ -477,16 +494,15 @@ describe('reader state and visual progress', () => {
     // The branch skips page 3, then revisits page 1 before returning to page 7.
     const session = { ...initialSession, currentPage: 7, visitedPageNumbers: [1, 7, 1, 7] }
     render({ session })
-    const heading = () => wrapper.get('.reader-heading p').text()
     for (const page of [1, 7, 1]) {
       await button('上一页').trigger('click')
-      expect(heading()).toContain(`第 ${page} 页`)
+      expect(displayedPageNumber()).toBe(page)
       expect(button('朗读').element.disabled).toBe(true)
     }
     expect(button('上一页').element.disabled).toBe(true)
     for (const page of [7, 1, 7]) {
       await button('下一页').trigger('click')
-      expect(heading()).toContain(`第 ${page} 页`)
+      expect(displayedPageNumber()).toBe(page)
     }
     expect(button('朗读').element.disabled).toBe(false)
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
@@ -500,11 +516,11 @@ describe('reader state and visual progress', () => {
     render({ session: { ...initialSession, currentPage: 7, visitedPageNumbers: [1, 7] } }, true)
     flip({ page: 0 })
     await flushPromises()
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 1 页')
+    expect(displayedPageNumber()).toBe(1)
     expect(wrapper.findAll('.flip-page--text')).toHaveLength(2)
     flip({ page: 2 })
     await flushPromises()
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 7 页')
+    expect(displayedPageNumber()).toBe(7)
     expect(wrapper.findAll('.flip-page--text')).toHaveLength(2)
     expect(button('朗读').element.disabled).toBe(false)
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
@@ -524,10 +540,10 @@ describe('reader state and visual progress', () => {
     await button('结束本次阅读').trigger('click')
     await wrapper.setProps({ session: { ...session, status: 'FINISHED' } })
     await button('上一页').trigger('click')
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 1 页')
+    expect(displayedPageNumber()).toBe(1)
     expect(button('下一页').element.disabled).toBe(false)
     await button('下一页').trigger('click')
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 3 页')
+    expect(displayedPageNumber()).toBe(3)
     expect(button('下一页').element.disabled).toBe(true)
 
     expect(widget.destroy).toHaveBeenCalledTimes(1)
@@ -535,10 +551,10 @@ describe('reader state and visual progress', () => {
     expect(wrapper.find('.page-number').text()).toContain('共 4 页')
     onFlip({ page: 0 })
     await flushPromises()
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 1 页')
+    expect(displayedPageNumber()).toBe(1)
     onFlip({ page: 2 })
     await flushPromises()
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 3 页')
+    expect(displayedPageNumber()).toBe(3)
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
   })
 
@@ -552,13 +568,13 @@ describe('reader state and visual progress', () => {
 
     for (let i = visits.length - 2; i >= 0; i--) {
       await button('上一页').trigger('click')
-      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${visits[i]} 页 ·`)
+      expect(displayedPageNumber()).toBe(visits[i])
       expect(button('朗读').element.disabled).toBe(true)
     }
     expect(button('上一页').element.disabled).toBe(true)
     for (let i = 1; i < visits.length; i++) {
       await button('下一页').trigger('click')
-      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${visits[i]} 页 ·`)
+      expect(displayedPageNumber()).toBe(visits[i])
       expect(button('朗读').element.disabled).toBe(i < visits.length - 1)
     }
 
@@ -595,20 +611,20 @@ describe('reader state and visual progress', () => {
 
     for (const page of [1, 3, 1]) {
       await clickEdge(5)
-      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${page} 页 ·`)
+      expect(displayedPageNumber()).toBe(page)
       expect(button('朗读').element.disabled).toBe(true)
     }
     expect(button('上一页').element.disabled).toBe(true)
     for (const page of [3, 1, 3]) {
       await clickEdge(835)
-      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${page} 页 ·`)
+      expect(displayedPageNumber()).toBe(page)
     }
     expect(button('朗读').element.disabled).toBe(false)
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
     await clickEdge(835)
     expect(wrapper.props('recordPage')).toHaveBeenCalledExactlyOnceWith(7)
     await wrapper.setProps({ session: { ...session, currentPage: 7, visitedPageNumbers: [...session.visitedPageNumbers, 7] } })
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 7 页 ·')
+    expect(displayedPageNumber()).toBe(7)
   })
 
   it('keeps the first visit to page 1 when finishing a repeated branch', async () => {
@@ -616,17 +632,17 @@ describe('reader state and visual progress', () => {
     render({ session })
     for (const page of [1, 3, 1]) {
       await button('上一页').trigger('click')
-      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${page} 页 ·`)
+      expect(displayedPageNumber()).toBe(page)
     }
     expect(button('上一页').element.disabled).toBe(true)
     await button('结束本次阅读').trigger('click')
     await wrapper.setProps({ session: { ...session, status: 'FINISHED' } })
     expect(wrapper.props('completeReading')).toHaveBeenCalledOnce()
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 1 页 ·')
+    expect(displayedPageNumber()).toBe(1)
     expect(button('上一页').element.disabled).toBe(true)
     for (const page of [3, 1, 3]) {
       await button('下一页').trigger('click')
-      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${page} 页 ·`)
+      expect(displayedPageNumber()).toBe(page)
     }
     expect(button('下一页').element.disabled).toBe(true)
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
@@ -722,7 +738,6 @@ describe('reader state and visual progress', () => {
 
     const mountedPages = () => wrapper.findAll('.flip-page--text').map(page => page.attributes('aria-label'))
     function expectCurrentPage(pageNumber) {
-      expect(wrapper.get('.reader-heading p').text()).toContain(`第 ${pageNumber} 页 ·`)
       const visibleText = wrapper.findAll('.flip-page--text').filter(page => page.isVisible())
       expect(visibleText.map(page => page.attributes('aria-label'))).toEqual([`第 ${pageNumber} 页文字`])
     }
@@ -754,13 +769,13 @@ describe('reader state and visual progress', () => {
     render({ session: { ...initialSession, status: 'FINISHED', currentPage: 1, visitedPageNumbers: [1, 7, 1] } })
     expect(button('上一页').element.disabled).toBe(false)
     await button('上一页').trigger('click')
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 7 页')
+    expect(displayedPageNumber()).toBe(7)
     await button('上一页').trigger('click')
     expect(button('上一页').element.disabled).toBe(true)
     await button('下一页').trigger('click')
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 7 页')
+    expect(displayedPageNumber()).toBe(7)
     await button('下一页').trigger('click')
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 1 页')
+    expect(displayedPageNumber()).toBe(1)
     expect(button('下一页').element.disabled).toBe(true)
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
   })
@@ -791,18 +806,47 @@ describe('reader state and visual progress', () => {
     }
     render({ session, book: branchedBook })
     await button('上一页').trigger('click')
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 1 页 ·')
+    expect(displayedPageNumber()).toBe(1)
     expect(button('下一页').element.disabled).toBe(false)
     expect(button('结束本次阅读')).toBeDefined()
     expect(button('结束本次阅读').element.disabled).toBe(false)
     await button('结束本次阅读').trigger('click')
     await wrapper.setProps({ session: { ...session, status: 'FINISHED' } })
     expect(wrapper.props('completeReading')).toHaveBeenCalledOnce()
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 1 页 ·')
+    expect(displayedPageNumber()).toBe(1)
     expect(button('上一页').element.disabled).toBe(true)
     await button('下一页').trigger('click')
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 3 页 ·')
+    expect(displayedPageNumber()).toBe(3)
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
+  })
+
+  it('prioritizes and focuses the summary after finishing the final page', async () => {
+    const session = { ...initialSession, currentPage: 7, visitedPageNumbers: [1, 3, 7] }
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    try {
+      render({ session })
+      expect(wrapper.find('.reader-summary').exists()).toBe(false)
+      await button('结束本次阅读').trigger('click')
+      expect(wrapper.props('completeReading')).toHaveBeenCalledOnce()
+      const summary = '已保存本次阅读记录'
+      await wrapper.setProps({ session: { ...session, status: 'FINISHED' }, report: { status: 'PENDING', summary } })
+      const card = wrapper.get('.reader-side > .side-card:first-child')
+      expect(card.get('h2').text()).toBe('本次共读小结')
+      expect(card.text()).toContain(summary)
+      expect(focus.mock.contexts).toEqual([card.element])
+      await wrapper.setProps({ report: { status: 'READY', summary } })
+      expect(focus).toHaveBeenCalledOnce()
+    } finally {
+      focus.mockRestore()
+    }
+  })
+
+  it('offers to refresh a finished session with a missing report', async () => {
+    render({ session: { ...initialSession, status: 'FINISHED' } })
+    expect(wrapper.get('.reader-summary [role="status"]').text()).toContain('小结暂未加载')
+    await button('刷新小结').trigger('click')
+    expect(wrapper.props('refreshReading')).toHaveBeenCalledOnce()
+    expect(wrapper.props('completeReading')).not.toHaveBeenCalled()
   })
 
   it.each(['READY', 'FAILED'])('shows the pending facts and refreshes a %s report in place', async (status) => {
@@ -1068,7 +1112,7 @@ describe('guided reading interactions', () => {
     await wrapper.setProps({
       session: { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3], revision: 4 },
     })
-    expect(wrapper.get('.reader-heading p').text()).toContain('第 3 页')
+    expect(displayedPageNumber()).toBe(3)
     expect(wrapper.text()).not.toContain('小兔躲在树后。')
   })
 
