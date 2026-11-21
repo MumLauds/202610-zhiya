@@ -1,8 +1,9 @@
-import { computed, onMounted, onUnmounted, shallowRef } from 'vue'
+import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 
 const limits = { minutes: 60, books: 5, weekly: 7 }
 const activityKey = key => `zhiya.readingActivity.${key}`
 const planKey = key => key ? `zhiya.plan.${key}` : 'zhiya.plan'
+const activityRevision = shallowRef(0)
 
 export function readingProfileKey(accountId, profileId) {
   return accountId && profileId ? `${accountId}.${profileId}` : null
@@ -41,19 +42,28 @@ function dayKey(date) {
 function weekStart(date) {
   const start = new Date(date.getFullYear(), date.getMonth(), date.getDate())
   start.setDate(start.getDate() - (start.getDay() + 6) % 7)
-  return dayKey(start)
+  return start
+}
+
+function nextMidnight(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime()
+}
+
+function duration(day) {
+  const measured = (day?.intervals ?? []).reduce((total, [start, end]) => total + end - start, 0)
+  return (day?.milliseconds ?? 0) + measured
 }
 
 export function readPlanProgress(key, now = new Date()) {
   const activity = key ? readStored(activityKey(key)) ?? {} : {}
   const today = dayKey(now)
   const day = activity[today]
-  const monday = weekStart(now)
+  const monday = dayKey(weekStart(now))
   return {
-    minutes: Math.floor((day?.milliseconds ?? 0) / 60000),
+    minutes: Math.floor(duration(day) / 60000),
     books: day?.completed?.length ?? 0,
     weekly: Object.entries(activity).filter(([date, entry]) =>
-      date >= monday && date <= today && (entry.milliseconds > 0 || entry.completed?.length)).length,
+      date >= monday && date <= today && (duration(entry) > 0 || entry.completed?.length)).length,
   }
 }
 
@@ -65,40 +75,67 @@ export function useReadingPlanProgress(profileKey) {
     clearTimeout(midnightTimer)
     const date = new Date()
     now.value = date
-    const nextMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
-    midnightTimer = setTimeout(updateDate, nextMidnight - date)
+    midnightTimer = setTimeout(updateDate, nextMidnight(date) - date)
   }
 
+  function syncActivity(event) {
+    if (event.key === null || event.key === activityKey(profileKey.value)) updateDate()
+  }
+
+  // The reader's final checkpoint may finish after the next page mounts.
+  watch(activityRevision, updateDate)
   onMounted(() => {
     updateDate()
     document.addEventListener('visibilitychange', updateDate)
+    window.addEventListener('storage', syncActivity)
   })
   onUnmounted(() => {
     clearTimeout(midnightTimer)
     document.removeEventListener('visibilitychange', updateDate)
+    window.removeEventListener('storage', syncActivity)
   })
 
   return computed(() => readPlanProgress(profileKey.value, now.value))
 }
 
+function mergeInterval(intervals, start, end) {
+  const merged = []
+  for (const [from, to] of [...intervals, [start, end]].sort(([left], [right]) => left - right)) {
+    const previous = merged.at(-1)
+    if (previous && from <= previous[1]) previous[1] = Math.max(previous[1], to)
+    else merged.push([from, to])
+  }
+  return merged
+}
+
 export function recordPlanActivity(key, ended, milliseconds, completedSession) {
   if (!key || (!milliseconds && !completedSession)) return
-  const activity = readStored(activityKey(key)) ?? {}
-  const date = new Date(ended)
-  const today = dayKey(date)
-  const monday = weekStart(date)
-  const previous = dayKey(new Date(ended - milliseconds))
-  const midnight = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
-  const previousMilliseconds = Math.max(0, midnight - (ended - milliseconds))
-  if (previousMilliseconds && previous >= monday) {
-    const previousDay = activity[previous] ??= { milliseconds: 0, completed: [] }
-    previousDay.milliseconds += previousMilliseconds
+  const storageKey = activityKey(key)
+  function save() {
+    const activity = readStored(storageKey) ?? {}
+    const date = new Date(ended)
+    const monday = weekStart(date)
+    let start = Math.max(ended - milliseconds, monday.getTime())
+    while (start < ended) {
+      const startDate = new Date(start)
+      const end = Math.min(ended, nextMidnight(startDate))
+      const day = activity[dayKey(startDate)] ??= { milliseconds: 0, completed: [] }
+      // Existing totals have no timestamps. Keep them as a separate baseline.
+      day.intervals = mergeInterval(day.intervals ?? [], start, end)
+      start = end
+    }
+    if (completedSession) {
+      const day = activity[dayKey(date)] ??= { milliseconds: 0, completed: [] }
+      if (!day.completed.includes(completedSession)) day.completed.push(completedSession)
+    }
+    const firstDay = dayKey(monday)
+    for (const dateKey of Object.keys(activity)) {
+      if (dateKey < firstDay) delete activity[dateKey]
+    }
+    if (writeStored(storageKey, activity)) activityRevision.value += 1
   }
-  const day = activity[today] ??= { milliseconds: 0, completed: [] }
-  day.milliseconds += milliseconds - previousMilliseconds
-  if (completedSession && !day.completed.includes(completedSession)) day.completed.push(completedSession)
-  for (const dateKey of Object.keys(activity)) {
-    if (dateKey < monday) delete activity[dateKey]
-  }
-  writeStored(activityKey(key), activity)
+
+  // Serialize the shared localStorage read/merge/write across visible windows.
+  if (navigator.locks?.request) return navigator.locks.request(storageKey, save).catch(save)
+  save()
 }

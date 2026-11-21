@@ -861,6 +861,29 @@ describe('reader state and visual progress', () => {
     }
   })
 
+  it('counts a visible minute only once across two reader windows', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 10, 18, 12))
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    const key = '8.2'
+    const storageKey = `zhiya.readingActivity.${key}`
+    localStorage.removeItem(storageKey)
+    const props = { session: { ...initialSession, childProfileId: 2 }, accountId: 8 }
+    const first = render(props)
+    try {
+      vi.advanceTimersByTime(15_000)
+      render(props)
+      vi.advanceTimersByTime(60_000)
+      expect(readPlanProgress(key).minutes).toBe(1)
+    } finally {
+      first.unmount()
+      wrapper?.unmount()
+      wrapper = null
+      localStorage.removeItem(storageKey)
+      vi.useRealTimers()
+    }
+  })
+
   it('opens a confirmation on the final page and shows the summary in the same dialog', async () => {
     const session = { ...initialSession, currentPage: 7, visitedPageNumbers: [1, 3, 7] }
     const summary = '已保存本次阅读记录'
