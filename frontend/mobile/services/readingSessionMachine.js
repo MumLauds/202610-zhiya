@@ -25,6 +25,7 @@ export class ReadingSessionMachine {
     this.sleep = sleep
     this.session = initialSnapshot?.session ?? null
     this.events = initialSnapshot?.events ?? []
+    this.answerOptions = initialSnapshot ? (initialSnapshot.answerOptions ?? []) : null
     this.report = initialSnapshot?.report ?? null
     this.lastRequestId = null
     this.pending = false
@@ -37,6 +38,7 @@ export class ReadingSessionMachine {
     return {
       session: this.session,
       events: this.events,
+      answerOptions: this.answerOptions,
       report: this.report,
       lastRequestId: this.lastRequestId,
       pending: this.pending,
@@ -49,8 +51,16 @@ export class ReadingSessionMachine {
   }
 
   _setSnapshot(data, requestId) {
+    if (Array.isArray(data?.events)) {
+      const isChildPageRead = Array.isArray(data.answerOptions)
+        && data.session?.readingSessionId === this.session?.readingSessionId
+      // Child snapshots only return the visible page. Keep already seen prompts on earlier pages.
+      const earlierQuestions = isChildPageRead ? this.events.filter(event =>
+        event.pageNumber !== data.session.currentPage && ['QUESTION', 'FEEDBACK'].includes(event.eventType)) : []
+      this.events = [...earlierQuestions, ...data.events]
+    }
     if (data?.session) this.session = data.session
-    if (Array.isArray(data?.events)) this.events = data.events
+    this.answerOptions = data?.answerOptions ?? []
     if (Object.hasOwn(data ?? {}, 'report')) this.report = data.report
     this.lastRequestId = requestId ?? this.lastRequestId
     this._emit()
@@ -63,6 +73,7 @@ export class ReadingSessionMachine {
       const result = await this.api.create({ childProfileId, storyVersionId, signal })
       this.session = result.data
       this.events = []
+      this.answerOptions = null
       this.report = null
       this.lastRequestId = result.requestId
       return this.snapshot()
@@ -108,8 +119,9 @@ export class ReadingSessionMachine {
           status: 'IN_PROGRESS',
           currentPage: pageNumber,
           revision: data.revision,
-          visitedPageNumbers: appendUnique(this.session.visitedPageNumbers, pageNumber),
+          visitedPageNumbers: [...(this.session.visitedPageNumbers ?? []), pageNumber],
         }
+        this.answerOptions = null
       },
     })
   }
@@ -131,8 +143,9 @@ export class ReadingSessionMachine {
           ...this.session,
           currentPage: pageNumber,
           revision: data.revision,
-          visitedPageNumbers: appendUnique(this.session.visitedPageNumbers, pageNumber),
+          visitedPageNumbers: [...(this.session.visitedPageNumbers ?? []), pageNumber],
         }
+        this.answerOptions = null
       },
     })
   }
@@ -152,6 +165,7 @@ export class ReadingSessionMachine {
           visitedPageNumbers: data.visitedPageNumbers,
           revision: data.revision,
         }
+        this.answerOptions = null
       },
     })
   }
@@ -170,6 +184,7 @@ export class ReadingSessionMachine {
       apply: (data) => {
         this.session = data.session
         this.report = data.report
+        this.answerOptions = null
       },
     })
   }
@@ -208,6 +223,7 @@ export class ReadingSessionMachine {
       }, { signal }),
       apply: (data) => {
         this.session = { ...this.session, revision: data.revision }
+        if (Array.isArray(data.answerOptions)) this.answerOptions = data.answerOptions
         this.events = [...this.events, {
           ...data, pageNumber, feedback, eventType: feedback === 'INITIAL' ? 'QUESTION' : 'FEEDBACK',
         }]
@@ -338,11 +354,6 @@ function pendingReceipt(operation, revision, error) {
   const transportUnconfirmed = error.code === 'REQUEST_OUTCOME_UNKNOWN' && !error.payload?.error?.code
   if (!transportUnconfirmed && error.code !== 'REQUEST_IN_PROGRESS') return null
   return { operation, revision, retryAt: Date.now() + (error.retryAfter ? retryDelay(error) : 0) }
-}
-
-function appendUnique(list, value) {
-  const source = Array.isArray(list) ? list : []
-  return source.includes(value) ? source.slice() : [...source, value]
 }
 
 function retryDelay(error) {

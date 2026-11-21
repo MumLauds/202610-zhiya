@@ -80,6 +80,17 @@ test('STARTED and PAGE_CHANGED update revision and current page', async () => {
   assert.equal(api.calls[2][2].clientEventId, 'page-fixed')
 })
 
+test('PAGE_CHANGED retains a second visit to a previously read page', async () => {
+  const api = fakeApi()
+  const machine = new ReadingSessionMachine({ api })
+  await machine.create({ childProfileId: 101, storyVersionId: 301 })
+  await machine.start()
+  await machine.changePage(2)
+  await machine.changePage(1)
+  assert.deepEqual(machine.snapshot().session.visitedPageNumbers, [1, 2, 1])
+  assert.equal(machine.session.currentPage, 1)
+})
+
 test('a page turn supersedes a slow INITIAL and discards its late result', async () => {
   let reply
   const api = fakeApi({ submitGuidance: () => new Promise(resolve => { reply = resolve }) })
@@ -88,8 +99,9 @@ test('a page turn supersedes a slow INITIAL and discards its late result', async
   await machine.start()
   const pending = machine.guidance('INITIAL')
   await machine.changePage(2)
-  reply({ data: { interactionEventId: 901, revision: 2, outputText: '旧页问题' } })
+  reply({ data: { interactionEventId: 901, revision: 2, outputText: '旧页问题', answerOptions: ['旧页选项'] } })
   await pending
+  assert.equal(machine.snapshot().answerOptions, null)
   assert.equal(machine.session.currentPage, 2)
   assert.equal(machine.session.revision, 2)
   assert.equal(machine.events.some(event => event.interactionEventId === 901), false)

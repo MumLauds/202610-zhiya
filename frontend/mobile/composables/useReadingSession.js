@@ -5,6 +5,7 @@ export function useReadingSession({ api, initialSessionId = null, initialSnapsho
   const state = reactive({
     session: null,
     events: [],
+    answerOptions: null,
     report: null,
     pending: false,
     syncRequired: false,
@@ -19,6 +20,7 @@ export function useReadingSession({ api, initialSessionId = null, initialSnapsho
     onChange(snapshot) {
       state.session = snapshot.session
       state.events = snapshot.events
+      state.answerOptions = snapshot.answerOptions
       state.report = snapshot.report
       state.pending = snapshot.pending
       state.syncRequired = snapshot.syncRequired

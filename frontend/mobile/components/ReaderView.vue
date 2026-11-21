@@ -28,7 +28,7 @@ const session = useReadingSession({
   childProfileId: props.childProfileId,
   storyVersionId: props.storyVersionId,
 })
-const currentPageNumber = ref(props.book.pages[0]?.page ?? 1)
+
 const showPinyin = ref(true)
 const highlightIndex = ref(-1)
 const interactionResult = ref(null)
@@ -53,6 +53,7 @@ const pendingFeedback = ref(null)
 const foregroundBusy = ref(false)
 const childAuthorizationExpired = ref(false)
 let autoQuestionPage = ''
+let lastOptionsVisit = ''
 let answerAudioEventId = null
 const answerAudio = useAudioController((url) => {
   if (answerAudioUrl.value === url) {
@@ -69,6 +70,16 @@ let requestGeneration = 0
 let pageRequestGeneration = 0
 let active = true
 
+const visited = computed(() => session.state.session?.visitedPageNumbers ?? [])
+const historyIndex = ref(null)
+const lastVisitIndex = computed(() => visited.value.length - 1)
+const reviewing = computed(() => historyIndex.value !== null && historyIndex.value < lastVisitIndex.value)
+const visitIndex = computed(() => reviewing.value ? historyIndex.value : lastVisitIndex.value)
+const currentPageNumber = computed(() => reviewing.value ? visited.value[visitIndex.value]
+  : (session.state.session?.currentPage ?? props.book.pages[0]?.page ?? 1))
+const isChildMode = computed(() => props.mode === 'live' && session.state.session?.mode === 'CHILD_SOLO')
+const childAnswerOptions = computed(() => interactionResult.value && !questionReady.value ? [] : session.state.answerOptions)
+
 const currentPageIndex = computed(() => {
   const index = props.book.pages.findIndex((page) => page.page === currentPageNumber.value)
   return index
@@ -76,12 +87,10 @@ const currentPageIndex = computed(() => {
 const currentPage = computed(() => props.book.pages[currentPageIndex.value])
 const progressText = computed(() => `${currentPageIndex.value + 1} / ${props.book.pages.length}`)
 const progressPercent = computed(() => ((currentPageIndex.value + 1) / props.book.pages.length) * 100)
-const visited = computed(() => [...new Set(session.state.session?.visitedPageNumbers ?? [])])
-const reviewing = computed(() => currentPageNumber.value !== session.state.session?.currentPage)
 const branchChoices = computed(() => props.mode === 'live' && !reviewing.value
   ? approvedBranchesAt(props.book.branches, currentPageNumber.value) : [])
 const nextPageNumber = computed(() => {
-  if (reviewing.value) return visited.value[visited.value.indexOf(currentPageNumber.value) + 1]
+  if (reviewing.value) return visited.value[visitIndex.value + 1]
   if (props.mode === 'live') return currentPage.value?.defaultNextPageNumber
   return props.book.pages[currentPageIndex.value + 1]?.page
 })
@@ -110,7 +119,7 @@ const errorMessage = computed(() => session.error.value?.message ?? session.erro
 const creationUnconfirmed = computed(() => !props.initialSessionId && !session.state.session && session.error.value?.code === 'REQUEST_OUTCOME_UNKNOWN')
 const serverErrorHint = computed(() => (session.error.value?.status ?? 0) >= 500 ? '阅读服务暂不可用，请稍后重试。' : '')
 
-watch(currentPageNumber, () => {
+watch([currentPageNumber, reviewing], () => {
   resetInteractionForPage()
   restorePageQuestion()
 })
@@ -128,9 +137,15 @@ watch([activePageKey, pending, interactionResult], ([key, busy, question]) => {
   autoQuestionPage = key
   void submitFeedback('INITIAL', { background: true })
 }, { immediate: true, flush: 'post' })
-watch(() => session.state.session?.currentPage, (page) => {
-  if (page != null) currentPageNumber.value = page
-})
+// Revisiting an existing question needs its current server options, without regenerating the question.
+watch([activePageKey, lastVisitIndex, pending, questionReady, isChildMode, childAnswerOptions],
+  ([key, index, busy, ready, child, options]) => {
+    const visit = `${key}:${index}`
+    if (!key || busy || !ready || !child || options !== null || lastOptionsVisit === visit) return
+    lastOptionsVisit = visit
+    void refreshChildOptions()
+  }, { immediate: true, flush: 'post' },
+)
 onBeforeUnmount(() => {
   active = false
   cancelPageAudioRequest()
@@ -148,7 +163,6 @@ async function initializeReader() {
   try {
     await session.initialize()
     if (!active) return
-    currentPageNumber.value = session.state.session.currentPage
     if (session.state.session?.status === 'CREATED') await session.start()
     if (props.mode === 'demo') pageAudioSrc.value = currentPage.value?.audio || ''
   } catch {
@@ -220,7 +234,7 @@ async function syncReading() {
   try {
     const recovered = await session.restore()
     if (!active) return
-    currentPageNumber.value = session.state.session.currentPage
+    historyIndex.value = null
     restorePageQuestion()
     if (recovered?.confirmedAnswer) {
       lastAnswerText.value = recovered.confirmedAnswer
@@ -248,13 +262,13 @@ async function goNext() {
   const next = nextPageNumber.value
   if (!props.book.pages.some((page) => page.page === next)) return
   if (reviewing.value) {
-    currentPageNumber.value = next
+    const nextIndex = visitIndex.value + 1
+    historyIndex.value = nextIndex < lastVisitIndex.value ? nextIndex : null
     return
   }
   foregroundBusy.value = true
   try {
     await session.changePage(next)
-    currentPageNumber.value = session.state.session.currentPage
   } catch {
     // Conflict recovery is reported through `session.notice`.
   } finally {
@@ -276,10 +290,9 @@ async function chooseBranch(branchId) {
 }
 
 function goPrevious() {
-  const index = visited.value.indexOf(currentPageNumber.value)
-  if (navigationPending.value || index <= 0) return
+  if (navigationPending.value || visitIndex.value <= 0) return
   answerAudio.stop()
-  currentPageNumber.value = visited.value[index - 1]
+  historyIndex.value = visitIndex.value - 1
 }
 
 async function finishReading() {
@@ -314,7 +327,13 @@ async function submitFeedback(feedback, { background = false } = {}) {
   }
 }
 
+async function refreshChildOptions() {
+  if (!isChildMode.value || !activePageKey.value || pending.value) return
+  try { await session.restore() } catch { /* Keep the question visible and offer a read-only retry. */ }
+}
+
 async function openAnswerDialog(question = false) {
+  if (isChildMode.value) return
   if (pageAudioLoading.value) cancelPageAudioRequest()
   asking.value = question
   if (!question && !interactionResult.value) {
@@ -330,10 +349,20 @@ async function openAnswerDialog(question = false) {
 }
 
 async function handleAnswerConfirmed({ text }) {
-  if ((!asking.value && !questionReady.value) || pending.value || reviewing.value || session.state.syncRequired) return
-  answerDraft.value = text
+  if (isChildMode.value || (!asking.value && !questionReady.value)) return
+  await submitAnswerText(text, asking.value)
+}
+
+async function selectChildAnswer(text) {
+  if (!isChildMode.value || !childAnswerOptions.value?.includes(text)) return
+  await submitAnswerText(text, false)
+}
+
+async function submitAnswerText(text, question) {
+  if (pending.value || reviewing.value || session.state.syncRequired || checkChildAuthorization()) return
+  if (!isChildMode.value) answerDraft.value = text
   try {
-    if (asking.value) await session.askQuestion(text)
+    if (question) await session.askQuestion(text)
     else {
       await session.answer(text)
       lastAnswerText.value = text
@@ -561,11 +590,15 @@ function exitReading() {
           :pending="pending"
           :demo="mode === 'demo'"
           :question-ready="questionReady"
+          :child-mode="isChildMode"
+          :child-answer-options="childAnswerOptions"
           :can-skip="canSkip"
           :answer-audio-url="answerAudioUrl"
           :answer-audio-loading="answerAudioLoading"
           @generate="submitFeedback('INITIAL')"
           @answer="openAnswerDialog()"
+          @select-answer="selectChildAnswer"
+          @reload-answer-options="refreshChildOptions"
           @not-understood="submitFeedback('NOT_UNDERSTOOD')"
           @understood="submitFeedback('UNDERSTOOD')"
           @skip="submitFeedback('SKIPPED')"
@@ -582,7 +615,7 @@ function exitReading() {
         </section>
 
         <p v-if="lastAnswerText" class="answer-confirmation">
-          <strong>家长确认文本：</strong>{{ lastAnswerText }}
+          <strong>{{ isChildMode ? '已提交回答：' : '家长确认文本：' }}</strong>{{ lastAnswerText }}
         </p>
         <p v-if="answerAudioNotice" class="inline-notice">{{ answerAudioNotice }}</p>
         <p v-if="session.notice.value" class="inline-notice">{{ session.notice.value }}</p>
@@ -594,7 +627,7 @@ function exitReading() {
             :disabled="navigationPending || session.state.syncRequired" @click="chooseBranch(branch.branchId)">{{ branch.choiceLabel }}</button>
         </section>
         <nav class="page-navigation" aria-label="翻页">
-          <button class="button button-ghost" type="button" :disabled="navigationPending || visited.indexOf(currentPageNumber) <= 0" @click="goPrevious">上一页</button>
+          <button class="button button-ghost" type="button" :disabled="navigationPending || visitIndex <= 0" @click="goPrevious">上一页</button>
           <button v-if="!branchChoices.length" class="button button-primary" type="button" :disabled="navigationPending" @click="goNext">
             {{ navigationPending ? '同步中…' : (isLastPage ? '完成阅读' : '下一页 →') }}
           </button>
