@@ -1,3 +1,5 @@
+import { computed, onMounted, onUnmounted, shallowRef } from 'vue'
+
 const limits = { minutes: 60, books: 5, weekly: 7 }
 const activityKey = key => `zhiya.readingActivity.${key}`
 const planKey = key => key ? `zhiya.plan.${key}` : 'zhiya.plan'
@@ -53,6 +55,30 @@ export function readPlanProgress(key, now = new Date()) {
     weekly: Object.entries(activity).filter(([date, entry]) =>
       date >= monday && date <= today && (entry.milliseconds > 0 || entry.completed?.length)).length,
   }
+}
+
+export function useReadingPlanProgress(profileKey) {
+  const now = shallowRef(new Date())
+  let midnightTimer
+
+  function updateDate() {
+    clearTimeout(midnightTimer)
+    const date = new Date()
+    now.value = date
+    const nextMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
+    midnightTimer = setTimeout(updateDate, nextMidnight - date)
+  }
+
+  onMounted(() => {
+    updateDate()
+    document.addEventListener('visibilitychange', updateDate)
+  })
+  onUnmounted(() => {
+    clearTimeout(midnightTimer)
+    document.removeEventListener('visibilitychange', updateDate)
+  })
+
+  return computed(() => readPlanProgress(profileKey.value, now.value))
 }
 
 export function recordPlanActivity(key, ended, milliseconds, completedSession) {

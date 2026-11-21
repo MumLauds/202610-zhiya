@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import HomePage from './HomePage.vue'
+import { recordPlanActivity } from '../data/readingPlan'
 
 const books = [
   { id: 'book-1', title: '第一本', cover: '/one.png', topics: [], pages: [] },
@@ -19,6 +20,27 @@ const render = (selectedBookId = '') => mount(HomePage, {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
+})
+
+it('updates the daily and weekly goals at local midnight without a remount', async () => {
+  vi.useFakeTimers()
+  const sundayNight = new Date(2026, 10, 22, 23, 59, 50)
+  vi.setSystemTime(sundayNight)
+  recordPlanActivity('8.2', sundayNight.getTime(), 15 * 60_000, 55)
+  const wrapper = mount(HomePage, { props: {
+    books, auth: { authenticated: true, accountId: 8 },
+    activeProfile: { childProfileId: 2, preferredMinutes: 15 },
+  } })
+  try {
+    expect(wrapper.get('.home-plan-time strong').text()).toBe('15/15')
+    expect(wrapper.get('.home-plan-counts').text()).toContain('1/1 本 · 本周 1/5 天')
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(wrapper.get('.home-plan-time strong').text()).toBe('0/15')
+    expect(wrapper.get('.home-plan-counts').text()).toContain('0/1 本 · 本周 0/5 天')
+  } finally {
+    wrapper.unmount()
+    localStorage.removeItem('zhiya.readingActivity.8.2')
+  }
 })
 
 describe('home featured book', () => {

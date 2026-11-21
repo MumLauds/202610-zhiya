@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { readPlan, readPlanProgress, readingProfileKey } from '../data/readingPlan'
+import { readPlan, readingProfileKey, useReadingPlanProgress } from '../data/readingPlan'
 import { bookStatusLabel } from '../data/preview'
 
 const props = defineProps({
@@ -26,7 +26,7 @@ const manualIndex = computed(() => props.books.findIndex((book) => book.id === p
 const selected = computed(() => props.books[selectedIndex.value] || null)
 const planKey = computed(() => readingProfileKey(props.auth.accountId, props.activeProfile?.childProfileId))
 const plan = computed(() => readPlan(planKey.value, props.activeProfile?.preferredMinutes))
-const planProgress = computed(() => readPlanProgress(planKey.value))
+const planProgress = useReadingPlanProgress(planKey)
 const shelfBooks = computed(() => {
   if (!props.books.length) return []
   return [-1, 0, 1, 2, 3].map((offset) =>

@@ -93,12 +93,6 @@ watch(activeReadingKey, (key, _, onCleanup) => {
     document.removeEventListener('visibilitychange', checkpoint)
   })
 }, { immediate: true })
-watch(() => props.session?.status, (status, previous) => {
-  if (status === 'FINISHED' && previous === 'IN_PROGRESS' && readingKey.value) {
-    recordPlanActivity(readingKey.value, Date.now(), 0, props.session.readingSessionId)
-  }
-})
-
 const reviewingHistory = computed(() => ['FINISHED', 'INTERRUPTED'].includes(props.session?.status))
 const pagesByNumber = computed(() => new Map((props.book?.pages || []).map(page => [page.pageNumber, page])))
 const visitedPages = computed(() => {
@@ -161,9 +155,19 @@ const parentTip = computed(() => {
 })
 const canSetChildMode = computed(() => props.authenticated && !props.session?.preview
   && props.session?.status === 'CREATED' && props.session.mode === 'PARENT_CHILD')
-const atLastPage = computed(() => props.session?.status === 'IN_PROGRESS' && !rereading.value
-  && !currentPage.value?.defaultNextPageNumber
-  && !currentBranches.value.length && visitedPages.value.length > 0)
+const hasReachedPathEnd = computed(() => {
+  const pageNumber = props.session?.visitedPageNumbers?.at(-1)
+  const page = pagesByNumber.value.get(pageNumber)
+  return Boolean(page && pageNumber === props.session.currentPage && !page.defaultNextPageNumber
+    && !approvedBranchesAt(props.book?.branches, pageNumber).length)
+})
+const atLastPage = computed(() => props.session?.status === 'IN_PROGRESS' && !rereading.value && hasReachedPathEnd.value)
+
+watch([() => props.session?.readingSessionId, () => props.session?.status], ([id, status], [previousId, previousStatus]) => {
+  if (id === previousId && status === 'FINISHED' && previousStatus === 'IN_PROGRESS' && hasReachedPathEnd.value) {
+    recordPlanActivity(readingKey.value, Date.now(), 0, id)
+  }
+})
 const reportActivities = computed(() => {
   if (props.report?.status !== 'READY' || !Array.isArray(props.report.activities)) return []
   return props.report.activities.filter(activity => activity?.name && Array.isArray(activity.materials) && Array.isArray(activity.steps))

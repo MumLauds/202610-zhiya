@@ -1,13 +1,15 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AccountPage from './AccountPage.vue'
+import { recordPlanActivity } from '../data/readingPlan'
 
-const render = (section) => mount(AccountPage, {
+const render = (section, overrides = {}) => mount(AccountPage, {
   props: {
     section,
     auth: { nickname: '家长甲', account: 'guardian' },
     totals: {},
     saveProfileAction: vi.fn(),
+    ...overrides,
   },
 })
 
@@ -25,6 +27,28 @@ it.each([
     expect(wrapper.findAll('.plan-form input').map(({ element }) => element.value)).toEqual(expected)
   } finally {
     wrapper.unmount()
+  }
+})
+
+it('refreshes the saved plan progress when visible again after midnight', async () => {
+  vi.useFakeTimers()
+  const evening = new Date(2026, 10, 21, 23, 30)
+  vi.setSystemTime(evening)
+  recordPlanActivity('8.2', evening.getTime(), 5 * 60_000, 55)
+  const wrapper = render('plan', {
+    auth: { accountId: 8 }, activeProfileId: 2,
+    profiles: [{ childProfileId: 2, preferredMinutes: 15 }],
+  })
+  const values = () => wrapper.findAll('.stat-card strong').map(item => item.text())
+  try {
+    expect(values()).toEqual(['5/15', '1/1', '1/5'])
+    vi.setSystemTime(new Date(2026, 10, 22, 1))
+    document.dispatchEvent(new Event('visibilitychange'))
+    await wrapper.vm.$nextTick()
+    expect(values()).toEqual(['0/15', '0/1', '1/5'])
+  } finally {
+    wrapper.unmount()
+    vi.useRealTimers()
   }
 })
 

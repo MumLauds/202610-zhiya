@@ -3,7 +3,7 @@ import { vModalFocus } from '../components/modalFocus'
 import { computed, reactive, ref, watch } from 'vue'
 import { describeApiError } from '../api/client'
 import { ageLabels } from '../data/preview'
-import { readPlan, readPlanProgress, readingProfileKey, storePlan } from '../data/readingPlan'
+import { readPlan, readingProfileKey, useReadingPlanProgress, storePlan } from '../data/readingPlan'
 import { countReadPages } from '../data/readingProgress'
 
 const props = defineProps({
@@ -53,7 +53,7 @@ const activeProfile = computed(() => {
   return props.profiles.find((profile) => profile.childProfileId === props.activeProfileId) || null
 })
 const planKey = computed(() => readingProfileKey(props.auth.accountId, activeProfile.value?.childProfileId))
-const planProgress = computed(() => readPlanProgress(planKey.value))
+const planProgress = useReadingPlanProgress(planKey)
 watch([planKey, () => activeProfile.value?.preferredMinutes], ([key, minutes]) => {
   Object.assign(plan, readPlan(key, minutes))
   planMessage.value = ''
