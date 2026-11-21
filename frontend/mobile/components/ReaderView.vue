@@ -88,7 +88,7 @@ const isLastPage = computed(() => !reviewing.value && !branchChoices.value.lengt
 const isFinished = computed(() => session.state.session?.status === 'FINISHED')
 const pending = computed(() => session.state.pending || Boolean(pendingFeedback.value) || session.loading.value)
 const navigationPending = computed(() => foregroundBusy.value || (pending.value && pendingFeedback.value !== 'INITIAL'))
-const canSkip = computed(() => !session.state.syncRequired && (pendingFeedback.value === 'INITIAL' ||
+const canSkip = computed(() => !foregroundBusy.value && !session.state.syncRequired && (pendingFeedback.value === 'INITIAL' ||
   (!pending.value && interactionResult.value?.strategyType !== 'SKIP' && interactionResult.value?.feedback !== 'SKIPPED')))
 const revision = computed(() => session.state.session?.revision ?? 0)
 const sessionId = computed(() => session.state.session?.readingSessionId ?? null)
