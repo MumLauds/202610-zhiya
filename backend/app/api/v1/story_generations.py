@@ -246,7 +246,8 @@ async def generate_text(request, payload, source, carried_pages, total, decision
             context_text=json.dumps(context, ensure_ascii=False),
             user_input="生成绘本文字草稿",
             timeout_seconds=60.0,
-            min_output_token_budget=1536 if payload.generateIllustrations else None,
+            max_output_token_budget=(request.app.state.model_settings.model_workshop_illustration_max_tokens
+                                     if payload.generateIllustrations else None),
         ))
     if not result.success:
         if result.error_code == "TIMEOUT":

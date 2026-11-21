@@ -49,6 +49,7 @@ def create_app(settings: Settings | None = None, speech_settings: SpeechSettings
         # Single-worker first release: settle leftover PENDING reports before serving requests.
         recover_pending_reports()
         async with ModelGateway(config) as gateway, VoiceGateway(speech_config) as voice_gateway:
+            app.state.model_settings = config
             app.state.model_gateway = gateway
             app.state.model_adapter = ModelAdapter(gateway)
             app.state.voice_gateway = voice_gateway

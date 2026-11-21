@@ -4,6 +4,7 @@ import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from dataclasses import replace
 from pathlib import Path
 from threading import Barrier
 
@@ -358,6 +359,9 @@ def test_generated_cover_matches_the_first_illustration_before_and_after_approva
 
     client, other, _, _ = cont_env
     headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
+    monkeypatch.setattr(client.app.state, "model_settings", replace(
+        client.app.state.model_settings, model_workshop_illustration_max_tokens=1024,
+    ))
     monkeypatch.setenv("ZHIYA_MEDIA_ROOT", str(tmp_path))
     monkeypatch.setenv("IMAGE_API_URL", "https://images.test/generate")
     monkeypatch.setenv("DASHSCOPE_API_KEY", "test-image-api-key")
@@ -380,7 +384,7 @@ def test_generated_cover_matches_the_first_illustration_before_and_after_approva
                 "pages": ["下雨了。", "兔子遇见了松鼠。", "他们一起找松果。", "他们带着松果回家。"],
             }
             assert ("imageScenes" in request.system_prompt) == generate_illustrations
-            assert request.min_output_token_budget == (1536 if generate_illustrations else None)
+            assert request.max_output_token_budget == (1024 if generate_illustrations else None)
             if generate_illustrations:
                 draft["imageScenes"] = ["下雨了以后的林间小径", "树根旁相遇", "树下捡松果", "提着松果走向家门"]
                 draft["imageCast"] = [[], [], [], []]

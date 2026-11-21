@@ -19,8 +19,8 @@ class ModelAdapter:
             kwargs = {}
             if request.timeout_seconds is not None:
                 kwargs["timeout_seconds"] = request.timeout_seconds
-            if request.min_output_token_budget is not None:
-                kwargs["min_output_token_budget"] = request.min_output_token_budget
+            if request.max_output_token_budget is not None:
+                kwargs["max_output_token_budget"] = request.max_output_token_budget
             if request.json_object:
                 kwargs["json_object"] = True
             if request.page_image_url is not None:
