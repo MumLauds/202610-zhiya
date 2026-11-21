@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { roundedTrapezoidPath } from '../utils/coverShape'
 
 const props = defineProps({
@@ -15,6 +15,7 @@ const dots = ref(null)
 const panelWidth = ref(900)
 const wheelSpread = ref(.77)
 const coverClipPath = roundedTrapezoidPath(87.9, 100)
+const openingDuration = 740
 let observer = null
 let openingTimer
 
@@ -30,6 +31,9 @@ function revealSelectedDot() {
 }
 
 watch([selectedIndex, () => props.books.length], revealSelectedDot, { flush: 'post' })
+watch(() => props.starting, (starting) => {
+  if (!starting && openingTimer === undefined) opening.value = null
+})
 
 onMounted(() => {
   if (!wheel.value) return
@@ -92,15 +96,16 @@ function openBook(book, index) {
   if (index !== selectedIndex.value) return choose(book)
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return emit('start', book)
   opening.value = book
-  openingTimer = setTimeout(finishOpening, 380)
+  openingTimer = setTimeout(finishOpening, openingDuration + 80)
 }
 
 function finishOpening() {
   const book = opening.value
-  if (!book) return
+  if (!book || openingTimer === undefined) return
   clearTimeout(openingTimer)
-  opening.value = null
+  openingTimer = undefined
   emit('start', book)
+  nextTick(() => { if (!props.starting) opening.value = null })
 }
 
 function move(step) {
@@ -113,7 +118,7 @@ function move(step) {
 <template>
   <section class="library-stage" aria-label="绘本轮播">
     <div class="book-wheel-panel">
-      <div ref="wheel" class="book-wheel">
+      <div ref="wheel" class="book-wheel" :style="{ '--wheel-open-duration': `${openingDuration}ms` }">
         <button
           v-for="(book, index) in books"
           :key="book.id"
@@ -135,7 +140,15 @@ function move(step) {
         >
           <span class="wheel-book-shell">
             <img class="book-shell" src="/assets/figma-prototype/book-shell.webp" alt="">
-            <span class="wheel-cover" @animationend.self="finishOpening"><img v-if="Math.abs(offsetFor(index)) <= 2" :loading="offsetFor(index) === 0 ? 'eager' : 'lazy'" :src="book.cover" :alt="`${book.title}封面`"></span>
+            <span class="wheel-paper-edge" aria-hidden="true"></span>
+            <template v-if="opening?.id === book.id">
+              <span class="wheel-page-block" aria-hidden="true"></span>
+              <span class="wheel-turning-leaf" aria-hidden="true"></span>
+            </template>
+            <span class="wheel-cover" @animationend.self="finishOpening">
+              <span class="wheel-cover-front"><img v-if="Math.abs(offsetFor(index)) <= 2" :loading="offsetFor(index) === 0 ? 'eager' : 'lazy'" :src="book.cover" :alt="`${book.title}封面`"></span>
+              <span v-if="opening?.id === book.id" class="wheel-cover-back" aria-hidden="true"></span>
+            </span>
           </span>
         </button>
       </div>
