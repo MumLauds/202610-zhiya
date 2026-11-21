@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import sqlite3
 import time
 import unicodedata
@@ -108,6 +109,25 @@ def _extract_json_text(raw: str) -> str:
         if len(lines) >= 3 and lines[0].strip().lower() in ("```", "```json") and lines[-1].strip() == "```":
             return "\n".join(lines[1:-1]).strip()
     return text
+
+
+def _story_copy_key(text: str) -> str:
+    return "".join(char for char in unicodedata.normalize("NFKC", text).casefold() if char.isalnum())
+
+
+def _contains_copied_page(scenes: list[str], pages: list[str]) -> bool:
+    page_keys = {_story_copy_key(page) for page in pages} - {""}
+    for scene in scenes:
+        scene_key = _story_copy_key(scene)
+        if (scene in pages or scene_key in page_keys
+                or any(len(page) >= 8 and page in scene_key for page in page_keys)):
+            return True
+        # Short pages often share role names or setting words with a valid description.
+        # For these, detect an independent copy (including one following a label).
+        segments = re.split(r'[:。.!?;“”"「」]', unicodedata.normalize("NFKC", scene))
+        if any(_story_copy_key(segment) in page_keys for segment in segments):
+            return True
+    return False
 
 
 def reserve_generation(request, payload, digest, image_settings: ImageSettings | None):
@@ -227,7 +247,8 @@ async def generate_text(request, payload, source, carried_pages, total, decision
     if decision is None and draft.choices:
         raise ValueError("unexpected choices")
     if payload.generateIllustrations and (
-        len(draft.imageScenes) != count or any(scene in draft.pages for scene in draft.imageScenes)
+        len(draft.imageScenes) != count
+        or _contains_copied_page(draft.imageScenes, [*draft.pages, *context["previousPages"]])
     ):
         raise ValueError("illustration scenes do not match the new pages")
     return draft

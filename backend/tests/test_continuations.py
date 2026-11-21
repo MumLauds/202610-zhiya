@@ -371,11 +371,11 @@ def test_generated_cover_matches_the_first_illustration_before_and_after_approva
         async def generate(self, request):
             draft = {
                 "title": "森林里的朋友",
-                "pages": ["兔子到森林散步。", "兔子遇见了松鼠。", "他们一起找松果。", "他们带着松果回家。"],
+                "pages": ["下雨了。", "兔子遇见了松鼠。", "他们一起找松果。", "他们带着松果回家。"],
             }
             assert ("imageScenes" in request.system_prompt) == generate_illustrations
             if generate_illustrations:
-                draft["imageScenes"] = ["林间小径上的兔子", "树根旁相遇", "树下捡松果", "提着松果走向家门"]
+                draft["imageScenes"] = ["下雨了以后的林间小径", "树根旁相遇", "树下捡松果", "提着松果走向家门"]
             return ModelGenerateResult(success=True, text=json.dumps(draft))
 
     async def generate_images(settings, pages, **brief):
@@ -452,8 +452,11 @@ def test_ai_illustration_failure_replays_without_creating_a_draft(cont_env, monk
     None,
     ["林间小径上的小兔"],
     ["小兔今天去了森林。", "树根旁相遇", "树下玩耍", "小兔走向家门"],
+    ["近景：小兔今天去了森林。", "树根旁相遇", "树下玩耍", "小兔走向家门"],
+    ["柔和晨光中的林间远景，小兔 今 天去了森林，脚下有青苔", "树根旁相遇", "树下玩耍", "小兔走向家门"],
+    ["小兔在林间小径上", "树根旁相遇", "树下玩耍", "背景前方：小兔回家了！"],
     ["林间小径上的小兔", "树根旁相遇", "树下玩耍", "画面里写下电话号码"],
-], ids=["omitted", "count-mismatch", "copied-page", "unsafe"])
+], ids=["omitted", "count-mismatch", "copied-page", "prefixed-copy", "normalized-copy", "short-prefixed-copy", "unsafe"])
 def test_invalid_illustration_scenes_never_reach_image_provider(cont_env, monkeypatch, scenes):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
@@ -473,8 +476,8 @@ def test_invalid_illustration_scenes_never_reach_image_provider(cont_env, monkey
         "ageBand": "AGE_4_5", "topic": "友谊", "characters": ["小兔"], "scene": "森林",
         "branching": False, "generateIllustrations": True, "clientRequestId": "ai-invalid-scenes",
     })
-    assert response.status_code == 422, response.text
     image_provider.assert_not_awaited()
+    assert response.status_code == 422, response.text
     with closing(sqlite3.connect(db_path)) as db:
         assert db.execute("SELECT COUNT(*) FROM story_versions WHERE status = 'PENDING_REVIEW'").fetchone() == (0,)
 

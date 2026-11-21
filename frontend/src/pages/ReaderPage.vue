@@ -767,7 +767,7 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
           <p v-if="guidanceError && (currentQuestion || questionSkipped || questionBlocked)" class="question-error" role="alert">{{ guidanceError }}</p>
           <p v-if="answerText" class="question-saved"><strong>孩子的回答：</strong>{{ answerText }}</p>
           <p v-else-if="savedAnswer" class="question-saved" role="status">本页回答已保存。</p>
-          <p v-if="authenticated && savedAnswer?.replyText" class="question-saved" role="status"><strong>芽芽：</strong>{{ savedAnswer.replyText }}</p>
+          <p v-if="authenticated && savedAnswer?.replyText" class="question-reply" role="status"><strong>芽芽：</strong>{{ savedAnswer.replyText }}</p>
           <button v-if="guidanceError && !currentQuestion && !questionSkipped && !questionBlocked && !session.preview" class="text-button question-retry" type="button" :disabled="interactionBusy || guidanceLoading || syncRequired" @click="retryQuestion">重新生成本页问题</button>
           <div class="question-actions">
             <button class="secondary feedback-understood" type="button" :disabled="!canSubmitFeedback || guidanceLoading || recordingBusy" @click="submitUnderstanding('UNDERSTOOD')"><span aria-hidden="true">✓</span> 已理解</button>

@@ -1337,6 +1337,17 @@
     .narration-status { margin: 10px 0 0; color: var(--leaf-deep); font-size: 12px; line-height: 18px; }
     .question-card p { margin: 0; overflow-wrap: anywhere; color: #183a42; font-size: clamp(18px, 1.55vw, 26px); font-weight: 600; line-height: 1.5; }
     .question-card p.question-saved { margin-top: 10px; color: var(--leaf); font-family: inherit; font-size: 11px; line-height: 18px; }
+    .question-card p.question-reply {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-inline-start: 3px solid var(--leaf);
+      border-radius: 10px;
+      background: #eef4e8;
+      color: var(--leaf-deep);
+      font-size: clamp(15px, 1.1vw, 17px);
+      font-weight: 500;
+      line-height: 1.6;
+    }
     .question-card p.question-error { margin-top: 10px; color: var(--danger); font-family: inherit; font-size: 10px; line-height: 18px; }
     .question-retry { margin-top: 9px; padding: 0; font-size: 10px; }
     .question-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }

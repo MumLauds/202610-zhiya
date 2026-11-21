@@ -1108,7 +1108,7 @@ describe('guided reading interactions', () => {
     })
     expect(wrapper.text()).toContain('孩子的回答：')
     expect(wrapper.text()).toContain('小兔躲在树后。')
-    expect(wrapper.get('.question-card [role="status"]').text()).toBe('芽芽：你从画面哪里看出来的？')
+    expect(wrapper.get('.question-card .question-reply[role="status"]').text()).toBe('芽芽：你从画面哪里看出来的？')
 
     await wrapper.setProps({
       session: { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3], revision: 4 },
