@@ -1117,7 +1117,7 @@
     .reader-heading p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
     .reader-layout {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 330px;
+      grid-template-columns: minmax(0, 1fr) clamp(248px, 27%, 360px);
       gap: 20px;
       align-items: start;
     }
@@ -1133,20 +1133,46 @@
       box-shadow: var(--shadow-md);
     }
     .flipbook-stage {
-      padding: 18px 14px 34px;
+      padding: 18px 14px 20px;
       border: 1px solid rgba(220, 204, 184, .78);
       border-radius: 22px;
       background: linear-gradient(180deg, rgba(255, 252, 246, .94), rgba(248, 238, 224, .92));
       box-shadow: var(--shadow-md);
     }
+    .reader-book-area { position: relative; max-width: 920px; margin-inline: auto; }
+    .reader-edge {
+      position: absolute;
+      z-index: 2;
+      top: 50%;
+      transform: translateY(-50%);
+      width: clamp(36px, 5%, 46px);
+      height: min(42%, 156px);
+      min-height: 44px;
+      display: grid;
+      place-items: center;
+      border: 1px dashed #63916e;
+      border-radius: 999px;
+      color: var(--leaf-deep);
+      background: #edf4e8ed;
+      font-size: 32px;
+      line-height: 1;
+    }
+    .reader-edge--previous { left: 4px; }
+    .reader-edge--next { right: 4px; }
+    .reader-edge:hover:not(:disabled) { background: #dcebd8; }
+    .reader-edge:focus-visible { outline: 2px solid var(--leaf-deep); outline-offset: 2px; }
     .flipbook-book {
       width: 100%;
       margin: 0 auto;
       filter: drop-shadow(0 18px 22px rgba(71, 45, 25, .15));
     }
     .flip-hint {
-      margin: 15px 0 0;
-      color: var(--muted);
+      width: fit-content;
+      margin: 16px auto 0;
+      padding: 5px 14px;
+      border-radius: 999px;
+      color: var(--leaf-deep);
+      background: var(--leaf-pale);
       font-size: 12px;
       line-height: 19px;
       text-align: center;
@@ -1179,7 +1205,7 @@
     }
     .flip-page-inner--text {
       position: relative;
-      padding: clamp(28px, 4vw, 48px) clamp(26px, 4vw, 44px) 28px;
+      padding: clamp(28px, 4vw, 48px) max(54px, 8%) 28px clamp(26px, 4vw, 44px);
       display: flex;
       flex-direction: column;
       background:
@@ -1258,10 +1284,12 @@
     .page-dots i.active { background: var(--leaf); }
     .reader-side { display: grid; gap: 12px; }
     .side-card { padding: 18px; border-radius: 17px; background: var(--paper); box-shadow: var(--shadow-sm); }
-    .side-card.audio { padding: 14px 16px; background: var(--leaf-pale); box-shadow: none; }
-    .audio-line { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--leaf); font-size: 11px; }
-    .audio-line button { min-height: 32px; padding: 0 12px; border: 1px solid #d7dccf; border-radius: 999px; background: var(--paper); font-size: 10px; }
-    .side-card h2 { margin: 0 0 11px; color: var(--brown); font-size: 12px; line-height: 19px; }
+    .side-card h2 { margin: 0 0 11px; color: var(--brown); font-size: 14px; line-height: 20px; }
+    .narration-card { border: 1px solid #dfe3da; }
+    .narration-card h2 { color: var(--leaf-deep); }
+    .reader-narration-button { width: 100%; min-height: 44px; }
+    .reader-narration-button span { margin-inline-end: 5px; }
+    .narration-status { margin: 10px 0 0; color: var(--leaf-deep); font-size: 12px; line-height: 18px; }
     .side-card.question-card { border: 1px solid #e6cfae; background: var(--cream); }
     .question-card p { margin: 0; font-family: var(--font-story); font-size: 18px; line-height: 29px; }
     .question-card p.question-saved { margin-top: 10px; color: var(--leaf); font-family: inherit; font-size: 11px; line-height: 18px; }
@@ -1274,34 +1302,6 @@
     .branch-actions { display: grid; gap: 8px; }
     .branch-actions button { width: 100%; text-align: left; }
     .side-card.parent-tip p { margin: 0; color: #62655e; font-family: var(--font-story); font-size: 13px; line-height: 22px; }
-    .reader-dock {
-      padding: 10px;
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-      border: 1px solid #dfe3da;
-      border-radius: 18px;
-      background: var(--paper);
-      box-shadow: var(--shadow-md);
-    }
-    .dock-button {
-      min-height: 52px;
-      padding: 6px 10px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      border: 1px solid transparent;
-      border-radius: 12px;
-      color: var(--ink);
-      background: transparent;
-      font-size: 11px;
-    }
-    .dock-button:hover { background: var(--leaf-wash); }
-    .dock-button.primary { color: #fff; background: var(--leaf); }
-    .dock-button.primary:hover { background: var(--leaf-deep); }
-    .dock-glyph { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 10px; background: #f4eee3; font-size: 15px; }
-    .dock-button.primary .dock-glyph { color: #5d4219; background: var(--gold); }
     .reader-loading { min-height: 556px; display: grid; place-items: center; border-radius: 18px; background: var(--paper); box-shadow: var(--shadow-md); }
     .spinner { width: 36px; height: 36px; border: 3px solid #e7e2d8; border-top-color: var(--leaf); border-radius: 50%; animation: spin .9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -1673,8 +1673,6 @@
       .wheel-controls { inset: auto 18px 48px; transform: none; }
       .carousel-dots { bottom: 3px; }
       .reader-layout { grid-template-columns: 1fr; }
-      .reader-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .question-card { grid-column: 1 / -1; }
       .account-layout { grid-template-columns: 1fr; }
       .account-sidebar { position: static; }
       .account-nav { grid-template-columns: repeat(3, 1fr); }
@@ -1889,8 +1887,6 @@
       line-height: 20px;
     }
     .child-book-range input { width: 18px; height: 18px; }
-    .child-mode-card p { color: #665f55; font-size: 12px; line-height: 20px; }
-    .child-mode-card .secondary { width: 100%; margin-top: 8px; }
     .child-handoff-modal-note {
       margin: 14px 0 0;
       color: var(--muted);
