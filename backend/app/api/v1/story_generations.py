@@ -398,7 +398,9 @@ async def generate_story(payload: StoryGeneration, request: Request):
             if any(SENSITIVE.search(unicodedata.normalize("NFKC", value))
                    for value in (result.title, *result.pages, *result.choices)):
                 raise ValueError("generated draft did not pass content checks")
-            images = await generate_story_illustrations(image_settings, result.title, result.pages)
+            images = await generate_story_illustrations(
+                image_settings, result.pages, topic=payload.topic, characters=payload.characters, scene=payload.scene,
+            )
             reserved = (*reserved[:2], images, *reserved[3:])
     except TimeoutError:
         status = "UNKNOWN"

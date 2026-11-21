@@ -275,9 +275,9 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
             pages = continued_pages if context["previousPages"] else original_pages
             return ModelGenerateResult(success=True, text=json.dumps({"title": title, "pages": pages}))
 
-    async def generate_images(settings, title, pages):
+    async def generate_images(settings, *args, **brief):
         batch = png_batches[len(image_calls)]
-        image_calls.append((title, pages))
+        image_calls.append((args, brief))
         return pin_generated_illustrations(batch)
 
     monkeypatch.setattr(client.app.state, "model_adapter", StoryModel())
@@ -285,6 +285,7 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
     generations = "/api/v1/story-generations"
     payload = {"topic": "互助", "characters": ["小兔子"], "scene": "森林", "branching": False,
                "generateIllustrations": True}
+    expected_brief = {key: payload[key] for key in ("topic", "characters", "scene")}
     original = {**payload, "ageBand": "AGE_4_5", "clientRequestId": "ai-original"}
     generated = client.post(generations, headers=headers, json=original)
     assert generated.status_code == 201, generated.text
@@ -303,7 +304,7 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
     replay = client.post(generations, headers=headers, json=original)
     assert replay.status_code == 200 and replay.json()["data"] == draft
     assert model_calls == [4]
-    assert image_calls == [(title, original_pages)]
+    assert image_calls == [((original_pages,), expected_brief)]
     approved = client.post(f"/api/v1/story-versions/{version}/approvals", headers=headers,
                            json={"versionNumber": draft["versionNumber"], "reviewedAllBranches": True})
     assert approved.status_code == 200, approved.text
@@ -333,7 +334,7 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
         png_batches[0][:2] + png_batches[1]
     )
     assert model_calls == [4, 2]
-    assert image_calls == [(title, original_pages), (title, continued_pages)]
+    assert image_calls == [((original_pages,), expected_brief), ((continued_pages,), expected_brief)]
 
 
 @pytest.mark.parametrize("generate_illustrations", [False, True], ids=["template", "ai"])
@@ -370,7 +371,7 @@ def test_generated_cover_matches_the_first_illustration_before_and_after_approva
                 "pages": ["兔子到森林散步。", "兔子遇见了松鼠。", "他们一起找松果。", "他们带着松果回家。"],
             }))
 
-    async def generate_images(settings, title, pages):
+    async def generate_images(settings, pages, **brief):
         assert generate_illustrations
         return story_media.pin_generated_illustrations(illustration_bytes)
 
@@ -421,7 +422,7 @@ def test_ai_illustration_failure_replays_without_creating_a_draft(cont_env, monk
                 "title": "森林里的朋友", "pages": ["兔子到森林散步。", "它见到了松鼠。", "它们一同玩耍。", "它们回家了。"],
             }))
 
-    async def generate_images(settings, title, pages):
+    async def generate_images(settings, pages, **brief):
         calls.append("image")
         raise ImageGenerationError("image provider unavailable")
 
