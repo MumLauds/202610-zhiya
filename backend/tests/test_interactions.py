@@ -538,7 +538,7 @@ def test_guidance_gateway_request_and_replay(started_session, guidance_knowledge
         assert data["status"] == "GENERATED" and "小兔打开雨伞" in data["outputText"]
         assert data["sources"] == [{"knowledgeItemId": 81, "sourceTitle": "共读手册"}]
         assert len(requests) == 1
-        assert requests[0]["thinking"] == {"type": "disabled"}
+        assert requests[0]["enable_thinking"] is False
         prompt = requests[0]["messages"][1]["content"]
         assert "3～4岁" in prompt and "怎样关心朋友" in prompt
 
@@ -903,17 +903,25 @@ def test_guidance_validates_child_facing_output(started_session, guidance_model,
                           (data["interactionEventId"],)).fetchone()[0] == stored
 
 
-def test_guidance_no_knowledge_and_model_timeout(started_session, guidance_model):
+def test_parent_guidance_uses_current_page_without_retrieved_knowledge(started_session, guidance_model):
     client, headers, path, sid = started_session
     guidance_model.return_value = ModelGenerateResult(success=False, error_code="TIMEOUT")
     first = guidance(client, headers, sid, "timeout")
     assert first.status_code == 201 and first.json()["data"]["strategyType"] == "TIMEOUT_FALLBACK"
     with closing(sqlite3.connect(path)) as db, db:
         db.execute("UPDATE knowledge_items SET status='RETIRED' WHERE id=81")
+    guidance_model.return_value = ModelGenerateResult(success=True, text="1")
     reply = guidance(client, headers, sid, "no-knowledge", revision=2)
-    assert reply.status_code == 201 and reply.json()["data"]["strategyType"] == "NO_KNOWLEDGE_FALLBACK"
-    assert reply.json()["data"]["sources"] == []
-    guidance_model.assert_awaited_once()
+    assert reply.status_code == 201
+    result = reply.json()["data"]
+    assert (result["status"], result["strategyType"], result["sources"]) == ("GENERATED", "CONTEXT_QUESTION", [])
+    assert "小兔打开雨伞" in result["outputText"]
+    assert guidance_model.await_count == 2
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET body_text='！' WHERE version_id=11 AND page_no=1")
+    empty = guidance(client, headers, sid, "no-grounded-text", revision=result["revision"])
+    assert empty.status_code == 201 and empty.json()["data"]["strategyType"] == "NO_KNOWLEDGE_FALLBACK"
+    assert guidance_model.await_count == 2
 
 
 def test_guidance_feedback_ignores_skipped_and_blocked_events(started_session, guidance_model):

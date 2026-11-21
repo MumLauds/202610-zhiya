@@ -104,8 +104,8 @@
         "READY",
         "FAILED"
       ],
-      "completion": "首次结束阅读同事务保存终态、事实、PENDING小结和原响应。提交后调用DeepSeek补充小结。成功置READY；失败且已有本地作答摘要则保留本地内容置READY，其余置FAILED。",
-      "contentValidation": "DeepSeek仅参考实际已读正文、已展示的小提问和本地作答线索，作答原文留在服务端。模型可选择既有建议编号和可选storyMoment，后者必须逐字匹配已读正文并通过安全检查。保留原事实、最新本地作答摘要与回看活动。生成文本不评价儿童能力或虚构表现。续写切换结束源会话时沿用本地规则。",
+      "completion": "首次结束阅读同事务保存终态、事实、PENDING小结和原响应。提交后调用百炼文本模型补充小结。成功置READY；失败且已有本地作答摘要则保留本地内容置READY，其余置FAILED。",
+      "contentValidation": "百炼文本模型仅参考实际已读正文、已展示的小提问和本地作答线索，作答原文留在服务端。模型可选择既有建议编号和可选storyMoment，后者必须逐字匹配已读正文并通过安全检查，否则丢弃该可选引文。保留原事实、最新本地作答摘要与回看活动。生成文本不评价儿童能力或虚构表现。续写切换结束源会话时沿用本地规则。",
       "startupRecovery": "单工作进程启动时，遗留PENDING小结若已有本地作答活动则恢复READY，其余标记FAILED。恢复保留摘要和原响应，无模型调用。",
       "read": "API-013读取当前小结。READY返回已生成内容；PENDING或FAILED返回事实摘要及空活动数组。FALLBACK仅用于模型/互动结果，不是ReadingReport.status。",
       "repeat": "同键重放原结束响应，可能仍含PENDING；新键重复结束只返回既有终态及当前小结，不再次调用模型。本阶段不提供失败小结重新生成入口。"
@@ -1707,7 +1707,7 @@
         "requestId": "req-initial"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "STARTED成功或翻页/分支/续写切换进入当前页后，前端在需要情境提问且无可恢复问题时发送INITIAL；不由GET或STARTED响应隐式调用模型。首次不要求既往问题或反馈。DeepSeek参考年龄、当前页、最近三个实际已读的前文页面及当前问题。联系前文的两个引文分别核验来源。UNDERSTOOD/NOT_UNDERSTOOD针对当前页最后展示的首题或追问，缺失时409 PROMPT_REQUIRED。家长提交反馈时，可用本次到达当前页、且在最新提问或反馈后保存的最后一条回答，在服务端忽略回答中「我觉得」等常用表达，用完整分句匹配故事细节，再从命中的位置截取当前页短引文供模型参考并保留受控追问作为回退。回答原文不发送给模型。SKIPPED不要求已有问题，直接保存反馈并递增revision，outputText为空、strategyType=SKIP、status=FALLBACK。CHILD_SOLO的可作答问题与超时、无知识回退均带已核验的answerOptions。模型TIMEOUT可保存TIMEOUT_FALLBACK。其他API_ERROR返回503 DEPENDENCY_UNAVAILABLE并记录FAILED，原键重放该错误，未写事件或递增revision。执行前按common.requestExecution占位。翻页或跳过先提交后，迟到的问题不得保存或播放。",
+      "constraints": "STARTED成功或翻页/分支/续写切换进入当前页后，前端在需要情境提问且无可恢复问题时发送INITIAL；不由GET或STARTED响应隐式调用模型。首次不要求既往问题或反馈。百炼文本模型参考年龄、当前页、最近三个实际已读的前文页面及当前问题。家长共读时，缺少检索知识但当前页有可用正文，仍可基于绘本正文生成，来源列表为空。联系前文的两个引文分别核验来源。UNDERSTOOD/NOT_UNDERSTOOD针对当前页最后展示的首题或追问，缺失时409 PROMPT_REQUIRED。家长提交反馈时，可用本次到达当前页、且在最新提问或反馈后保存的最后一条回答，在服务端忽略回答中「我觉得」等常用表达，用完整分句匹配故事细节，再从命中的位置截取当前页短引文供模型参考并保留受控追问作为回退。回答原文不发送给模型。SKIPPED不要求已有问题，直接保存反馈并递增revision，outputText为空、strategyType=SKIP、status=FALLBACK。CHILD_SOLO的可作答问题与超时、无知识回退均带已核验的answerOptions。模型TIMEOUT可保存TIMEOUT_FALLBACK。其他API_ERROR返回503 DEPENDENCY_UNAVAILABLE并记录FAILED，原键重放该错误，未写事件或递增revision。执行前按common.requestExecution占位。翻页或跳过先提交后，迟到的问题不得保存或播放。",
       "interfaceId": "API-017",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/guidance",
       "additionalExamples": [

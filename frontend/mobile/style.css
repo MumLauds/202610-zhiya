@@ -212,6 +212,7 @@ h1, h2, h3, p { margin-top: 0; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .8rem; }
 .page-heading .eyebrow { margin: 0; }
 .reading-text { display: flex; flex-wrap: wrap; gap: .24rem .16rem; margin: 0 0 1.2rem; font-family: "STKaiti", "KaiTi", serif; }
+.reading-text--playable { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: start; cursor: pointer; }
 .reading-token { display: inline-flex; flex-direction: column; align-items: center; min-width: 1.5em; padding: .1rem .08rem .2rem; border-radius: 9px; line-height: 1.1; transition: color .16s ease, background .16s ease; }
 .reading-token small { min-height: .85rem; color: #819287; font-family: "Segoe UI", sans-serif; font-size: .52rem; letter-spacing: .01em; }
 .reading-token b { font-size: clamp(1.55rem, 4.6vw, 2.1rem); font-weight: 500; }

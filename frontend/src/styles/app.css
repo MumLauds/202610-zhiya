@@ -1195,6 +1195,23 @@
     }
     .flip-page-inner--text > * { position: relative; z-index: 1; }
     .flip-page-inner--text .page-quote { margin-top: 18px; font-size: clamp(22px, 2.25vw, 29px); line-height: 1.55; }
+    .page-narration-text {
+      display: block;
+      padding: 0;
+      border: 0;
+      border-radius: 4px;
+      color: inherit;
+      background: transparent;
+      font: inherit;
+      text-align: start;
+      cursor: pointer;
+    }
+    .page-narration-text:hover { color: var(--leaf); }
+    .flip-page--illustration > img { opacity: 0; transition: opacity .22s ease-out; }
+    .flip-page--illustration > img.flip-image-ready { opacity: 1; }
+    @media (prefers-reduced-motion: reduce) {
+      .flip-page--illustration > img { transition: none; }
+    }
     .flip-page-inner--text .page-text { margin-top: 24px; font-size: clamp(15px, 1.35vw, 18px); line-height: 1.8; }
     .flip-page-empty {
       height: 100%;
@@ -1258,11 +1275,9 @@
     .branch-actions button { width: 100%; text-align: left; }
     .side-card.parent-tip p { margin: 0; color: #62655e; font-family: var(--font-story); font-size: 13px; line-height: 22px; }
     .reader-dock {
-      width: min(100%, 760px);
-      margin: 18px auto 0;
       padding: 10px;
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 8px;
       border: 1px solid #dfe3da;
       border-radius: 18px;
@@ -1697,7 +1712,6 @@
       .page-quote { font-size: 22px; line-height: 34px; }
       .page-text { font-size: 15px; line-height: 27px; }
       .reader-side { grid-template-columns: 1fr; }
-      .reader-dock { grid-template-columns: repeat(2, 1fr); }
       .account-title { align-items: flex-start; flex-direction: column; }
       .account-hero { padding: 20px; }
       .account-hero h1 { font-size: 27px; line-height: 36px; }

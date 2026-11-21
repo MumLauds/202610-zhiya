@@ -228,6 +228,27 @@ describe('ReaderView session recovery and interaction', () => {
     expect(wrapper.get('.page-scene').text()).toBe('第一页')
   })
 
+  it('plays the requested page when the first tap arrives before audio preparation completes', async () => {
+    const play = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('Audio', class extends EventTarget {
+      play = play
+      pause() {}
+      removeAttribute() {}
+      load() {}
+    })
+    let resolveAudio
+    const synthesizePage = vi.fn(() => new Promise(resolve => { resolveAudio = resolve }))
+    await openReader({ snapshot: questionedPageOne, events: [savedQuestion(1, 2)], voiceApi: { synthesizePage } })
+
+    await wrapper.get('button.reading-text').trigger('click')
+    expect(synthesizePage).toHaveBeenCalledOnce()
+    expect(play).not.toHaveBeenCalled()
+    resolveAudio({ data: { audioUrl: '/page-one.mp3' } })
+    await flushPromises()
+    expect(play).toHaveBeenCalledOnce()
+    expect(play.mock.contexts[0].src).toBe('/page-one.mp3')
+  })
+
   it('keeps reviewing visited pages local and hides interaction controls until the current page', async () => {
     const synthesizePage = vi.fn().mockRejectedValue(new ApiError('朗读暂不可用', { status: 503 }))
     const api = await openReader({ snapshot: questionedPageTwo, events: [savedQuestion(2, 3)], voiceApi: { synthesizePage } })

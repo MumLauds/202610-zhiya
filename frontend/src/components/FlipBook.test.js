@@ -6,6 +6,24 @@ import FlipBook from './FlipBook.vue'
 let wrapper
 afterEach(() => { wrapper?.unmount(); vi.unstubAllGlobals() })
 
+it('narrates only the active spread and animates a requested adjacent turn', async () => {
+  const book = { on: vi.fn(), flipTo: vi.fn().mockResolvedValue(true), turnTo: vi.fn(), destroy: vi.fn() }
+  vi.stubGlobal('OpenPageFlip', { createBook: () => book })
+  wrapper = mount(FlipBook, {
+    props: { canNarrate: true, pages: [
+      { pageNumber: 1, text: '第一页' },
+      { pageNumber: 2, text: '第二页' },
+    ] },
+  })
+  expect(wrapper.findAll('.page-narration-text')).toHaveLength(1)
+  await wrapper.get('.page-narration-text').trigger('click')
+  expect(wrapper.emitted('narrate')).toHaveLength(1)
+  expect(wrapper.vm.flipToPage(1)).toBe(true)
+  expect(book.flipTo).toHaveBeenCalledWith(2)
+  await wrapper.setProps({ pages: [...wrapper.props('pages')] })
+  expect(book.turnTo).not.toHaveBeenCalled()
+})
+
 it('uses page image refs and placeholders, and restores the actual widget position', async () => {
   let onFlip
   const book = { on: vi.fn((name, handler) => { onFlip = handler }), turnTo: vi.fn((page) => onFlip({ page })), destroy: vi.fn() }

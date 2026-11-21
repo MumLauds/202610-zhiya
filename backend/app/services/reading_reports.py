@@ -118,7 +118,7 @@ def validated_summary(text: str, facts: str, page_texts: list[str]) -> tuple[str
     moment = selection.get("storyMoment", "")
     if "storyMoment" in selection and (not isinstance(moment, str) or not 4 <= len(moment) <= 60
             or not any(moment in clause for page in page_texts for clause in page_clauses(page))):
-        return None
+        moment = ""
     summary = facts + (f"我们读到了“{moment}”这一幕。" if moment else "") + REPORT_SUGGESTIONS[suggestion_id]
     return (summary, suggestion_id) if len(summary) <= MAX_SUMMARY_CHARS else None
 
@@ -177,6 +177,7 @@ async def generate_report(session_id: int, facts: str, page_texts: list[str], ad
                 system_prompt=SUMMARY_PROMPT,
                 context_text=context,
                 user_input=facts,
+                json_object=True,
             ))
             if result.success:
                 text = (result.text or "").strip()

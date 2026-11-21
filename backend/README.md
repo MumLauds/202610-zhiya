@@ -54,23 +54,23 @@ X-Request-ID 响应头与响应体一致。/docs 可查看健康、账号、档�
 
 ## 模型环境变量
 
-用户于 2026-11-11 将文本改为 DeepSeek 官方服务，语音继续使用百炼。文本默认 deepseek-flash，默认发送 thinking.type=disabled；识别使用北京地域 Qwen-ASR，合成使用支持模型语速的 Qwen-Audio-3.1-TTS-Flash。新合成接口须填写本人业务空间地址，声线与语速配置见[交接说明](../docs/design/speech-preferences-handoff.md)。详见[文本与语音接入说明](bailian.md)。两个供应商的密钥分别配置；切换语音地域须同步核对密钥、端点与音频下载白名单。
+文本、语音与可选的 AI 插画使用阿里云百炼。文本默认 qwen3.6-plus，默认发送 enable_thinking=false；识别使用北京地域 Qwen-ASR，合成使用支持模型语速的 Qwen-Audio-3.1-TTS-Flash。新合成接口须填写本人业务空间地址，声线与语速配置见[交接说明](../docs/design/speech-preferences-handoff.md)。详见[文本与语音接入说明](bailian.md)。文本与语音／插画的密钥分别配置；切换语音地域须同步核对密钥、端点与音频下载白名单。
 
 | 环境变量 | 默认值 | 含义 |
 | --- | --- | --- |
-| MODEL_API_URL | https://api.deepseek.com/chat/completions | 完整 HTTPS 请求地址，包含 /chat/completions 路径；不自动拼接或去除空白。禁止 URL 用户名、密码、查询参数、fragment、空白和控制字符。 |
+| MODEL_API_URL | https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions | 完整 HTTPS 请求地址，包含 /chat/completions 路径；不自动拼接或去除空白。禁止 URL 用户名、密码、查询参数、fragment、空白和控制字符。 |
 | DASHSCOPE_API_KEY | 空 | 用于百炼语音和可选的 AI 插画；不得提交或写入日志。 |
-| MODEL_API_KEY | 空 | DeepSeek 官方文本凭证；空时禁用文本调用，绝不回退到百炼密钥。 |
-| MODEL_NAME | deepseek-flash | DeepSeek 实际支持的模型标识，必须能编码为 UTF-8。 |
+| MODEL_API_KEY | 空 | 有文本模型权限的百炼凭证；空时禁用文本调用，不读取语音凭证。 |
+| MODEL_NAME | qwen3.6-plus | 百炼实际支持的模型标识，必须能编码为 UTF-8。 |
 | MODEL_TIMEOUT_SECONDS | 20 | 请求及响应读取的总预算，必须大于 0 且不超过 20 秒。 |
-| MODEL_SEND_THINKING | true | 默认发送 `thinking.type=disabled`。兼容端点明确拒绝该字段时设为 `false`。 |
+| MODEL_SEND_THINKING | true | 默认发送 `enable_thinking=false`。兼容端点明确拒绝该字段时设为 `false`。 |
 | MODEL_MAX_TOKENS | 512 | 最大输出令牌数，整数 1～4096；供应商需支持 max_tokens。 |
 
 .env 由 Uvicorn 的 --env-file 或本地连通性脚本加载，已有进程环境变量优先；Settings.from_env 本身只读取进程环境。仓库已有规则忽略 .env，保留 .env.example。配置值不出现在健康检查或 OpenAPI 中。此适配器关闭环境代理读取，避免无意将凭证交给本机代理；如运行环境必须经代理，应另行明确配置与信任边界。
 
 ## 工坊 AI 插画（可选）
 
-工坊的 AI 插画默认使用 `qwen-image-2.1-turbo`。当 `IMAGE_API_URL` 为空时，自动复用 `TTS_API_URL` 中的百炼官方工作空间域名及 `DASHSCOPE_API_KEY`。使用独立工作空间时，在后端环境中填写完整的 HTTPS 文生图同步 `IMAGE_API_URL`，并确认密钥有该空间的模型调用权限。缺少有效工作空间或密钥时仍可用授权模板。需要关闭 AI 插画时显式设置 `IMAGE_MODEL=`。[示例配置](.env.example) · [百炼文生图同步 API](https://help.aliyun.com/en/model-studio/qwen-image-generation-and-editing-api-reference)
+工坊的 AI 插画默认使用 `qwen-image-3.0-pro`。当 `IMAGE_API_URL` 为空时，自动复用 `TTS_API_URL` 中的百炼官方工作空间域名及 `DASHSCOPE_API_KEY`。使用独立工作空间时，在后端环境中填写完整的 HTTPS 文生图同步 `IMAGE_API_URL`，并确认密钥有该空间的模型调用权限。缺少有效工作空间或密钥时仍可用授权模板。需要关闭 AI 插画时显式设置 `IMAGE_MODEL=`。[示例配置](.env.example) · [百炼文生图同步 API](https://help.aliyun.com/en/model-studio/qwen-image-generation-and-editing-api-reference)
 
 家长在工坊勾选「使用 AI 生成专属插画」才会调用文生图。每个新增页调用一次，调用受百炼额度和计费约束。续写沿用已读页的冻结配图。生成结果保存在数据库同卷的媒体存储，只有本人家长可在审核前预览。请逐页核对画面后再审核，生成失败可在工坊取消该选项并改用模板。
 
@@ -94,7 +94,7 @@ input_text 去除首尾空白后为 1～200 字符，与契约中的用户文本
 | Settings.model_name | 请求 model |
 | system_prompt / input_text | 请求 messages 中 system / user 消息的 content |
 | Settings.model_max_tokens | 请求 max_tokens；stream 固定为 false |
-| Settings.model_send_thinking | 默认为 true 时发送 `thinking.type=disabled`，设为 false 时省略该字段。 |
+| Settings.model_send_thinking | 默认为 true 时发送 `enable_thinking=false`，设为 false 时省略该字段。 |
 | 响应 choices[0].message.content | 校验后作为字符串返回；本地脚本使用知芽 camelCase 字段 outputText，不透传供应商完整对象 |
 
 适配器仅返回完整的 assistant 文本，不创建业务事件、不生成知识引用、不执行工具。调用方仍需完成领域结果校验和安全回退，写入最终事实记录后才向用户展示。校验 finish_reason、文本结构或供应商 refusal 并不能证明内容适龄或安全。
@@ -190,6 +190,6 @@ API-017 的回归使用已开始的会话、临时 SQLite 和模拟模型。从�
 
 ## 设计与实现参考
 
-采用 [FastAPI lifespan](https://fastapi.tiangolo.com/advanced/events/) 管理客户端生命周期；使用 [HTTPX transport](https://www.python-httpx.org/advanced/transports/) 显式关闭重试并进行离线模拟。HTTPX 的[超时说明](https://www.python-httpx.org/advanced/timeouts/)描述的是各传输阶段，因此另外设置总期限。文本请求/响应使用 [DeepSeek Chat Completions 协议](https://api-docs.deepseek.com/api/create-chat-completion/)，语音继续使用百炼协议。
+采用 [FastAPI lifespan](https://fastapi.tiangolo.com/advanced/events/) 管理客户端生命周期；使用 [HTTPX transport](https://www.python-httpx.org/advanced/transports/) 显式关闭重试并进行离线模拟。HTTPX 的[超时说明](https://www.python-httpx.org/advanced/timeouts/)描述的是各传输阶段，因此另外设置总期限。文本请求/响应使用 [百炼 Chat Completions 协议](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)。
 
 旧实验仅用于比较环境配置和错误分类做法。本轮没有移入其业务工程、部署配置、真实凭证、自动重试或较长超时规则，也不将旧实验的验证记录算作知芽成果。

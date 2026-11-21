@@ -9,7 +9,7 @@ import httpx
 
 
 DASHSCOPE_CHAT_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
+DASHSCOPE_TEXT_MODEL = "qwen3.6-plus"
 
 
 def validate_url(value: str, name: str) -> None:
@@ -46,9 +46,9 @@ def validate_text(value: str, name: str) -> None:
 
 @dataclass(frozen=True)
 class Settings:
-    model_api_url: str = field(default=DEEPSEEK_CHAT_URL, repr=False)
+    model_api_url: str = field(default=DASHSCOPE_CHAT_URL, repr=False)
     model_api_key: str = field(default="", repr=False)
-    model_name: str = "deepseek-flash"
+    model_name: str = DASHSCOPE_TEXT_MODEL
     model_timeout_seconds: float = 20.0
     model_max_tokens: int = 512
     model_send_thinking: bool = True
@@ -73,9 +73,9 @@ class Settings:
         if send_thinking not in ("true", "false"):
             raise ValueError("MODEL_SEND_THINKING must be true or false")
         return cls(
-            model_api_url=os.getenv("MODEL_API_URL", DEEPSEEK_CHAT_URL),
+            model_api_url=os.getenv("MODEL_API_URL", DASHSCOPE_CHAT_URL),
             model_api_key=os.getenv("MODEL_API_KEY", ""),
-            model_name=os.getenv("MODEL_NAME", "deepseek-flash").strip(),
+            model_name=os.getenv("MODEL_NAME", DASHSCOPE_TEXT_MODEL).strip(),
             model_timeout_seconds=timeout,
             model_max_tokens=max_tokens,
             model_send_thinking=send_thinking == "true",

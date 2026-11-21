@@ -25,7 +25,7 @@
 ## 技术与部署
 
 - **应用**　桌面端和移动端使用 Vue 3、Vite；FastAPI 提供账号、档案、绘本、阅读会话和受控媒体接口，业务数据保存在 SQLite 中。[前端说明](frontend/README.md) · [后端说明](backend/README.md)
-- **模型与语音**　阅读引导结合领域知识检索与 DeepSeek 文本模型，语音识别和合成使用阿里云百炼。两套服务分别配置密钥。供应商短句实测和各轮联调的依赖配置记录在相应测试文档中。[供应商联调记录](docs/testing/live-provider-checks.md) · [系统联调记录](docs/integration.md)
+- **模型与语音**　阅读引导、小结和故事创作等文本能力使用阿里云百炼千问。语音识别、合成与可选的 AI 插画也使用百炼，文本与语音／插画凭证独立配置。供应商短句实测和各轮联调的依赖配置记录在相应测试文档中。[供应商联调记录](docs/testing/live-provider-checks.md) · [系统联调记录](docs/integration.md)
 - **自动部署**　面向 `main` 的 PR 运行测试和公开版构建。合并后，香港 ECS 定时检查已通过验证的主线提交，备份 SQLite、切换应用镜像并生成回执。GitHub Actions 从公网核对版本、健康接口和匿名后台访问权限。[部署与恢复说明](infra/hk/README.md) · [工作流](.github/workflows/deploy-hk.yml)
 
 ## 本地启动

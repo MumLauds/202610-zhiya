@@ -73,7 +73,7 @@ docker compose -f infra/compose.yaml down
 
 ## 配置与边界
 
-文本已选择 DeepSeek 官方服务（deepseek-flash），`MODEL_API_KEY` 仅用于文本；语音保留百炼北京地域，`DASHSCOPE_API_KEY` 仅用于语音。两者默认空、互不回退，通过运行环境注入，密钥不得提交仓库或写进镜像。对应密钥为空时不调用该供应商；文本与语音字段见 backend/.env.example。Windows 本机及最新容器均已通过真实短句联调，见[本机记录](../docs/testing/live-provider-checks.md)和[容器记录](../docs/testing/docker-checks.md)。构建上下文采用 Dockerfile 专用忽略文件，仅放行后端源码、联调命令、锁定依赖、数据库脚本、种子 JSON 及 `knowledge-base_v2.5/图片` 内的图片素材（API-024 读取种子封面所需，随镜像打包到 `/app/knowledge-base_v2.5/图片`；可用 `ZHIYA_MEDIA_ROOT` 改为外部只读目录，映射中的 `knowledge-base_v2.5/图片/` 前缀在两种配置下等价），排除环境文件、密钥、虚拟环境和 Git。
+文本默认使用百炼 qwen3.6-plus，凭证为 MODEL_API_KEY。语音与可选的 AI 插画使用百炼北京地域，凭证为 DASHSCOPE_API_KEY。已部署站点需要更新供应商环境文件中的旧文本地址、模型和密钥。两者默认空、互不回退，通过运行环境注入，密钥不得提交仓库或写进镜像。对应密钥为空时不调用该供应商；文本与语音字段见 backend/.env.example。Windows 本机及最新容器均已通过真实短句联调，见[本机记录](../docs/testing/live-provider-checks.md)和[容器记录](../docs/testing/docker-checks.md)。构建上下文采用 Dockerfile 专用忽略文件，仅放行后端源码、联调命令、锁定依赖、数据库脚本、种子 JSON 及 `knowledge-base_v2.5/图片` 内的图片素材（API-024 读取种子封面所需，随镜像打包到 `/app/knowledge-base_v2.5/图片`；可用 `ZHIYA_MEDIA_ROOT` 改为外部只读目录，映射中的 `knowledge-base_v2.5/图片/` 前缀在两种配置下等价），排除环境文件、密钥、虚拟环境和 Git。
 
 合成当前使用 qwen-audio-3.1-tts-flash，需设置包含本人北京业务空间标识的 TTS_API_URL；未填时只禁用合成。默认声线 wenhuaiqing_v3.1。配置迁移、可选声线和 SLOW/NORMAL/FAST 合成参数见[交接说明](../docs/design/speech-preferences-handoff.md)。Compose 显式空 TTS_MODEL / TTS_VOICE 保持禁用，不用默认值补回。
 

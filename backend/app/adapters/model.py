@@ -15,6 +15,8 @@ class ModelAdapter:
             kwargs = {}
             if request.timeout_seconds is not None:
                 kwargs["timeout_seconds"] = request.timeout_seconds
+            if request.json_object:
+                kwargs["json_object"] = True
             text = await self._gateway.generate(
                 input_text=request.user_input,
                 system_prompt=request.system_prompt,

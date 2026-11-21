@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import InteractionCard from './InteractionCard.vue'
 import PageAudioPlayer from './PageAudioPlayer.vue'
 import ReadingText from './ReadingText.vue'
@@ -62,6 +62,7 @@ const answerAudio = useAudioController((url) => {
 })
 let pageAudioExpiryTimer
 let pageAudioRequest = null
+let playWhenPrepared = false
 let answerAudioExpiresAt = NaN
 let answerAudioRequest = null
 let requestGeneration = 0
@@ -116,6 +117,8 @@ watch(currentPageNumber, () => {
 watch(() => session.state.events, () => restorePageQuestion())
 const activePageKey = computed(() => props.mode === 'live' && !childAuthorizationExpired.value && !reviewing.value && !session.state.syncRequired
   && session.state.session?.status === 'IN_PROGRESS' ? `${sessionId.value}:${currentPageNumber.value}` : '')
+const textCanPlay = computed(() => !navigationPending.value && !showAnswerDialog.value
+  && (activePageKey.value || (props.mode === 'demo' && pageAudioSrc.value)))
 watch(activePageKey, (key) => {
   if (key && !pageAudioSrc.value) void loadPageAudio(true)
   else if (!key) resetAudio()
@@ -166,6 +169,7 @@ function stopAnswerAudio() {
 }
 
 function cancelPageAudioRequest() {
+  playWhenPrepared = false
   pageAudioRequest?.abort()
   pageAudioRequest = null
   pageAudioLoading.value = false
@@ -373,16 +377,34 @@ async function loadPageAudio(silent = false) {
       if (remaining <= 0) discardPageAudio(audioUrl)
       else pageAudioExpiryTimer = setTimeout(() => discardPageAudio(audioUrl), remaining)
     }
+    if (playWhenPrepared && pageAudioSrc.value) {
+      playWhenPrepared = false
+      await nextTick()
+      if (!controller.signal.aborted && page === currentPageNumber.value && textCanPlay.value) {
+        await pagePlayer.value?.toggle()
+      }
+    }
   } catch (error) {
-    if (!silent && !controller.signal.aborted && page === currentPageNumber.value) {
+    if ((!silent || playWhenPrepared) && !controller.signal.aborted && page === currentPageNumber.value) {
       answerAudioNotice.value = error?.message ?? '页面朗读音频准备失败'
     }
   } finally {
     if (pageAudioRequest === controller) {
+      playWhenPrepared = false
       pageAudioRequest = null
       pageAudioLoading.value = false
     }
   }
+}
+
+function playPageText() {
+  if (!textCanPlay.value || checkChildAuthorization()) return
+  if (pageAudioSrc.value) {
+    void pagePlayer.value?.toggle()
+    return
+  }
+  playWhenPrepared = true
+  void loadPageAudio()
 }
 
 function discardPageAudio(url) {
@@ -502,7 +524,13 @@ function exitReading() {
                 {{ showPinyin ? '隐藏拼音' : '显示拼音' }}
               </button>
             </div>
-            <ReadingText :tokens="currentPage.tokens" :show-pinyin="showPinyin" :highlight-index="highlightIndex" />
+            <ReadingText
+              :tokens="currentPage.tokens"
+              :show-pinyin="showPinyin"
+              :highlight-index="highlightIndex"
+              :playable="Boolean(textCanPlay)"
+              @play="playPageText"
+            />
             <button
               v-if="mode === 'live' && !reviewing && !pageAudioSrc"
               class="button button-ghost button-small page-audio-request"

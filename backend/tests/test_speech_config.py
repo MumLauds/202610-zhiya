@@ -29,8 +29,8 @@ class EnvironmentSettingsTests(unittest.TestCase):
     def test_defaults_and_separate_provider_keys(self):
         with patch.dict("os.environ", {}, clear=True):
             settings = Settings.from_env()
-            self.assertEqual(settings.model_api_url, "https://api.deepseek.com/chat/completions")
-            self.assertEqual(settings.model_name, "deepseek-flash")
+            self.assertEqual(settings.model_api_url, DASHSCOPE_CHAT_URL)
+            self.assertEqual(settings.model_name, "qwen3.6-plus")
             self.assertEqual(SpeechSettings.from_env().asr_api_url, DASHSCOPE_CHAT_URL)
             self.assertFalse(settings.model_configured)
             self.assertFalse(SpeechSettings.from_env().asr_configured)

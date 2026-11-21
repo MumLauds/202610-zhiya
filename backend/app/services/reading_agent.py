@@ -189,7 +189,7 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
     knowledge = retrieve_knowledge(KnowledgeQuery(age_band=age_band, topics=topics,
                                                   task_type="GUIDANCE", query_text=page_text))
     selected = select_knowledge_items(knowledge.items, 5)
-    if not selected:
+    if not selected and (child_mode or not any(page_clauses(page_text))):
         if grounded_followup:
             return AgentResult(status="GENERATED", outputText=grounded_followup, strategyType=strategy)
         question = "你喜欢这一页吗？" if child_mode else "这个故事里，你最喜欢谁呀？"
@@ -228,10 +228,11 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
             raise ServiceError("DEPENDENCY_UNAVAILABLE", "文本模型未能生成引导问题")
         question = "你想再看看这一页吗？" if child_mode else "我们先看看画面上有什么吧？"
         return AgentResult(status="FALLBACK", strategyType="TIMEOUT_FALLBACK", outputText=question)
-    number, separator, echoed = result.text.strip().partition(". ")
+    model_text = unicodedata.normalize("NFKC", result.text.strip())
+    number, separator, echoed = model_text.partition(". ")
     if number.isdecimal():
-        question = choices.get(unicodedata.normalize("NFKC", number))
-        if separator and question != echoed:
+        question = choices.get(number)
+        if separator and question and unicodedata.normalize("NFKC", question) != echoed:
             question = None
     elif not child_mode and feedback != "NOT_UNDERSTOOD" and (composed := CONTEXT_QUESTION.fullmatch(result.text.strip())):
         earlier, current, _ = composed.groups()

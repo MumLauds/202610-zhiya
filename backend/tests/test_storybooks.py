@@ -499,7 +499,6 @@ def test_report_without_readable_text_has_no_activity(bookshelf, monkeypatch, su
     "孩子已经掌握了故事中的所有词语。",
     "建议用体罚帮助孩子集中注意力。",
     '{"suggestionId":"TALK_ABOUT_STORY","summary":"阅读能力低于同龄儿童"}',
-    '{"suggestionId":"DRAW_PICTURE","storyMoment":"没有读过的小兔到火车站"}',
     '{"suggestionId":"正确回答十道问题"}',
     '{"suggestionId":["TALK_ABOUT_STORY"]}',
     "[]", "null", "", "文" * 501,
@@ -530,6 +529,19 @@ def test_finish_rejects_unverified_model_content(bookshelf, monkeypatch, model_t
                         json={**body, "clientEventId": "again", "expectedRevision": 2})
     assert repeat.json()["data"]["report"] == expected
     assert len(adapter.calls) == 1
+
+
+def test_unverified_optional_story_moment_keeps_the_safe_suggestion():
+    from app.services.reading_reports import validated_summary
+
+    summary, suggestion = validated_summary(
+        '{"suggestionId":"DRAW_PICTURE","storyMoment":"没有读过的小兔到火车站"}',
+        "本次共读阅读了第 1 页。",
+        ["小兔打开了雨伞。"],
+    )
+    assert suggestion == "DRAW_PICTURE"
+    assert "可以请孩子画一画" in summary
+    assert "火车站" not in summary
 
 
 def test_finish_model_failure_keeps_fact_summary(bookshelf, monkeypatch):

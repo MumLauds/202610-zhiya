@@ -8,9 +8,9 @@ services:
     environment:
       ZHIYA_DB_PATH: /var/lib/zhiya/zhiya.sqlite3
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
-      MODEL_API_URL: ${MODEL_API_URL:-https://api.deepseek.com/chat/completions}
+      MODEL_API_URL: ${MODEL_API_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}
       MODEL_API_KEY: ${MODEL_API_KEY:-}
-      MODEL_NAME: ${MODEL_NAME:-deepseek-flash}
+      MODEL_NAME: ${MODEL_NAME:-qwen3.6-plus}
       MODEL_TIMEOUT_SECONDS: ${MODEL_TIMEOUT_SECONDS:-20}
       MODEL_MAX_TOKENS: ${MODEL_MAX_TOKENS:-512}
       MODEL_SEND_THINKING: ${MODEL_SEND_THINKING:-true}
@@ -21,7 +21,7 @@ services:
       TTS_VOICE: ${TTS_VOICE-wenhuaiqing_v3.1}
       VOICE_TIMEOUT_SECONDS: ${VOICE_TIMEOUT_SECONDS:-20}
       IMAGE_API_URL: ${IMAGE_API_URL:-}
-      IMAGE_MODEL: ${IMAGE_MODEL-qwen-image-2.1-turbo}
+      IMAGE_MODEL: ${IMAGE_MODEL-qwen-image-3.0-pro}
     volumes:
       - sqlite-data:/var/lib/zhiya
     healthcheck:

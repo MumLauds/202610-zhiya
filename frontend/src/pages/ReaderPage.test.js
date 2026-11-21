@@ -818,9 +818,13 @@ describe('reader state and visual progress', () => {
     expect(wrapper.findComponent({ name: 'FlipBook' }).props('startPage')).toBe(1)
   })
 
-  it('restores the widget after rejection instead of only changing the page label', async () => {
-    render()
+  it('keeps the visual turn during confirmation and restores the widget on rejection', async () => {
+    const pending = deferred()
+    render({ recordPage: vi.fn().mockReturnValue(pending.promise) })
+    showPage.mockClear()
     wrapper.findComponent({ name: 'FlipBook' }).vm.$emit('page-change', { storyIndex: 1 })
+    expect(showPage).not.toHaveBeenCalled()
+    pending.resolve(false)
     await flushPromises()
     expect(showPage).toHaveBeenLastCalledWith(0)
     expect(wrapper.findComponent({ name: 'FlipBook' }).props('startPage')).toBe(0)

@@ -89,7 +89,7 @@ assert os.getuid() == 10001
 assert not list(Path('/app').rglob('.env*'))
 s, v = Settings.from_env(), SpeechSettings.from_env()
 assert not s.model_configured and not v.asr_configured and not v.tts_configured
-assert s.model_name == 'deepseek-flash' and v.tts_model == 'qwen-audio-3.1-tts-flash'
+assert s.model_name == 'qwen3.6-plus' and v.tts_model == 'qwen-audio-3.1-tts-flash'
 options = subprocess.run(['python', 'backend/smoke_voice.py', 'options'], capture_output=True,
                          text=True, check=True, env={**os.environ, 'VOICE_TIMEOUT_SECONDS': 'invalid'})
 catalog = json.loads(options.stdout)['data']

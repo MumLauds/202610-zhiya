@@ -28,6 +28,7 @@ class ModelGenerateRequest(BaseModel):
     context_text: str
     user_input: str
     timeout_seconds: Optional[float] = None
+    json_object: bool = False
 
 class ModelGenerateResult(BaseModel):
     success: bool

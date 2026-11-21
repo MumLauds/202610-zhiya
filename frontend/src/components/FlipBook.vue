@@ -10,9 +10,10 @@ const props = defineProps({
   visitPages: { type: Array, default: null },
   startPage: { type: Number, default: 0 },
   disabled: { type: Boolean, default: false },
+  canNarrate: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['page-change', 'error'])
+const emit = defineEmits(['page-change', 'narrate', 'error'])
 const MAX_SPREADS_WITH_DOTS = 12
 const SPREADS_PER_WINDOW = 5
 const windowStart = computed(() => Math.max(0, Math.min(
@@ -31,12 +32,25 @@ const currentImageSettled = computed(() => !currentImage.value ||
 let book = null
 let mountedFrames = []
 let syncing = false
+let animatedTurn = false
 
 function showPage(storyIndex) {
   const localIndex = storyIndex - windowStart.value
   if (localIndex < 0 || localIndex >= visiblePages.value.length) return
   syncing = true
   try { book?.turnTo(localIndex * 2) } finally { syncing = false }
+}
+
+function flipToPage(storyIndex) {
+  const localIndex = storyIndex - windowStart.value
+  if (!book?.flipTo || localIndex < 0 || localIndex >= visiblePages.value.length) return false
+  if (animatedTurn) return true
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return false
+  animatedTurn = true
+  void book.flipTo(localIndex * 2).catch(() => {
+    emit('error', '翻页暂时失败，请重试')
+  }).finally(() => { animatedTurn = false })
+  return true
 }
 
 watch([() => props.startPage, visiblePages], () => {
@@ -101,7 +115,7 @@ function mountBook() {
 
 onMounted(mountBook)
 // Keep overlapping frames mounted and tell the widget when the window's elements change.
-watch([() => props.startPage, visiblePages], ([index]) => {
+watch([() => props.startPage, visiblePages], ([index], [previousIndex]) => {
   if (!book) {
     mountBook()
     return
@@ -113,7 +127,9 @@ watch([() => props.startPage, visiblePages], ([index]) => {
     mountedFrames = []
     return
   }
-  if (frames.length !== mountedFrames.length || frames.some((frame, offset) => frame !== mountedFrames[offset])) {
+  const framesChanged = frames.length !== mountedFrames.length
+    || frames.some((frame, offset) => frame !== mountedFrames[offset])
+  if (framesChanged) {
     syncing = true
     try {
       book.setPages(frames)
@@ -122,7 +138,7 @@ watch([() => props.startPage, visiblePages], ([index]) => {
       syncing = false
     }
   }
-  showPage(index)
+  if (framesChanged || index !== previousIndex) showPage(index)
 }, { flush: 'post' })
 
 onBeforeUnmount(() => {
@@ -132,6 +148,7 @@ onBeforeUnmount(() => {
 
 defineExpose({
   showPage,
+  flipToPage,
 })
 </script>
 
@@ -147,6 +164,7 @@ defineExpose({
           :key="page.imageRef"
           :src="mediaUrl(page.imageRef, 'reading')"
           :alt="`${title} · 第 ${page.pageNumber} 页`"
+          :class="{ 'flip-image-ready': settledImages.get(windowStart + index) === page.imageRef }"
           :fetchpriority="windowStart + index === startPage ? 'high' : 'low'"
           draggable="false"
           @load="settleImage(windowStart + index, page.imageRef)"
@@ -156,7 +174,16 @@ defineExpose({
       <section class="flip-page flip-page--text" data-density="soft" :aria-label="`第 ${page.pageNumber} 页文字`">
         <div class="flip-page-inner flip-page-inner--text">
           <p class="eyebrow">{{ title }} · 第 {{ page.pageNumber }} 页</p>
-          <blockquote class="page-quote">{{ page.text }}</blockquote>
+          <blockquote class="page-quote">
+            <button
+              v-if="canNarrate && windowStart + index === startPage"
+              type="button"
+              class="page-narration-text"
+              title="点击朗读本页"
+              @click.stop="emit('narrate')"
+            >{{ page.text }}</button>
+            <template v-else>{{ page.text }}</template>
+          </blockquote>
           <div class="page-number">
             <span>第 {{ page.pageNumber }} 页 · 共 {{ pageCount ?? pages.length }} 页</span>
             <template v-if="!visitPages || windowStart + index < visitPages.length">

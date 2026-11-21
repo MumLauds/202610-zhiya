@@ -12,7 +12,7 @@ const props = defineProps({
 const emit = defineEmits(['highlight', 'media-error', 'before-play'])
 
 const audio = useAudioController((url) => emit('media-error', url))
-defineExpose({ stop: audio.stop })
+defineExpose({ stop: audio.stop, toggle })
 const highlightIndex = computed(() => {
   if (!audio.progress.value || !props.tokens.length) return -1
   return Math.min(props.tokens.length - 1, Math.floor(audio.progress.value * props.tokens.length))

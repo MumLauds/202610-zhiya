@@ -33,7 +33,7 @@ class ImageSettings:
 def image_generation_settings() -> ImageSettings | None:
     endpoint = os.getenv("IMAGE_API_URL", "").strip()
     api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
-    model = os.getenv("IMAGE_MODEL", "qwen-image-2.1-turbo").strip()
+    model = os.getenv("IMAGE_MODEL", "qwen-image-3.0-pro").strip()
     if api_key and model and not endpoint:
         try:
             speech = urlsplit(os.getenv("TTS_API_URL", ""))

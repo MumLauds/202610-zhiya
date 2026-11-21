@@ -181,8 +181,7 @@ async function onPageChange({ storyIndex }) {
     flipBook.value?.showPage(pageIndex.value)
     return
   }
-  // Keep the widget and text on confirmed progress while the write is pending.
-  flipBook.value?.showPage(pageIndex.value)
+  // The completed fold stays visible while the server confirms the page.
   turnBusy.value = true
   try {
     await props.recordPage(target.pageNumber)
@@ -192,6 +191,10 @@ async function onPageChange({ storyIndex }) {
     showIndex(progressIndex.value)
     turnBusy.value = false
   }
+}
+
+function turnPage(index) {
+  if (!flipBook.value?.flipToPage?.(index)) return onPageChange({ storyIndex: index })
 }
 
 async function finishReading() {
@@ -613,21 +616,23 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
             :title="book.title"
             :start-page="pageIndex"
             :disabled="turnBusy || interactionBusy || syncRequired"
+            :can-narrate="mediaAllowed"
             @page-change="onPageChange"
+            @narrate="playNarration()"
             @error="audioMessage = $event"
           />
           <p class="flip-hint">拖动书页边缘，或点击外侧翻页</p>
         </div>
-        <nav class="reader-dock" aria-label="阅读控制">
-          <button class="dock-button" type="button" :disabled="pageIndex === 0 || turnBusy || interactionBusy || syncRequired" @click="onPageChange({ storyIndex: pageIndex - 1 })"><span class="dock-glyph">‹</span>上一页</button>
-          <button class="dock-button" type="button" :disabled="!mediaAllowed" @click="playNarration()"><span class="dock-glyph">{{ audioStatus === 'playing' ? 'Ⅱ' : '▶' }}</span>{{ audioStatus === 'playing' ? '暂停朗读' : audioStatus === 'loading' ? '取消朗读' : '朗读' }}</button>
-          <button class="dock-button primary" type="button" :disabled="!canAnswer" @click="openVoice()"><span class="dock-glyph">芽</span>语音识别</button>
-          <button v-if="showDockFinish" class="dock-button" type="button" :disabled="!canFinish" @click="finishReading"><span class="dock-glyph">✓</span>完成</button>
-          <button v-else class="dock-button" type="button" :disabled="turnBusy || interactionBusy || syncRequired || !readerPages[pageIndex + 1] || (!reviewingHistory && session.status !== 'IN_PROGRESS')" @click="onPageChange({ storyIndex: pageIndex + 1 })"><span class="dock-glyph">›</span>下一页</button>
-        </nav>
       </section>
 
       <aside class="reader-side">
+        <nav class="reader-dock" aria-label="阅读控制">
+          <button class="dock-button" type="button" :disabled="pageIndex === 0 || turnBusy || interactionBusy || syncRequired" @click="turnPage(pageIndex - 1)"><span class="dock-glyph">‹</span>上一页</button>
+          <button class="dock-button" type="button" :disabled="!mediaAllowed" @click="playNarration()"><span class="dock-glyph">{{ audioStatus === 'playing' ? 'Ⅱ' : '▶' }}</span>{{ audioStatus === 'playing' ? '暂停朗读' : audioStatus === 'loading' ? '取消朗读' : '朗读' }}</button>
+          <button class="dock-button primary" type="button" :disabled="!canAnswer" @click="openVoice()"><span class="dock-glyph">芽</span>语音识别</button>
+          <button v-if="showDockFinish" class="dock-button" type="button" :disabled="!canFinish" @click="finishReading"><span class="dock-glyph">✓</span>完成</button>
+          <button v-else class="dock-button" type="button" :disabled="turnBusy || interactionBusy || syncRequired || !readerPages[pageIndex + 1] || (!reviewingHistory && session.status !== 'IN_PROGRESS')" @click="turnPage(pageIndex + 1)"><span class="dock-glyph">›</span>下一页</button>
+        </nav>
         <div v-if="audioMessage" class="side-card audio">
           <div class="audio-line"><span>{{ audioMessage }}</span></div>
         </div>
