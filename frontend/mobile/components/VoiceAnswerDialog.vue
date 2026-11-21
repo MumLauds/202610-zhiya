@@ -1,4 +1,5 @@
 <script setup>
+import { vModalFocus } from '../../src/components/modalFocus'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { useVoiceRecorder } from '../composables/useVoiceRecorder'
 
@@ -113,7 +114,7 @@ function formatDuration(seconds) {
 
 <template>
   <div class="dialog-backdrop" role="presentation" @click.self="close">
-    <section class="answer-dialog" role="dialog" aria-modal="true" aria-labelledby="answer-title">
+    <section v-modal-focus="close" class="answer-dialog" role="dialog" aria-modal="true" aria-labelledby="answer-title">
       <header class="dialog-header">
         <div>
           <p class="eyebrow">G08 语音转写</p>

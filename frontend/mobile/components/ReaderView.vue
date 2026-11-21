@@ -7,6 +7,7 @@ import ReadingSummary from './ReadingSummary.vue'
 import VoiceAnswerDialog from './VoiceAnswerDialog.vue'
 import { useAudioController } from '../composables/useAudioController'
 import { useReadingSession } from '../composables/useReadingSession'
+import { approvedBranchesAt } from '../../src/data/readingBranches'
 
 const props = defineProps({
   book: { type: Object, required: true },
@@ -18,7 +19,7 @@ const props = defineProps({
   initialSessionId: { type: Number, default: null },
   initialSnapshot: { type: Object, default: null },
 })
-const emit = defineEmits(['exit', 'finished'])
+const emit = defineEmits(['exit', 'finished', 'session'])
 
 const session = useReadingSession({
   api: props.sessionApi,
@@ -50,6 +51,7 @@ const answerAudioLoading = ref(false)
 const answerAudioNotice = ref('')
 const pendingFeedback = ref(null)
 const foregroundBusy = ref(false)
+const childAuthorizationExpired = ref(false)
 let autoQuestionPage = ''
 let answerAudioEventId = null
 const answerAudio = useAudioController((url) => {
@@ -75,12 +77,14 @@ const progressText = computed(() => `${currentPageIndex.value + 1} / ${props.boo
 const progressPercent = computed(() => ((currentPageIndex.value + 1) / props.book.pages.length) * 100)
 const visited = computed(() => [...new Set(session.state.session?.visitedPageNumbers ?? [])])
 const reviewing = computed(() => currentPageNumber.value !== session.state.session?.currentPage)
+const branchChoices = computed(() => props.mode === 'live' && !reviewing.value
+  ? approvedBranchesAt(props.book.branches, currentPageNumber.value) : [])
 const nextPageNumber = computed(() => {
   if (reviewing.value) return visited.value[visited.value.indexOf(currentPageNumber.value) + 1]
   if (props.mode === 'live') return currentPage.value?.defaultNextPageNumber
   return props.book.pages[currentPageIndex.value + 1]?.page
 })
-const isLastPage = computed(() => !reviewing.value && nextPageNumber.value == null)
+const isLastPage = computed(() => !reviewing.value && !branchChoices.value.length && nextPageNumber.value == null)
 const isFinished = computed(() => session.state.session?.status === 'FINISHED')
 const pending = computed(() => session.state.pending || Boolean(pendingFeedback.value) || session.loading.value)
 const navigationPending = computed(() => foregroundBusy.value || (pending.value && pendingFeedback.value !== 'INITIAL'))
@@ -88,16 +92,29 @@ const canSkip = computed(() => !session.state.syncRequired && (pendingFeedback.v
   (!pending.value && interactionResult.value?.strategyType !== 'SKIP' && interactionResult.value?.feedback !== 'SKIPPED')))
 const revision = computed(() => session.state.session?.revision ?? 0)
 const sessionId = computed(() => session.state.session?.readingSessionId ?? null)
+const childDeadline = computed(() => {
+  const current = session.state.session
+  if (props.mode !== 'live' || current?.mode !== 'CHILD_SOLO') return null
+  const deadline = Date.parse(current.expiresAt)
+  return Number.isFinite(deadline) ? deadline : null
+})
+watch(childDeadline, (deadline, _previous, onCleanup) => {
+  childAuthorizationExpired.value = false
+  if (deadline === null || checkChildAuthorization()) return
+  const timer = setTimeout(checkChildAuthorization, deadline - Date.now())
+  onCleanup(() => clearTimeout(timer))
+}, { immediate: true, flush: 'sync' })
+watch(sessionId, (id) => { if (props.mode === 'live' && id) emit('session', id) })
 const errorMessage = computed(() => session.error.value?.message ?? session.error.value ?? '')
 const creationUnconfirmed = computed(() => !props.initialSessionId && !session.state.session && session.error.value?.code === 'REQUEST_OUTCOME_UNKNOWN')
-const serverErrorHint = computed(() => (session.error.value?.status ?? 0) >= 500 ? '请确认 127.0.0.1:8000 后端已启动、账号已登录且 Cookie 有效；若后端正在运行，请查看服务端日志。' : '')
+const serverErrorHint = computed(() => (session.error.value?.status ?? 0) >= 500 ? '阅读服务暂不可用，请稍后重试。' : '')
 
 watch(currentPageNumber, () => {
   resetInteractionForPage()
   restorePageQuestion()
 })
 watch(() => session.state.events, () => restorePageQuestion())
-const activePageKey = computed(() => props.mode === 'live' && !reviewing.value && !session.state.syncRequired
+const activePageKey = computed(() => props.mode === 'live' && !childAuthorizationExpired.value && !reviewing.value && !session.state.syncRequired
   && session.state.session?.status === 'IN_PROGRESS' ? `${sessionId.value}:${currentPageNumber.value}` : '')
 watch(activePageKey, (key) => {
   if (key && !pageAudioSrc.value) void loadPageAudio(true)
@@ -165,6 +182,17 @@ function resetAudio() {
   pageAudioSrc.value = props.mode === 'demo' ? (currentPage.value?.audio ?? '') : ''
 }
 
+function checkChildAuthorization() {
+  if (childDeadline.value === null || Date.now() < childDeadline.value) return false
+  if (!childAuthorizationExpired.value) {
+    childAuthorizationExpired.value = true
+    pagePlayer.value?.stop()
+    resetAudio()
+    showAnswerDialog.value = false
+  }
+  return true
+}
+
 function resetInteractionForPage() {
   requestGeneration += 1
   resetAudio()
@@ -207,7 +235,7 @@ async function retryStart() {
 }
 
 async function goNext() {
-  if (navigationPending.value || !session.state.session) return
+  if (navigationPending.value || !session.state.session || branchChoices.value.length) return
   answerAudio.stop()
   if (isLastPage.value) {
     await finishReading()
@@ -225,6 +253,19 @@ async function goNext() {
     currentPageNumber.value = session.state.session.currentPage
   } catch {
     // Conflict recovery is reported through `session.notice`.
+  } finally {
+    foregroundBusy.value = false
+  }
+}
+
+async function chooseBranch(branchId) {
+  if (navigationPending.value || session.state.syncRequired || !branchChoices.value.some(branch => branch.branchId === branchId)) return
+  answerAudio.stop()
+  foregroundBusy.value = true
+  try {
+    await session.chooseBranch(branchId)
+  } catch {
+    // Keep the same session and show its authoritative progress or error.
   } finally {
     foregroundBusy.value = false
   }
@@ -310,7 +351,7 @@ async function askShortQuestion(text) {
 }
 
 async function loadPageAudio(silent = false) {
-  if (!activePageKey.value || pageAudioLoading.value || showAnswerDialog.value) return
+  if (checkChildAuthorization() || !activePageKey.value || pageAudioLoading.value || showAnswerDialog.value) return
   const page = currentPageNumber.value
   const controller = new AbortController()
   pageAudioRequest = controller
@@ -322,7 +363,7 @@ async function loadPageAudio(silent = false) {
       revision: revision.value,
       signal: controller.signal,
     })
-    if (controller.signal.aborted || page !== currentPageNumber.value) return
+    if (controller.signal.aborted || page !== currentPageNumber.value || checkChildAuthorization()) return
     const { audioUrl, expiresAt } = response.data
     pageAudioSrc.value = audioUrl
     answerAudioNotice.value = ''
@@ -352,7 +393,7 @@ function discardPageAudio(url) {
 }
 
 async function playAnswerAudio(result = interactionResult.value) {
-  if (showAnswerDialog.value || !result?.outputText || result.strategyType === 'SAFETY_BLOCK') return
+  if (checkChildAuthorization() || showAnswerDialog.value || !result?.outputText || result.strategyType === 'SAFETY_BLOCK') return
   answerAudioNotice.value = ''
   if (props.mode === 'demo') {
     answerAudioNotice.value = '演示模式没有回答音频；实机模式将在 G10 返回 interactionEventId 后请求 API-023。'
@@ -374,7 +415,8 @@ async function playAnswerAudio(result = interactionResult.value) {
   try {
     if (!answerAudioUrl.value || eventId !== answerAudioEventId || Date.now() >= answerAudioExpiresAt) {
       const response = await props.voiceApi.synthesizeInteraction({ interactionEventId: eventId, signal: controller.signal })
-      if (controller.signal.aborted || generation !== pageRequestGeneration || page !== currentPageNumber.value || !matches()) return
+      if (controller.signal.aborted || generation !== pageRequestGeneration || page !== currentPageNumber.value
+        || !matches() || checkChildAuthorization()) return
       answerAudioUrl.value = response.data.audioUrl
       answerAudioEventId = eventId
       answerAudioExpiresAt = Date.parse(response.data.expiresAt)
@@ -424,7 +466,11 @@ function exitReading() {
     </div>
 
     <main v-if="session.state.session" class="reader-content">
-      <section v-if="session.state.syncRequired" class="reader-error-card">
+      <section v-if="childAuthorizationExpired" class="reader-error-card">
+        <p role="alert">本次儿童阅读授权已到期，请交还家长。</p>
+        <button type="button" class="button button-ghost" @click="exitReading">返回</button>
+      </section>
+      <section v-else-if="session.state.syncRequired" class="reader-error-card">
         <p>上次操作的结果仍待核对。{{ errorMessage }}</p>
         <button type="button" class="button button-primary" :disabled="pending" @click="syncReading">重新核对进度</button>
         <p>若服务器尚未记录上次操作，将用同一事件编号重试。</p>
@@ -470,6 +516,7 @@ function exitReading() {
               ref="pagePlayer"
               :src="pageAudioSrc"
               :disabled="showAnswerDialog"
+              :check-expiry="checkChildAuthorization"
               :tokens="currentPage.tokens"
               :mode="mode"
               @media-error="discardPageAudio"
@@ -513,9 +560,14 @@ function exitReading() {
         <p v-if="session.notice.value" class="inline-notice">{{ session.notice.value }}</p>
         <p v-if="session.error.value" class="inline-error">{{ errorMessage }}</p>
 
+        <section v-if="branchChoices.length" class="interaction-card" aria-labelledby="mobile-branch-title">
+          <h2 id="mobile-branch-title">选择接下来的故事</h2>
+          <button v-for="branch in branchChoices" :key="branch.branchId" class="button button-soft" type="button"
+            :disabled="navigationPending || session.state.syncRequired" @click="chooseBranch(branch.branchId)">{{ branch.choiceLabel }}</button>
+        </section>
         <nav class="page-navigation" aria-label="翻页">
           <button class="button button-ghost" type="button" :disabled="navigationPending || visited.indexOf(currentPageNumber) <= 0" @click="goPrevious">上一页</button>
-          <button class="button button-primary" type="button" :disabled="navigationPending" @click="goNext">
+          <button v-if="!branchChoices.length" class="button button-primary" type="button" :disabled="navigationPending" @click="goNext">
             {{ navigationPending ? '同步中…' : (isLastPage ? '完成阅读' : '下一页 →') }}
           </button>
         </nav>

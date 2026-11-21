@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import App from './App.vue'
+import { parseMobileRoute } from '../src/data/mobileRoute'
 
 const state = ref('checking')
 async function checkSession() {
@@ -8,7 +9,10 @@ async function checkSession() {
   try {
     const response = await fetch('/api/v1/storybooks?pageSize=1', { cache: 'no-store' })
     if (response.status === 401) {
-      window.location.replace('/?entry=mobile#auth')
+      const route = parseMobileRoute(window.location.hash)
+      const params = new URLSearchParams({ entry: 'mobile' })
+      if (route.hash) params.set('mobileRoute', route.hash)
+      window.location.replace(`/?${params}#auth`)
       return
     }
     state.value = response.ok ? 'ready' : 'unavailable'

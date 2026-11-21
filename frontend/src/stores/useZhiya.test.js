@@ -1301,7 +1301,11 @@ describe('growth statistics', () => {
       first.at(-1), session({ readingSessionId: 10, storyVersionId: 99 }),
     ])
     await actions.loadSessions()
+    expect(reading.listReadingSessions.mock.calls).toEqual([[1, 50]])
+    expect(state.nextSessionsPage).toBe(2)
+    await actions.loadSessions({ append: true })
     expect(reading.listReadingSessions.mock.calls).toEqual([[1, 50], [2, 50]])
+    expect(state.nextSessionsPage).toBeNull()
     expect(totals.value).toEqual({ sessions: 51, read: 2, pages: 51 })
   })
 })

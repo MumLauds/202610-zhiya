@@ -36,13 +36,16 @@ describe('home featured book', () => {
 
       await wrapper.get('.shelf-arrow-hit.next').trigger('click')
       expect(wrapper.emitted('select')?.at(-1)).toEqual(['book-2'])
-      preference.matches = false
+      await wrapper.get('.home-rotation-toggle').trigger('click')
       await vi.advanceTimersByTimeAsync(3600)
       expect(title.text()).toBe('第二本')
+      preference.matches = false
+      await vi.advanceTimersByTimeAsync(3600)
+      expect(title.text()).toBe('第三本')
 
       preference.matches = true
       await vi.advanceTimersByTimeAsync(7200)
-      expect(title.text()).toBe('第二本')
+      expect(title.text()).toBe('第三本')
     } finally {
       wrapper.unmount()
     }
@@ -74,7 +77,7 @@ describe('home featured book', () => {
 
     await wrapper.get('.shelf-arrow-hit.next').trigger('click')
     expect(wrapper.emitted('select')?.at(-1)).toEqual(['book-3'])
-    await wrapper.get('.shelf-showcase-book.featured').trigger('click')
+    await wrapper.get('.shelf-showcase-book.previous').trigger('click')
     expect(wrapper.emitted('select')?.at(-1)).toEqual(['book-2'])
     await wrapper.setProps({ selectedBookId: 'book-2' })
 
@@ -82,6 +85,35 @@ describe('home featured book', () => {
     expect(wrapper.get('.hero-book-cover img').attributes('src')).toBe('/two.png')
     expect(wrapper.get('.home-info-card h2').text()).toBe('第二本')
     wrapper.unmount()
+  })
+
+  it('pauses and resumes automatic rotation from the currently selected book', async () => {
+    vi.useFakeTimers()
+    const wrapper = render()
+    const toggle = wrapper.get('.home-rotation-toggle')
+    const title = wrapper.get('.home-info-card h2')
+    try {
+      expect(toggle.text()).toBe('暂停自动轮播')
+      await toggle.trigger('focusin')
+      await toggle.trigger('click')
+      await vi.advanceTimersByTimeAsync(7200)
+      expect(toggle.text()).toBe('继续自动轮播')
+      expect(title.text()).toBe('第一本')
+
+      await toggle.trigger('click')
+      await vi.advanceTimersByTimeAsync(3600)
+      expect(title.text()).toBe('第二本')
+
+      await wrapper.setProps({ selectedBookId: 'book-2' })
+      expect(toggle.text()).toBe('继续自动轮播')
+      await toggle.trigger('click')
+      await vi.advanceTimersByTimeAsync(3600)
+      expect(title.text()).toBe('第三本')
+      await toggle.trigger('click')
+      expect(title.text()).toBe('第三本')
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('pauses the carousel until hover and keyboard focus both leave the recommendations', async () => {

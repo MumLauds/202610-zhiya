@@ -37,6 +37,14 @@ export class ReadingSessionsApi {
     })
   }
 
+  chooseBranch(sessionId, payload, { signal } = {}) {
+    return this.request(`/api/v1/reading-sessions/${sessionId}/branches`, {
+      method: 'POST',
+      body: payload,
+      signal,
+    })
+  }
+
   submitQuestion(sessionId, payload, { signal } = {}) {
     return this.request(`/api/v1/reading-sessions/${sessionId}/questions`, {
       method: 'POST',

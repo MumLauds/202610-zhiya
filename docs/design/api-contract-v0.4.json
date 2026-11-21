@@ -1407,7 +1407,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "普通创建须省略sourceReadingSessionId、expectedRevision和clientRequestId，初始为PARENT_CHILD/CREATED。切换须同时提供这三个非空字段，缺项或显式null返回422 VALIDATION_ERROR。storyVersionId固定到按common.versionAccess可新建会话的版本。本人已审核私有RETIRED版本可复读；LIBRARY退休版本和任何WITHDRAWN版本均禁止新建。儿童模式在STARTED前由mode-settings原子签发授权及绑定。有限续写按flows.continuationSwitch原子切换，属于本期FR-17 P1，验收TC-FR17-04/05；普通主链无需续写即可完成，范围及审批状态见common.deliveryScope。",
+      "constraints": "普通创建须省略sourceReadingSessionId和expectedRevision，初始为PARENT_CHILD/CREATED。可用非空clientRequestId核对未确认的创建，同一家长同键同参数重放原会话，参数冲突返回409，原会话不可访问返回404。切换须同时提供这三个非空字段，缺项或显式null返回422 VALIDATION_ERROR。storyVersionId固定到按common.versionAccess可新建会话的版本。本人已审核私有RETIRED版本可复读；LIBRARY退休版本和任何WITHDRAWN版本均禁止新建。儿童模式在STARTED前由mode-settings原子签发授权及绑定。有限续写按flows.continuationSwitch原子切换，属于本期FR-17 P1，验收TC-FR17-04/05；普通主链无需续写即可完成，范围及审批状态见common.deliveryScope。",
       "interfaceId": "API-011",
       "uniqueKey": "POST /api/v1/reading-sessions",
       "additionalExamples": [

@@ -137,6 +137,25 @@ export class ReadingSessionMachine {
     })
   }
 
+  async chooseBranch(branchId, { signal, clientEventId = this.keyFactory('branch') } = {}) {
+    if (this.session?.status !== 'IN_PROGRESS') throw new Error('请先开始阅读')
+    const { readingSessionId, revision } = this.session
+    const payload = { branchId, expectedRevision: revision, clientEventId }
+    return this._runMutation({
+      canSupersedeInitial: true,
+      signal,
+      request: () => this.api.chooseBranch(readingSessionId, payload, { signal }),
+      apply: (data) => {
+        this.session = {
+          ...this.session,
+          currentPage: data.currentPage,
+          visitedPageNumbers: data.visitedPageNumbers,
+          revision: data.revision,
+        }
+      },
+    })
+  }
+
   async finish({ signal, clientEventId = this.keyFactory('finish') } = {}) {
     if (!this.session) throw new Error('尚无阅读会话')
     return this._runMutation({

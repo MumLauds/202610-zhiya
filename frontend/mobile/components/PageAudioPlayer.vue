@@ -7,6 +7,7 @@ const props = defineProps({
   tokens: { type: Array, default: () => [] },
   mode: { type: String, default: 'demo' },
   disabled: { type: Boolean, default: false },
+  checkExpiry: { type: Function, default: () => false },
 })
 const emit = defineEmits(['highlight', 'media-error', 'before-play'])
 
@@ -24,7 +25,7 @@ watch(() => props.src, (src) => {
 })
 
 async function toggle() {
-  if (props.disabled) return
+  if (props.disabled || props.checkExpiry()) return
   if (!audio.playing.value) emit('before-play')
   if (audio.activeSource.value === 'page') {
     audio.togglePause()

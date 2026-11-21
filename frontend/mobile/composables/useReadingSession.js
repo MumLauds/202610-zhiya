@@ -78,6 +78,16 @@ export function useReadingSession({ api, initialSessionId = null, initialSnapsho
     }
   }
 
+  async function chooseBranch(branchId) {
+    clearMessages()
+    try {
+      return await machine.chooseBranch(branchId)
+    } catch (cause) {
+      describeError(cause)
+      throw cause
+    }
+  }
+
   async function finish() {
     clearMessages()
     try {
@@ -146,6 +156,7 @@ export function useReadingSession({ api, initialSessionId = null, initialSnapsho
     initialize,
     start,
     changePage,
+    chooseBranch,
     finish,
     answer,
     guidance,

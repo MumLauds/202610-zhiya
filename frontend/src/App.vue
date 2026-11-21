@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, defineAsyncComponent, h, onBeforeUnmount, onMounted } from 'vue'
 import AppHeader from './components/AppHeader.vue'
 import AuthPage from './pages/AuthPage.vue'
 import HomePage from './pages/HomePage.vue'
@@ -7,12 +7,14 @@ import LibraryPage from './pages/LibraryPage.vue'
 import BookDetailPage from './pages/BookDetailPage.vue'
 import ReaderPage from './pages/ReaderPage.vue'
 import AccountPage from './pages/AccountPage.vue'
-import AdminPage from './pages/AdminPage.vue'
-import WorkshopPage from './pages/WorkshopPage.vue'
 import ChildModePage from './pages/ChildModePage.vue'
 import { activeProfile, totals, zhiya, zhiyaActions } from './stores/useZhiya'
 import { mapApiBook } from './data/preview'
 
+const loadingPage = { render: () => h('p', { role: 'status' }, '正在载入页面…') }
+const unavailablePage = { render: () => h('p', { role: 'alert' }, '页面加载失败，请刷新重试。') }
+const AdminPage = defineAsyncComponent({ loader: () => import('./pages/AdminPage.vue'), loadingComponent: loadingPage, errorComponent: unavailablePage })
+const WorkshopPage = defineAsyncComponent({ loader: () => import('./pages/WorkshopPage.vue'), loadingComponent: loadingPage, errorComponent: unavailablePage })
 const state = zhiya
 const publicSite = import.meta.env.MODE === 'public'
 const selectedBook = computed(() =>
@@ -102,6 +104,7 @@ onBeforeUnmount(() => {
       v-else-if="state.route.name === 'library'"
       :starting="state.sessionBusy"
       :books="state.books"
+      :filters="state.bookFilters"
       :selected-id="(state.booksSource === 'api' && state.pendingBookRestore) || state.selectedBookId"
       :loading="state.booksLoading"
       :next-page="state.nextBooksPage"
@@ -180,6 +183,7 @@ onBeforeUnmount(() => {
       :profiles-loading="state.profilesLoading"
       :active-profile-id="state.activeProfileId"
       :sessions="state.sessions"
+      :more-sessions="Boolean(state.nextSessionsPage)"
       :sessions-error="state.sessionsError"
       :books="state.books"
       :totals="totals"
@@ -194,7 +198,8 @@ onBeforeUnmount(() => {
       :check-deletion-action="zhiyaActions.checkDeletion"
       :pending-deletion-checks="state.pendingDeletionChecks"
       :reload-account-data-action="zhiyaActions.reloadProfiles"
-      @reload-sessions="zhiyaActions.loadSessions"
+      @reload-sessions="zhiyaActions.loadSessions()"
+      @more-sessions="zhiyaActions.loadSessions({ append: true })"
       @sign-out="zhiyaActions.signOut"
       @start="startBook"
     />
@@ -206,6 +211,7 @@ onBeforeUnmount(() => {
       :set-story-status-action="zhiyaActions.adminSetStoryStatus"
       :create-knowledge-action="zhiyaActions.adminCreateKnowledge"
       :update-knowledge-action="zhiyaActions.adminUpdateKnowledge"
+      @more="section => zhiyaActions.loadAdminContent(section, { append: true })"
       @sign-out="zhiyaActions.signOut"
       @navigate="zhiyaActions.navigate"
     />
@@ -226,5 +232,10 @@ onBeforeUnmount(() => {
   </div>
   <div class="toast" :class="{ show: state.toast.visible, error: state.toast.tone === 'error' }" role="status">
     {{ state.toast.message }}
+    <template v-if="state.toast.visible && state.toast.tone === 'error'">
+      <button v-if="state.readingCreationRecovery" class="text-button" type="button" :disabled="state.sessionBusy"
+        @click="zhiyaActions.retryReadingCreation">核对原阅读请求</button>
+      <button class="text-button" type="button" aria-label="关闭通知" @click="zhiyaActions.dismissToast">关闭</button>
+    </template>
   </div>
 </template>

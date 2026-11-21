@@ -1358,6 +1358,7 @@ def test_continuation_metadata_is_omitted_from_granted_child_books(cont_env):
 
 
 @pytest.mark.parametrize("continuation", [
+    pytest.param({"clientRequestId": None}, id="null-create-key"),
     pytest.param({"sourceReadingSessionId": None}, id="one-null"),
     pytest.param({"sourceReadingSessionId": None, "expectedRevision": None, "clientRequestId": None}, id="all-null"),
     pytest.param({"sourceReadingSessionId": 1, "expectedRevision": None, "clientRequestId": "switch"}, id="mixed"),
@@ -1372,6 +1373,27 @@ def test_create_reading_session_rejects_explicit_null_continuation_fields(cont_e
         })
         assert response.status_code == 422
         assert db.execute("SELECT COUNT(*) FROM reading_sessions").fetchone() == before
+
+
+def test_ordinary_reading_create_replays_only_the_original_accessible_session(cont_env):
+    first, second, db_path, profile_id = cont_env
+    h1 = {"X-CSRF-Token": first.cookies["zhiya_csrf"]}
+    h2 = {"X-CSRF-Token": second.cookies["zhiya_csrf"]}
+    path = "/api/v1/reading-sessions"
+    payload = {"childProfileId": profile_id, "storyVersionId": 301,
+               "mode": "PARENT_CHILD", "clientRequestId": "create-ordinary"}
+    created = first.post(path, headers=h1, json=payload)
+    assert created.status_code == 201
+    replay = first.post(path, headers=h1, json=payload)
+    assert replay.status_code == 200
+    assert replay.json()["data"] == created.json()["data"]
+    conflict = first.post(path, headers=h1, json={**payload, "storyVersionId": 302})
+    assert conflict.status_code == 409
+    assert second.post(path, headers=h2, json=payload).status_code == 404
+    with closing(sqlite3.connect(db_path)) as db, db:
+        assert db.execute("SELECT count(*) FROM reading_sessions").fetchone()[0] == 1
+        db.execute("UPDATE story_versions SET status = 'WITHDRAWN' WHERE id = 301")
+    assert first.post(path, headers=h1, json=payload).status_code == 404
 
 
 def test_continuation_switch_tc_fr17_04_and_idempotency(cont_env):

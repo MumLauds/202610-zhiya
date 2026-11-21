@@ -34,16 +34,17 @@ let wrapper
 afterEach(() => {
   wrapper?.unmount()
   wrapper = null
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
-async function openReader(voiceApi, { mode = session.mode, sessionApi = {} } = {}) {
+async function openReader(voiceApi, { mode = session.mode, sessionApi = {}, expiresAt = null, events = [question] } = {}) {
   wrapper = mount(ReaderView, {
     props: {
       book,
       mode: 'live',
       storyVersionId: book.storyVersionId,
-      initialSnapshot: { session: { ...session, mode }, events: [question], report: null },
+      initialSnapshot: { session: { ...session, mode, expiresAt }, events, report: null },
       sessionApi,
       voiceApi,
     },
@@ -86,7 +87,7 @@ function stubAudio() {
       this.dispatchEvent(new Event('pause'))
     }
 
-    removeAttribute() {}
+    removeAttribute(name) { if (name === 'src') this.src = '' }
     load() {}
   })
   return { media, play }
@@ -235,6 +236,43 @@ it('reads aloud a child’s explicit story answer only when the child taps play'
     interactionEventId: 71, signal: expect.any(AbortSignal),
   })
   expect(playingSources(media)).toEqual(['/story-answer.mp3'])
+})
+
+describe('child reading authorization deadline', () => {
+  const savedAnswer = { ...question, eventType: 'ASK', interactionEventId: 71 }
+
+  it.each(['page', 'answer'])('stops and unloads %s audio at expiry', async (source) => {
+    const { media } = stubAudio()
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    const expiresAt = new Date(Date.now() + 5000).toISOString()
+    const synthesizePage = vi.fn().mockResolvedValue({ data: { audioUrl: '/page.mp3' } })
+    const synthesizeInteraction = vi.fn().mockResolvedValue({ data: { audioUrl: '/story-answer.mp3' } })
+    await openReader({ synthesizePage, synthesizeInteraction }, { mode: 'CHILD_SOLO', expiresAt, events: [question, savedAnswer] })
+
+    if (source === 'page') await playPage()
+    else await clickButton('播放芽芽的回答')
+    expect(playingSources(media)).toHaveLength(1)
+
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(playingSources(media)).toEqual([])
+    expect(media.every(element => !element.src)).toBe(true)
+    expect(wrapper.get('[role="alert"]').text()).toContain('儿童阅读授权已到期')
+  })
+
+  it('checks the deadline when tapping preloaded narration before the timer fires', async () => {
+    const { media, play } = stubAudio()
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    const deadline = Date.now() + 5000
+    const synthesizePage = vi.fn().mockResolvedValue({ data: { audioUrl: '/page.mp3' } })
+    await openReader({ synthesizePage }, { mode: 'CHILD_SOLO', expiresAt: new Date(deadline).toISOString() })
+    expect(media[0].src).toBe('/page.mp3')
+
+    vi.setSystemTime(deadline + 1)
+    await wrapper.get('.audio-play').trigger('click')
+    expect(play).not.toHaveBeenCalled()
+    expect(media[0].src).toBe('')
+    expect(wrapper.get('[role="alert"]').text()).toContain('儿童阅读授权已到期')
+  })
 })
 
 describe('Reader voice request lock recovery', () => {

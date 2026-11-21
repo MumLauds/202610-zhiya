@@ -1,4 +1,5 @@
 <script setup>
+import { vModalFocus } from '../components/modalFocus'
 import { computed, reactive, ref } from 'vue'
 import { mediaUrl } from '../api/client'
 
@@ -11,7 +12,7 @@ const props = defineProps({
   updateKnowledgeAction: { type: Function, required: true },
 })
 
-const emit = defineEmits(['navigate', 'sign-out'])
+const emit = defineEmits(['navigate', 'sign-out', 'more'])
 const storyForm = reactive({
   storybookId: null,
   title: '',
@@ -241,8 +242,10 @@ async function saveRevision() {
       </section>
     </template>
 
+    <button v-if="section === 'knowledge' ? admin.nextKnowledgePage : admin.nextStoryPage" class="secondary" type="button" :disabled="sectionLoading || admin.busy" @click="emit('more', section)">加载更多</button>
+
     <div v-if="revising" class="modal-backdrop" @click.self="revising = null">
-      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="knowledge-revision-title">
+      <section v-modal-focus="() => { if (!admin.busy) revising = null }" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="knowledge-revision-title">
         <div class="modal-head">
           <div><h2 id="knowledge-revision-title">创建知识修订</h2><p>{{ revising.itemKey }} · 将生成新版本并保留历史引用</p></div>
           <button class="modal-close" type="button" aria-label="关闭" @click="revising = null">×</button>

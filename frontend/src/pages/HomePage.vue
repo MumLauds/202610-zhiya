@@ -13,7 +13,8 @@ const props = defineProps({
 
 const emit = defineEmits(['select', 'detail', 'start', 'navigate'])
 const direction = ref(0)
-const autoIndex = ref(0)
+const selectedIndex = ref(0)
+const rotationPaused = ref(false)
 const hoveringBooks = ref(false)
 const focusWithin = ref(false)
 let autoTimer = null
@@ -21,7 +22,6 @@ let motionPreference
 const AUTO_BOOK_INTERVAL = 3600
 
 const manualIndex = computed(() => props.books.findIndex((book) => book.id === props.selectedBookId))
-const selectedIndex = computed(() => manualIndex.value >= 0 ? manualIndex.value : autoIndex.value)
 const selected = computed(() => props.books[selectedIndex.value] || null)
 const shelfBooks = computed(() => {
   if (!props.books.length) return []
@@ -31,14 +31,23 @@ const shelfBooks = computed(() => {
 })
 
 function advanceAutoBook() {
-  if (motionPreference?.matches || manualIndex.value >= 0 || props.books.length < 2 || document.hidden || hoveringBooks.value || focusWithin.value) return
-  autoIndex.value = (autoIndex.value + 1) % props.books.length
+  if (motionPreference?.matches || rotationPaused.value || props.books.length < 2 || document.hidden || hoveringBooks.value || focusWithin.value) return
+  selectedIndex.value = (selectedIndex.value + 1) % props.books.length
+}
+
+function updateFocus(target) {
+  focusWithin.value = Boolean(target?.closest?.('.hero-book-stage, .home-info-card, .featured-shelf, .home-plan'))
 }
 
 watch(() => props.books.length, (length) => {
-  if (!length) autoIndex.value = 0
-  else autoIndex.value %= length
+  selectedIndex.value = length ? selectedIndex.value % length : 0
 })
+
+watch(manualIndex, (index) => {
+  if (index < 0) return
+  selectedIndex.value = index
+  rotationPaused.value = true
+}, { immediate: true })
 
 onMounted(() => {
   motionPreference = typeof window.matchMedia === 'function'
@@ -53,12 +62,14 @@ function moveShelf(step) {
   if (!props.books.length) return
   direction.value = step
   const nextIndex = (selectedIndex.value + step + props.books.length) % props.books.length
-  emit('select', props.books[nextIndex].id)
+  chooseShelf(props.books[nextIndex])
   window.setTimeout(() => { direction.value = 0 }, 340)
 }
 
 function chooseShelf(book) {
   if (!book) return
+  selectedIndex.value = props.books.indexOf(book)
+  rotationPaused.value = true
   emit('select', book.id)
 }
 
@@ -66,8 +77,8 @@ function chooseShelf(book) {
 
 <template>
   <main class="home-page page-width"
-    @focusin="focusWithin = true"
-    @focusout="focusWithin = $event.currentTarget.contains($event.relatedTarget)">
+    @focusin="updateFocus($event.target)"
+    @focusout="updateFocus($event.relatedTarget)">
     <section class="home-hero" aria-labelledby="home-title">
       <div class="home-copy">
         <p class="eyebrow">亲子共读 · 从今天开始</p>
@@ -76,12 +87,15 @@ function chooseShelf(book) {
         <div class="home-actions">
           <button class="primary" type="button" @click="emit('navigate', 'library')">去绘本馆 →</button>
           <button v-if="!auth.authenticated" class="secondary" type="button" @click="emit('navigate', 'auth')">登录账号</button>
+          <button v-if="books.length > 1" class="secondary home-rotation-toggle" type="button" @click="rotationPaused = !rotationPaused">
+            {{ rotationPaused ? '继续自动轮播' : '暂停自动轮播' }}
+          </button>
         </div>
         <p v-if="booksError" class="data-source-note">{{ booksError }}</p>
       </div>
       <div class="hero-book-stage" :aria-label="selected ? `本周精选：${selected.title}` : '本周精选绘本'"
         @mouseenter="hoveringBooks = true" @mouseleave="hoveringBooks = false">
-        <img class="hero-book-base" src="/assets/figma-prototype/home-book-background.png" alt="">
+        <img class="hero-book-base" src="/assets/figma-prototype/home-book-background.webp" alt="">
         <button v-if="selected" class="hero-book-cover" type="button" :aria-label="`查看《${selected.title}》`" @click="emit('detail', selected)">
           <img :src="selected.cover" :alt="`${selected.title}封面`">
         </button>
@@ -124,7 +138,7 @@ function chooseShelf(book) {
               :aria-label="book ? `查看《${book.title}》` : '暂无绘本'"
               @click="book && chooseShelf(book)"
             >
-              <img v-if="book" :src="book.cover" :alt="`${book.title}封面`">
+              <img v-if="book" :loading="book.id === selected?.id ? 'eager' : 'lazy'" :src="book.cover" :alt="`${book.title}封面`">
             </button>
           </div>
           <button class="shelf-arrow-hit previous" type="button" aria-label="查看前面的绘本" @click="moveShelf(-1)"><span class="arrow-glyph" aria-hidden="true">‹</span></button>
