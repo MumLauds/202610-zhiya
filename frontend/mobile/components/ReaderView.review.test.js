@@ -47,7 +47,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-async function openReader({ snapshot = inProgress, events = [], sessionApi = {}, voiceApi = {} } = {}) {
+async function openReader({ snapshot = inProgress, events = [], answerOptions, readerBook = book, sessionApi = {}, voiceApi = {} } = {}) {
   const api = {
     create: vi.fn(),
     get: vi.fn(),
@@ -60,10 +60,10 @@ async function openReader({ snapshot = inProgress, events = [], sessionApi = {},
   }
   wrapper = mount(ReaderView, {
     props: {
-      book,
+      book: readerBook,
       mode: 'live',
       storyVersionId: book.storyVersionId,
-      initialSnapshot: snapshot ? { session: snapshot, events, report: null } : null,
+      initialSnapshot: snapshot ? { session: snapshot, events, report: null, answerOptions } : null,
       sessionApi: api,
       voiceApi: {
         synthesizePage: vi.fn().mockRejectedValue(new ApiError('朗读暂不可用', { status: 503 })),
@@ -267,6 +267,82 @@ describe('ReaderView session recovery and interaction', () => {
     expect(wrapper.find('.interaction-card').exists()).toBe(true)
     expect(api.addEvent).not.toHaveBeenCalled()
     expect(api.submitGuidance).not.toHaveBeenCalled()
+  })
+
+  it('returns to live reading only at the final visit even when the page number repeats', async () => {
+    const api = await openReader({
+      snapshot: { ...questionedPageOne, visitedPageNumbers: [1, 2, 1] },
+      events: [savedQuestion(1, 2)],
+    })
+    await clickButton('上一页')
+    expect(wrapper.get('.page-scene').text()).toBe('第二页')
+    await clickButton('上一页')
+    expect(wrapper.get('.page-scene').text()).toBe('第一页')
+    expect(wrapper.text()).toContain('正在回看已读页')
+    expect(wrapper.find('.interaction-card').exists()).toBe(false)
+    await clickButton('下一页 →')
+    expect(wrapper.get('.page-scene').text()).toBe('第二页')
+    await clickButton('下一页 →')
+    expect(wrapper.get('.page-scene').text()).toBe('第一页')
+    expect(wrapper.find('.interaction-card').exists()).toBe(true)
+    expect(api.addEvent).not.toHaveBeenCalled()
+    expect(api.submitGuidance).not.toHaveBeenCalled()
+  })
+
+  it('lets the child submit only an approved option and updates options after a follow-up', async () => {
+    const submitGuidance = vi.fn()
+      .mockResolvedValueOnce({ data: { ...initialQuestion, answerOptions: ['是', '不是', '不知道'] } })
+      .mockResolvedValueOnce({ data: { ...initialQuestion, revision: 4, outputText: '还看到什么？', answerOptions: ['风声', '雨声'] } })
+    const api = await openReader({
+      snapshot: { ...inProgress, mode: 'CHILD_SOLO' },
+      sessionApi: { submitGuidance, addEvent: vi.fn().mockResolvedValue({ data: { revision: 3 } }) },
+    })
+    expect(wrapper.text()).not.toContain('孩子回答')
+    await clickButton('不知道')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(api.addEvent).toHaveBeenCalledExactlyOnceWith(42, expect.objectContaining({
+      eventType: 'ANSWER', inputText: '不知道', pageNumber: 1, expectedRevision: 2,
+    }))
+    await clickButton('没听懂')
+    expect(wrapper.findAll('button').map(button => button.text())).toContain('雨声')
+    expect(wrapper.findAll('button').map(button => button.text())).not.toContain('不知道')
+  })
+
+  it('uses authoritative restored options and fetches them for a revisited page with a saved question', async () => {
+    const events = [savedQuestion(1, 2), savedQuestion(2, 3)]
+    const child = { ...questionedPageTwo, mode: 'CHILD_SOLO' }
+    const revisited = { ...child, currentPage: 1, visitedPageNumbers: [1, 2, 1], revision: 4 }
+    const get = vi.fn()
+      .mockResolvedValueOnce({ data: { session: revisited, events: [events[0]], report: null, answerOptions: ['第一页选项'] } })
+      .mockResolvedValueOnce({ data: { session: { ...child, revision: 5, visitedPageNumbers: [1, 2, 1, 2] },
+        events: [events[1]], report: null, answerOptions: ['第二页选项'] } })
+    const api = await openReader({
+      snapshot: child, events, answerOptions: ['第二页选项'],
+      readerBook: { ...book, pages: book.pages.map(page => page.page === 2 ? { ...page, defaultNextPageNumber: 1 } : page) },
+      sessionApi: { get, addEvent: vi.fn()
+        .mockResolvedValueOnce({ data: { revision: 4 } }).mockResolvedValueOnce({ data: { revision: 5 } }) },
+    })
+    expect(wrapper.findAll('button').map(button => button.text())).toContain('第二页选项')
+    await clickButton('下一页 →')
+    expect(wrapper.get('.page-scene').text()).toBe('第一页')
+    expect(wrapper.findAll('button').map(button => button.text())).toContain('第一页选项')
+    expect(wrapper.findAll('button').map(button => button.text())).not.toContain('第二页选项')
+    expect(api.get).toHaveBeenCalledOnce()
+    await clickButton('下一页 →')
+    expect(wrapper.get('.page-scene').text()).toBe('第二页')
+    expect(wrapper.findAll('button').map(button => button.text())).toContain('第二页选项')
+    expect(api.get).toHaveBeenCalledTimes(2)
+    expect(api.submitGuidance).not.toHaveBeenCalled()
+  })
+
+  it('shows an unavailable state when the server restores an empty list of child options', async () => {
+    const api = await openReader({
+      snapshot: { ...questionedPageOne, mode: 'CHILD_SOLO' },
+      events: [savedQuestion(1, 2)], answerOptions: [],
+    })
+    expect(wrapper.text()).toContain('本页暂无可提交的答题选项')
+    expect(wrapper.text()).not.toContain('孩子回答')
+    expect(api.addEvent).not.toHaveBeenCalled()
   })
 
   it('sends confirmed manual text as a page-scoped ANSWER event', async () => {

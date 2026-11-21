@@ -8,11 +8,13 @@ const props = defineProps({
   pending: { type: Boolean, default: false },
   demo: { type: Boolean, default: false },
   questionReady: { type: Boolean, default: false },
+  childMode: Boolean,
+  childAnswerOptions: { type: Array, default: null },
   canSkip: { type: Boolean, default: false },
   answerAudioUrl: { type: String, default: '' },
   answerAudioLoading: { type: Boolean, default: false },
 })
-const emit = defineEmits(['generate', 'answer', 'understood', 'not-understood', 'skip', 'play-answer'])
+const emit = defineEmits(['generate', 'answer', 'understood', 'not-understood', 'skip', 'play-answer', 'select-answer', 'reload-answer-options'])
 
 const statusLabel = computed(() => G10_STATUS_LABELS[props.result?.status] ?? '')
 const strategyLabel = computed(() => STRATEGY_LABELS[props.result?.strategyType] ?? '')
@@ -61,7 +63,14 @@ const hasOutput = computed(() => Boolean(props.result?.outputText))
       <button v-if="!questionReady" class="button button-primary" type="button" :disabled="pending" @click="emit('generate')">
         {{ pending ? '生成中…' : '生成本页共读问题' }}
       </button>
-      <button class="button button-soft" type="button" :disabled="pending || (Boolean(result) && !questionReady)" @click="emit('answer')">
+      <template v-if="childMode">
+        <button v-for="option in childAnswerOptions" :key="option" class="button button-soft" type="button"
+          :disabled="pending" @click="emit('select-answer', option)">{{ option }}</button>
+        <button v-if="questionReady && childAnswerOptions === null" class="button button-ghost" type="button"
+          :disabled="pending" @click="emit('reload-answer-options')">重新获取答题选项</button>
+        <p v-else-if="!pending && !childAnswerOptions?.length" class="muted">本页暂无可提交的答题选项</p>
+      </template>
+      <button v-else class="button button-soft" type="button" :disabled="pending || (Boolean(result) && !questionReady)" @click="emit('answer')">
         孩子回答
       </button>
       <button class="button button-soft" type="button" :disabled="pending || !questionReady" @click="emit('not-understood')">
