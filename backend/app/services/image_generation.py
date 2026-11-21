@@ -21,12 +21,6 @@ UNWANTED_CONTENT = (
     "文字、书名、标题、正文、字幕、签名、标识、水印、角色设定表、多格分镜、拼贴、封面和留白文字框、"
     "额外角色、重复角色、暴力、成人内容"
 )
-CHARACTER_APPEARANCES = {
-    "小兔": "奶白色绒毛、粉色长耳、圆短尾",
-    "小熊": "棕色绒毛、圆耳朵、浅棕色圆肚皮",
-    "小狐狸": "橙红色绒毛、白色口鼻、白尖蓬松尾巴",
-    "小猫": "橘色虎斑、白色前爪、长尾巴",
-}
 
 
 class ImageGenerationError(RuntimeError):
@@ -62,18 +56,17 @@ def image_generation_settings() -> ImageSettings | None:
     return ImageSettings(endpoint, api_key, model)
 
 
-async def _generate_page(client: httpx.AsyncClient, settings: ImageSettings, art_direction: str, illustration_scene: str) -> bytes:
+async def _generate_page(client: httpx.AsyncClient, settings: ImageSettings, art_direction: str,
+                         illustration_scene: str, page_cast: dict[str, str]) -> bytes:
     prompt = f"{art_direction}{illustration_scene.rstrip('。')}。"
-    appearances = "，".join(
-        f"{name}沿用{appearance}"
-        for name, appearance in CHARACTER_APPEARANCES.items() if name in illustration_scene
-    )
-    if appearances:
-        prompt += f"{appearances}。以本页明确描述的外观和道具为准。"
+    if page_cast:
+        appearances = "；".join(f"{name}沿用{appearance}" for name, appearance in page_cast.items())
+        prompt += f"本页角色：{appearances}。服饰和道具按当页剧情变化。"
+    else:
+        prompt += "本页没有出场角色。"
     prompt += (
         "把正在行动的主角放在视觉中心。只画本页明确出场的角色，保持物种、数量和相对位置，动物保持自然动物体态。"
         "本页的地点、动作和道具以描述为准，背景仅呈现环境。"
-        "画面完整、无字、无标识，适合3至6岁亲子共读。不含暴力或成人内容。"
     )
     parameters = {"size": "1024*1024", "n": 1, "prompt_extend": False}
     if settings.model in ("qwen-image-3.0", "qwen-image-3.0-pro"):
@@ -104,10 +97,11 @@ async def _generate_page(client: httpx.AsyncClient, settings: ImageSettings, art
 
 
 async def generate_story_illustrations(
-    settings: ImageSettings, illustration_scenes: list[str], *, topic: str, scene: str,
+    settings: ImageSettings, illustration_scenes: list[str], *, page_casts: list[dict[str, str]], topic: str, scene: str,
 ) -> list[dict]:
     art_direction = (
         "一幅满版的温暖手绘水彩插画，构图简洁，单一连续场景，柔和自然光。"
+        "画面完整、无字、无标识，适合3至6岁亲子共读。不含暴力或成人内容。"
         f"全书以{topic}为线索，延续{scene}的氛围。"
     )
     try:
@@ -115,8 +109,8 @@ async def generate_story_illustrations(
             async with httpx.AsyncClient(follow_redirects=False, trust_env=False,
                                          timeout=IMAGE_GENERATION_SECONDS) as client:
                 async with asyncio.TaskGroup() as group:
-                    jobs = [group.create_task(_generate_page(client, settings, art_direction, description))
-                            for description in illustration_scenes]
+                    jobs = [group.create_task(_generate_page(client, settings, art_direction, description, cast))
+                            for description, cast in zip(illustration_scenes, page_casts, strict=True)]
             return await run_in_threadpool(pin_generated_illustrations, [job.result() for job in jobs])
     except (ExceptionGroup, TimeoutError, MediaDependencyError):
         # Transport details may contain signed media URLs. Keep them out of responses and logs.

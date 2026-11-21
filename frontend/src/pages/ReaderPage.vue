@@ -5,6 +5,7 @@ import { approvedBranchesAt } from '../data/readingBranches'
 import FlipBook from '../components/FlipBook.vue'
 import { synthesize, transcribe } from '../api/voice'
 import { describeApiError } from '../api/client'
+import { readingProfileKey, recordPlanActivity } from '../data/readingPlan'
 import { canContinueStory } from '../data/readingProgress'
 
 const props = defineProps({
@@ -13,8 +14,10 @@ const props = defineProps({
   events: { type: Array, default: () => [] },
   report: { type: Object, default: null },
   loading: { type: Boolean, default: false },
+  childSetup: Boolean,
   canRetryLoad: { type: Boolean, default: false },
   authenticated: { type: Boolean, default: false },
+  accountId: { type: Number, default: null },
   syncRequired: { type: Boolean, default: false },
   requestGuidance: { type: Function, default: async () => false },
   submitAnswer: { type: Function, default: async () => false },
@@ -27,9 +30,11 @@ const props = defineProps({
   enterChildModeAction: { type: Function, default: async () => false },
 })
 
-const emit = defineEmits(['back', 'library', 'start-session', 'retry-load', 'continue-story'])
+const emit = defineEmits(['back', 'library', 'retry-start', 'retry-load', 'continue-story'])
 const flipBook = ref(null)
-const summaryPanel = ref(null)
+const completionOpen = ref(false)
+const completionDialog = ref(null)
+let endPromptSession = null
 const pageIndex = ref(0)
 const turnBusy = ref(false)
 const edgeTurnBusy = ref(false)
@@ -67,6 +72,32 @@ let audio = null
 let audioGeneration = 0
 let speechRequest = null
 let preparedPageAudio = null
+
+const readingKey = computed(() => props.authenticated && !props.session?.preview
+  ? readingProfileKey(props.accountId, props.session?.childProfileId) : null)
+const activeReadingKey = computed(() => !props.loading && !props.syncRequired && props.session?.status === 'IN_PROGRESS'
+  ? readingKey.value : null)
+watch(activeReadingKey, (key, _, onCleanup) => {
+  if (!key) return
+  let started = document.hidden ? null : Date.now()
+  function checkpoint() {
+    const now = Date.now()
+    if (started !== null) recordPlanActivity(key, now, Math.max(0, Math.min(now - started, 6000)))
+    started = document.hidden ? null : now
+  }
+  const timer = setInterval(checkpoint, 5000)
+  document.addEventListener('visibilitychange', checkpoint)
+  onCleanup(() => {
+    checkpoint()
+    clearInterval(timer)
+    document.removeEventListener('visibilitychange', checkpoint)
+  })
+}, { immediate: true })
+watch(() => props.session?.status, (status, previous) => {
+  if (status === 'FINISHED' && previous === 'IN_PROGRESS' && readingKey.value) {
+    recordPlanActivity(readingKey.value, Date.now(), 0, props.session.readingSessionId)
+  }
+})
 
 const reviewingHistory = computed(() => ['FINISHED', 'INTERRUPTED'].includes(props.session?.status))
 const pagesByNumber = computed(() => new Map((props.book?.pages || []).map(page => [page.pageNumber, page])))
@@ -115,7 +146,7 @@ const narrationKey = computed(() => props.authenticated && !props.loading && !pr
   ? `${props.session.readingSessionId}:${currentPage.value.pageNumber}` : '')
 const canSubmitFeedback = computed(() => mediaAllowed.value && Boolean(currentQuestion.value) && !questionSkipped.value && !questionBlocked.value)
 const canSkipQuestion = computed(() => mediaAllowed.value && !questionSkipped.value)
-const canAnswer = computed(() => props.session?.preview ? mediaAllowed.value : canSubmitFeedback.value)
+const canAnswer = computed(() => mediaAllowed.value && !questionSkipped.value && !questionBlocked.value)
 const answerDisabled = computed(() => !canAnswer.value || guidanceLoading.value || voiceOpen.value)
 const recordingBusy = computed(() => ['starting', 'recording', 'processing'].includes(voiceState.value))
 const inlineAnswer = computed(() => childAnswerDraft.value?.text ?? '')
@@ -130,6 +161,9 @@ const parentTip = computed(() => {
 })
 const canSetChildMode = computed(() => props.authenticated && !props.session?.preview
   && props.session?.status === 'CREATED' && props.session.mode === 'PARENT_CHILD')
+const atLastPage = computed(() => props.session?.status === 'IN_PROGRESS' && !rereading.value
+  && !currentPage.value?.defaultNextPageNumber
+  && !currentBranches.value.length && visitedPages.value.length > 0)
 const reportActivities = computed(() => {
   if (props.report?.status !== 'READY' || !Array.isArray(props.report.activities)) return []
   return props.report.activities.filter(activity => activity?.name && Array.isArray(activity.materials) && Array.isArray(activity.steps))
@@ -140,12 +174,40 @@ const childBookChoices = computed(() => {
 })
 
 watch(transcriptEditor, (editor) => editor?.focus(), { flush: 'post' })
-watch(() => props.session?.status, (status, previousStatus) => {
-  if (status === 'FINISHED' && previousStatus === 'IN_PROGRESS') {
-    summaryPanel.value?.focus({ preventScroll: true })
-    summaryPanel.value?.scrollIntoView?.({ block: 'nearest' })
-  }
+watch([() => props.loading, () => props.childSetup, canSetChildMode], ([loading, setup, available]) => {
+  if (!loading && setup && available) openChildMode()
+}, { immediate: true })
+
+watch([() => props.session?.readingSessionId, () => props.session?.status, atLastPage, canFinish],
+  ([id, status, isLast, ready], previous) => {
+    if (id !== previous?.[0]) {
+      endPromptSession = null
+      completionOpen.value = false
+    }
+    if (status === 'FINISHED' && (id !== previous?.[0] || status !== previous?.[1])) {
+      completionOpen.value = true
+    } else if (isLast && ready && endPromptSession !== id) {
+      endPromptSession = id
+      completionOpen.value = true
+    }
+  }, { immediate: true },
+)
+watch(() => props.session?.status, status => {
+  if (status === 'FINISHED') completionDialog.value?.focus()
 }, { flush: 'post' })
+
+watch([completionOpen, () => props.session?.status, () => props.report?.status], ([open, status, reportStatus], _, onCleanup) => {
+  if (!open || status !== 'FINISHED' || reportStatus !== 'PENDING') return
+  let timer
+  let remaining = 45
+  let cancelled = false
+  async function poll() {
+    await refreshProgress()
+    if (!cancelled && --remaining > 0) timer = setTimeout(poll, 900)
+  }
+  timer = setTimeout(poll, 900)
+  onCleanup(() => { cancelled = true; clearTimeout(timer) })
+})
 
 async function ensurePageQuestion(force = false) {
   if (!mediaAllowed.value || props.session?.preview || currentQuestion.value || questionSkipped.value || questionBlocked.value) return false
@@ -248,7 +310,9 @@ async function finishReading() {
   stopNarration()
   closeVoice()
   turnBusy.value = true
-  try { await props.completeReading() } catch (error) { audioMessage.value = describeApiError(error) }
+  try {
+    if (!await props.completeReading()) audioMessage.value = '暂未确认阅读完成，请核对进度后重试。'
+  } catch (error) { audioMessage.value = describeApiError(error) }
   finally { turnBusy.value = false }
 }
 
@@ -680,8 +744,9 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
             </p>
             <p v-if="rereading && session.status === 'IN_PROGRESS'">回看期间仅阅读文字和插图；返回当前进度后可继续朗读与录音。</p>
             <button v-if="syncRequired" class="secondary" type="button" :disabled="turnBusy" @click="refreshProgress">确认并同步进度</button>
-            <button v-else-if="session.status === 'CREATED'" class="primary" type="button" @click="emit('start-session')">开始本次阅读</button>
+            <button v-else-if="session.status === 'CREATED' && !childSetup" class="secondary" type="button" :disabled="syncRequired" @click="emit('retry-start')">重试同步阅读</button>
             <button v-if="session.status === 'IN_PROGRESS'" class="secondary" type="button" :disabled="!canFinish" @click="finishReading">结束本次阅读</button>
+            <button v-else-if="session.status === 'FINISHED'" class="secondary" type="button" @click="completionOpen = true">查看小结</button>
             <button v-if="canSetChildMode" class="secondary" type="button" :disabled="navigationLocked" @click="openChildMode">设置并进入儿童模式</button>
             <button
               v-if="authenticated && !session.preview && canContinueStory(session, book)"
@@ -718,26 +783,10 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
             </button>
           </div>
         </div>
+        <button v-if="atLastPage && !completionOpen" class="primary reader-finish-action" type="button" :disabled="!canFinish" @click="completionOpen = true">完成本次共读</button>
       </section>
 
       <aside class="reader-side">
-        <section v-if="session.status === 'FINISHED'" ref="summaryPanel" class="side-card reader-summary" tabindex="-1" aria-labelledby="reader-summary-title">
-          <h2 id="reader-summary-title">本次共读小结</h2>
-          <p v-if="!report" role="status">小结暂未加载，可以刷新查看。</p>
-          <p v-else-if="report.status === 'PENDING'" role="status">小结正在生成，以下是已保存的阅读记录。</p>
-          <p v-else-if="report.status === 'FAILED'" role="status">小结生成失败，已保留本次阅读记录。</p>
-          <p v-else-if="report.status === 'READY'" role="status">小结已生成。</p>
-          <p v-if="report?.summary" class="address">{{ report.summary }}</p>
-          <section v-for="(activity, index) in reportActivities" :key="index" class="report-activity">
-            <h3>亲子活动 · {{ activity.name }}</h3>
-            <p>准备材料：{{ activity.materials.join('、') }}</p>
-            <h4>活动步骤</h4>
-            <ol>
-              <li v-for="(step, position) in activity.steps" :key="position">{{ step }}</li>
-            </ol>
-          </section>
-          <button v-if="!report || report.status === 'PENDING'" class="secondary" type="button" :disabled="turnBusy" @click="refreshProgress">刷新小结</button>
-        </section>
         <section class="side-card narration-card">
           <div v-if="session.status !== 'FINISHED'" class="reader-mascot" aria-hidden="true"><span class="reader-foliage"></span><img width="326" height="380" src="/assets/mascot/yaya-reader.webp" alt=""></div>
           <h2><span class="reader-card-icon reader-card-icon--book" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 5c-3-2-6-2-10-1v15c4-1 7-1 10 1 3-2 6-2 10-1V4c-4-1-7-1-10 1Zm0 0v15"/></svg></span> 阅读模式</h2>
@@ -762,12 +811,12 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
           <p v-else-if="questionBlocked">{{ latestGuidanceEvent.outputText || '这个问题先请家长和孩子一起聊一聊。' }}</p>
           <p v-else-if="currentQuestion">{{ currentQuestion.outputText }}</p>
           <p v-else-if="guidanceLoading">正在根据这一页生成问题…</p>
-          <p v-else-if="guidanceError">{{ guidanceError }}</p>
-          <p v-else>当前页暂时没有可用的问题。</p>
-          <p v-if="guidanceError && (currentQuestion || questionSkipped || questionBlocked)" class="question-error" role="alert">{{ guidanceError }}</p>
+          <p v-else>看看这一页，你发现了什么？</p>
+          <p v-if="guidanceError" class="question-error" role="alert">{{ guidanceError }}</p>
           <p v-if="answerText" class="question-saved"><strong>孩子的回答：</strong>{{ answerText }}</p>
           <p v-else-if="savedAnswer" class="question-saved" role="status">本页回答已保存。</p>
-          <p v-if="authenticated && savedAnswer?.replyText" class="question-reply" role="status"><strong>芽芽：</strong>{{ savedAnswer.replyText }}</p>
+          <p v-if="authenticated && savedAnswer" class="question-reply" role="status"><strong>芽芽：</strong>{{ savedAnswer.replyText || '谢谢你分享！你能指一指图里的线索吗？' }}</p>
+          <p v-else-if="session.preview && previewAnswer" class="question-reply" role="status"><strong>芽芽：</strong>{{ currentPage?.answer || '我们一起看看图里发生了什么吧。' }}</p>
           <button v-if="guidanceError && !currentQuestion && !questionSkipped && !questionBlocked && !session.preview" class="text-button question-retry" type="button" :disabled="interactionBusy || guidanceLoading || syncRequired" @click="retryQuestion">重新生成本页问题</button>
           <div class="question-actions">
             <button class="secondary feedback-understood" type="button" :disabled="!canSubmitFeedback || guidanceLoading || recordingBusy" @click="submitUnderstanding('UNDERSTOOD')"><span aria-hidden="true">✓</span> 已理解</button>
@@ -827,6 +876,45 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
           </div>
         </section>
       </aside>
+    </div>
+
+    <div v-if="completionOpen" class="modal-backdrop">
+      <section ref="completionDialog" v-modal-focus="() => { if (!turnBusy) completionOpen = false }" class="modal-card reader-completion reader-summary" role="dialog" aria-modal="true" aria-labelledby="reader-summary-title">
+        <div class="modal-head">
+          <div>
+            <span v-if="session.status === 'FINISHED'" class="pill">✓ 阅读完成</span>
+            <h2 id="reader-summary-title">{{ session.status === 'FINISHED' ? '本次共读小结' : atLastPage ? '读到最后一页啦！' : '结束本次阅读？' }}</h2>
+            <p>{{ book.title }}</p>
+          </div>
+          <button class="modal-close" type="button" aria-label="关闭阅读完成窗口" :disabled="turnBusy" @click="completionOpen = false">×</button>
+        </div>
+        <template v-if="session.status === 'FINISHED'">
+          <p v-if="!report" role="status">小结暂未加载，可以刷新查看。</p>
+          <p v-else-if="report.status === 'PENDING'" role="status">小结正在生成，以下是已保存的阅读记录。</p>
+          <p v-else-if="report.status === 'FAILED'" role="status">小结生成失败，已保留本次阅读记录。</p>
+          <p v-else-if="report.status === 'READY'" role="status">小结已生成。</p>
+          <p v-if="report?.summary" class="address">{{ report.summary }}</p>
+          <section v-for="(activity, index) in reportActivities" :key="index" class="report-activity">
+            <h3>亲子活动 · {{ activity.name }}</h3>
+            <p>准备材料：{{ activity.materials.join('、') }}</p>
+            <h4>活动步骤</h4>
+            <ol>
+              <li v-for="(step, position) in activity.steps" :key="position">{{ step }}</li>
+            </ol>
+          </section>
+          <button v-if="!report || report.status === 'PENDING'" class="secondary" type="button" :disabled="turnBusy" @click="refreshProgress">刷新小结</button>
+          <button class="primary" type="button" @click="emit('library')">返回绘本馆</button>
+        </template>
+        <template v-else>
+          <p>读完后可以保存本次阅读记录，并生成共读小结。</p>
+          <p v-if="audioMessage" role="status">{{ audioMessage }}</p>
+          <div class="question-actions">
+            <button v-if="syncRequired" class="secondary" type="button" :disabled="turnBusy" @click="refreshProgress">核对阅读进度</button>
+            <button v-else class="primary" type="button" :disabled="!canFinish" @click="finishReading">{{ turnBusy ? '正在保存…' : '完成阅读并生成小结' }}</button>
+            <button class="secondary" type="button" :disabled="turnBusy" @click="completionOpen = false">继续阅读</button>
+          </div>
+        </template>
+      </section>
     </div>
 
     <div v-if="voiceOpen" class="modal-backdrop" @click.self="closeStoryQuestion">

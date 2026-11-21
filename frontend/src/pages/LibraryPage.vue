@@ -126,7 +126,7 @@ function chooseFilter(value) {
           </div>
         </div>
       </div>
-      <BookCarousel v-if="books.length" :books="books" :selected-id="selected?.id" @select="emit('select', $event)" />
+      <BookCarousel v-if="books.length" :books="books" :selected-id="selected?.id" :starting="starting" @select="emit('select', $event)" @start="emit('start', $event)" />
       <div v-if="nextPage !== null">
         <p v-if="error" role="alert">{{ error }}</p>
         <button class="secondary" type="button" :disabled="loading" @click="emit('more')">

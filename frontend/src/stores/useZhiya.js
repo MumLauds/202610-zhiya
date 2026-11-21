@@ -44,6 +44,7 @@ function parseRoute(hash = location.hash) {
     return { name, source, versionId: Number(parts[source ? 2 : 1]) || null }
   }
   if (name === 'reader' && parts[1] === 'preview') return { name, previewVersionId: Number(parts[2]) || null }
+  if (name === 'reader' && parts[1] === 'setup') return { name, childSetup: true, sessionId: Number(parts[2]) || null }
   if (name === 'reader') return { name, sessionId: Number(parts[1]) || null }
   if (name === 'workshop') {
     return {
@@ -1459,7 +1460,7 @@ async function retryReadingIdentity() {
   }
 }
 
-async function startReading(book) {
+async function startReading(book, { childSetup = false } = {}) {
   if (!book || state.sessionBusy) return
   const epoch = authEpoch
   if (book.source !== 'preview' && state.auth.status !== 'authenticated') {
@@ -1506,16 +1507,16 @@ async function startReading(book) {
     if (epoch !== authEpoch) return
     state.readingCreationRecovery = null
     state.currentSession = created
-    navigate(`reader/${created.readingSessionId}`)
+    navigate(`reader/${childSetup ? 'setup/' : ''}${created.readingSessionId}`)
   } catch (error) {
     if (epoch !== authEpoch) return
     if (['REQUEST_OUTCOME_UNKNOWN', 'REQUEST_IN_PROGRESS'].includes(error.code) || error.status >= 500) {
-      state.readingCreationRecovery = { book, profileId: profile.childProfileId }
+      state.readingCreationRecovery = { book, profileId: profile.childProfileId, childSetup }
       setToast('阅读会话是否创建成功尚未确认。可以核对原请求，避免重复创建。', 'error')
       return
     }
     if (creation.isRecovery && [401, 403, 429].includes(error.status)) {
-      state.readingCreationRecovery = { book, profileId: profile.childProfileId }
+      state.readingCreationRecovery = { book, profileId: profile.childProfileId, childSetup }
       setToast(describeApiError(error), 'error')
       return
     }
@@ -1548,7 +1549,7 @@ async function retryReadingCreation() {
     setToast('请选择原来的儿童档案，再核对这次阅读请求。', 'error')
     return
   }
-  await startReading(recovery.book)
+  await startReading(recovery.book, { childSetup: recovery.childSetup })
 }
 
 function isTemporaryReadFailure(error) {
@@ -1609,6 +1610,9 @@ async function loadReaderRoute() {
     if (!isCurrent()) return
     applyReadingDetail(detail)
     state.currentBook = book
+    if (!route.childSetup && detail.session.status === 'CREATED' && detail.session.mode !== 'CHILD_SOLO') {
+      await startCurrentReading()
+    }
   } catch (error) {
     if (isCurrent()) {
       state.readerLoadRetryable = isTemporaryReadFailure(error)
@@ -1622,13 +1626,13 @@ async function loadReaderRoute() {
 
 async function startCurrentReading() {
   const session = state.currentSession
-  if (!session || session.preview || session.status !== 'CREATED' || state.sessionBusy) return false
+  if (!session || session.preview || session.status !== 'CREATED' || state.sessionBusy || state.readingSyncRequired) return false
   return writeReading({
     sessionId: session.readingSessionId,
     kind: 'page',
     payload: {
       eventType: 'STARTED',
-      pageNumber: 1,
+      pageNumber: session.startPageNumber ?? 1,
       expectedRevision: session.revision,
       clientEventId: createClientEventId('start'),
     },
@@ -1893,7 +1897,7 @@ async function writeReading(operation) {
     const result = await readingRequest(operation)
     if (!isCurrent()) return false
     if (operation.kind === 'finish') {
-      state.currentSession = result.session
+      state.currentSession = { ...state.currentSession, ...result.session }
       state.currentReport = result.report
       setToast('阅读记录已保存')
     } else if (operation.kind === 'guidance') {

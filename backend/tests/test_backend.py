@@ -231,13 +231,16 @@ class ModelGatewayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_structured_output_is_opt_in(self):
         def provider(request):
-            self.assertEqual(json.loads(request.content)["response_format"], {"type": "json_object"})
+            payload = json.loads(request.content)
+            self.assertEqual(payload["response_format"], {"type": "json_object"})
+            self.assertEqual(payload["max_tokens"], 1536)
             return httpx.Response(200, json=model_response())
 
         async with ModelGateway(MODEL_SETTINGS, transport=httpx.MockTransport(provider)) as gateway:
             adapter = ModelAdapter(gateway)
             result = await adapter.generate(ModelGenerateRequest(
                 system_prompt="Return JSON.", user_input=INPUT_TEXT, context_text="", json_object=True,
+                min_output_token_budget=1536,
             ))
             self.assertTrue(result.success)
 

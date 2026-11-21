@@ -111,15 +111,25 @@ def matching_answer_excerpt(page_text: str, confirmed_answer: str) -> str | None
     return excerpt
 
 
-def reply_to_child_answer(page_text: str, confirmed_answer: str) -> str:
+def reply_to_child_answer(page_text: str, confirmed_answer: str, question: str = "") -> str:
     answer = unicodedata.normalize("NFKC", confirmed_answer)
     if SENSITIVE.search(answer):
         return HANDOFF
-    if excerpt := matching_answer_excerpt(page_text, answer):
+    if not any(char.isalnum() for char in answer):
+        return "收到你的表情啦！能用一句话说说，你在图里看到了什么吗？"
+    unsure = any(phrase in answer for phrase in ("不知道", "不清楚", "没看懂", "不确定"))
+    if not unsure and (excerpt := matching_answer_excerpt(page_text, answer)):
         return f"谢谢你分享！这一页也写到“{excerpt}”。你能在图里找到相关的线索吗？"
-    if any(phrase in answer for phrase in ("不知道", "不清楚", "没看懂", "不确定")):
-        return "我们一起找找吧。先看看图里有谁，再看看它在做什么。"
-    return "我听到你的想法啦。你能指一指图里的哪个地方让你这么想吗？"
+    clue = "先看看图里有谁，再看看它在做什么。"
+    if "颜色" in question:
+        clue = "可以指给我看，再说说它是什么颜色。"
+    elif "哪里" in question or "在哪" in question:
+        clue = "可以看看角色身边有什么，再说说它在哪里。"
+    elif "为什么" in question:
+        clue = "想一想角色做这件事之前发生了什么。"
+    if unsure:
+        return "我们一起找找吧。" + clue
+    return "我听到你的想法啦。" + clue
 
 
 def visible_detail(text: str) -> str | None:

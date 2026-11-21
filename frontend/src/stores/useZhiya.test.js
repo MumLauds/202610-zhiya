@@ -243,12 +243,11 @@ describe('authoritative reading progress', () => {
     expect(state.readingSyncRequired).toBe(false)
   })
 
-  it('starts a restored CREATED session with its authoritative revision', async () => {
+  it('automatically starts a restored CREATED session with its authoritative revision', async () => {
     reading.getReadingSession.mockResolvedValueOnce(detail({ status: 'CREATED', revision: 0, visitedPageNumbers: [] }))
     reading.addReadingEvent.mockResolvedValueOnce({ revision: 1 })
     await actions.loadReaderRoute()
-    expect(reading.addReadingEvent).not.toHaveBeenCalled()
-    expect(await actions.startCurrentReading()).toBe(true)
+    expect(reading.addReadingEvent).toHaveBeenCalledOnce()
     expect(reading.addReadingEvent.mock.calls[0][1]).toMatchObject({ eventType: 'STARTED', expectedRevision: 0, pageNumber: 1 })
     expect(state.currentSession.status).toBe('IN_PROGRESS')
   })
@@ -1112,8 +1111,9 @@ describe('child-mode handoff', () => {
   async function openNewParentSession() {
     await actions.bootstrap()
     books.listStorybooks.mockClear()
+    window.history.replaceState({}, '', '/#reader/setup/55')
     reading.getReadingSession.mockResolvedValueOnce(detail({ status: 'CREATED', revision: 0, visitedPageNumbers: [] }))
-    await actions.loadReaderRoute()
+    await actions.syncRoute()
   }
 
   function confirmChildCredential() {
@@ -1130,7 +1130,7 @@ describe('child-mode handoff', () => {
     expect(state.childMode).toBeNull()
     expect(localStorage.getItem('zhiya.childHandoffSessionId')).toBeNull()
     expect(sessionStorage.getItem('zhiya.childHandoffSessionId')).toBeNull()
-    expect(location.hash).toBe('#reader/55')
+    expect(location.hash).toBe('#reader/setup/55')
     expect(await actions.enterChildMode(55, [88], 300)).toBe(false)
     expect(reading.updateReadingMode).toHaveBeenCalledOnce()
   })

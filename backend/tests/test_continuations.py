@@ -279,7 +279,8 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
             assert "“家人”表示亲属关系" in request.system_prompt
             assert "只画本页明确出场的角色" in request.system_prompt
             pages, scenes = (continued_pages, continued_scenes) if context["previousPages"] else (original_pages, original_scenes)
-            return ModelGenerateResult(success=True, text=json.dumps({"title": title, "pages": pages, "imageScenes": scenes}))
+            return ModelGenerateResult(success=True, text=json.dumps({"title": title, "pages": pages, "imageScenes": scenes,
+                "imageCharacters": {"小兔": "奶白色长耳"}, "imageCast": [["小兔"]] * len(scenes)}))
 
     async def generate_images(settings, scenes, **brief):
         batch = png_batches[len(image_calls)]
@@ -292,6 +293,8 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
     payload = {"topic": "互助", "characters": ["小兔", "家人"], "scene": "森林", "branching": False,
                "generateIllustrations": True}
     expected_brief = {key: payload[key] for key in ("topic", "scene")}
+    original_brief = {**expected_brief, "page_casts": [{"小兔": "奶白色长耳"}] * len(original_scenes)}
+    continued_brief = {**expected_brief, "page_casts": [{"小兔": "奶白色长耳"}] * len(continued_scenes)}
     original = {**payload, "ageBand": "AGE_4_5", "clientRequestId": "ai-original"}
     generated = client.post(generations, headers=headers, json=original)
     assert generated.status_code == 201, generated.text
@@ -310,7 +313,7 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
     replay = client.post(generations, headers=headers, json=original)
     assert replay.status_code == 200 and replay.json()["data"] == draft
     assert model_calls == [4]
-    assert image_calls == [(original_scenes, expected_brief)]
+    assert image_calls == [(original_scenes, original_brief)]
     approved = client.post(f"/api/v1/story-versions/{version}/approvals", headers=headers,
                            json={"versionNumber": draft["versionNumber"], "reviewedAllBranches": True})
     assert approved.status_code == 200, approved.text
@@ -340,7 +343,7 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
         png_batches[0][:2] + png_batches[1]
     )
     assert model_calls == [4, 2]
-    assert image_calls == [(original_scenes, expected_brief), (continued_scenes, expected_brief)]
+    assert image_calls == [(original_scenes, original_brief), (continued_scenes, continued_brief)]
 
 
 @pytest.mark.parametrize("generate_illustrations", [False, True], ids=["template", "ai"])
@@ -377,8 +380,10 @@ def test_generated_cover_matches_the_first_illustration_before_and_after_approva
                 "pages": ["下雨了。", "兔子遇见了松鼠。", "他们一起找松果。", "他们带着松果回家。"],
             }
             assert ("imageScenes" in request.system_prompt) == generate_illustrations
+            assert request.min_output_token_budget == (1536 if generate_illustrations else None)
             if generate_illustrations:
                 draft["imageScenes"] = ["下雨了以后的林间小径", "树根旁相遇", "树下捡松果", "提着松果走向家门"]
+                draft["imageCast"] = [[], [], [], []]
             return ModelGenerateResult(success=True, text=json.dumps(draft))
 
     async def generate_images(settings, pages, **brief):
@@ -431,6 +436,7 @@ def test_ai_illustration_failure_replays_without_creating_a_draft(cont_env, monk
             return ModelGenerateResult(success=True, text=json.dumps({
                 "title": "森林里的朋友", "pages": ["兔子到森林散步。", "它见到了松鼠。", "它们一同玩耍。", "它们回家了。"],
                 "imageScenes": ["林间小径上的兔子", "树根旁相遇", "树下玩耍", "两只动物走向家门"],
+                "imageCast": [[], [], [], []],
             }))
 
     async def generate_images(settings, pages, **brief):
@@ -471,6 +477,7 @@ def test_invalid_illustration_scenes_never_reach_image_provider(cont_env, monkey
     draft = {"title": "森林里的朋友", "pages": ["小兔今天去了森林。", "它遇到了松鼠。", "它们一同玩耍。", "小兔回家了。"]}
     if scenes is not None:
         draft["imageScenes"] = scenes
+        draft["imageCast"] = [[], [], [], []]
     text_provider = AsyncMock(return_value=ModelGenerateResult(success=True, text=json.dumps(draft)))
     image_provider = AsyncMock()
     monkeypatch.setattr(client.app.state, "model_adapter", SimpleNamespace(generate=text_provider))

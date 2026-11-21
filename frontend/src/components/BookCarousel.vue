@@ -5,15 +5,18 @@ import { roundedTrapezoidPath } from '../utils/coverShape'
 const props = defineProps({
   books: { type: Array, required: true },
   selectedId: { type: String, default: '' },
+  starting: Boolean,
 })
 
-const emit = defineEmits(['select'])
+const emit = defineEmits(['select', 'start'])
+const opening = ref(null)
 const wheel = ref(null)
 const dots = ref(null)
 const panelWidth = ref(900)
 const wheelSpread = ref(.77)
 const coverClipPath = roundedTrapezoidPath(87.9, 100)
 let observer = null
+let openingTimer
 
 const selectedIndex = computed(() => Math.max(0, props.books.findIndex((book) => book.id === props.selectedId)))
 
@@ -38,7 +41,10 @@ onMounted(() => {
   observer.observe(wheel.value)
 })
 
-onBeforeUnmount(() => observer?.disconnect())
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  clearTimeout(openingTimer)
+})
 
 function offsetFor(index) {
   const count = props.books.length
@@ -78,7 +84,23 @@ function styleFor(index) {
 }
 
 function choose(book) {
-  emit('select', book.id)
+  if (!opening.value && !props.starting) emit('select', book.id)
+}
+
+function openBook(book, index) {
+  if (opening.value || props.starting) return
+  if (index !== selectedIndex.value) return choose(book)
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return emit('start', book)
+  opening.value = book
+  openingTimer = setTimeout(finishOpening, 380)
+}
+
+function finishOpening() {
+  const book = opening.value
+  if (!book) return
+  clearTimeout(openingTimer)
+  opening.value = null
+  emit('start', book)
 }
 
 function move(step) {
@@ -97,7 +119,8 @@ function move(step) {
           :key="book.id"
           class="wheel-book"
           :class="{
-            selected: book.id === selectedId,
+            selected: offsetFor(index) === 0,
+            'is-opening': opening?.id === book.id,
             'is-center': book.id === selectedId,
             'is-side': offsetFor(index) !== 0 && Math.abs(offsetFor(index)) <= 2,
             'is-hidden': Math.abs(offsetFor(index)) > 2,
@@ -105,13 +128,14 @@ function move(step) {
           :style="styleFor(index)"
           type="button"
           :inert="Math.abs(offsetFor(index)) > 2 || undefined"
-          :aria-label="`选择《${book.title}》`"
-          :aria-current="book.id === selectedId ? 'true' : undefined"
-          @click="choose(book)"
+          :aria-label="`${offsetFor(index) === 0 ? '阅读' : '选择'}《${book.title}》`"
+          :aria-current="offsetFor(index) === 0 ? 'true' : undefined"
+          :aria-disabled="Boolean(opening || starting)"
+          @click="openBook(book, index)"
         >
           <span class="wheel-book-shell">
             <img class="book-shell" src="/assets/figma-prototype/book-shell.webp" alt="">
-            <span class="wheel-cover"><img v-if="Math.abs(offsetFor(index)) <= 2" :loading="offsetFor(index) === 0 ? 'eager' : 'lazy'" :src="book.cover" :alt="`${book.title}封面`"></span>
+            <span class="wheel-cover" @animationend.self="finishOpening"><img v-if="Math.abs(offsetFor(index)) <= 2" :loading="offsetFor(index) === 0 ? 'eager' : 'lazy'" :src="book.cover" :alt="`${book.title}封面`"></span>
           </span>
         </button>
       </div>

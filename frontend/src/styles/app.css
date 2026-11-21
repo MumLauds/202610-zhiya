@@ -2023,3 +2023,41 @@
     }
   
 
+
+    .wheel-book.is-opening .wheel-cover {
+      transform-origin: left center;
+      animation: open-shelf-cover 320ms ease-in-out both;
+    }
+
+    @keyframes open-shelf-cover {
+      to { transform: perspective(650px) rotateY(-86deg); opacity: .45; }
+    }
+
+    .reader-completion {
+      width: min(100%, 630px);
+      background: var(--cream);
+    }
+
+    .reader-completion .address { margin: 18px 0; }
+    .reader-completion .question-actions { flex-wrap: wrap; }
+    .reader-completion .modal-head .pill { margin-bottom: 6px; }
+
+    .growth-records .recent-item {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 14px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--cream);
+    }
+
+    .growth-record-main { display: grid; justify-items: start; gap: 5px; min-width: 0; }
+    .growth-record-main strong { overflow-wrap: anywhere; }
+    .growth-records .recent-item-actions { flex-wrap: wrap; }
+    .growth-records .recent-item-actions button { white-space: nowrap; }
+    .growth-status--finished { color: #214f38; background: #dcebdc; }
+    .growth-status--in_progress { color: #69491e; background: #f5e6c6; }
+    .home-plan progress { width: 100%; height: 8px; accent-color: var(--green); }
+    .home-plan-counts { margin: 0; font-size: .8rem; }
+    .reader-finish-action { display: block; margin: 16px 0 0 auto; }

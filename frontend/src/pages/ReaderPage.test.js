@@ -820,25 +820,23 @@ describe('reader state and visual progress', () => {
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
   })
 
-  it('prioritizes and focuses the summary after finishing the final page', async () => {
+  it('opens a confirmation on the final page and shows the summary in the same dialog', async () => {
     const session = { ...initialSession, currentPage: 7, visitedPageNumbers: [1, 3, 7] }
-    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
-    try {
-      render({ session })
-      expect(wrapper.find('.reader-summary').exists()).toBe(false)
-      await button('结束本次阅读').trigger('click')
-      expect(wrapper.props('completeReading')).toHaveBeenCalledOnce()
-      const summary = '已保存本次阅读记录'
-      await wrapper.setProps({ session: { ...session, status: 'FINISHED' }, report: { status: 'PENDING', summary } })
-      const card = wrapper.get('.reader-side > .side-card:first-child')
-      expect(card.get('h2').text()).toBe('本次共读小结')
-      expect(card.text()).toContain(summary)
-      expect(focus.mock.contexts).toEqual([card.element])
-      await wrapper.setProps({ report: { status: 'READY', summary } })
-      expect(focus).toHaveBeenCalledOnce()
-    } finally {
-      focus.mockRestore()
-    }
+    const summary = '已保存本次阅读记录'
+    render({ session })
+    await flushPromises()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('读到最后一页啦')
+    expect(wrapper.props('completeReading')).not.toHaveBeenCalled()
+    const dialog = wrapper.get('[role="dialog"]').element
+    await button('完成阅读并生成小结').trigger('click')
+    expect(wrapper.props('completeReading')).toHaveBeenCalledOnce()
+    await wrapper.setProps({ session: { ...session, status: 'FINISHED' }, report: { status: 'PENDING', summary } })
+    const card = wrapper.get('.reader-summary[role="dialog"]')
+    expect(card.element).toBe(dialog)
+    expect(card.get('h2').text()).toBe('本次共读小结')
+    expect(card.text()).toContain(summary)
+    await wrapper.setProps({ report: { status: 'READY', summary } })
+    expect(card.text()).toContain('小结已生成')
   })
 
   it('offers to refresh a finished session with a missing report', async () => {

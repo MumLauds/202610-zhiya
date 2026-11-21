@@ -34,7 +34,10 @@ def provider_response(content):
 ])
 def test_dashscope_sends_consistent_illustration_brief_for_each_page(monkeypatch, model, supports_negative_prompt):
     settings = replace(SETTINGS, model=model)
-    scenes = ["青苔覆盖的林间小径，小兔跃过树根", "小兔在树根旁把松果递给戴黄帽子的松鼠"]
+    scenes = ["小兔背着印有小熊图案的书包跃过树根", "小兔在树根旁把松果递给小松鼠", "小松鼠带着松果走向树洞"]
+    rabbit = {"小兔": "奶白色绒毛、粉色长耳"}
+    squirrel = {"小松鼠": "棕色绒毛、戴黄帽子"}
+    page_casts = [rabbit, {**rabbit, **squirrel}, squirrel]
     requests = []
     downloads = []
 
@@ -47,7 +50,7 @@ def test_dashscope_sends_consistent_illustration_brief_for_each_page(monkeypatch
 
     mock_provider(monkeypatch, handler)
     pinned = []
-    assets = [{"id": "first"}, {"id": "second"}]
+    assets = [{"id": "first"}, {"id": "second"}, {"id": "third"}]
 
     def pin(images):
         pinned.extend(images)
@@ -55,13 +58,13 @@ def test_dashscope_sends_consistent_illustration_brief_for_each_page(monkeypatch
 
     monkeypatch.setattr(image_generation, "pin_generated_illustrations", pin)
 
-    result = asyncio.run(image_generation.generate_story_illustrations(settings, scenes, **BRIEF))
+    result = asyncio.run(image_generation.generate_story_illustrations(settings, scenes, page_casts=page_casts, **BRIEF))
 
     assert result == assets
-    assert pinned == [b"/1.png", b"/2.png"]
+    assert pinned == [b"/1.png", b"/2.png", b"/3.png"]
     assert len(requests) == len(downloads) == len(scenes)
     prompts = []
-    for request, scene in zip(requests, scenes, strict=True):
+    for request, scene, cast in zip(requests, scenes, page_casts, strict=True):
         assert str(request.url) == settings.endpoint
         assert request.headers["Authorization"] == "Bearer test-key"
         body = json.loads(request.content)
@@ -69,9 +72,9 @@ def test_dashscope_sends_consistent_illustration_brief_for_each_page(monkeypatch
         prompts.append(prompt)
         assert "单一连续场景" in prompt
         assert "森林" in prompt and "友谊" in prompt
-        assert ("戴黄帽子的松鼠" in prompt) == ("戴黄帽子的松鼠" in scene)
-        assert "家人" not in prompt
-        assert "奶白色绒毛" in prompt and "粉色长耳" in prompt
+        assert ("戴黄帽子" in prompt) == ("小松鼠" in cast)
+        assert "小熊沿用" not in prompt and "家人" not in prompt
+        assert ("奶白色绒毛" in prompt) == ("小兔" in cast)
         assert "只画本页明确出场的角色" in prompt and "自然动物体态" in prompt
         assert "无字" in prompt and "无标识" in prompt
         assert "适合3至6岁" in prompt
@@ -89,7 +92,6 @@ def test_dashscope_sends_consistent_illustration_brief_for_each_page(monkeypatch
             "input": {"messages": [{"role": "user", "content": [{"text": prompt}]}]},
             "parameters": parameters,
         }
-    assert prompts[0].replace(scenes[0], "") == prompts[1].replace(scenes[1], "")
     assert scenes[1] not in prompts[0] and scenes[0] not in prompts[1]
     for index, request in enumerate(downloads, start=1):
         assert request.method == "GET"
@@ -114,7 +116,8 @@ def test_image_request_keeps_the_family_story_scene_cast(monkeypatch, descriptio
     mock_provider(monkeypatch, handler)
     monkeypatch.setattr(image_generation, "pin_generated_illustrations", lambda images: images)
     asyncio.run(image_generation.generate_story_illustrations(
-        SETTINGS, [description], **BRIEF,
+        SETTINGS, [description], page_casts=[{"小熊": "棕色绒毛"} if other_role == "小女孩"
+                                                else {"小女孩": "蓝色外套", "妈妈": "长发"}], **BRIEF,
     ))
 
     assert len(prompts) == 1
@@ -150,6 +153,6 @@ def test_dashscope_rejects_invalid_results_without_downloading(monkeypatch, cont
     mock_provider(monkeypatch, handler)
 
     with pytest.raises(image_generation.ImageGenerationError, match="^Illustration generation failed$"):
-        asyncio.run(image_generation.generate_story_illustrations(SETTINGS, ["第一页正文"], **BRIEF))
+        asyncio.run(image_generation.generate_story_illustrations(SETTINGS, ["第一页正文"], page_casts=[{}], **BRIEF))
 
     assert methods == ["POST"]

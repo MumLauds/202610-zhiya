@@ -7,7 +7,7 @@ defineProps({
   checkingIdentity: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['back', 'start', 'retry-identity'])
+const emit = defineEmits(['back', 'start', 'setup-child', 'retry-identity'])
 </script>
 
 <template>
@@ -36,6 +36,7 @@ const emit = defineEmits(['back', 'start', 'retry-identity'])
           <button class="primary" type="button" :disabled="retryIdentity && checkingIdentity" @click="retryIdentity ? emit('retry-identity') : emit('start', book)">
             {{ retryIdentity ? (checkingIdentity ? '正在核验身份…' : '重试身份核验') : '开始阅读' }}
           </button>
+          <button v-if="book.source === 'api' && !retryIdentity" class="secondary" type="button" @click="emit('setup-child', book)">设置儿童模式</button>
           <button class="secondary" type="button" @click="emit('back')">继续选书</button>
         </div>
       </div>

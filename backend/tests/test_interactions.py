@@ -467,7 +467,7 @@ def test_parent_answer_returns_an_immediate_local_reply_and_replays_it(started_s
     client, headers, _, sid = started_session
     url = f"/api/v1/reading-sessions/{sid}"
     replies = []
-    for revision, text in enumerate(("雨伞", "不知道", "我的手机号"), start=1):
+    for revision, text in enumerate(("雨伞", "不知道", "我的手机号", "🦋"), start=1):
         payload = {"eventType": "ANSWER", "pageNumber": 1, "expectedRevision": revision,
                    "clientEventId": f"reply-{revision}", "inputText": text}
         first = client.post(url + "/events", headers=headers, json=payload)
@@ -480,6 +480,8 @@ def test_parent_answer_returns_an_immediate_local_reply_and_replays_it(started_s
     assert "小兔打开雨伞" in replies[0]
     assert "先看看图里有谁" in replies[1]
     assert replies[2] == reading_agent.HANDOFF
+    assert "收到你的表情" in replies[3]
+    assert "是什么颜色" in reading_agent.reply_to_child_answer("小兔打开雨伞", "不知道", "伞是什么颜色？")
     assert [item["replyText"] for item in client.get(url).json()["data"]["events"] if item["eventType"] == "ANSWER"] == replies
     guidance_model.assert_not_awaited()
 
