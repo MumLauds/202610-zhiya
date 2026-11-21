@@ -36,8 +36,7 @@ function render(props = {}, useRealFlipBook = false) {
 }
 
 async function startRecording() {
-  await button('回答（语音 + 文字）').trigger('click')
-  await button('开始录音').trigger('click')
+  await wrapper.get('.reader-answer .mic-button').trigger('click')
   await flushPromises()
 }
 
@@ -47,7 +46,7 @@ async function receiveUnconfirmedTranscript() {
   await startRecording()
   await wrapper.get('.mic-button').trigger('click')
   await flushPromises()
-  return wrapper.get('[role="dialog"]')
+  return wrapper.get('.reader-answer')
 }
 
 beforeEach(() => {
@@ -88,18 +87,31 @@ it('places page turns on the book and offers one answer entry with text and reco
   render()
   const sidebar = wrapper.get('.reader-side')
   expect(sidebar.findAll(':scope > .side-card').map(card => card.get('h2').text())).toEqual([
-    expect.stringContaining('朗读控制'), expect.stringContaining('共读小提问'), expect.stringContaining('家长的共读提示'),
+    expect.stringContaining('阅读模式'), expect.stringContaining('共读小提问'), expect.stringContaining('家长的共读提示'),
   ])
   expect(sidebar.find('.reader-edge').exists()).toBe(false)
   expect(wrapper.get('.reader-book-area .reader-edge--previous').element.disabled).toBe(true)
   expect(wrapper.get('.reader-book-area .reader-edge--next').element.disabled).toBe(false)
-  expect(sidebar.get('.narration-card button').text()).toContain('朗读')
+  expect(sidebar.get('.reader-narration-button').text()).toContain('朗读')
   expect(sidebar.text()).not.toContain('语音识别')
-  expect(sidebar.findAll('.question-actions button.primary')).toHaveLength(1)
-  await button('回答（语音 + 文字）').trigger('click')
-  expect(wrapper.get('[role="dialog"] textarea').element.value).toBe('')
-  expect(button('开始录音').element.disabled).toBe(false)
+  expect(sidebar.findAll('.reader-answer button[type="submit"]')).toHaveLength(1)
+  expect(wrapper.get('.reader-answer textarea').element.value).toBe('')
+  expect(wrapper.get('.reader-answer .mic-button').element.disabled).toBe(false)
   expect(getUserMedia).not.toHaveBeenCalled()
+})
+
+it('starts page narration and stops it when switching to free reading', async () => {
+  render()
+  const modes = wrapper.get('.reader-mode-options').findAll('button')
+  expect(modes[0].attributes('aria-pressed')).toBe('true')
+  expect(modes[1].attributes('aria-pressed')).toBe('false')
+  await modes[1].trigger('click')
+  await flushPromises()
+  expect(modes[1].attributes('aria-pressed')).toBe('true')
+  expect(audios.at(-1).play).toHaveBeenCalledOnce()
+  await modes[0].trigger('click')
+  expect(modes[0].attributes('aria-pressed')).toBe('true')
+  expect(audios.at(-1).pause).toHaveBeenCalled()
 })
 
 it('locks reading actions until the edge animation and the page write both settle', async () => {
@@ -119,7 +131,7 @@ it('locks reading actions until the edge animation and the page write both settl
   await wrapper.get('.reader-edge--next').trigger('click')
   expect(bookWidget.flipTo).toHaveBeenCalledExactlyOnceWith(2)
   expect(button('结束本次阅读').element.disabled).toBe(true)
-  expect(button('回答（语音 + 文字）').element.disabled).toBe(true)
+  expect(wrapper.get('.reader-answer textarea').element.disabled).toBe(true)
   expect(recordPage).not.toHaveBeenCalled()
 
   onFlip({ page: 2 })
@@ -161,7 +173,7 @@ describe('recording lifecycle', () => {
     render()
     await startRecording()
     expect(recorders[0].state).toBe('recording')
-    await button('取消并关闭').trigger('click')
+    await button('取消录音').trigger('click')
     await flushPromises()
     expect(recorders[0].state).toBe('inactive')
     expect(track.stop).toHaveBeenCalled()
@@ -175,7 +187,7 @@ describe('recording lifecycle', () => {
     render()
     await startRecording()
     expect(wrapper.find('.mic-button').element.disabled).toBe(true)
-    await button('取消并关闭').trigger('click')
+    await button('取消录音').trigger('click')
     permission.resolve({ getTracks: () => [track] })
     await flushPromises()
     expect(track.stop).toHaveBeenCalledTimes(1)
@@ -192,12 +204,11 @@ describe('recording lifecycle', () => {
     expect(transcribe).toHaveBeenCalledTimes(1)
     expect(transcribe.mock.calls[0][1]).toEqual({ readingSessionId: 55, pageNumber: 1, revision: 1 })
     expect(wrapper.find('.mic-button').element.disabled).toBe(true)
-    await button('取消并关闭').trigger('click')
+    await button('取消录音').trigger('click')
     expect(transcribe.mock.calls[0][2].aborted).toBe(true)
     recognition.resolve({ text: '迟到的结果', reliable: true })
     await flushPromises()
-    await button('回答（语音 + 文字）').trigger('click')
-    expect(wrapper.text()).not.toContain('迟到的结果')
+    expect(wrapper.get('.reader-answer textarea').element.value).toBe('')
     expect(track.stop).toHaveBeenCalled()
   })
 
@@ -222,101 +233,95 @@ describe('recording lifecycle', () => {
 })
 
 describe('parent transcript review', () => {
-  it.each(['direct', 'denied', 'unsupported'])('accepts a local typed question with %s input', async (entry) => {
-    render()
-    if (entry === 'direct') {
-      await button('回答（语音 + 文字）').trigger('click')
-    } else {
+  it.each(['direct', 'denied', 'unsupported'])('accepts a typed answer with %s input', async (entry) => {
+    const submitAnswer = vi.fn().mockResolvedValue(true)
+    render({ submitAnswer })
+    if (entry !== 'direct') {
       if (entry === 'denied') getUserMedia.mockRejectedValueOnce(new Error('permission denied'))
       if (entry === 'unsupported') vi.stubGlobal('MediaRecorder', undefined)
       await startRecording()
     }
-    const dialog = wrapper.get('[role="dialog"]')
-    expect(dialog.get('label').text()).toBe('输入回答')
-    expect(button('确认文字').element.disabled).toBe(true)
-    await dialog.get('textarea').setValue('  小兔回家了吗？ ')
-    await button('确认文字').trigger('click')
-    expect(dialog.get('[role="status"]').text()).toBe('已确认的文字')
-    expect(dialog.get('.transcript-box p').text()).toBe('小兔回家了吗？')
-    expect(dialog.text()).toContain('确认后将作为本页回答保存')
+    const editor = wrapper.get('.reader-answer textarea')
+    expect(button('提交回答').element.disabled).toBe(true)
+    await editor.setValue('  小兔回家了。 ')
     expect(getUserMedia).toHaveBeenCalledTimes(entry === 'denied' ? 1 : 0)
     expect(transcribe).not.toHaveBeenCalled()
+    expect(submitAnswer).not.toHaveBeenCalled()
     expect(synthesize.mock.calls.map(([source]) => source)).toEqual([
       { readingSessionId: 55, pageNumber: 1, revision: 1, preload: true },
     ])
-    await dialog.get('.modal-close').trigger('click')
-    await button('回答（语音 + 文字）').trigger('click')
-    expect(wrapper.get('textarea').element.value).toBe('')
+    await wrapper.get('.reader-answer').trigger('submit')
+    await flushPromises()
+    expect(submitAnswer).toHaveBeenCalledExactlyOnceWith('小兔回家了。')
+    expect(editor.element.value).toBe('')
   })
 
-  it('displays the corrected text after the parent confirms it', async () => {
-    const dialog = await receiveUnconfirmedTranscript()
-    const editor = dialog.get('textarea')
-    expect(dialog.get('label[for="' + editor.attributes('id') + '"]').text()).toBe('待确认的转写')
+  it('allows correction and sends only the text explicitly submitted by the parent', async () => {
+    const form = await receiveUnconfirmedTranscript()
+    const editor = form.get('textarea')
+    expect(form.get('[role="status"]').text()).toContain('核对转写')
     expect(editor.element.value).toBe('小免在哪里？')
-    expect(dialog.text()).not.toContain('识别到的问题')
     await editor.setValue('   ')
-    expect(button('确认转写').element.disabled).toBe(true)
+    expect(button('提交回答').element.disabled).toBe(true)
     await editor.setValue('  小兔在哪里？  ')
-    await button('确认转写').trigger('click')
-    expect(dialog.text()).toContain('已确认的转写')
-    expect(dialog.get('.transcript-box p').text()).toBe('小兔在哪里？')
-    expect(dialog.find('textarea').exists()).toBe(false)
+    expect(wrapper.props('submitAnswer')).not.toHaveBeenCalled()
+    await form.trigger('submit')
+    await flushPromises()
+    expect(wrapper.props('submitAnswer')).toHaveBeenCalledExactlyOnceWith('小兔在哪里？')
     expect(transcribe).toHaveBeenCalledTimes(1)
   })
 
-  it('allows confirmation without editing and clears the result when the dialog closes', async () => {
-    const dialog = await receiveUnconfirmedTranscript()
-    await button('确认转写').trigger('click')
-    expect(dialog.get('.transcript-box p').text()).toBe('小免在哪里？')
-    await dialog.get('.modal-close').trigger('click')
-    await button('回答（语音 + 文字）').trigger('click')
-    expect(wrapper.text()).not.toContain('小免在哪里？')
-    expect(wrapper.get('textarea').element.value).toBe('')
-    expect(transcribe).toHaveBeenCalledTimes(1)
+  it('allows submission without editing and clears a cancelled transcription', async () => {
+    const form = await receiveUnconfirmedTranscript()
+    await form.trigger('submit')
+    await flushPromises()
+    expect(wrapper.props('submitAnswer')).toHaveBeenCalledExactlyOnceWith('小免在哪里？')
+    await startRecording()
+    await form.get('.mic-button').trigger('click')
+    await flushPromises()
+    expect(form.get('textarea').element.value).toBe('识别的声音')
+    await button('清除转写').trigger('click')
+    expect(form.get('textarea').element.value).toBe('')
+    expect(wrapper.props('submitAnswer')).toHaveBeenCalledTimes(1)
   })
 
   it('replaces the draft on re-recording and uploads only after the next explicit stop', async () => {
-    const dialog = await receiveUnconfirmedTranscript()
-    await dialog.get('textarea').setValue('上一段草稿')
-    await button('重新录音').trigger('click')
-    await flushPromises()
+    const form = await receiveUnconfirmedTranscript()
+    await form.get('textarea').setValue('上一段草稿')
+    await startRecording()
     expect(recorders[1].state).toBe('recording')
-    expect(dialog.find('textarea').exists()).toBe(false)
+    expect(form.get('textarea').element.disabled).toBe(true)
     expect(transcribe).toHaveBeenCalledTimes(1)
-    await dialog.get('.mic-button').trigger('click')
+    await form.get('.mic-button').trigger('click')
     await flushPromises()
     expect(transcribe).toHaveBeenCalledTimes(2)
-    expect(dialog.text()).toContain('识别到的回答')
-    expect(dialog.text()).toContain('识别的声音')
-    expect(dialog.text()).not.toContain('上一段草稿')
-    expect(button('确认转写')).toBeUndefined()
+    expect(form.get('[role="status"]').text()).toContain('核对转写')
+    expect(form.get('textarea').element.value).toBe('识别的声音')
+    expect(wrapper.props('submitAnswer')).not.toHaveBeenCalled()
   })
 
   it('discards unconfirmed edits when the reading page changes', async () => {
-    const dialog = await receiveUnconfirmedTranscript()
-    await dialog.get('textarea').setValue('只属于上一页的草稿')
+    const form = await receiveUnconfirmedTranscript()
+    await form.get('textarea').setValue('只属于上一页的草稿')
     await wrapper.setProps({
       session: { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3], revision: 2 },
       events: [{ ...questionEvent, pageNumber: 3, interactionEventId: 11 }],
     })
-    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
-    await button('回答（语音 + 文字）').trigger('click')
-    expect(wrapper.text()).not.toContain('只属于上一页的草稿')
-    expect(wrapper.get('textarea').element.value).toBe('')
+    expect(form.get('textarea').element.value).toBe('')
+    expect(wrapper.props('submitAnswer')).not.toHaveBeenCalled()
     expect(transcribe).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the editable draft when permission for a replacement recording is denied', async () => {
-    const dialog = await receiveUnconfirmedTranscript()
-    await dialog.get('textarea').setValue('仍可确认的文字')
+    const form = await receiveUnconfirmedTranscript()
+    await form.get('textarea').setValue('仍可确认的文字')
     getUserMedia.mockRejectedValueOnce(new Error('permission denied'))
-    await button('重新录音').trigger('click')
+    await startRecording()
+    expect(form.get('[role="alert"]').text()).toContain('麦克风不可用')
+    expect(form.get('textarea').element.value).toBe('仍可确认的文字')
+    await form.trigger('submit')
     await flushPromises()
-    expect(dialog.get('[role="alert"]').text()).toContain('麦克风不可用')
-    expect(dialog.get('textarea').element.value).toBe('仍可确认的文字')
-    await button('确认转写').trigger('click')
-    expect(dialog.get('.transcript-box p').text()).toBe('仍可确认的文字')
+    expect(wrapper.props('submitAnswer')).toHaveBeenCalledExactlyOnceWith('仍可确认的文字')
     expect(transcribe).toHaveBeenCalledTimes(1)
   })
 })
@@ -892,13 +897,13 @@ describe('reader state and visual progress', () => {
     expect(wrapper.text()).toContain('回看已读页')
     expect(wrapper.text().includes('返回当前进度后可继续朗读与录音')).toBe(status === 'IN_PROGRESS')
     expect(button('朗读').element.disabled).toBe(true)
-    expect(button('回答（语音 + 文字）').element.disabled).toBe(true)
+    expect(wrapper.get('.reader-answer textarea').element.disabled).toBe(true)
     expect(record).not.toHaveBeenCalled()
     await button('下一页').trigger('click')
     expect(showPage).toHaveBeenLastCalledWith(1)
     expect(record).not.toHaveBeenCalled()
     expect(button('朗读').element.disabled).toBe(status !== 'IN_PROGRESS')
-    expect(button('回答（语音 + 文字）').element.disabled).toBe(status !== 'IN_PROGRESS')
+    expect(wrapper.get('.reader-answer textarea').element.disabled).toBe(status !== 'IN_PROGRESS')
   })
 
   it('locks every reading interaction while progress is pending', () => {
@@ -906,7 +911,7 @@ describe('reader state and visual progress', () => {
     expect(button('已理解').element.disabled).toBe(true)
     expect(button('还没懂').element.disabled).toBe(true)
     expect(button('跳过本页').element.disabled).toBe(true)
-    expect(button('回答（语音 + 文字）').element.disabled).toBe(true)
+    expect(wrapper.get('.reader-answer textarea').element.disabled).toBe(true)
     expect(button('下一页').element.disabled).toBe(true)
     expect(button('结束本次阅读').element.disabled).toBe(true)
     expect(button('朗读').element.disabled).toBe(true)
@@ -921,7 +926,7 @@ describe('guided reading interactions', () => {
     const submitAnswer = vi.fn()
     render({ askQuestion, submitAnswer })
     await button('问问芽芽').trigger('click')
-    await wrapper.get('textarea').setValue(' 谁拿着伞？ ')
+    await wrapper.get('[role="dialog"] textarea').setValue(' 谁拿着伞？ ')
     await button('确认文字').trigger('click')
     expect(askQuestion).not.toHaveBeenCalled()
     await button('提交问题').trigger('click')
@@ -956,7 +961,7 @@ describe('guided reading interactions', () => {
     const requestGuidance = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(true)
     render({ events: [], requestGuidance })
     await flushPromises()
-    expect(button('回答（语音 + 文字）').element.disabled).toBe(true)
+    expect(wrapper.get('.reader-answer textarea').element.disabled).toBe(true)
     expect(button('跳过本页').element.disabled).toBe(false)
     expect(button('下一页').element.disabled).toBe(false)
     await button('跳过本页').trigger('click')
@@ -980,7 +985,7 @@ describe('guided reading interactions', () => {
     render({ requestGuidance, events: [questionEvent, blocked] })
     expect(wrapper.text()).toContain(blocked.outputText)
     expect(wrapper.text()).not.toContain(questionEvent.outputText)
-    for (const label of ['已理解', '还没懂', '回答（语音 + 文字）']) {
+    for (const label of ['已理解', '还没懂', '提交回答']) {
       expect(button(label).element.disabled).toBe(true)
     }
     expect(button('下一页').element.disabled).toBe(false)
@@ -1000,19 +1005,17 @@ describe('guided reading interactions', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('这一页的提问已跳过')
     expect(button('已理解').element.disabled).toBe(true)
-    expect(button('回答（语音 + 文字）').element.disabled).toBe(true)
+    expect(wrapper.get('.reader-answer textarea').element.disabled).toBe(true)
     expect(requestGuidance).not.toHaveBeenCalled()
   })
 
   it('keeps transcript review separate from the ANSWER write', async () => {
     const submitAnswer = vi.fn().mockResolvedValue(true)
     render({ submitAnswer })
-    await button('回答（语音 + 文字）').trigger('click')
-    const dialog = wrapper.get('[role="dialog"]')
-    await dialog.get('textarea').setValue('  小兔在河边看云。 ')
-    await button('确认文字').trigger('click')
+      const form = wrapper.get('.reader-answer')
+    await form.get('textarea').setValue('  小兔在河边看云。 ')
     expect(submitAnswer).not.toHaveBeenCalled()
-    await button('提交回答').trigger('click')
+    await form.trigger('submit')
     await flushPromises()
     expect(submitAnswer).toHaveBeenCalledWith('小兔在河边看云。')
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
@@ -1021,10 +1024,8 @@ describe('guided reading interactions', () => {
   it('shows a saved answer after the authoritative events update', async () => {
     const submitAnswer = vi.fn().mockResolvedValue(true)
     render({ submitAnswer })
-    await button('回答（语音 + 文字）').trigger('click')
-    await wrapper.get('textarea').setValue('小兔躲在树后。')
-    await button('确认文字').trigger('click')
-    await button('提交回答').trigger('click')
+      await wrapper.get('.reader-answer textarea').setValue('小兔躲在树后。')
+    await wrapper.get('.reader-answer').trigger('submit')
     await wrapper.setProps({
       events: [
         questionEvent,

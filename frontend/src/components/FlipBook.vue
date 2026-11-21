@@ -83,7 +83,7 @@ function mountBook() {
       height: 560,
       size: 'stretch',
       minWidth: 240,
-      maxWidth: 460,
+      maxWidth: 470,
       layout: 'auto',
       cover: false,
       startPage: Math.max(0, Math.min(visiblePages.value.length - 1, props.startPage - windowStart.value)) * 2,
