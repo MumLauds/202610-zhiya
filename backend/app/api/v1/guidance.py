@@ -15,7 +15,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.v1.auth import authorized_db, error
 from app.api.v1.reading_sessions import (
-    CHILD_SHORT_ANSWERS, MAX_ID, current_question, fail_session_event, owned_session, record_session_event,
+    CHILD_SHORT_ANSWERS, MAX_ID, current_parent_question, current_question, fail_session_event, owned_session, record_session_event,
     replay_session_event, request_digest,
 )
 from app.schemas.agent import AgentResult
@@ -159,21 +159,23 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
                                           "SESSION_CONFLICT", "当前状态或页面不允许此操作")
             previous_question = confirmed_answer = ""
             if not ask and payload.feedback in ("UNDERSTOOD", "NOT_UNDERSTOOD"):
-                question = current_question(db, session)
+                parent_reading = principal.role == "GUARDIAN" and session["mode"] == "PARENT_CHILD"
+                question = current_parent_question(db, session) if parent_reading else current_question(db, session)
                 if question is None:
                     return fail_session_event(db, request, owner, session_id, key, digest, 409,
                                               "PROMPT_REQUIRED", "当前页尚未有引导问题")
                 previous_question = question["output_text"]
-                if principal.role == "GUARDIAN" and session["mode"] == "PARENT_CHILD":
+                if parent_reading:
                     # An answer only follows the latest question in the current visit.
                     answer = db.execute(
                         """SELECT input_text FROM interaction_events
                            WHERE session_id = ? AND version_id = ? AND page_no = ?
                              AND event_type = 'ANSWER' AND result_status = 'SUCCESS'
+                             AND id > ?
                              AND id > (SELECT MAX(id) FROM interaction_events WHERE session_id = ?
                                        AND event_type IN ('STARTED', 'PAGE_CHANGED', 'BRANCH_CHOSEN', 'QUESTION', 'FEEDBACK'))
                            ORDER BY id DESC LIMIT 1""",
-                        (session_id, session["version_id"], session["current_page_no"], session_id),
+                        (session_id, session["version_id"], session["current_page_no"], question["id"], session_id),
                     ).fetchone()
                     if answer:
                         confirmed_answer = answer["input_text"] or ""

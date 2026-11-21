@@ -632,7 +632,7 @@ async function submitConfirmedAnswer() {
     if (saved) {
       if (isStoryQuestion) closeStoryQuestion()
       else childAnswerDraft.value = null
-    } else {
+    } else if (!props.syncRequired) {
       voiceError.value = isStoryQuestion ? '提问尚未确认保存，请核对进度后重试。' : '回答尚未确认保存，请检查页面提示后重试。'
     }
   } finally {

@@ -125,6 +125,18 @@ def current_question(db: sqlite3.Connection, session: sqlite3.Row) -> sqlite3.Ro
     return next((question for question in questions if question["output_text"].strip()), None)
 
 
+def current_parent_question(db: sqlite3.Connection, session: sqlite3.Row) -> sqlite3.Row | None:
+    question = current_question(db, session)
+    latest_answer = db.execute(
+        """SELECT id, output_text FROM interaction_events WHERE session_id = ? AND version_id = ? AND page_no = ?
+           AND event_type = 'ANSWER' ORDER BY id DESC LIMIT 1""",
+        (session["id"], session["version_id"], session["current_page_no"]),
+    ).fetchone()
+    if latest_answer and latest_answer["output_text"] and (question is None or latest_answer["id"] > question["id"]):
+        return latest_answer
+    return question
+
+
 def child_answer_options(db: sqlite3.Connection, session: sqlite3.Row) -> list[str]:
     question = current_question(db, session)
     if question is None:
@@ -773,20 +785,12 @@ def answer_context(db, session, answer: str) -> dict:
            WHERE p.version_id = ? AND p.page_no = ?""",
         (session["profile_id"], session["version_id"], session["current_page_no"]),
     ).fetchone()
-    question = current_question(db, session)
-    latest_answer = db.execute(
-        """SELECT id, output_text FROM interaction_events WHERE session_id = ? AND version_id = ? AND page_no = ?
-           AND event_type = 'ANSWER' ORDER BY id DESC LIMIT 1""",
-        (session["id"], session["version_id"], session["current_page_no"]),
-    ).fetchone()
+    question = current_parent_question(db, session)
     followups = db.execute(
         """SELECT output_text FROM interaction_events WHERE session_id = ? AND version_id = ? AND page_no = ?
            AND event_type = 'ANSWER' AND output_text IS NOT NULL ORDER BY id DESC LIMIT 2""",
         (session["id"], session["version_id"], session["current_page_no"]),
     ).fetchall()
-    prompt = question["output_text"] if question else ""
-    if latest_answer and latest_answer["output_text"] and (question is None or latest_answer["id"] > question["id"]):
-        prompt = latest_answer["output_text"]
     visited = json.loads(session["visited_pages_json"])
     earlier = [number for number in visited[:-1] if number != session["current_page_no"]][-3:]
     texts = {}
@@ -796,7 +800,7 @@ def answer_context(db, session, answer: str) -> dict:
             % ",".join("?" * len(earlier)), (session["version_id"], *earlier),
         ))
     return dict(
-        page_text=page["body_text"] if page else "", question=prompt, answer=answer,
+        page_text=page["body_text"] if page else "", question=question["output_text"] if question else "", answer=answer,
         title=page["title"] if page else "", page_number=session["current_page_no"],
         age_band=page["age_band"] if page else "", topics=json.loads(page["topics_json"]) if page else [],
         earlier_pages=[texts[number][:600] for number in earlier if number in texts],

@@ -145,14 +145,49 @@ def matching_answer_excerpt(page_text: str, confirmed_answer: str) -> str | None
     return excerpt
 
 
+OPPOSITE_ACTIONS = (
+    (("打开", "撑开"), ("收起", "合上", "关上")),
+    (("拿起", "捡起"), ("放下",)),
+    (("走近", "靠近"), ("走远", "离开")),
+)
+
+
+def _answer_signals(answer: str, clue: str | None) -> tuple[str, str, bool]:
+    short_answer = answer.strip(" ，。！？,.!?")
+    matches = [
+        (aliases, opposite)
+        for left, right in OPPOSITE_ACTIONS
+        for aliases, opposite in ((left, right), (right, left))
+        if any(word in answer for word in aliases)
+    ]
+    stance = "未明确"
+    if any(phrase in answer for phrase in ("不知道", "不清楚", "没看懂", "不确定", "没想好")):
+        stance = "不确定"
+    elif (short_answer in ("不", "没", "没有", "不对", "没做") or answer.startswith("不是")
+          or any(word in answer for word in ("没有", "没做"))
+          or any("没" + word in answer for aliases, _ in matches for word in aliases)):
+        stance = "否定"
+    elif short_answer in ("是", "是的", "对", "对的", "有"):
+        stance = "肯定"
+
+    if len(matches) != 1:
+        return stance, "", False
+    aliases, opposite = matches[0]
+    conflict = bool(clue and any(word in clue for word in opposite))
+    return stance, aliases[0], conflict
+
+
 def reply_to_child_answer(page_text: str, confirmed_answer: str, question: str = "") -> str:
     answer = unicodedata.normalize("NFKC", confirmed_answer)
     if answer_is_unsafe(answer):
         return HANDOFF
     if not any(char.isalnum() for char in answer):
         return "收到你的表情啦！能用一句话说说，你在图里看到了什么吗？"
-    unsure = any(phrase in answer for phrase in ("不知道", "不清楚", "没看懂", "不确定"))
-    if not unsure and (excerpt := matching_answer_excerpt(page_text, answer)):
+    excerpt = matching_answer_excerpt(page_text, answer)
+    stance, _, conflict = _answer_signals(answer, excerpt)
+    if excerpt and conflict and stance != "不确定":
+        return f"我们一起看看“{excerpt}”。你能指一指角色刚才做的动作吗？"
+    if excerpt and stance not in ("不确定", "否定"):
         return f"谢谢你分享！这一页也写到“{excerpt}”。你能在图里找到相关的线索吗？"
     clue = "先看看图里有谁，再看看它在做什么。"
     if "颜色" in question:
@@ -161,13 +196,13 @@ def reply_to_child_answer(page_text: str, confirmed_answer: str, question: str =
         clue = "可以看看角色身边有什么，再说说它在哪里。"
     elif "为什么" in question:
         clue = "想一想角色做这件事之前发生了什么。"
-    if unsure:
+    if stance == "不确定":
         return "我们一起找找吧。" + clue
     return "我听到你的想法啦。" + clue
 
 
 def _answer_cue(page_text: str, answer: str) -> str | None:
-    # The only answer-derived text sent to the gateway is an excerpt from the page.
+    # The excerpt comes from the page, even when selected using the answer.
     cue = matching_answer_excerpt(page_text, answer)
     if cue:
         return cue
@@ -186,16 +221,20 @@ async def generate_answer_reply(model: ModelAdapter, *, page_text: str, question
     if answer_is_unsafe(answer) or not question or not any(char.isalnum() for char in answer):
         return None
     page = "。".join(clause for clause in page_clauses(page_text[:1200]) if not answer_is_unsafe(clause))
-    clue = _answer_cue(page, unicodedata.normalize("NFKC", answer))
+    normalized_answer = unicodedata.normalize("NFKC", answer)
+    clue = _answer_cue(page, normalized_answer)
+    stance, action, conflict = _answer_signals(normalized_answer, clue)
     fallback = reply_to_child_answer(page, answer, question)
     replies = {"INSUFFICIENT_EVIDENCE": "我们和家长一起看看这页，再找找线索吧。"}
-    if any(word in answer for word in ("不知道", "不清楚", "没看懂", "不确定", "没想好")):
+    if stance == "不确定":
         replies = {"UNCERTAIN": fallback}
     elif clue:
-        if not any(word in answer for word in ("不是", "没有", "没做")):
+        if stance != "否定" and not conflict:
             replies.update(RELEVANT=f"我听到你的观察啦。这页写着“{clue}”。",
                            PARTIAL=f"你已经找到了一些线索。我们再看看“{clue}”。")
-    elif page:
+        else:
+            replies["INSUFFICIENT_EVIDENCE"] = fallback
+    elif page and stance == "未明确":
         replies["OFF_TOPIC"] = "谢谢你告诉我。我们回到这一页，一起看看发生了什么吧。"
 
     choices = ANSWER_FOLLOWUPS.get(age_band, ANSWER_FOLLOWUPS["AGE_3_4"])
@@ -217,6 +256,7 @@ async def generate_answer_reply(model: ModelAdapter, *, page_text: str, question
                 "页码": page_number, "当前问题": question[:160] if not answer_is_unsafe(question) else "",
                 "已读前文": [text[:200] for text in earlier_pages if not answer_is_unsafe(text)],
                 "作答对应的当页原文线索": clue,
+                "本地作答信号": {"态度": stance, "动作": action, "动作与当页线索冲突": conflict},
                 "可选类别": list(replies), "追问候选": dict(enumerate(followups, 1)),
             }, ensure_ascii=False)
             request.json_object = True

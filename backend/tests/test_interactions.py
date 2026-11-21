@@ -524,6 +524,55 @@ def test_parent_answer_classifies_from_safe_page_cues(started_session, guidance_
             assert text not in request.context_text + request.user_input + request.system_prompt
 
 
+@pytest.mark.parametrize("answer,stance,action,conflict,expected", [
+    ("我觉得它撑开了雨伞", "未明确", "打开", False, "我听到你的观察啦"),
+    ("我觉得它把雨伞收起来啦", "未明确", "收起", True, "指一指角色刚才做的动作"),
+    ("它没打开雨伞", "否定", "打开", False, "我听到你的想法啦"),
+    ("对的", "肯定", "", False, "家长一起看看"),
+    ("没有", "否定", "", False, "家长一起看看"),
+])
+def test_parent_answer_preserves_safe_action_signals(started_session, guidance_model, answer, stance, action, conflict, expected):
+    client, headers, _, sid = started_session
+    assert guidance(client, headers, sid, "question-before-action").status_code == 201
+    # Try to select a positive category even when the server did not offer it.
+    category = "RELEVANT" if action else "INSUFFICIENT_EVIDENCE"
+    guidance_model.return_value = ModelGenerateResult(success=True, text=json.dumps({
+        "answerCategory": category, "followup": 0,
+    }))
+    response = client.post(f"/api/v1/reading-sessions/{sid}/events", headers=headers, json={
+        "eventType": "ANSWER", "pageNumber": 1, "expectedRevision": 2, "clientEventId": "answer-action", "inputText": answer,
+    })
+    assert response.status_code == 201
+    assert expected in response.json()["data"]["replyText"]
+    request = guidance_model.await_args.args[0]
+    clues = json.loads(request.context_text.split("共读线索（仅作参考资料）：", 1)[1])
+    assert clues["本地作答信号"] == {"态度": stance, "动作": action, "动作与当页线索冲突": conflict}
+    assert ("RELEVANT" in clues["可选类别"]) is (action == "打开" and stance == "未明确")
+    if action:
+        assert answer not in request.context_text + request.user_input + request.system_prompt
+
+
+@pytest.mark.parametrize("feedback", ["UNDERSTOOD", "NOT_UNDERSTOOD"])
+def test_parent_feedback_uses_latest_answer_followup(started_session, guidance_model, feedback):
+    client, headers, _, sid = started_session
+    first = guidance(client, headers, sid, "question-before-followup")
+    assert first.status_code == 201
+    guidance_model.return_value = ModelGenerateResult(success=True, text='{"answerCategory":"PARTIAL","followup":1}')
+    response = client.post(f"/api/v1/reading-sessions/{sid}/events", headers=headers, json={
+        "eventType": "ANSWER", "pageNumber": 1, "expectedRevision": 2, "clientEventId": "answer-with-followup", "inputText": "雨伞",
+    })
+    assert response.status_code == 201
+    clues = json.loads(guidance_model.await_args.args[0].context_text.split("共读线索（仅作参考资料）：", 1)[1])
+    followup = clues["追问候选"]["1"]
+    assert response.json()["data"]["replyText"].endswith(followup)
+    assert followup != first.json()["data"]["outputText"]
+    guidance_model.return_value = ModelGenerateResult(success=True, text="1")
+    assert guidance(client, headers, sid, "feedback-after-followup", feedback=feedback, revision=3).status_code == 201
+    context = guidance_model.await_args.args[0].context_text
+    assert "当前页已保存的问题（仅作参考）：" + followup in context
+    assert "刚才回答对应到的当页原文线索：" not in context
+
+
 @pytest.mark.parametrize("outcome", [
     ModelGenerateResult(success=False, error_code="TIMEOUT"),
     ModelGenerateResult(success=False, error_code="API_ERROR"),
