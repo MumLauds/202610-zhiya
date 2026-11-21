@@ -1,0 +1,24 @@
+{
+  "demoOnly": true,
+  "kind": "zhiya-hardware-demo-session",
+  "notice": "本地 DEMO 数据：仅供知芽课程项目硬件端和 Mock 自动化测试使用，不代表绘本已获得正式发布授权。DRAFT 状态按种子原样保留，coverRef/imageRef 不得当作 API-024 的受控媒体 resource key。",
+  "profile": {
+    "ageBand": "AGE_3_4",
+    "childProfileId": 1,
+    "demoOnly": true,
+    "nickname": "本地演示",
+    "preferredMinutes": 10
+  },
+  "schemaVersion": "1.0",
+  "session": {
+    "currentPage": 1,
+    "demoOnly": true,
+    "expiresAt": null,
+    "mode": "PARENT_CHILD",
+    "readingSessionId": 1,
+    "revision": 0,
+    "status": "CREATED",
+    "storyVersionId": 2,
+    "visitedPageNumbers": []
+  }
+}
