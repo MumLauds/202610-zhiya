@@ -10,6 +10,7 @@ from contextlib import closing
 from io import BytesIO
 from pathlib import Path
 from threading import Event
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
@@ -18,6 +19,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.api.v1 import guidance as guidance_api
+from app.api.v1 import reading_sessions
 from app.api.v1.auth import _login_attempts
 from app.config import Settings
 from app.main import app, create_app
@@ -592,6 +594,26 @@ def test_parent_answer_keeps_rule_reply_on_model_failure(started_session, guidan
     )
 
 
+def assert_saved_answer(client, path, sid, key, data, followup=None):
+    with closing(sqlite3.connect(path)) as db:
+        execution = db.execute(
+            """SELECT status, response_status, response_body FROM request_executions
+               WHERE scope_type = 'SESSION_EVENT' AND scope_id = ? AND client_request_id = ?""", (sid, key),
+        ).fetchone()
+        event_response, output, revision = db.execute(
+            "SELECT response_json, output_text, revision_after FROM interaction_events WHERE id = ?",
+            (data["interactionEventId"],),
+        ).fetchone()
+    assert execution[:2] == ("SUCCEEDED", 201)
+    assert json.loads(execution[2]) == json.loads(event_response)
+    assert json.loads(event_response)["data"] == data and output == followup
+    detail = client.get(f"/api/v1/reading-sessions/{sid}").json()["data"]
+    event = next(item for item in detail["events"] if item["interactionEventId"] == data["interactionEventId"])
+    assert event["eventType"] == "ANSWER"
+    assert event["replyText"] == data["replyText"]
+    assert revision == data["revision"] <= detail["session"]["revision"]
+
+
 @pytest.mark.parametrize("during_reply", ["page_turn", "expired_execution"])
 def test_saved_answer_survives_while_model_is_pending(started_session, guidance_model, during_reply):
     client, headers, path, sid = started_session
@@ -634,6 +656,99 @@ def test_saved_answer_survives_while_model_is_pending(started_session, guidance_
     assert response.status_code == 201 and response.json()["data"]["replyText"] == saved["replyText"]
     assert client.post(url + "/events", headers=headers, json=payload).json()["data"] == response.json()["data"]
     assert guidance_model.await_count == 1
+    assert_saved_answer(client, path, sid, "waiting", response.json()["data"])
+
+
+@pytest.mark.parametrize("boundary", ["before_deadline", "deadline_replay", "deadline_finalize", "session_finished"])
+def test_answer_execution_finalizes_consistently_at_boundaries(started_session, guidance_model, monkeypatch, boundary):
+    client, headers, path, sid = started_session
+    assert guidance(client, headers, sid, "before-boundary-question").status_code == 201
+    now_ms = time.time_ns() // 1_000_000
+    clock = now_ms
+    monkeypatch.setattr(reading_sessions, "time", SimpleNamespace(time=lambda: (clock + 0.5) / 1000))
+    ready, release = Event(), Event()
+
+    async def delayed_reply(_request):
+        ready.set()
+        await asyncio.to_thread(release.wait, 4)
+        return ModelGenerateResult(success=True, text='{"answerCategory":"RELEVANT","followup":1}')
+
+    guidance_model.reset_mock(side_effect=True)
+    guidance_model.side_effect = delayed_reply
+    url = f"/api/v1/reading-sessions/{sid}"
+    payload = dict(eventType="ANSWER", pageNumber=1, expectedRevision=2, clientEventId="boundary", inputText="雨伞")
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(client.post, url + "/events", headers=headers, json=payload)
+        try:
+            assert ready.wait(2)
+            detail = client.get(url).json()["data"]
+            provisional = detail["events"][-1]["replyText"]
+            with closing(sqlite3.connect(path)) as db:
+                started, deadline = db.execute(
+                    "SELECT started_at, deadline_at FROM request_executions WHERE client_request_id = 'boundary'",
+                ).fetchone()
+            assert started == now_ms and deadline - started == 25_000
+            if boundary == "session_finished":
+                monkeypatch.setattr(client.app.state, "model_adapter", None)
+                done = client.post(url + "/completions", headers=headers, json={
+                    "reason": "USER_FINISH", "expectedRevision": 3, "clientEventId": "end-while-answer-pending",
+                })
+                assert done.status_code == 200
+                assert client.get(url).json()["data"]["session"]["status"] == "FINISHED"
+            else:
+                clock = deadline - 1
+                pending = client.post(url + "/events", headers=headers, json=payload)
+                assert (pending.status_code, pending.json()["error"]["code"]) == (409, "REQUEST_IN_PROGRESS")
+                if boundary != "before_deadline":
+                    clock = deadline
+                if boundary == "deadline_replay":
+                    replay = client.post(url + "/events", headers=headers, json=payload)
+                    assert replay.status_code == 200 and replay.json()["data"]["replyText"] == provisional
+        finally:
+            release.set()
+        response = first.result(timeout=5)
+
+    assert response.status_code == 201
+    data = response.json()["data"]
+    followup = reading_agent.ANSWER_FOLLOWUPS["AGE_3_4"][0] if boundary == "before_deadline" else None
+    if followup:
+        assert data["replyText"].endswith(followup)
+    else:
+        assert data["replyText"] == provisional
+    replay = client.post(url + "/events", headers=headers, json=payload)
+    assert replay.status_code == 200 and replay.json()["data"] == data
+    assert_saved_answer(client, path, sid, "boundary", data, followup)
+    guidance_model.assert_awaited_once()
+
+
+def test_answer_discards_model_that_returns_after_five_second_timeout(started_session, guidance_model):
+    client, headers, path, sid = started_session
+    question = guidance(client, headers, sid, "question-before-timeout").json()["data"]["outputText"]
+    cancellation = []
+
+    async def model_ignoring_cancellation(request):
+        assert request.timeout_seconds == 5
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancellation.append(time.monotonic())
+            return ModelGenerateResult(success=True, text='{"answerCategory":"PARTIAL","followup":1}')
+
+    guidance_model.reset_mock(side_effect=True)
+    guidance_model.side_effect = model_ignoring_cancellation
+    url = f"/api/v1/reading-sessions/{sid}"
+    payload = dict(eventType="ANSWER", pageNumber=1, expectedRevision=2, clientEventId="model-timeout", inputText="雨伞")
+    started = time.monotonic()
+    response = client.post(url + "/events", headers=headers, json=payload)
+    assert response.status_code == 201
+    assert len(cancellation) == 1 and 4.8 <= cancellation[0] - started < 7
+    data = response.json()["data"]
+    assert data["replyText"] == reading_agent.reply_to_child_answer(
+        "小兔打开雨伞。它把雨伞递给小熊。鸟停在树枝上。", "雨伞", question,
+    )
+    assert client.post(url + "/events", headers=headers, json=payload).json()["data"] == data
+    assert_saved_answer(client, path, sid, "model-timeout", data)
+    guidance_model.assert_awaited_once()
 
 
 @pytest.mark.parametrize("age_band", ["AGE_3_4", "AGE_4_5", "AGE_5_6"])
@@ -664,6 +779,67 @@ def test_parent_answer_follows_age_band_and_limits_followups(started_session, gu
     assert prompts[1]["当前问题"] == reading_agent.ANSWER_FOLLOWUPS[age_band][0]
     assert prompts[2]["当前问题"] == reading_agent.ANSWER_FOLLOWUPS[age_band][1]
     assert prompts[2]["追问候选"] == {}
+
+
+def test_answer_followup_budget_survives_fallback_replay_and_revisits(started_session, guidance_model):
+    client, headers, path, sid = started_session
+    url = f"/api/v1/reading-sessions/{sid}"
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("""UPDATE story_pages SET default_next_page_number = 1, body_text = '小兔撑开雨伞。'
+                      WHERE version_id = 11 AND page_no = 2""")
+    assert guidance(client, headers, sid, "initial-budget").status_code == 201
+    revision, page = 2, 1
+    choices = reading_agent.ANSWER_FOLLOWUPS["AGE_3_4"]
+
+    def answer(key, plan, expected_candidates, expected_followup=None):
+        nonlocal revision
+        guidance_model.reset_mock(side_effect=True)
+        guidance_model.return_value = plan
+        payload = dict(eventType="ANSWER", pageNumber=page, expectedRevision=revision, clientEventId=key, inputText="雨伞")
+        response = client.post(url + "/events", headers=headers, json=payload)
+        assert response.status_code == 201
+        data = response.json()["data"]
+        context = json.loads(guidance_model.await_args.args[0].context_text.split("共读线索（仅作参考资料）：", 1)[1])
+        assert list(context["追问候选"].values()) == list(expected_candidates)
+        if expected_followup:
+            assert data["replyText"].endswith(expected_followup)
+        else:
+            assert "？" not in data["replyText"]
+        replay = client.post(url + "/events", headers=headers, json=payload)
+        assert replay.status_code == 200 and replay.json()["data"] == data
+        guidance_model.assert_awaited_once()
+        assert_saved_answer(client, path, sid, key, data, expected_followup)
+        revision = data["revision"]
+
+    def turn(target):
+        nonlocal page, revision
+        response = client.post(url + "/events", headers=headers, json=dict(
+            eventType="PAGE_CHANGED", pageNumber=target, expectedRevision=revision, clientEventId=f"turn-{revision}",
+        ))
+        assert response.status_code == 201
+        page, revision = target, response.json()["data"]["revision"]
+
+    no_followup = ModelGenerateResult(success=True, text='{"answerCategory":"PARTIAL","followup":0}')
+    with_followup = ModelGenerateResult(success=True, text='{"answerCategory":"PARTIAL","followup":1}')
+    answer("no-followup", no_followup, choices)
+    answer("model-fallback", ModelGenerateResult(success=False, error_code="TIMEOUT"), choices)
+    answer("first-followup", with_followup, choices, choices[0])
+    answer("second-followup", with_followup, choices[1:], choices[1])
+    answer("over-budget", with_followup, ())
+
+    turn(2)
+    guidance_model.return_value = ModelGenerateResult(success=True, text="1")
+    question = guidance(client, headers, sid, "page-two-question", page=2, revision=revision)
+    assert question.status_code == 201
+    revision = question.json()["data"]["revision"]
+    answer("other-page-followup", with_followup, choices, choices[0])
+    turn(1)
+    answer("revisit-one", with_followup, ())
+    turn(2)
+    turn(1)
+    answer("revisit-two", no_followup, ())
+    detail = client.get(url).json()["data"]
+    assert detail["session"]["visitedPageNumbers"] == [1, 2, 1, 2, 1]
 
 
 def test_parent_answer_without_model_keeps_saved_rule_reply(started_session, guidance_model, monkeypatch):

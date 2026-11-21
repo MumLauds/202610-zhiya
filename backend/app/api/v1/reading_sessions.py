@@ -32,7 +32,7 @@ from app.services.reading_reports import (
     session_read_pages,
 )
 from app.services.story_media import MediaDependencyError, ensure_opening_media
-from app.services.reading_agent import answer_is_unsafe, generate_answer_reply, reply_to_child_answer
+from app.services.reading_agent import MAX_ANSWER_FOLLOWUPS, answer_is_unsafe, generate_answer_reply, reply_to_child_answer
 
 router = APIRouter(prefix="/api/v1/reading-sessions")
 MAX_ID = 9007199254740991
@@ -788,8 +788,8 @@ def answer_context(db, session, answer: str) -> dict:
     question = current_parent_question(db, session)
     followups = db.execute(
         """SELECT output_text FROM interaction_events WHERE session_id = ? AND version_id = ? AND page_no = ?
-           AND event_type = 'ANSWER' AND output_text IS NOT NULL ORDER BY id DESC LIMIT 2""",
-        (session["id"], session["version_id"], session["current_page_no"]),
+           AND event_type = 'ANSWER' AND NULLIF(TRIM(output_text), '') IS NOT NULL ORDER BY id DESC LIMIT ?""",
+        (session["id"], session["version_id"], session["current_page_no"], MAX_ANSWER_FOLLOWUPS),
     ).fetchall()
     visited = json.loads(session["visited_pages_json"])
     earlier = [number for number in visited[:-1] if number != session["current_page_no"]][-3:]
