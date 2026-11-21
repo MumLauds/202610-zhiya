@@ -32,7 +32,6 @@ const currentImageSettled = computed(() => !currentImage.value ||
 let book = null
 let mountedFrames = []
 let syncing = false
-let animatedTurn = false
 
 function showPage(storyIndex) {
   const localIndex = storyIndex - windowStart.value
@@ -43,14 +42,9 @@ function showPage(storyIndex) {
 
 function flipToPage(storyIndex) {
   const localIndex = storyIndex - windowStart.value
-  if (!book?.flipTo || localIndex < 0 || localIndex >= visiblePages.value.length) return false
-  if (animatedTurn) return true
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return false
-  animatedTurn = true
-  void book.flipTo(localIndex * 2).catch(() => {
-    emit('error', '翻页暂时失败，请重试')
-  }).finally(() => { animatedTurn = false })
-  return true
+  if (!book?.flipTo || localIndex < 0 || localIndex >= visiblePages.value.length) return null
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return null
+  return book.flipTo(localIndex * 2)
 }
 
 watch([() => props.startPage, visiblePages], () => {

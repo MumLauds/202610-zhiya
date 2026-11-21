@@ -31,6 +31,7 @@ const emit = defineEmits(['back', 'library', 'start-session', 'retry-load', 'con
 const flipBook = ref(null)
 const pageIndex = ref(0)
 const turnBusy = ref(false)
+const edgeTurnBusy = ref(false)
 const audioStatus = ref('idle')
 const audioMessage = ref('')
 const childModeOpen = ref(false)
@@ -94,10 +95,10 @@ const answerText = computed(() => {
 })
 const currentBranches = computed(() => approvedBranchesAt(props.book?.branches, currentPage.value?.pageNumber))
 const rereading = computed(() => pageIndex.value !== progressIndex.value)
-const navigationLocked = computed(() => turnBusy.value || interactionBusy.value || props.syncRequired)
+const navigationLocked = computed(() => edgeTurnBusy.value || turnBusy.value || interactionBusy.value || props.syncRequired)
 const canTurnNext = computed(() => !navigationLocked.value && Boolean(readerPages.value[pageIndex.value + 1])
   && (reviewingHistory.value || props.session?.status === 'IN_PROGRESS'))
-const canFinish = computed(() => !props.loading && !turnBusy.value && !interactionBusy.value && !props.syncRequired && props.session?.status === 'IN_PROGRESS' && (props.session?.preview || props.authenticated))
+const canFinish = computed(() => !props.loading && !navigationLocked.value && props.session?.status === 'IN_PROGRESS' && (props.session?.preview || props.authenticated))
 const mediaAllowed = computed(() => canFinish.value && !rereading.value)
 const narrationKey = computed(() => props.authenticated && !props.loading && !props.syncRequired
   && !props.session?.preview && props.session?.status === 'IN_PROGRESS'
@@ -197,8 +198,21 @@ async function onPageChange({ storyIndex }) {
   }
 }
 
-function turnPage(index) {
-  if (!flipBook.value?.flipToPage?.(index)) return onPageChange({ storyIndex: index })
+async function turnPage(index) {
+  if (navigationLocked.value) return
+  const animation = flipBook.value?.flipToPage?.(index)
+  if (!animation) return onPageChange({ storyIndex: index })
+  edgeTurnBusy.value = true
+  stopNarration()
+  closeVoice()
+  try {
+    await animation
+  } catch {
+    flipBook.value?.showPage(pageIndex.value)
+    audioMessage.value = '翻页暂时失败，请重试'
+  } finally {
+    edgeTurnBusy.value = false
+  }
 }
 
 async function finishReading() {

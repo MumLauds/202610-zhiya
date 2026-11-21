@@ -18,7 +18,7 @@ it('narrates only the active spread and animates a requested adjacent turn', asy
   expect(wrapper.findAll('.page-narration-text')).toHaveLength(1)
   await wrapper.get('.page-narration-text').trigger('click')
   expect(wrapper.emitted('narrate')).toHaveLength(1)
-  expect(wrapper.vm.flipToPage(1)).toBe(true)
+  await expect(wrapper.vm.flipToPage(1)).resolves.toBe(true)
   expect(book.flipTo).toHaveBeenCalledWith(2)
   await wrapper.setProps({ pages: [...wrapper.props('pages')] })
   expect(book.turnTo).not.toHaveBeenCalled()

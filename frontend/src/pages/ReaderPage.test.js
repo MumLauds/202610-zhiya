@@ -102,6 +102,38 @@ it('places page turns on the book and offers one answer entry with text and reco
   expect(getUserMedia).not.toHaveBeenCalled()
 })
 
+it('locks reading actions until the edge animation and the page write both settle', async () => {
+  let onFlip
+  let finishAnimation
+  let finishWrite
+  const bookWidget = {
+    on: vi.fn((name, callback) => { if (name === 'flip') onFlip = callback }),
+    flipTo: vi.fn(() => new Promise(resolve => { finishAnimation = resolve })),
+    turnTo: vi.fn(),
+    destroy: vi.fn(),
+  }
+  vi.stubGlobal('OpenPageFlip', { createBook: () => bookWidget })
+  vi.stubGlobal('matchMedia', () => ({ matches: false }))
+  const recordPage = vi.fn(() => new Promise(resolve => { finishWrite = resolve }))
+  render({ recordPage }, true)
+  await wrapper.get('.reader-edge--next').trigger('click')
+  expect(bookWidget.flipTo).toHaveBeenCalledExactlyOnceWith(2)
+  expect(button('结束本次阅读').element.disabled).toBe(true)
+  expect(button('回答（语音 + 文字）').element.disabled).toBe(true)
+  expect(recordPage).not.toHaveBeenCalled()
+
+  onFlip({ page: 2 })
+  finishAnimation(true)
+  await flushPromises()
+  expect(recordPage).toHaveBeenCalledExactlyOnceWith(3)
+  expect(button('结束本次阅读').element.disabled).toBe(true)
+
+  finishWrite(false)
+  await flushPromises()
+  expect(button('结束本次阅读').element.disabled).toBe(false)
+  expect(wrapper.get('.reader-edge--next').element.disabled).toBe(false)
+})
+
 it('offers continuation only for the private original when reading retired versions', async () => {
   render({ session: { ...initialSession, sourceType: 'ORIGINAL' }, book: { ...book, status: 'RETIRED' } })
   await button('续写这个故事').trigger('click')
