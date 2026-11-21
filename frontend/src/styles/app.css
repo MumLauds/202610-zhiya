@@ -913,24 +913,86 @@
       transform: translate(-50%, -50%) translate3d(var(--wheel-x), var(--wheel-y), var(--wheel-z)) rotateY(var(--wheel-rotate-y)) scale(calc(var(--wheel-scale) * 1.05));
     }
     .wheel-book.selected { filter: drop-shadow(0 16px 22px rgba(60, 36, 18, .2)); }
+    .wheel-book.is-opening { z-index: 110; }
     .wheel-book-shell {
       width: 100%;
       aspect-ratio: 457 / 418;
       position: relative;
       display: block;
+      perspective: 580px;
+      perspective-origin: 30% 43%;
+      transform-style: preserve-3d;
+    }
+    .wheel-book-shell > .book-shell {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
       filter: drop-shadow(0 7px 10px rgba(63, 42, 25, .13));
     }
-    .wheel-book-shell > .book-shell { width: 100%; height: 100%; object-fit: contain; }
     .wheel-cover {
       position: absolute;
       left: 16.8%;
       top: 7.9%;
       width: 68.2%;
       height: 74%;
-      overflow: hidden;
+      transform-origin: left center;
+      transform-style: preserve-3d;
+    }
+    .wheel-cover-front,
+    .wheel-cover-back {
+      position: absolute;
+      inset: 0;
+      display: block;
+      backface-visibility: hidden;
       clip-path: url("#zhiya-wheel-cover-clip");
+    }
+    .wheel-cover-front {
       background: #e8eee0;
-      box-shadow: 0 1px 4px rgba(55, 34, 20, .12);
+      transform: translateZ(2px);
+    }
+    .wheel-cover-front::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(57, 40, 29, .36), rgba(255, 249, 232, .24) 4%, transparent 8%);
+      box-shadow: inset 0 0 0 2px rgba(65, 46, 32, .22);
+    }
+    .wheel-cover-back {
+      border: clamp(4px, .65vw, 9px) solid #73634d;
+      border-radius: 4%;
+      background: linear-gradient(270deg, #a28865, #e7d1aa 10%, #f6ead0 48%, #ead5af);
+      box-shadow: inset 0 0 12px #8e70468c;
+      transform: rotateY(180deg) translateZ(3px);
+    }
+    .wheel-book.is-opening .wheel-cover::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      clip-path: url("#zhiya-wheel-cover-clip");
+      background: #655540;
+      transform: translateZ(-.5px);
+    }
+    .wheel-paper-edge {
+      position: absolute;
+      inset: 85% 16.6% 9.8% 19%;
+      border-radius: 8px 2px 2px 8px;
+      background: repeating-linear-gradient(0deg, #6f492533 0 1px, #fff2d955 1px 3px), linear-gradient(90deg, #80563538, transparent 14% 92%, #8c603c44);
+    }
+    .wheel-page-block,
+    .wheel-turning-leaf {
+      position: absolute;
+      inset: 9% 16.8% 17% 19.5%;
+      border-radius: 4% 5% 3% 4%;
+      background: linear-gradient(90deg, #8d6c4a, #dfc69e 7%, #fff4db 17%, #fbefd6 92%, #e1c59d);
+      transform-origin: left center;
+    }
+    .wheel-page-block {
+      box-shadow: 0 2px #ae906a, 0 4px #f3dfbc, 0 6px #b99b74, 0 8px #f2debb, 0 10px #a98a64;
+    }
+    .wheel-turning-leaf {
+      background: linear-gradient(90deg, #b89a72, #efe0bd 10%, #fff8e6 70%, #e6cea8);
+      box-shadow: 1px 1px 1px #a4865b9c, inset -5px 0 10px #c7a57846;
+      animation: turn-shelf-leaf var(--wheel-open-duration) cubic-bezier(.38, .02, .21, 1) both;
     }
     .wheel-cover-clip-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
     .wheel-cover img { width: 100%; height: 100%; object-fit: cover; }
@@ -2024,13 +2086,18 @@
   
 
 
-    .wheel-book.is-opening .wheel-cover {
-      transform-origin: left center;
-      animation: open-shelf-cover 320ms ease-in-out both;
-    }
+    .wheel-book.is-opening .wheel-cover { animation: open-shelf-cover var(--wheel-open-duration) cubic-bezier(.32, .02, .22, 1) both; }
 
     @keyframes open-shelf-cover {
-      to { transform: perspective(650px) rotateY(-86deg); opacity: .45; }
+      from { transform: translateZ(4px) rotateY(0deg); }
+      72% { transform: translateZ(6px) rotateY(-153deg); }
+      to { transform: translateZ(6px) rotateY(-151deg); }
+    }
+
+    @keyframes turn-shelf-leaf {
+      0%, 18% { transform: translateZ(1px) rotateY(0deg); }
+      68% { transform: translateZ(3px) rotateY(-108deg); }
+      to { transform: translateZ(3px) rotateY(-137deg); }
     }
 
     .reader-completion {
@@ -2058,6 +2125,5 @@
     .growth-records .recent-item-actions button { white-space: nowrap; }
     .growth-status--finished { color: #214f38; background: #dcebdc; }
     .growth-status--in_progress { color: #69491e; background: #f5e6c6; }
-    .home-plan progress { width: 100%; height: 8px; accent-color: var(--green); }
     .home-plan-counts { margin: 0; font-size: .8rem; }
     .reader-finish-action { display: block; margin: 16px 0 0 auto; }
