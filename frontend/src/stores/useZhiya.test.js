@@ -310,6 +310,39 @@ describe('authoritative reading progress', () => {
     expect(state.currentEvents.at(-1)).toMatchObject({ eventType: 'ANSWER', interactionEventId: 9, replyText })
   })
 
+  it.each([
+    new ApiError('response lost'),
+    new ApiError('finalization unavailable', { status: 503, retryable: true }),
+  ])('replays the original answer after readback finds it saved', async (error) => {
+    const answer = { interactionEventId: 9, eventType: 'ANSWER', pageNumber: 1, revision: 2,
+      inputText: '雨伞', replyText: '规则回应' }
+    const pageTurn = { interactionEventId: 10, eventType: 'PAGE_CHANGED', pageNumber: 3, revision: 3 }
+    const saved = { ...detail({ revision: 2 }), events: [answer] }
+    const advanced = { ...detail({ revision: 3, currentPage: 3, visitedPageNumbers: [1, 3] }), events: [answer, pageTurn] }
+    reading.addReadingEvent.mockRejectedValueOnce(error)
+      .mockRejectedValueOnce(new ApiError('pending', { status: 409, code: 'REQUEST_IN_PROGRESS', retryAfter: '2' }))
+      .mockResolvedValueOnce({ interactionEventId: 9, revision: 2, replyText: '更新后的规则回应' })
+    reading.getReadingSession.mockResolvedValueOnce(saved).mockResolvedValue(advanced)
+
+    expect(await actions.submitAnswer('雨伞')).toBe(false)
+    expect(state.readingSyncRequired).toBe(true)
+    expect(await actions.submitAnswer('雨伞')).toBe(false)
+    expect(await actions.refreshReading()).toBe(false)
+    expect(reading.addReadingEvent).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(await actions.refreshReading()).toBe(false)
+    expect(state.readingSyncRequired).toBe(true)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(await actions.refreshReading()).toBe(true)
+
+    const original = reading.addReadingEvent.mock.calls[0][1]
+    expect(reading.addReadingEvent.mock.calls).toEqual([[55, original], [55, original], [55, original]])
+    expect(state.currentEvents).toEqual([{ ...answer, replyText: '更新后的规则回应' }, pageTurn])
+    expect(state.currentSession).toMatchObject({ revision: 3, currentPage: 3 })
+    expect(state.readingSyncRequired).toBe(false)
+  })
+
   it('chooses an approved branch through API-018 and installs the authoritative path', async () => {
     expect(await actions.chooseBranch(501)).toBe(true)
     expect(reading.chooseReadingBranch).toHaveBeenCalledWith(55, expect.objectContaining({

@@ -1846,7 +1846,13 @@ function appendReadingInteraction(operation, result) {
       inputText: operation.payload.inputText,
       replyText: result.replyText,
     }
-    session.revision = result.revision
+    session.revision = Math.max(session.revision, result.revision)
+    if (state.currentEvents.some(item => item.interactionEventId === event.interactionEventId)) {
+      state.currentEvents = state.currentEvents.map(item => item.interactionEventId === event.interactionEventId
+        ? { ...item, replyText: event.replyText }
+        : item)
+      return
+    }
   } else if (operation.kind === 'branch') {
     event = {
       interactionEventId: result.interactionEventId,
@@ -1930,7 +1936,9 @@ async function writeReading(operation) {
   } catch (error) {
     if (!isCurrent()) return false
     const terminalUnknown = error.status === 504 && error.code === 'REQUEST_OUTCOME_UNKNOWN'
-    const retrySameKey = error.status === 0 || error.code === 'REQUEST_IN_PROGRESS' || (error.status === 504 && !terminalUnknown)
+    const answerMayBeSaved = operation.kind === 'answer' && error.status === 503 && error.retryable
+    const retrySameKey = error.status === 0 || error.code === 'REQUEST_IN_PROGRESS'
+      || (error.status === 504 && !terminalUnknown) || answerMayBeSaved
     pendingReading = retrySameKey ? { ...operation, retryAt: Date.now() + (Number(error.retryAfter) || 1) * 1000 } : null
     state.readingSyncRequired = retrySameKey || terminalUnknown || error.status === 409
     if (state.readingSyncRequired) {
@@ -1938,7 +1946,8 @@ async function writeReading(operation) {
         const detail = await getReadingSession(operation.sessionId)
         if (!isCurrent()) return false
         applyReadingDetail(detail)
-        if (!pendingReading || detail.session.revision !== operation.payload.expectedRevision) {
+        // An answer advances the revision before its reply is ready. Replay its original key after readback.
+        if (!pendingReading || (operation.kind !== 'answer' && detail.session.revision !== operation.payload.expectedRevision)) {
           pendingReading = null
           state.readingSyncRequired = false
         }
@@ -1984,7 +1993,9 @@ async function refreshReading() {
     }
     applyReadingDetail(detail)
     const operation = pendingReading
-    if (operation && ['CREATED', 'IN_PROGRESS'].includes(detail.session.status) && detail.session.revision === operation.payload.expectedRevision) {
+    if (operation && (operation.kind === 'answer' || (
+      ['CREATED', 'IN_PROGRESS'].includes(detail.session.status) && detail.session.revision === operation.payload.expectedRevision
+    ))) {
       if (Date.now() < operation.retryAt) {
         setToast('原请求仍在处理，请稍后再次确认。', 'error')
         return false

@@ -123,6 +123,9 @@ const currentQuestion = computed(() => pageEvents.value.filter((event) => (
 const questionSkipped = computed(() => latestGuidanceEvent.value?.feedback === 'SKIPPED')
 const questionBlocked = computed(() => latestGuidanceEvent.value?.strategyType === 'SAFETY_BLOCK')
 const savedAnswer = computed(() => pageEvents.value.findLast(event => event.eventType === 'ANSWER'))
+const answerViewKey = computed(() => `${props.session?.readingSessionId}:${currentPage.value?.pageNumber}`)
+const pendingAnswerView = ref('')
+const answerPending = computed(() => pendingAnswerView.value === answerViewKey.value)
 const answerText = computed(() => {
   if (props.session?.preview) return previewAnswer.value
   return props.authenticated ? savedAnswer.value?.inputText : ''
@@ -620,16 +623,20 @@ async function submitConfirmedAnswer() {
   }
   interactionBusy.value = true
   voiceError.value = ''
+  const isStoryQuestion = voiceOpen.value
+  const view = answerViewKey.value
+  if (!isStoryQuestion) pendingAnswerView.value = view
   try {
-    const isStoryQuestion = voiceOpen.value
     const saved = isStoryQuestion ? await props.askQuestion(text) : await props.submitAnswer(text)
+    if (answerViewKey.value !== view) return
     if (saved) {
       if (isStoryQuestion) closeStoryQuestion()
       else childAnswerDraft.value = null
-    } else {
+    } else if (!props.syncRequired) {
       voiceError.value = isStoryQuestion ? '提问尚未确认保存，请核对进度后重试。' : '回答尚未确认保存，请检查页面提示后重试。'
     }
   } finally {
+    pendingAnswerView.value = ''
     interactionBusy.value = false
   }
 }
@@ -819,7 +826,8 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
           <p v-if="guidanceError" class="question-error" role="alert">{{ guidanceError }}</p>
           <p v-if="answerText" class="question-saved"><strong>孩子的回答：</strong>{{ answerText }}</p>
           <p v-else-if="savedAnswer" class="question-saved" role="status">本页回答已保存。</p>
-          <p v-if="authenticated && savedAnswer" class="question-reply" role="status"><strong>芽芽：</strong>{{ savedAnswer.replyText || '谢谢你分享！你能指一指图里的线索吗？' }}</p>
+          <p v-if="answerPending" class="question-reply" role="status">芽芽正在想怎么回应…</p>
+          <p v-else-if="authenticated && savedAnswer" class="question-reply" role="status"><strong>芽芽：</strong>{{ savedAnswer.replyText || '谢谢你分享！你能指一指图里的线索吗？' }}</p>
           <p v-else-if="session.preview && previewAnswer" class="question-reply" role="status"><strong>芽芽：</strong>{{ currentPage?.answer || '我们一起看看图里发生了什么吧。' }}</p>
           <button v-if="guidanceError && !currentQuestion && !questionSkipped && !questionBlocked && !session.preview" class="text-button question-retry" type="button" :disabled="interactionBusy || guidanceLoading || syncRequired" @click="retryQuestion">重新生成本页问题</button>
           <div class="question-actions">
