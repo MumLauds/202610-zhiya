@@ -29,9 +29,9 @@ async function handleProfileSave({ id, payload }) {
   return zhiyaActions.addProfile(payload)
 }
 
-async function startBook(book) {
+async function startBook(book, options) {
   try {
-    await zhiyaActions.startReading(book)
+    await zhiyaActions.startReading(book, options)
   } catch (error) {
     zhiyaActions.setToast(error.message || '无法开始阅读', 'error')
   }
@@ -148,6 +148,7 @@ onBeforeUnmount(() => {
       @retry-identity="zhiyaActions.retryReadingIdentity"
       @back="zhiyaActions.navigate('library')"
       @start="startBook"
+      @setup-child="book => startBook(book, { childSetup: true })"
     />
     <ReaderPage
       v-else-if="state.route.name === 'reader'"
@@ -157,6 +158,7 @@ onBeforeUnmount(() => {
       :report="state.currentReport"
       :loading="state.sessionLoading || state.auth.status === 'checking'"
       :authenticated="state.auth.authenticated && state.auth.status === 'authenticated'"
+      :account-id="state.auth.accountId"
       :sync-required="state.readingSyncRequired"
       :can-retry-load="state.readerLoadRetryable"
       :request-guidance="zhiyaActions.requestGuidance"
@@ -171,7 +173,8 @@ onBeforeUnmount(() => {
       @continue-story="state.currentSession?.readingSessionId && zhiyaActions.navigate(`workshop/continue/${state.currentSession.readingSessionId}`)"
       @back="zhiyaActions.openDetail"
       @library="zhiyaActions.navigate('library')"
-      @start-session="zhiyaActions.startCurrentReading"
+      :child-setup="state.route.childSetup"
+      @retry-start="zhiyaActions.startCurrentReading"
       @retry-load="zhiyaActions.loadReaderRoute"
     />
     <AccountPage

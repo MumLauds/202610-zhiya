@@ -7,6 +7,17 @@ from app.speech_config import SpeechSettings
 
 
 class EnvironmentSettingsTests(unittest.TestCase):
+    def test_illustrated_workshop_output_budget_is_configurable(self):
+        name = "MODEL_WORKSHOP_ILLUSTRATION_MAX_TOKENS"
+        with patch.dict("os.environ", {name: "1024", "MODEL_MAX_TOKENS": "2048"}, clear=True):
+            settings = Settings.from_env()
+            self.assertEqual(settings.model_workshop_illustration_max_tokens, 1024)
+            self.assertEqual(settings.model_max_tokens, 2048)
+        for invalid in ("1.5", "0", "4097"):
+            with self.subTest(invalid=invalid), patch.dict("os.environ", {name: invalid}, clear=True):
+                with self.assertRaisesRegex(ValueError, name):
+                    Settings.from_env()
+
     def test_tts_requires_workspace_endpoint_and_matching_model_voice(self):
         settings = SpeechSettings(api_key="key")
         self.assertTrue(settings.asr_configured)

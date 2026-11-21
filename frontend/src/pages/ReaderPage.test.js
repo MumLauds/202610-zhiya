@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import flipBookScript from '../../public/vendor/openpageflip/index.iife.js?raw'
 import ReaderPage from './ReaderPage.vue'
 import { synthesize, transcribe } from '../api/voice'
+import { readPlanProgress, recordPlanActivity } from '../data/readingPlan'
 
 vi.mock('../api/voice', () => ({ synthesize: vi.fn(), transcribe: vi.fn() }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
@@ -820,25 +821,86 @@ describe('reader state and visual progress', () => {
     expect(wrapper.props('recordPage')).not.toHaveBeenCalled()
   })
 
-  it('prioritizes and focuses the summary after finishing the final page', async () => {
-    const session = { ...initialSession, currentPage: 7, visitedPageNumbers: [1, 3, 7] }
-    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
-    try {
-      render({ session })
-      expect(wrapper.find('.reader-summary').exists()).toBe(false)
-      await button('结束本次阅读').trigger('click')
-      expect(wrapper.props('completeReading')).toHaveBeenCalledOnce()
-      const summary = '已保存本次阅读记录'
-      await wrapper.setProps({ session: { ...session, status: 'FINISHED' }, report: { status: 'PENDING', summary } })
-      const card = wrapper.get('.reader-side > .side-card:first-child')
-      expect(card.get('h2').text()).toBe('本次共读小结')
-      expect(card.text()).toContain(summary)
-      expect(focus.mock.contexts).toEqual([card.element])
-      await wrapper.setProps({ report: { status: 'READY', summary } })
-      expect(focus).toHaveBeenCalledOnce()
-    } finally {
-      focus.mockRestore()
+  it.each([
+    ['early', 1, [1], 0],
+    ['approved choice still available', 3, [1, 3], 0],
+    ['shorter approved path', 7, [1, 7], 1],
+  ])('only counts a finished book at the end of the visited path (%s)', async (_, currentPage, visitedPageNumbers, count) => {
+    const session = { ...initialSession, childProfileId: 2, currentPage, visitedPageNumbers }
+    const branchBook = {
+      ...book,
+      pages: book.pages.map(page => page.pageNumber === 3 ? { ...page, defaultNextPageNumber: null } : page),
+      branches: [
+        { branchId: 1, fromPageNumber: 1, nextPageNumber: 7, reviewStatus: 'APPROVED' },
+        { branchId: 2, fromPageNumber: 3, nextPageNumber: 7, reviewStatus: 'APPROVED' },
+      ],
     }
+    const now = new Date(2026, 10, 18, 12)
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now.getTime())
+    const key = '8.2'
+    const storageKey = 'zhiya.readingActivity.8.2'
+    localStorage.removeItem(storageKey)
+    recordPlanActivity(key, now.getTime(), 90_000)
+    const completeReading = vi.fn(async () => {
+      await wrapper.setProps({ session: { ...session, status: 'FINISHED', revision: 2 } })
+      return true
+    })
+    try {
+      render({ book: branchBook, session, accountId: 8, completeReading })
+      await flushPromises()
+      expect(readPlanProgress(key, now).books).toBe(0)
+      await button(count ? '完成阅读并生成小结' : '结束本次阅读').trigger('click')
+      await flushPromises()
+      expect(completeReading).toHaveBeenCalledOnce()
+      expect(readPlanProgress(key, now)).toMatchObject({ minutes: 1, books: count })
+    } finally {
+      wrapper?.unmount()
+      wrapper = null
+      localStorage.removeItem(storageKey)
+      clock.mockRestore()
+    }
+  })
+
+  it('counts a visible minute only once across two reader windows', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 10, 18, 12))
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    const key = '8.2'
+    const storageKey = `zhiya.readingActivity.${key}`
+    localStorage.removeItem(storageKey)
+    const props = { session: { ...initialSession, childProfileId: 2 }, accountId: 8 }
+    const first = render(props)
+    try {
+      vi.advanceTimersByTime(15_000)
+      render(props)
+      vi.advanceTimersByTime(60_000)
+      expect(readPlanProgress(key).minutes).toBe(1)
+    } finally {
+      first.unmount()
+      wrapper?.unmount()
+      wrapper = null
+      localStorage.removeItem(storageKey)
+      vi.useRealTimers()
+    }
+  })
+
+  it('opens a confirmation on the final page and shows the summary in the same dialog', async () => {
+    const session = { ...initialSession, currentPage: 7, visitedPageNumbers: [1, 3, 7] }
+    const summary = '已保存本次阅读记录'
+    render({ session })
+    await flushPromises()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('读到最后一页啦')
+    expect(wrapper.props('completeReading')).not.toHaveBeenCalled()
+    const dialog = wrapper.get('[role="dialog"]').element
+    await button('完成阅读并生成小结').trigger('click')
+    expect(wrapper.props('completeReading')).toHaveBeenCalledOnce()
+    await wrapper.setProps({ session: { ...session, status: 'FINISHED' }, report: { status: 'PENDING', summary } })
+    const card = wrapper.get('.reader-summary[role="dialog"]')
+    expect(card.element).toBe(dialog)
+    expect(card.get('h2').text()).toBe('本次共读小结')
+    expect(card.text()).toContain(summary)
+    await wrapper.setProps({ report: { status: 'READY', summary } })
+    expect(card.text()).toContain('小结已生成')
   })
 
   it('offers to refresh a finished session with a missing report', async () => {

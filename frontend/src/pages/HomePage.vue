@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { readPlan, readingProfileKey, useReadingPlanProgress } from '../data/readingPlan'
 import { bookStatusLabel } from '../data/preview'
 
 const props = defineProps({
@@ -23,6 +24,9 @@ const AUTO_BOOK_INTERVAL = 3600
 
 const manualIndex = computed(() => props.books.findIndex((book) => book.id === props.selectedBookId))
 const selected = computed(() => props.books[selectedIndex.value] || null)
+const planKey = computed(() => readingProfileKey(props.auth.accountId, props.activeProfile?.childProfileId))
+const plan = computed(() => readPlan(planKey.value, props.activeProfile?.preferredMinutes))
+const planProgress = useReadingPlanProgress(planKey)
 const shelfBooks = computed(() => {
   if (!props.books.length) return []
   return [-1, 0, 1, 2, 3].map((offset) =>
@@ -147,11 +151,12 @@ function chooseShelf(book) {
       </section>
       <aside class="home-plan" @mouseenter="hoveringBooks = true" @mouseleave="hoveringBooks = false">
         <span class="home-plan-kicker">✦ 今日阅读计划</span>
-        <div class="home-plan-time"><strong>{{ activeProfile?.preferredMinutes || 15 }}</strong><span>分钟</span></div>
-        <h2>和孩子一起，共读一本绘本吧！</h2>
-        <blockquote>“只有用心，才能看见故事里真正的光。”</blockquote>
+        <div class="home-plan-time"><strong>{{ planProgress.minutes }}/{{ plan.minutes }}</strong><span>分钟</span></div>
+        <progress :value="Math.min(planProgress.minutes, plan.minutes)" :max="plan.minutes" aria-label="今日阅读时长进度" />
+        <h2>{{ planProgress.minutes >= plan.minutes ? '今日时长目标已达成！' : '和孩子一起，共读一本绘本吧！' }}</h2>
+        <p class="home-plan-counts">今日共读 {{ planProgress.books }}/{{ plan.books }} 本 · 本周 {{ planProgress.weekly }}/{{ plan.weekly }} 天</p>
         <button v-if="selected" class="primary" type="button" @click="emit('start', selected)">开始阅读</button>
-        <span class="home-plan-note">{{ auth.authenticated ? '阅读进度会同步到后端会话' : '登录后可保存真实阅读进度' }}</span>
+        <span class="home-plan-note">{{ auth.authenticated ? '统计本机阅读时长' : '登录并选择儿童档案后记录进度' }}</span>
       </aside>
     </section>
   </main>

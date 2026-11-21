@@ -231,7 +231,8 @@ class ModelGatewayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_structured_output_is_opt_in(self):
         def provider(request):
-            self.assertEqual(json.loads(request.content)["response_format"], {"type": "json_object"})
+            payload = json.loads(request.content)
+            self.assertEqual(payload["response_format"], {"type": "json_object"})
             return httpx.Response(200, json=model_response())
 
         async with ModelGateway(MODEL_SETTINGS, transport=httpx.MockTransport(provider)) as gateway:
@@ -240,6 +241,24 @@ class ModelGatewayTests(unittest.IsolatedAsyncioTestCase):
                 system_prompt="Return JSON.", user_input=INPUT_TEXT, context_text="", json_object=True,
             ))
             self.assertTrue(result.success)
+
+    async def test_request_budget_never_exceeds_global_max_tokens(self):
+        sent = []
+
+        def provider(request):
+            sent.append(json.loads(request.content)["max_tokens"])
+            return httpx.Response(200, json=model_response())
+
+        for global_max, request_max in ((512, 1536), (2048, 1024), (2048, None)):
+            settings = Settings(model_api_url=MODEL_SETTINGS.model_api_url, model_api_key=API_KEY,
+                                model_max_tokens=global_max)
+            async with ModelGateway(settings, transport=httpx.MockTransport(provider)) as gateway:
+                result = await ModelAdapter(gateway).generate(ModelGenerateRequest(
+                    system_prompt=SYSTEM_PROMPT, user_input=INPUT_TEXT, context_text="",
+                    max_output_token_budget=request_max,
+                ))
+                self.assertTrue(result.success)
+        self.assertEqual(sent, [512, 1024, 2048])
 
     async def test_total_deadline_cancels_provider_without_retry(self):
         calls = []

@@ -79,6 +79,8 @@ class GeneratedText(BaseModel):
     pages: list[PageText] = Field(min_length=1, max_length=6)
     choices: list[ShortText] = Field(default_factory=list, max_length=2)
     imageScenes: list[IllustrationScene] = Field(default_factory=list, max_length=6)
+    imageCharacters: dict[ShortText, ShortText] = Field(default_factory=dict, max_length=16)
+    imageCast: list[Annotated[list[ShortText], Field(max_length=8)]] = Field(default_factory=list, max_length=6)
 
 
 def source_session(db, owner, session_id):
@@ -223,9 +225,17 @@ async def generate_text(request, payload, source, carried_pages, total, decision
     )
     if payload.generateIllustrations:
         prompt += (
-            '另输出 imageScenes 字符串数组，与新增正文逐页对应。每个元素用一句简短的画面描述，'
-            '只写一个连续镜头中可见的角色、动作、物品和地点。突出该页出场的所选角色，动物保持动物外形。'
-            '沿用角色外观，不增添无关人物或服饰。不要复述正文，不写标题、对白、旁白、标签或分镜。'
+            '先确定故事主角，让所选具体角色担当主线，尊重自定义角色的物种和特征。'
+            '全篇保持相同的称呼、物种、毛色、服饰和随身物件，续写沿用前文已有的角色设定。'
+            '“家人”表示亲属关系。动物主角的家人默认采用同物种的亲属，明确写成熊妈妈、兔爸爸等，'
+            '除非输入或前文已明确指定其他角色。若只选“家人”，先确定一个家庭及其成员，后续各页沿用。'
+            '另输出 imageScenes 字符串数组，与新增正文逐页对应。每条画面描述约 40 个字，'
+            '先写主角，再写可见配角、数量、动作、相对位置、道具和具体地点。只画本页明确出场的角色。'
+            '另输出 imageCharacters 对象，以角色称呼为键，以稳定的可见外观为值，每个角色用约 20 个字描述，保留指定的毛色、服饰与道具。'
+            'imageCast 是逐页对应的角色称呼数组列表，每个称呼都须出现在 imageCharacters 中。'
+            '图案、玩具和只被提及的角色不写入 imageCast，无角色的页面写空数组。'
+            '动物保持动物外形。角色独处时写明独自，服饰和道具随剧情明确变化。'
+            '不要复述正文，不写标题、对白、旁白、标签或分镜。'
         )
     adapter = getattr(request.app.state, "model_adapter", None)
     if adapter is None:
@@ -236,6 +246,8 @@ async def generate_text(request, payload, source, carried_pages, total, decision
             context_text=json.dumps(context, ensure_ascii=False),
             user_input="生成绘本文字草稿",
             timeout_seconds=60.0,
+            max_output_token_budget=(request.app.state.model_settings.model_workshop_illustration_max_tokens
+                                     if payload.generateIllustrations else None),
         ))
     if not result.success:
         if result.error_code == "TIMEOUT":
@@ -248,6 +260,9 @@ async def generate_text(request, payload, source, carried_pages, total, decision
         raise ValueError("unexpected choices")
     if payload.generateIllustrations and (
         len(draft.imageScenes) != count
+        or len(draft.imageCast) != count
+        or any(len(set(cast)) != len(cast) or any(name not in draft.imageCharacters for name in cast)
+               for cast in draft.imageCast)
         or _contains_copied_page(draft.imageScenes, [*draft.pages, *context["previousPages"]])
     ):
         raise ValueError("illustration scenes do not match the new pages")
@@ -429,10 +444,13 @@ async def generate_story(payload: StoryGeneration, request: Request):
         result = await generate_text(request, payload, *reserved[3:])
         if image_settings is not None:
             if any(SENSITIVE.search(unicodedata.normalize("NFKC", value))
-                   for value in (result.title, *result.pages, *result.choices, *result.imageScenes)):
+                   for value in (result.title, *result.pages, *result.choices, *result.imageScenes,
+                                 *result.imageCharacters, *result.imageCharacters.values())):
                 raise ValueError("generated draft did not pass content checks")
             images = await generate_story_illustrations(
-                image_settings, result.imageScenes, topic=payload.topic, characters=payload.characters, scene=payload.scene,
+                image_settings, result.imageScenes,
+                page_casts=[{name: result.imageCharacters[name] for name in cast} for cast in result.imageCast],
+                topic=payload.topic, scene=payload.scene,
             )
             reserved = (*reserved[:2], images, *reserved[3:])
     except TimeoutError:

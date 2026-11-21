@@ -726,7 +726,10 @@ def add_reading_event(payload: ReadingEvent, request: Request, session_id: int =
                     "SELECT body_text FROM story_pages WHERE version_id = ? AND page_no = ?",
                     (row["version_id"], payload.pageNumber),
                 ).fetchone()
-                response["data"]["replyText"] = reply_to_child_answer(page_text[0] if page_text else "", payload.inputText)
+                question = current_question(db, row)
+                response["data"]["replyText"] = reply_to_child_answer(
+                    page_text[0] if page_text else "", payload.inputText, question["output_text"] if question else "",
+                )
             db.execute("UPDATE interaction_events SET response_json = ? WHERE id = ?",
                        (json.dumps(response, ensure_ascii=False), cursor.lastrowid))
             record_session_event(db, principal.guardian_id, session_id, payload.clientEventId, digest, now, 201, response)

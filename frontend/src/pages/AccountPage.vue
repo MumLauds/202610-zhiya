@@ -3,6 +3,7 @@ import { vModalFocus } from '../components/modalFocus'
 import { computed, reactive, ref, watch } from 'vue'
 import { describeApiError } from '../api/client'
 import { ageLabels } from '../data/preview'
+import { readPlan, readingProfileKey, useReadingPlanProgress, storePlan } from '../data/readingPlan'
 import { countReadPages } from '../data/readingProgress'
 
 const props = defineProps({
@@ -36,22 +37,8 @@ const deleteBusy = ref(false)
 const deleteError = ref('')
 const emptyProfile = { childProfileId: null, nickname: '', ageBand: 'AGE_4_5', interests: '', preferredMinutes: 15 }
 const form = reactive({ ...emptyProfile })
-const plan = reactive(loadPlan())
-
-function loadPlan() {
-  const defaults = { minutes: 15, books: 1, weekly: 5 }
-  const limits = { minutes: 60, books: 5, weekly: 7 }
-  try {
-    const saved = JSON.parse(localStorage.getItem('zhiya.plan'))
-    for (const [key, max] of Object.entries(limits)) {
-      const value = saved?.[key]
-      if (Number.isInteger(value) && value >= 1 && value <= max) defaults[key] = value
-    }
-  } catch {
-    // Keep defaults if storage is unavailable or an older value is corrupt.
-  }
-  return defaults
-}
+const plan = reactive(readPlan(null))
+const planMessage = ref('')
 
 const nav = [
   ['overview', '个人中心首页', '⌂'],
@@ -65,6 +52,12 @@ const activeProfile = computed(() => {
   if (props.activeProfileId === null) return props.profiles[0] || null
   return props.profiles.find((profile) => profile.childProfileId === props.activeProfileId) || null
 })
+const planKey = computed(() => readingProfileKey(props.auth.accountId, activeProfile.value?.childProfileId))
+const planProgress = useReadingPlanProgress(planKey)
+watch([planKey, () => activeProfile.value?.preferredMinutes], ([key, minutes]) => {
+  Object.assign(plan, readPlan(key, minutes))
+  planMessage.value = ''
+}, { immediate: true })
 const profileAction = computed(() => props.profiles.length ? '选择儿童档案' : '添加儿童档案')
 const recentSessions = computed(() => props.sessions.slice(0, 4))
 const unlistedDeleteIds = computed(() => [...(props.pendingDeletionChecks.session || [])].filter(
@@ -132,7 +125,9 @@ async function saveProfile() {
 }
 
 function savePlan() {
-  localStorage.setItem('zhiya.plan', JSON.stringify(plan))
+  planMessage.value = storePlan(planKey.value, plan)
+    ? '计划已保存，首页已使用新的阅读目标。'
+    : '未能保存，请检查目标范围和浏览器存储。'
 }
 
 function sessionTitle(session) {
@@ -266,7 +261,7 @@ async function confirmDelete() {
               </select>
             </label>
             <label class="form-field"><span>兴趣</span><input v-model="form.interests" placeholder="用顿号分隔，例如：动物、自然"></label>
-            <label class="form-field"><span>每日阅读分钟</span><input v-model.number="form.preferredMinutes" type="number" min="1" max="30"></label>
+            <label class="form-field"><span>每日阅读分钟</span><input v-model.number="form.preferredMinutes" type="number" required min="1" max="30"></label>
             <p v-if="saveError" class="form-error" role="alert">{{ saveError }}</p>
             <div class="modal-actions"><button class="secondary" type="button" :disabled="saving" @click="editing = false">取消</button><button class="primary" type="submit" :disabled="saving || profileDeletePending">{{ saving ? '正在保存…' : '保存档案' }}</button></div>
           </form>
@@ -280,11 +275,10 @@ async function confirmDelete() {
             <div class="stat-card"><span>累计浏览页面</span><strong>{{ growthValue('pages') }}</strong></div>
           </div>
           <div v-if="loading && !sessions.length" class="reader-loading" role="status" aria-label="正在读取阅读记录"><div class="spinner" /></div>
-          <div v-else-if="sessions.length" class="recent-list">
+          <div v-else-if="sessions.length" class="recent-list growth-records">
             <article v-for="session in sessions" :key="session.readingSessionId" class="recent-item">
-              <div><strong>{{ sessionTitle(session) }}</strong><p>{{ sessionRecordLabel(session) }} · 浏览 {{ countReadPages(session) }} 页 · {{ sessionStatusLabels[session.status] || '状态待确认' }}</p></div>
+              <div class="growth-record-main"><span class="pill" :class="`growth-status--${session.status.toLowerCase()}`">{{ sessionStatusLabels[session.status] || '状态待确认' }}</span><strong>{{ sessionTitle(session) }}</strong><p>{{ sessionRecordLabel(session) }} · 浏览 {{ countReadPages(session) }} 页</p></div>
               <div class="recent-item-actions">
-                <span class="pill">修订 {{ session.revision }}</span>
                 <button v-if="session.status === 'FINISHED'" class="secondary" type="button" @click="emit('navigate', `reader/${session.readingSessionId}`)">查看小结</button>
                 <button class="danger" type="button" :disabled="deleteBusy" @click="askDeleteSession(session)">删除记录</button>
               </div>
@@ -311,12 +305,18 @@ async function confirmDelete() {
         </template>
 
         <template v-else-if="section === 'plan'">
-          <div class="account-title"><div><h1>阅读计划</h1><p>计划暂存于浏览器；后端计划接口尚未开放。</p></div></div>
+          <div class="account-title"><div><h1>阅读计划</h1><p>目标和时长按儿童档案保存在本机，首页会显示每日进度。</p></div></div>
+          <div class="stats-grid">
+            <div class="stat-card"><span>今日阅读分钟</span><strong>{{ planProgress.minutes }}/{{ plan.minutes }}</strong></div>
+            <div class="stat-card"><span>今日读完绘本</span><strong>{{ planProgress.books }}/{{ plan.books }}</strong></div>
+            <div class="stat-card"><span>本周阅读天数</span><strong>{{ planProgress.weekly }}/{{ plan.weekly }}</strong></div>
+          </div>
           <form class="account-card plan-form" @submit.prevent="savePlan">
             <label class="form-field"><span>每日阅读时长</span><input v-model.number="plan.minutes" type="number" min="1" max="60"></label>
             <label class="form-field"><span>每日绘本数量</span><input v-model.number="plan.books" type="number" min="1" max="5"></label>
             <label class="form-field"><span>每周阅读天数</span><input v-model.number="plan.weekly" type="number" min="1" max="7"></label>
-            <button class="primary" type="submit">保存本地计划</button>
+            <button class="primary" type="submit">保存阅读计划</button>
+            <p v-if="planMessage" role="status">{{ planMessage }}</p>
           </form>
         </template>
 
