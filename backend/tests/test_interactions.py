@@ -751,6 +751,67 @@ def test_answer_discards_model_that_returns_after_five_second_timeout(started_se
     guidance_model.assert_awaited_once()
 
 
+def test_answer_recovers_from_process_interruption_on_original_key(started_session, guidance_model, monkeypatch):
+    client, headers, path, sid = started_session
+    assert guidance(client, headers, sid, "before-interruption").status_code == 201
+    url = f"/api/v1/reading-sessions/{sid}"
+    payload = dict(eventType="ANSWER", pageNumber=1, expectedRevision=2, clientEventId="interrupted", inputText="雨伞")
+    crashed_app = create_app(Settings())
+    with TestClient(crashed_app, base_url="https://testserver") as first:
+        async def interrupt_while_model_is_running():
+            started = asyncio.Event()
+
+            async def unfinished_model(_request):
+                started.set()
+                await asyncio.Future()
+
+            model = AsyncMock(side_effect=unfinished_model)
+            monkeypatch.setattr(crashed_app.state.model_adapter, "generate", model)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=crashed_app),
+                                         base_url="https://testserver", cookies=client.cookies) as asgi:
+                request = asyncio.create_task(asgi.post(url + "/events", headers=headers, json=payload))
+                try:
+                    await asyncio.wait_for(started.wait(), timeout=3)
+                finally:
+                    request.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await request
+            model.assert_awaited_once()
+
+        first.portal.call(interrupt_while_model_is_running)
+
+    with closing(sqlite3.connect(path)) as db:
+        status, body, deadline = db.execute(
+            "SELECT status, response_body, deadline_at FROM request_executions WHERE client_request_id = 'interrupted'",
+        ).fetchone()
+        input_text, event_body, output = db.execute(
+            "SELECT input_text, response_json, output_text FROM interaction_events WHERE request_key = 'interrupted'",
+        ).fetchone()
+    assert status == "RUNNING" and input_text == payload["inputText"] and output is None
+    assert json.loads(body) == json.loads(event_body)
+    data = json.loads(body)["data"]
+
+    clock = deadline - 1
+    monkeypatch.setattr(reading_sessions, "time", SimpleNamespace(time=lambda: (clock + 0.5) / 1000))
+    restarted_app = create_app(Settings())
+    with TestClient(restarted_app, base_url="https://testserver") as restarted:
+        restarted.cookies.update(client.cookies)
+        new_model = AsyncMock()
+        monkeypatch.setattr(restarted_app.state.model_adapter, "generate", new_model)
+        provisional = restarted.get(url).json()["data"]["events"][-1]
+        assert provisional["inputText"] == input_text and provisional["replyText"] == data["replyText"]
+        in_progress = restarted.post(url + "/events", headers=headers, json=payload)
+        assert in_progress.status_code == 409 and in_progress.json()["error"]["code"] == "REQUEST_IN_PROGRESS"
+        clock = deadline
+        for _ in range(2):
+            response = restarted.post(url + "/events", headers=headers, json=payload)
+            assert response.status_code == 200 and response.json()["data"] == data
+        assert_saved_answer(restarted, path, sid, "interrupted", data)
+        final = restarted.get(url).json()["data"]["events"]
+        assert [event for event in final if event["eventType"] == "ANSWER"] == [provisional]
+        new_model.assert_not_awaited()
+
+
 @pytest.mark.parametrize("age_band", ["AGE_3_4", "AGE_4_5", "AGE_5_6"])
 def test_parent_answer_follows_age_band_and_limits_followups(started_session, guidance_model, age_band):
     client, headers, path, sid = started_session
@@ -824,6 +885,14 @@ def test_answer_followup_budget_survives_fallback_replay_and_revisits(started_se
     answer("no-followup", no_followup, choices)
     answer("model-fallback", ModelGenerateResult(success=False, error_code="TIMEOUT"), choices)
     answer("first-followup", with_followup, choices, choices[0])
+    # Imported history can contain the same question on more than one answer.
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("""UPDATE interaction_events SET output_text = ?, response_json =
+                      json_set(response_json, '$.data.replyText', json_extract(response_json, '$.data.replyText') || ?)
+                      WHERE session_id = ? AND request_key = 'no-followup'""", (choices[0], choices[0], sid))
+        db.execute("""UPDATE request_executions SET response_body =
+                      json_set(response_body, '$.data.replyText', json_extract(response_body, '$.data.replyText') || ?)
+                      WHERE session_id = ? AND client_request_id = 'no-followup'""", (choices[0], sid))
     answer("second-followup", with_followup, choices[1:], choices[1])
     answer("over-budget", with_followup, ())
 

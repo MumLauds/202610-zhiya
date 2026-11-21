@@ -1894,7 +1894,7 @@ async function writeReading(operation) {
   // User writes supersede an automatic prompt. The server arbitrates via expectedRevision.
   activeInitialGuidance = initial ? operation : null
   if (!initial) state.sessionBusy = true
-  const isCurrent = () => sameReading(operation, epoch, generation) && (!initial || (
+  const isCurrent = () => routeHash === location.hash && sameReading(operation, epoch, generation) && (!initial || (
     activeInitialGuidance === operation && state.currentSession.status === 'IN_PROGRESS'
     && state.currentSession.currentPage === operation.payload.pageNumber
     && state.currentSession.revision === operation.payload.expectedRevision
@@ -1983,10 +1983,12 @@ async function refreshReading() {
   const epoch = authEpoch
   const generation = readingEpoch
   const target = { sessionId: session.readingSessionId }
+  const routeHash = location.hash
+  const isCurrent = () => routeHash === location.hash && sameReading(target, epoch, generation)
   state.sessionBusy = true
   try {
     const detail = await getReadingSession(target.sessionId)
-    if (!sameReading(target, epoch, generation)) return false
+    if (!isCurrent()) return false
     if (session.status === 'FINISHED' && !state.readingSyncRequired) {
       state.currentReport = detail.report
       return true
@@ -2007,7 +2009,7 @@ async function refreshReading() {
     state.readingSyncRequired = false
     return true
   } catch (error) {
-    if (sameReading(target, epoch, generation)) setToast(describeApiError(error), 'error')
+    if (isCurrent()) setToast(describeApiError(error), 'error')
     return false
   } finally {
     if (sameReading(target, epoch, generation)) state.sessionBusy = false

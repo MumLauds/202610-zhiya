@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { vModalFocus } from '../components/modalFocus'
 import { approvedBranchesAt } from '../data/readingBranches'
 import FlipBook from '../components/FlipBook.vue'
@@ -124,8 +124,9 @@ const questionSkipped = computed(() => latestGuidanceEvent.value?.feedback === '
 const questionBlocked = computed(() => latestGuidanceEvent.value?.strategyType === 'SAFETY_BLOCK')
 const savedAnswer = computed(() => pageEvents.value.findLast(event => event.eventType === 'ANSWER'))
 const answerViewKey = computed(() => `${props.session?.readingSessionId}:${currentPage.value?.pageNumber}`)
-const pendingAnswerView = ref('')
-const answerPending = computed(() => pendingAnswerView.value === answerViewKey.value)
+const pendingAnswerView = shallowRef(null)
+const answerPending = computed(() => pendingAnswerView.value?.view === answerViewKey.value
+  && !pendingAnswerView.value.isStoryQuestion)
 const answerText = computed(() => {
   if (props.session?.preview) return previewAnswer.value
   return props.authenticated ? savedAnswer.value?.inputText : ''
@@ -623,12 +624,12 @@ async function submitConfirmedAnswer() {
   }
   interactionBusy.value = true
   voiceError.value = ''
-  const isStoryQuestion = voiceOpen.value
-  const view = answerViewKey.value
-  if (!isStoryQuestion) pendingAnswerView.value = view
+  const submission = { view: answerViewKey.value, isStoryQuestion: voiceOpen.value }
+  pendingAnswerView.value = submission
   try {
+    const { isStoryQuestion, view } = submission
     const saved = isStoryQuestion ? await props.askQuestion(text) : await props.submitAnswer(text)
-    if (answerViewKey.value !== view) return
+    if (pendingAnswerView.value !== submission || answerViewKey.value !== view) return
     if (saved) {
       if (isStoryQuestion) closeStoryQuestion()
       else childAnswerDraft.value = null
@@ -636,9 +637,14 @@ async function submitConfirmedAnswer() {
       voiceError.value = isStoryQuestion ? '提问尚未确认保存，请核对进度后重试。' : '回答尚未确认保存，请检查页面提示后重试。'
     }
   } finally {
-    pendingAnswerView.value = ''
-    interactionBusy.value = false
+    if (pendingAnswerView.value === submission) clearPendingAnswer()
   }
+}
+
+function clearPendingAnswer() {
+  if (!pendingAnswerView.value) return
+  pendingAnswerView.value = null
+  interactionBusy.value = false
 }
 
 function cancelRecording() {
@@ -717,6 +723,7 @@ async function refreshProgress() {
 // A recording uses a revision-bound recognition request. Narration belongs to the page.
 // An ASK write changes the revision without changing the child's question.
 watch(() => props.session?.revision, closeStoryQuestion)
+watch([answerViewKey, () => props.loading, () => props.authenticated, () => props.accountId], clearPendingAnswer)
 watch([() => currentQuestion.value?.interactionEventId, questionSkipped, questionBlocked], () => {
   if (!voiceOpen.value) cancelRecording()
   childAnswerDraft.value = null
@@ -736,7 +743,7 @@ watch([
   stopNarration()
   closeVoice()
 })
-onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
+onBeforeUnmount(() => { clearPendingAnswer(); clearPreparedAudio(); stopNarration(); closeVoice() })
 </script>
 
 <template>

@@ -176,6 +176,7 @@ OBJECT_LEAD = re.compile(r"^(?:[了着过]|[一这那][把扇个本盏]|[这那]
 ACTOR_WORD = re.compile(r"小兔子|小兔|兔子|小熊|小狐狸|狐狸|小猫|小狗|小鸟|妈妈|爸爸")
 ACTOR_ALIASES = {"小兔子": "小兔", "兔子": "小兔", "小狐狸": "狐狸"}
 ACTION_BREAK = re.compile(r"[，。！？；,.!?;]|而是|但是|可是|然后|接着|(?<!不)再|后来|随后|最后|才|就|因为|所以")
+DETAIL_BREAK = re.compile(ACTION_BREAK.pattern + r"|并且|而且|又")
 ACTION_NEGATION = re.compile(r"(?:没(?:有)?|不是|并非|未曾|不曾|并不|不)(?:再|先|在)?(?:把.{1,10})?$")
 COORDINATED_NEGATION = re.compile(r"^(?:[\u3400-\u9fff]{0,5})(?:或者|或|、|也没(?:有)?|也不)$")
 SPECULATION = re.compile(r"我猜|也许|可能|大概|好像|会不会|如果|应该|想|打算|试图|没能|担心|害怕|(?<!一)会(?!儿)")
@@ -303,10 +304,21 @@ def _causal_evidence(answer: str, page: str, question: str) -> str:
 
 def _has_unverified_detail(answer: str, page: str) -> bool:
     facts = [_fact_phrase(clause) for clause in page_clauses(page)]
-    for clause in ACTION_BREAK.split(answer):
-        if len(clause) < 2 or ACTION_WORD.search(clause):
+    for clause in DETAIL_BREAK.split(answer):
+        if len(clause) < 2:
             continue
-        detail = _fact_phrase(re.sub(r"^(?:我觉得|我看到|我看见|就是|还有|那是|这是|[一那这]把)", "", clause))
+        actions = list(ACTION_WORD.finditer(clause))
+        if actions:
+            # A recognized verb does not establish a second claim glued to its object.
+            last = actions[-1]
+            tail = OBJECT_LEAD.sub("", clause[last.end():])
+            if target := OBJECT_WORD.match(tail):
+                tail = tail[target.end():]
+            if _fact_phrase(tail) in ("", "后", "之前", "之后", "以前", "以后"):
+                continue
+            detail = _fact_phrase(clause[last.start():])
+        else:
+            detail = _fact_phrase(re.sub(r"^(?:我觉得|我看到|我看见|就是|还有|那是|这是|[一那这]把)", "", clause))
         if detail and not any(detail in fact for fact in facts):
             return True
     return False

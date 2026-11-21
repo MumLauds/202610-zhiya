@@ -1214,6 +1214,57 @@ describe('guided reading interactions', () => {
     expect(wrapper.text()).not.toContain('你从画面哪里看出来的？')
   })
 
+  it('isolates pending answers across sessions and renders only the reply read back on return', async () => {
+    const first = deferred()
+    const second = deferred()
+    const submitAnswer = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    render({ submitAnswer })
+    const submit = async (text) => {
+      await wrapper.get('.reader-answer textarea').setValue(text)
+      await wrapper.get('.reader-answer').trigger('submit')
+    }
+
+    await submit('第一场的回答')
+    expect(wrapper.get('.question-reply').text()).toContain('芽芽正在想怎么回应')
+    const newQuestion = { ...questionEvent, interactionEventId: 20 }
+    await wrapper.setProps({ session: { ...initialSession, readingSessionId: 66 }, events: [newQuestion] })
+    expect(wrapper.find('.question-reply').exists()).toBe(false)
+    expect(wrapper.get('.reader-answer textarea').element.disabled).toBe(false)
+    await submit('第二场的回答')
+    expect(submitAnswer.mock.calls).toEqual([['第一场的回答'], ['第二场的回答']])
+
+    first.resolve(false)
+    await flushPromises()
+    expect(wrapper.get('.question-reply').text()).toContain('芽芽正在想怎么回应')
+    expect(wrapper.find('.question-error').exists()).toBe(false)
+
+    const saved = { interactionEventId: 12, eventType: 'ANSWER', pageNumber: 1,
+      inputText: '第一场已保存的回答', replyText: '这是读回的芽芽回应。' }
+    await wrapper.setProps({ session: { ...initialSession, revision: 2 }, events: [questionEvent, saved] })
+    expect(wrapper.get('.question-reply').text()).toBe('芽芽：这是读回的芽芽回应。')
+    expect(wrapper.get('.reader-answer textarea').element.disabled).toBe(false)
+    second.resolve(false)
+    await flushPromises()
+    expect(wrapper.get('.question-reply').text()).toBe('芽芽：这是读回的芽芽回应。')
+    expect(wrapper.find('.question-error').exists()).toBe(false)
+  })
+
+  it('ignores the abandoned submission after the same answer view is reloaded', async () => {
+    const pending = deferred()
+    render({ submitAnswer: vi.fn().mockReturnValueOnce(pending.promise) })
+    await wrapper.get('.reader-answer textarea').setValue('旧回答')
+    await wrapper.get('.reader-answer').trigger('submit')
+    await wrapper.setProps({ loading: true })
+    await wrapper.setProps({ loading: false })
+    expect(wrapper.find('.question-reply').exists()).toBe(false)
+    const editor = wrapper.get('.reader-answer textarea')
+    expect(editor.element.disabled).toBe(false)
+    await editor.setValue('重新载入后的草稿')
+    pending.resolve(true)
+    await flushPromises()
+    expect(editor.element.value).toBe('重新载入后的草稿')
+  })
+
   it('offers only approved branches from the current page', async () => {
     const chooseBranch = vi.fn().mockResolvedValue(true)
     render({

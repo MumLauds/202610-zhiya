@@ -787,8 +787,9 @@ def answer_context(db, session, answer: str) -> dict:
     ).fetchone()
     question = current_parent_question(db, session)
     followups = db.execute(
-        """SELECT output_text FROM interaction_events WHERE session_id = ? AND version_id = ? AND page_no = ?
-           AND event_type = 'ANSWER' AND NULLIF(TRIM(output_text), '') IS NOT NULL ORDER BY id DESC LIMIT ?""",
+        """SELECT TRIM(output_text) AS question FROM interaction_events WHERE session_id = ? AND version_id = ? AND page_no = ?
+           AND event_type = 'ANSWER' AND NULLIF(TRIM(output_text), '') IS NOT NULL
+           GROUP BY TRIM(output_text) ORDER BY MAX(id) DESC LIMIT ?""",
         (session["id"], session["version_id"], session["current_page_no"], MAX_ANSWER_FOLLOWUPS),
     ).fetchall()
     visited = json.loads(session["visited_pages_json"])
@@ -804,7 +805,7 @@ def answer_context(db, session, answer: str) -> dict:
         title=page["title"] if page else "", page_number=session["current_page_no"],
         age_band=page["age_band"] if page else "", topics=json.loads(page["topics_json"]) if page else [],
         earlier_pages=[texts[number][:600] for number in earlier if number in texts],
-        used_followups=[item["output_text"] for item in followups],
+        used_followups=[item["question"] for item in followups],
     )
 
 

@@ -95,6 +95,29 @@ def test_shared_subject_or_one_supported_action_does_not_verify_unknown_detail(a
     assert signals.unverified_detail and not signals.supports_page_reply
 
 
+@pytest.mark.parametrize("page,answer,actions,supported", [
+    ("小兔本来想打开伞，但是没有打开。", "小兔本来想打开伞，但是没有打开。",
+     [("打开", False, True), ("打开", True, False)], False),
+    ("小兔没有打开伞，而是跑开了。", "小兔没有先打开伞，而是先跑开了。",
+     [("打开", True, False), ("跑开", False, False)], True),
+    ("小兔撑开了雨伞，没放下。", "小兔打开伞后没有放下。",
+     [("打开", False, False), ("放下", True, False)], True),
+    ("小兔收起了雨伞。", "我觉得小兔可能想把伞收起来。",
+     [("收起", False, True)], False),
+    ("小兔没收起雨伞，而是把伞递给小熊。", "小兔不是收起伞，而是把伞递给小熊。",
+     [("收起", True, False), ("递给", False, False)], True),
+    ("外面下雨了。", "下雨是因为小兔在天上倒了一盆水。", [("下雨", False, False)], False),
+    ("小兔打开了雨伞。", "小兔打开雨伞飞上了天。", [("打开", False, False)], False),
+    ("小兔打开了雨伞。", "小兔飞上天又打开雨伞。", [("打开", False, False)], False),
+])
+def test_complex_chinese_claims_preserve_action_scope_without_endorsing_guesses(page, answer, actions, supported):
+    signals = reading_agent._answer_signals(answer, page, "这一页发生了什么？")
+    assert [(action.verb, action.negated, action.hypothetical) for action in signals.actions] == actions
+    assert signals.supports_page_reply is supported
+    if not supported:
+        assert "这一页也写到" not in reading_agent.reply_to_child_answer(page, answer)
+
+
 def test_reply_templates_vary_by_age_without_adding_story_facts_or_questions():
     model = AsyncMock()
     model.generate.return_value = ModelGenerateResult(

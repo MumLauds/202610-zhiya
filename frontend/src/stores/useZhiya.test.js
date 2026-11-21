@@ -545,6 +545,41 @@ describe('authoritative reading progress', () => {
     expect(state.currentSession.currentPage).toBe(7)
     expect(state.currentSession.revision).toBe(5)
   })
+
+  it.each(['success', 'network loss'])('discards an answer after leaving the reader on %s and restores API-013 events', async (outcome) => {
+    await actions.signIn('parent-a', 'password123')
+    window.history.replaceState({}, '', '/#reader/55')
+    await actions.syncRoute()
+    const pending = deferred()
+    reading.addReadingEvent.mockReturnValueOnce(pending.promise)
+    const oldWrite = actions.submitAnswer('旧页面的回答')
+    window.history.replaceState({}, '', '/#home')
+    await actions.syncRoute()
+
+    const priorReads = reading.getReadingSession.mock.calls.length
+    if (outcome === 'success') pending.resolve({ interactionEventId: 15, revision: 2, replyText: '旧页面的即时回应' })
+    else pending.reject(new ApiError('offline'))
+    expect(await oldWrite).toBe(false)
+    expect(reading.getReadingSession).toHaveBeenCalledTimes(priorReads)
+    expect(state.currentEvents).toEqual([])
+    expect(state.readingSyncRequired).toBe(false)
+
+    const newAnswer = { interactionEventId: 26, eventType: 'ANSWER', pageNumber: 1, replyText: '新会话的已保存回应' }
+    reading.getReadingSession.mockResolvedValueOnce({ ...detail({ readingSessionId: 66, revision: 4 }), events: [newAnswer] })
+    window.history.replaceState({}, '', '/#reader/66')
+    await actions.syncRoute()
+    expect(reading.getReadingSession).toHaveBeenLastCalledWith(66)
+    expect(state.currentEvents).toEqual([newAnswer])
+
+    const restored = { interactionEventId: 15, eventType: 'ANSWER', pageNumber: 1, replyText: '原会话读回的回应' }
+    reading.getReadingSession.mockResolvedValueOnce({ ...detail({ revision: 3 }), events: [restored] })
+    window.history.replaceState({}, '', '/#reader/55')
+    await actions.syncRoute()
+    expect(reading.getReadingSession).toHaveBeenLastCalledWith(55)
+    expect(state.currentSession.revision).toBe(3)
+    expect(state.currentEvents).toEqual([restored])
+  })
+
 })
 
 describe('recommendations and content operations', () => {
