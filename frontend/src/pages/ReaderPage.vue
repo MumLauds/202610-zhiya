@@ -197,8 +197,9 @@ async function onPageChange({ storyIndex }) {
   }
   if (storyIndex === pageIndex.value) return
   stopNarration()
-  closeVoice()
+  closeStoryQuestion()
   if (storyIndex <= progressIndex.value) {
+    childAnswerDraft.value = null
     showIndex(storyIndex)
     return
   }
@@ -224,7 +225,7 @@ async function turnPage(index) {
   if (!animation) return onPageChange({ storyIndex: index })
   edgeTurnBusy.value = true
   stopNarration()
-  closeVoice()
+  closeStoryQuestion()
   try {
     await animation
   } catch {

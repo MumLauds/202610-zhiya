@@ -20,7 +20,7 @@
 
 从 backend/.env.example 首次复制到 backend/.env，已有文件不要覆盖。在本地把有文本模型权限的百炼密钥填入 `MODEL_API_KEY`，把百炼北京地域密钥填入 `DASHSCOPE_API_KEY`。两个字段独立，文本密钥缺失时不回退到语音密钥。不要把密钥贴入聊天、任务表或 Git。已有系统环境优先于 .env。各项默认值见示例文件：文本 qwen3.6-plus，识别 qwen3-asr-flash，合成 qwen-audio-3.1-tts-flash / wenhuaiqing_v3.1；合成地址默认留空，须填百炼北京业务空间的完整 SpeechSynthesizer 地址。文本默认发送 enable_thinking=false，兼容端点可显式设置 MODEL_SEND_THINKING=false 省略该字段；文本、语音总预算各自默认 20 秒（语音含合成下载）。
 
-从 DeepSeek 迁移时，同时更新 MODEL_API_URL、MODEL_NAME 和 MODEL_API_KEY。百炼北京业务空间的 OpenAI 兼容地址以 /compatible-mode/v1/chat/completions 结尾；默认公共端点见示例。使用已有百炼密钥前请确认文本模型权限。插画默认 qwen-image-3.0-pro，已显式配置 IMAGE_MODEL 的环境也需要同步改值。
+从 DeepSeek 迁移时，同时更新 MODEL_API_URL、MODEL_NAME 和 MODEL_API_KEY。只配置文本密钥时，文本调用保持停用，避免把旧密钥送到新端点。显式保留 DeepSeek 官方地址时继续使用它的思考参数，未指定模型时使用 deepseek-flash。百炼北京业务空间的 OpenAI 兼容地址以 /compatible-mode/v1/chat/completions 结尾，公共端点见示例。使用已有百炼密钥前请确认文本模型权限。插画默认 qwen-image-3.0-pro，已显式配置 IMAGE_MODEL 的环境也需要同步改值。
 
 三个服务 URL 均原样校验，不自动删除首尾空白；包含空白或控制字符时报配置错误。显式空字符串表示未配置，纯空白字符串属于无效配置。
 
@@ -74,6 +74,6 @@ TTS 请求使用百炼 SSE。后端逐条读取事件和音频分块，收到完
 
 依据 FR-08、FR-12、NFR-03/05/06、AC-07/10、接口 API-022～024。采用已有 HTTPX 与标准库，不新增 SDK。官方依据：[百炼文本协议及思考开关](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)、[百炼千问图像](https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference)、[百炼 ASR](https://help.aliyun.com/en/model-studio/qwen-asr-api-reference)、[百炼 Qwen-Audio TTS](https://help.aliyun.com/zh/model-studio/qwen-audio-tts-http-api)。读取日期 2026-11-11。
 
-离线验证：仓库根目录执行 `.\.venv\Scripts\python.exe -m pytest backend/tests -q`。具体结果与需求追踪见[文本与语音验证记录](../docs/testing/bailian-checks.md)。2026-11-11 用户自行填写凭证后，文本、合成与识别的真实短句调用通过，见[真实联调记录](../docs/testing/live-provider-checks.md)。模型适龄效果、人工听感及浏览器端到端流程仍待验收，不能据此标记完整 AC-07 已通过。
+离线验证：仓库根目录执行 `.\.venv\Scripts\python.exe -m pytest backend/tests -q`。具体结果与需求追踪见[文本与语音验证记录](../docs/testing/bailian-checks.md)。2026-11-11 的真实短句覆盖 DeepSeek 文本、百炼合成与识别，见[历史联调记录](../docs/testing/live-provider-checks.md)。切换百炼文本后，使用目标环境重新验收共读小提问和小结。模型适龄效果、人工听感及浏览器端到端流程仍待验收，不能据此标记完整 AC-07 已通过。
 
 最新容器也已验证三项真实调用及 Windows 健康接口访问，镜像包含上述两个联调命令，见[容器操作说明](../infra/README.md)和[容器验收及 G08 交接边界](../docs/testing/docker-checks.md)。

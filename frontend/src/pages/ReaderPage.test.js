@@ -880,13 +880,16 @@ describe('reader state and visual progress', () => {
   it('keeps the visual turn during confirmation and restores the widget on rejection', async () => {
     const pending = deferred()
     render({ recordPage: vi.fn().mockReturnValue(pending.promise) })
+    const editor = wrapper.get('.reader-answer textarea')
+    await editor.setValue('还没提交的回答')
     showPage.mockClear()
-    wrapper.findComponent({ name: 'FlipBook' }).vm.$emit('page-change', { storyIndex: 1 })
+    await wrapper.get('.reader-edge--next').trigger('click')
     expect(showPage).not.toHaveBeenCalled()
     pending.resolve(false)
     await flushPromises()
     expect(showPage).toHaveBeenLastCalledWith(0)
     expect(wrapper.findComponent({ name: 'FlipBook' }).props('startPage')).toBe(0)
+    expect(editor.element.value).toBe('还没提交的回答')
   })
 
   it.each(['IN_PROGRESS', 'FINISHED', 'INTERRUPTED'])('keeps the revisit hint consistent with media controls in %s sessions', async (status) => {

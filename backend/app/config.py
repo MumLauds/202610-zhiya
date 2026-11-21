@@ -10,6 +10,14 @@ import httpx
 
 DASHSCOPE_CHAT_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 DASHSCOPE_TEXT_MODEL = "qwen3.6-plus"
+DEEPSEEK_TEXT_MODEL = "deepseek-flash"
+
+
+def is_deepseek_endpoint(url: str) -> bool:
+    try:
+        return urlsplit(url).hostname == "api.deepseek.com"
+    except ValueError:
+        return False  # Invalid URLs are rejected by validate_url.
 
 
 def validate_url(value: str, name: str) -> None:
@@ -72,10 +80,14 @@ class Settings:
         send_thinking = os.getenv("MODEL_SEND_THINKING", "true").strip().lower()
         if send_thinking not in ("true", "false"):
             raise ValueError("MODEL_SEND_THINKING must be true or false")
+        key = os.getenv("MODEL_API_KEY", "")
+        # A key from an older deployment must not follow the new default endpoint.
+        url = os.getenv("MODEL_API_URL", "" if key else DASHSCOPE_CHAT_URL)
+        default_model = DEEPSEEK_TEXT_MODEL if is_deepseek_endpoint(url) else DASHSCOPE_TEXT_MODEL
         return cls(
-            model_api_url=os.getenv("MODEL_API_URL", DASHSCOPE_CHAT_URL),
-            model_api_key=os.getenv("MODEL_API_KEY", ""),
-            model_name=os.getenv("MODEL_NAME", DASHSCOPE_TEXT_MODEL).strip(),
+            model_api_url=url,
+            model_api_key=key,
+            model_name=os.getenv("MODEL_NAME", default_model).strip(),
             model_timeout_seconds=timeout,
             model_max_tokens=max_tokens,
             model_send_thinking=send_thinking == "true",

@@ -133,6 +133,32 @@ class ModelGatewayTests(unittest.IsolatedAsyncioTestCase):
         for sensitive in (API_KEY, INPUT_TEXT, SYSTEM_PROMPT, UPSTREAM_BODY):
             self.assertNotIn(sensitive, str(caught.exception))
 
+    async def test_key_without_explicit_endpoint_does_not_reach_new_provider(self):
+        def fail_if_called(_request):
+            self.fail("A key with no explicit endpoint reached a provider")
+
+        for endpoint in ({}, {"MODEL_API_URL": ""}):
+            with self.subTest(endpoint=endpoint):
+                with patch.dict("os.environ", {"MODEL_API_KEY": API_KEY, **endpoint}, clear=True):
+                    settings = Settings.from_env()
+                async with ModelGateway(settings, transport=httpx.MockTransport(fail_if_called)) as gateway:
+                    await self.assert_service_error(gateway, "MODEL_NOT_CONFIGURED", 503)
+
+    async def test_explicit_deepseek_endpoint_keeps_its_default_model_and_thinking_field(self):
+        def provider(request):
+            payload = json.loads(request.content)
+            self.assertEqual(payload["model"], "deepseek-flash")
+            self.assertEqual(payload["thinking"], {"type": "disabled"})
+            self.assertNotIn("enable_thinking", payload)
+            return httpx.Response(200, json=model_response())
+
+        with patch.dict("os.environ", {
+            "MODEL_API_URL": "https://api.deepseek.com/v1/chat/completions", "MODEL_API_KEY": API_KEY,
+        }, clear=True):
+            settings = Settings.from_env()
+        async with ModelGateway(settings, transport=httpx.MockTransport(provider)) as gateway:
+            await gateway.generate(input_text=INPUT_TEXT, system_prompt=SYSTEM_PROMPT)
+
     async def test_invalid_or_unconfigured_calls_do_not_reach_provider(self):
         def fail_if_called(_request):
             self.fail("Invalid or unconfigured input reached the provider")
@@ -190,7 +216,10 @@ class ModelGatewayTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json=model_response())
 
         for flag in ("true", "false"):
-            with patch.dict("os.environ", {"MODEL_API_KEY": API_KEY, "MODEL_SEND_THINKING": flag}, clear=True):
+            with patch.dict("os.environ", {
+                "MODEL_API_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+                "MODEL_API_KEY": API_KEY, "MODEL_SEND_THINKING": flag,
+            }, clear=True):
                 settings = Settings.from_env()
             async with ModelGateway(settings, transport=httpx.MockTransport(provider)) as gateway:
                 await gateway.generate(input_text=INPUT_TEXT, system_prompt=SYSTEM_PROMPT)

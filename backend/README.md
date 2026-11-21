@@ -58,12 +58,12 @@ X-Request-ID 响应头与响应体一致。/docs 可查看健康、账号、档�
 
 | 环境变量 | 默认值 | 含义 |
 | --- | --- | --- |
-| MODEL_API_URL | https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions | 完整 HTTPS 请求地址，包含 /chat/completions 路径；不自动拼接或去除空白。禁止 URL 用户名、密码、查询参数、fragment、空白和控制字符。 |
+| MODEL_API_URL | 未配置密钥时使用百炼示例地址 | 配置 `MODEL_API_KEY` 时须显式填写完整 HTTPS 请求地址，包含 `/chat/completions`。缺少地址时文本调用停用。禁止 URL 用户名、密码、查询参数、fragment、空白和控制字符。 |
 | DASHSCOPE_API_KEY | 空 | 用于百炼语音和可选的 AI 插画；不得提交或写入日志。 |
-| MODEL_API_KEY | 空 | 有文本模型权限的百炼凭证；空时禁用文本调用，不读取语音凭证。 |
-| MODEL_NAME | qwen3.6-plus | 百炼实际支持的模型标识，必须能编码为 UTF-8。 |
+| MODEL_API_KEY | 空 | 与文本端点配套的凭证。空时禁用文本调用，不读取语音凭证。 |
+| MODEL_NAME | qwen3.6-plus | 文本供应商实际支持的模型标识。显式使用 DeepSeek 官方地址时默认为 `deepseek-flash`。 |
 | MODEL_TIMEOUT_SECONDS | 20 | 请求及响应读取的总预算，必须大于 0 且不超过 20 秒。 |
-| MODEL_SEND_THINKING | true | 默认发送 `enable_thinking=false`。兼容端点明确拒绝该字段时设为 `false`。 |
+| MODEL_SEND_THINKING | true | 默认发送 `enable_thinking=false`。DeepSeek 官方地址使用 `thinking.type=disabled`。兼容端点明确拒绝该字段时设为 `false` 以省略。 |
 | MODEL_MAX_TOKENS | 512 | 最大输出令牌数，整数 1～4096；供应商需支持 max_tokens。 |
 
 .env 由 Uvicorn 的 --env-file 或本地连通性脚本加载，已有进程环境变量优先；Settings.from_env 本身只读取进程环境。仓库已有规则忽略 .env，保留 .env.example。配置值不出现在健康检查或 OpenAPI 中。此适配器关闭环境代理读取，避免无意将凭证交给本机代理；如运行环境必须经代理，应另行明确配置与信任边界。
@@ -94,7 +94,7 @@ input_text 去除首尾空白后为 1～200 字符，与契约中的用户文本
 | Settings.model_name | 请求 model |
 | system_prompt / input_text | 请求 messages 中 system / user 消息的 content |
 | Settings.model_max_tokens | 请求 max_tokens；stream 固定为 false |
-| Settings.model_send_thinking | 默认为 true 时发送 `enable_thinking=false`，设为 false 时省略该字段。 |
+| Settings.model_send_thinking | 启用时按端点发送关闭思考的参数。百炼发送 `enable_thinking=false`，DeepSeek 官方地址发送 `thinking.type=disabled`。 |
 | 响应 choices[0].message.content | 校验后作为字符串返回；本地脚本使用知芽 camelCase 字段 outputText，不透传供应商完整对象 |
 
 适配器仅返回完整的 assistant 文本，不创建业务事件、不生成知识引用、不执行工具。调用方仍需完成领域结果校验和安全回退，写入最终事实记录后才向用户展示。校验 finish_reason、文本结构或供应商 refusal 并不能证明内容适龄或安全。

@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import httpx
 
-from app.config import Settings
+from app.config import Settings, is_deepseek_endpoint
 from app.errors import ServiceError
 
 logger = logging.getLogger("zhiya.model")
@@ -99,7 +99,10 @@ class ModelGateway:
             "stream": False,
         }
         if self._settings.model_send_thinking:
-            payload["enable_thinking"] = False
+            if is_deepseek_endpoint(self._settings.model_api_url):
+                payload["thinking"] = {"type": "disabled"}
+            else:
+                payload["enable_thinking"] = False
         if json_object:
             payload["response_format"] = {"type": "json_object"}
 

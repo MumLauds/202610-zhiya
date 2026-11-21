@@ -42,7 +42,9 @@ class EnvironmentSettingsTests(unittest.TestCase):
                 self.assertFalse(Settings.from_env().model_configured)
                 self.assertEqual(Settings.from_env().model_api_key, "")
                 self.assertTrue(SpeechSettings.from_env().asr_configured)
-        with patch.dict("os.environ", {"MODEL_API_KEY": "deepseek-key"}, clear=True):
+        with patch.dict("os.environ", {
+            "MODEL_API_KEY": "text-only", "MODEL_API_URL": DASHSCOPE_CHAT_URL,
+        }, clear=True):
             self.assertTrue(Settings.from_env().model_configured)
             self.assertFalse(SpeechSettings.from_env().asr_configured)
             self.assertFalse(SpeechSettings.from_env().tts_configured)

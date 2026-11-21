@@ -11,7 +11,7 @@ from unittest.mock import patch
 import httpx
 
 from app.errors import ServiceError
-from app.config import Settings
+from app.config import DASHSCOPE_CHAT_URL, Settings
 from app.model_gateway import ModelGateway
 from app.speech_config import SpeechSettings
 from app.speech_options import get_speech_options
@@ -247,7 +247,10 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(caught.exception.code, "ASR_INVALID_INPUT")
 
     async def test_text_and_voice_use_separate_credentials_and_protocols(self):
-        with patch.dict("os.environ", {"MODEL_API_KEY": "text-only", "DASHSCOPE_API_KEY": "speech-only", "TTS_API_URL": TTS_URL}, clear=True):
+        with patch.dict("os.environ", {
+            "MODEL_API_URL": DASHSCOPE_CHAT_URL, "MODEL_API_KEY": "text-only",
+            "DASHSCOPE_API_KEY": "speech-only", "TTS_API_URL": TTS_URL,
+        }, clear=True):
             model_settings, speech_settings = Settings.from_env(), SpeechSettings.from_env()
         calls = []
         def handler(request):
