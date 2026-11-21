@@ -223,9 +223,14 @@ async def generate_text(request, payload, source, carried_pages, total, decision
     )
     if payload.generateIllustrations:
         prompt += (
-            '另输出 imageScenes 字符串数组，与新增正文逐页对应。每个元素用一句简短的画面描述，'
-            '只写一个连续镜头中可见的角色、动作、物品和地点。突出该页出场的所选角色，动物保持动物外形。'
-            '沿用角色外观，不增添无关人物或服饰。不要复述正文，不写标题、对白、旁白、标签或分镜。'
+            '先确定故事主角，让所选具体角色担当主线，尊重自定义角色的物种和特征。'
+            '全篇保持相同的称呼、物种、毛色、服饰和随身物件，续写沿用前文已有的角色设定。'
+            '“家人”表示亲属关系。动物主角的家人默认采用同物种的亲属，明确写成熊妈妈、兔爸爸等，'
+            '除非输入或前文已明确指定其他角色。若只选“家人”，先确定一个家庭及其成员，后续各页沿用。'
+            '另输出 imageScenes 字符串数组，与新增正文逐页对应。每条用一句简短的画面描述，'
+            '先写主角，再写可见配角、数量、动作、相对位置、道具和具体地点。只画本页明确出场的角色。'
+            '动物保持动物外形。角色独处时写明独自，服饰和道具随剧情明确变化。'
+            '不要复述正文，不写标题、对白、旁白、标签或分镜。'
         )
     adapter = getattr(request.app.state, "model_adapter", None)
     if adapter is None:
@@ -432,7 +437,7 @@ async def generate_story(payload: StoryGeneration, request: Request):
                    for value in (result.title, *result.pages, *result.choices, *result.imageScenes)):
                 raise ValueError("generated draft did not pass content checks")
             images = await generate_story_illustrations(
-                image_settings, result.imageScenes, topic=payload.topic, characters=payload.characters, scene=payload.scene,
+                image_settings, result.imageScenes, topic=payload.topic, scene=payload.scene,
             )
             reserved = (*reserved[:2], images, *reserved[3:])
     except TimeoutError:

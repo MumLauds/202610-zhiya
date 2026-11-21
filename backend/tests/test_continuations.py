@@ -275,6 +275,9 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
             context = json.loads(request.context_text)
             model_calls.append(context["newPageCount"])
             assert "imageScenes" in request.system_prompt
+            assert context["characters"] == ["小兔", "家人"]
+            assert "“家人”表示亲属关系" in request.system_prompt
+            assert "只画本页明确出场的角色" in request.system_prompt
             pages, scenes = (continued_pages, continued_scenes) if context["previousPages"] else (original_pages, original_scenes)
             return ModelGenerateResult(success=True, text=json.dumps({"title": title, "pages": pages, "imageScenes": scenes}))
 
@@ -286,9 +289,9 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
     monkeypatch.setattr(client.app.state, "model_adapter", StoryModel())
     monkeypatch.setattr("app.api.v1.story_generations.generate_story_illustrations", generate_images)
     generations = "/api/v1/story-generations"
-    payload = {"topic": "互助", "characters": ["小兔子"], "scene": "森林", "branching": False,
+    payload = {"topic": "互助", "characters": ["小兔", "家人"], "scene": "森林", "branching": False,
                "generateIllustrations": True}
-    expected_brief = {key: payload[key] for key in ("topic", "characters", "scene")}
+    expected_brief = {key: payload[key] for key in ("topic", "scene")}
     original = {**payload, "ageBand": "AGE_4_5", "clientRequestId": "ai-original"}
     generated = client.post(generations, headers=headers, json=original)
     assert generated.status_code == 201, generated.text
