@@ -24,6 +24,30 @@ it('narrates only the active spread and animates a requested adjacent turn', asy
   expect(book.turnTo).not.toHaveBeenCalled()
 })
 
+it('ignores pointer clicks that complete text selection and keeps keyboard activation', async () => {
+  const book = { on: vi.fn(), turnTo: vi.fn(), destroy: vi.fn() }
+  vi.stubGlobal('OpenPageFlip', { createBook: () => book })
+  wrapper = mount(FlipBook, {
+    attachTo: document.body,
+    props: { canNarrate: true, pages: [{ pageNumber: 1, text: '故事正文' }] },
+  })
+  const narration = wrapper.get('.page-narration-text')
+  const selection = window.getSelection()
+  selection.selectAllChildren(narration.element)
+  try {
+    narration.element.dispatchEvent(new MouseEvent('pointerdown', { clientX: 10 }))
+    await narration.trigger('click', { detail: 1, clientX: 50 })
+    expect(wrapper.emitted('narrate')).toBeUndefined()
+    await narration.trigger('click', { detail: 0 })
+    expect(wrapper.emitted('narrate')).toHaveLength(1)
+    narration.element.dispatchEvent(new MouseEvent('pointerdown', { clientX: 10 }))
+    await narration.trigger('click', { detail: 1, clientX: 10 })
+    expect(wrapper.emitted('narrate')).toHaveLength(2)
+  } finally {
+    selection.removeAllRanges()
+  }
+})
+
 it('uses page image refs and placeholders, and restores the actual widget position', async () => {
   let onFlip
   const book = { on: vi.fn((name, handler) => { onFlip = handler }), turnTo: vi.fn((page) => onFlip({ page })), destroy: vi.fn() }

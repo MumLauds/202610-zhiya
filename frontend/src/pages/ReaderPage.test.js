@@ -171,6 +171,8 @@ describe('recording lifecycle', () => {
 
   it('cancels without upload and stops all microphone tracks', async () => {
     render()
+    const editor = wrapper.get('.reader-answer textarea')
+    await editor.setValue('录音前写下的回答')
     await startRecording()
     expect(recorders[0].state).toBe('recording')
     await button('取消录音').trigger('click')
@@ -179,6 +181,7 @@ describe('recording lifecycle', () => {
     expect(track.stop).toHaveBeenCalled()
     expect(transcribe).not.toHaveBeenCalled()
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(editor.element.value).toBe('录音前写下的回答')
   })
 
   it('stops a late microphone permission result after cancellation', async () => {
@@ -921,10 +924,26 @@ describe('reader state and visual progress', () => {
 })
 
 describe('guided reading interactions', () => {
+  it('preserves the child answer when cancelling a separate story question', async () => {
+    render({ askQuestion: vi.fn() })
+    const editor = wrapper.get('.reader-answer textarea')
+    await editor.setValue('这是孩子的回答。')
+    await button('问问芽芽').trigger('click')
+    const dialog = wrapper.get('[role="dialog"]')
+    expect(dialog.get('textarea').element.value).toBe('')
+    await dialog.get('textarea').setValue('这是给芽芽的问题。')
+    await dialog.get('.modal-close').trigger('click')
+    expect(editor.element.value).toBe('这是孩子的回答。')
+    expect(wrapper.props('submitAnswer')).not.toHaveBeenCalled()
+    expect(wrapper.props('askQuestion')).not.toHaveBeenCalled()
+  })
+
   it('submits a guardian-confirmed question separately and plays only its saved event', async () => {
     const askQuestion = vi.fn().mockResolvedValue(true)
     const submitAnswer = vi.fn()
     render({ askQuestion, submitAnswer })
+    const editor = wrapper.get('.reader-answer textarea')
+    await editor.setValue('本页回答草稿。')
     await button('问问芽芽').trigger('click')
     await wrapper.get('[role="dialog"] textarea').setValue(' 谁拿着伞？ ')
     await button('确认文字').trigger('click')
@@ -935,6 +954,7 @@ describe('guided reading interactions', () => {
     expect(submitAnswer).not.toHaveBeenCalled()
     const answer = { eventType: 'ASK', pageNumber: 1, outputText: '小狐狸举着伞。', interactionEventId: 19, revision: 2 }
     await wrapper.setProps({ session: { ...initialSession, revision: 2 }, events: [questionEvent, answer] })
+    expect(editor.element.value).toBe('本页回答草稿。')
     synthesize.mockResolvedValueOnce({ audioUrl: '/api/v1/media/audio-test' })
     await button('播放故事回答').trigger('click')
     await flushPromises()
@@ -973,9 +993,16 @@ describe('guided reading interactions', () => {
     const requestGuidance = vi.fn().mockResolvedValue(true)
     render({ requestGuidance })
     expect(wrapper.text()).toContain('小兔在哪里？')
+    const editor = wrapper.get('.reader-answer textarea')
+    await editor.setValue('这是对原问题的回答。')
     await button('还没懂').trigger('click')
     await flushPromises()
     expect(requestGuidance).toHaveBeenCalledWith('NOT_UNDERSTOOD')
+    await wrapper.setProps({
+      session: { ...initialSession, revision: 2 },
+      events: [questionEvent, { ...questionEvent, interactionEventId: 11, outputText: '你看到哪棵树？' }],
+    })
+    expect(editor.element.value).toBe('')
   })
 
   it('shows the latest safety response and leaves skip and navigation available', async () => {

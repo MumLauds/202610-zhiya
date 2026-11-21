@@ -32,6 +32,7 @@ const currentImageSettled = computed(() => !currentImage.value ||
 let book = null
 let mountedFrames = []
 let syncing = false
+let narrationPointerStart = null
 
 function showPage(storyIndex) {
   const localIndex = storyIndex - windowStart.value
@@ -45,6 +46,21 @@ function flipToPage(storyIndex) {
   if (!book?.flipTo || localIndex < 0 || localIndex >= visiblePages.value.length) return null
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return null
   return book.flipTo(localIndex * 2)
+}
+
+function startNarrationPointer(event) {
+  narrationPointerStart = { x: event.clientX, y: event.clientY }
+}
+
+function narratePage(event) {
+  const start = narrationPointerStart
+  narrationPointerStart = null
+  const moved = start && (Math.abs(event.clientX - start.x) > 3 || Math.abs(event.clientY - start.y) > 3)
+  if (event.detail > 0 && moved) {
+    const selection = window.getSelection()
+    if (selection?.rangeCount && !selection.isCollapsed && selection.getRangeAt(0).intersectsNode(event.currentTarget)) return
+  }
+  emit('narrate')
 }
 
 watch([() => props.startPage, visiblePages], () => {
@@ -174,7 +190,8 @@ defineExpose({
               type="button"
               class="page-narration-text"
               title="点击朗读本页"
-              @click.stop="emit('narrate')"
+              @pointerdown="startNarrationPointer"
+              @click.stop="narratePage"
             >{{ page.text }}</button>
             <template v-else>{{ page.text }}</template>
           </blockquote>

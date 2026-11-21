@@ -47,7 +47,15 @@ const previewAnswer = ref('')
 const voiceOpen = ref(false)
 const voiceState = ref('idle')
 const voiceError = ref('')
-const transcript = ref(null)
+const childAnswerDraft = ref(null)
+const storyQuestionDraft = ref(null)
+const transcript = computed({
+  get: () => voiceOpen.value ? storyQuestionDraft.value : childAnswerDraft.value,
+  set(value) {
+    const draft = voiceOpen.value ? storyQuestionDraft : childAnswerDraft
+    draft.value = value
+  },
+})
 const transcriptEditor = ref(null)
 let recorder = null
 let recordingStream = null
@@ -109,7 +117,7 @@ const canSkipQuestion = computed(() => mediaAllowed.value && !questionSkipped.va
 const canAnswer = computed(() => props.session?.preview ? mediaAllowed.value : canSubmitFeedback.value)
 const answerDisabled = computed(() => !canAnswer.value || guidanceLoading.value || voiceOpen.value)
 const recordingBusy = computed(() => ['starting', 'recording', 'processing'].includes(voiceState.value))
-const inlineAnswer = computed(() => voiceOpen.value ? '' : transcript.value?.text ?? '')
+const inlineAnswer = computed(() => childAnswerDraft.value?.text ?? '')
 const canNarratePage = computed(() => mediaAllowed.value && !recordingBusy.value && !voiceOpen.value)
 const narrationSelected = computed(() => isPageNarration.value && ['loading', 'playing'].includes(audioStatus.value))
 const parentTip = computed(() => {
@@ -426,7 +434,7 @@ async function toggleRecording() {
       voiceError.value = '录音失败，请重新录制。'
     }
     activeRecorder.start()
-    transcript.value = null
+    if (voiceOpen.value) storyQuestionDraft.value = null
     voiceState.value = 'recording'
   } catch {
     stream?.getTracks().forEach((track) => track.stop())
@@ -462,6 +470,12 @@ function recordInlineAnswer() {
   void toggleRecording()
 }
 
+function cancelOrClearInlineRecording() {
+  if (!recordingBusy.value) childAnswerDraft.value = null
+  cancelRecording()
+  voiceError.value = ''
+}
+
 function submitInlineAnswer() {
   if (answerDisabled.value || recordingBusy.value || !inlineAnswer.value.trim()) return
   confirmTranscript()
@@ -474,7 +488,7 @@ function openStoryQuestion() {
   cancelRecording()
   voiceOpen.value = true
   voiceState.value = 'idle'
-  transcript.value = null
+  storyQuestionDraft.value = null
   voiceError.value = ''
   editQuestionText()
 }
@@ -534,7 +548,8 @@ async function submitConfirmedAnswer() {
     const isStoryQuestion = voiceOpen.value
     const saved = isStoryQuestion ? await props.askQuestion(text) : await props.submitAnswer(text)
     if (saved) {
-      closeVoice()
+      if (isStoryQuestion) closeStoryQuestion()
+      else childAnswerDraft.value = null
     } else {
       voiceError.value = isStoryQuestion ? '提问尚未确认保存，请核对进度后重试。' : '回答尚未确认保存，请检查页面提示后重试。'
     }
@@ -558,11 +573,16 @@ function cancelRecording() {
   voiceState.value = 'idle'
 }
 
-function closeVoice() {
+function closeStoryQuestion() {
   cancelRecording()
-  transcript.value = null
+  storyQuestionDraft.value = null
   voiceOpen.value = false
   voiceError.value = ''
+}
+
+function closeVoice() {
+  closeStoryQuestion()
+  childAnswerDraft.value = null
 }
 
 function leaveReader() {
@@ -612,7 +632,12 @@ async function refreshProgress() {
 }
 
 // A recording uses a revision-bound recognition request. Narration belongs to the page.
-watch(() => props.session?.revision, closeVoice)
+// An ASK write changes the revision without changing the child's question.
+watch(() => props.session?.revision, closeStoryQuestion)
+watch([() => currentQuestion.value?.interactionEventId, questionSkipped, questionBlocked], () => {
+  if (!voiceOpen.value) cancelRecording()
+  childAnswerDraft.value = null
+})
 watch([
   () => props.session?.readingSessionId,
   () => props.session?.currentPage,
@@ -729,9 +754,9 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
               </button>
               <textarea aria-label="输入孩子的回答" :value="inlineAnswer" placeholder="说一说你的想法，或输入回答…" maxlength="200" rows="1" :disabled="answerDisabled || recordingBusy" @input="setInlineAnswer"></textarea>
             </div>
-            <div v-if="!voiceOpen && (recordingBusy || transcript?.source === 'recording')" class="reader-answer-state">
+            <div v-if="!voiceOpen && (recordingBusy || childAnswerDraft?.source === 'recording')" class="reader-answer-state">
               <span role="status">{{ voiceState === 'recording' ? '正在录音，点停止后识别' : voiceState === 'starting' ? '正在申请麦克风' : voiceState === 'processing' ? '正在识别' : '请核对转写，修改后再提交' }}</span>
-              <button class="text-button" type="button" @click="closeVoice">{{ recordingBusy ? '取消录音' : '清除转写' }}</button>
+              <button class="text-button" type="button" @click="cancelOrClearInlineRecording">{{ recordingBusy ? '取消录音' : '清除转写' }}</button>
             </div>
             <p v-if="!voiceOpen && voiceError" class="question-error" role="alert">{{ voiceError }}</p>
             <button class="primary reader-submit-answer" type="submit" :disabled="answerDisabled || recordingBusy || !inlineAnswer.trim()">
@@ -789,11 +814,11 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
       </aside>
     </div>
 
-    <div v-if="voiceOpen" class="modal-backdrop" @click.self="closeVoice">
-      <section v-modal-focus="closeVoice" class="modal-card voice-card" role="dialog" aria-modal="true" aria-labelledby="voice-title">
+    <div v-if="voiceOpen" class="modal-backdrop" @click.self="closeStoryQuestion">
+      <section v-modal-focus="closeStoryQuestion" class="modal-card voice-card" role="dialog" aria-modal="true" aria-labelledby="voice-title">
         <div class="modal-head">
           <div><h2 id="voice-title">问问芽芽</h2><p>{{ book.title }} · 第 {{ currentPage?.pageNumber }} 页</p></div>
-          <button class="modal-close" type="button" aria-label="关闭本页问题" @click="closeVoice">×</button>
+          <button class="modal-close" type="button" aria-label="关闭本页问题" @click="closeStoryQuestion">×</button>
         </div>
         <p v-if="voiceError" class="form-error" role="alert">{{ voiceError }}</p>
         <template v-if="transcript && voiceState !== 'starting'">
@@ -813,7 +838,7 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
             <button class="secondary" type="button" :disabled="interactionBusy" @click="toggleRecording">{{ transcript.source === 'typed' ? '开始录音' : '重新录音' }}</button>
             <button v-if="transcript.status === 'draft'" class="primary" type="button" :disabled="!transcript.text.trim()" @click="confirmTranscript">{{ transcript.source === 'typed' ? '确认文字' : '确认转写' }}</button>
             <template v-else>
-              <button class="secondary" type="button" :disabled="interactionBusy" @click="closeVoice">关闭</button>
+              <button class="secondary" type="button" :disabled="interactionBusy" @click="closeStoryQuestion">关闭</button>
               <button class="primary" type="button" :disabled="interactionBusy" @click="submitConfirmedAnswer">{{ interactionBusy ? '正在保存…' : '提交问题' }}</button>
             </template>
           </div>
@@ -827,7 +852,7 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
             <p v-if="!voiceError">点击“停止并识别”会上传本段录音，识别结果将在这里显示。取消会丢弃录音。</p>
           </div>
           <button v-if="['idle', 'error', 'unavailable'].includes(voiceState)" class="secondary" type="button" @click="editQuestionText">直接输入文字</button>
-          <button class="secondary" type="button" @click="closeVoice">取消并关闭</button>
+          <button class="secondary" type="button" @click="closeStoryQuestion">取消并关闭</button>
         </template>
       </section>
     </div>
