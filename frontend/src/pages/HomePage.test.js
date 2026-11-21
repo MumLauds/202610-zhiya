@@ -33,7 +33,6 @@ it('updates the daily and weekly goals at local midnight without a remount', asy
   } })
   try {
     expect(wrapper.get('.home-plan-time strong').text()).toBe('15/15')
-    expect(wrapper.find('.home-plan progress').exists()).toBe(false)
     expect(wrapper.get('.home-plan-counts').text()).toContain('1/1 本 · 本周 1/5 天')
     await vi.advanceTimersByTimeAsync(10_000)
     expect(wrapper.get('.home-plan-time strong').text()).toBe('0/15')

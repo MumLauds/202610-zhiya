@@ -152,6 +152,7 @@ function chooseShelf(book) {
       <aside class="home-plan" @mouseenter="hoveringBooks = true" @mouseleave="hoveringBooks = false">
         <span class="home-plan-kicker">✦ 今日阅读计划</span>
         <div class="home-plan-time"><strong>{{ planProgress.minutes }}/{{ plan.minutes }}</strong><span>分钟</span></div>
+        <progress :value="Math.min(planProgress.minutes, plan.minutes)" :max="plan.minutes" aria-label="今日阅读时长进度" />
         <h2>{{ planProgress.minutes >= plan.minutes ? '今日时长目标已达成！' : '和孩子一起，共读一本绘本吧！' }}</h2>
         <p class="home-plan-counts">今日共读 {{ planProgress.books }}/{{ plan.books }} 本 · 本周 {{ planProgress.weekly }}/{{ plan.weekly }} 天</p>
         <button v-if="selected" class="primary" type="button" @click="emit('start', selected)">开始阅读</button>
