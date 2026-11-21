@@ -1840,6 +1840,7 @@ function appendReadingInteraction(operation, result) {
       eventType: 'ANSWER',
       pageNumber: operation.payload.pageNumber,
       inputText: operation.payload.inputText,
+      replyText: result.replyText,
     }
     session.revision = result.revision
   } else if (operation.kind === 'branch') {

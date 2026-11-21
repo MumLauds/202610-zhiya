@@ -1095,25 +1095,27 @@ describe('guided reading interactions', () => {
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   })
 
-  it('shows a saved answer after the authoritative events update', async () => {
+  it('shows YaYa’s reply beside the saved answer and clears it on the next page', async () => {
     const submitAnswer = vi.fn().mockResolvedValue(true)
     render({ submitAnswer })
-      await wrapper.get('.reader-answer textarea').setValue('小兔躲在树后。')
+    await wrapper.get('.reader-answer textarea').setValue('小兔躲在树后。')
     await wrapper.get('.reader-answer').trigger('submit')
     await wrapper.setProps({
       events: [
         questionEvent,
-        { interactionEventId: 12, eventType: 'ANSWER', pageNumber: 1, inputText: '小兔躲在树后。' },
+        { interactionEventId: 12, eventType: 'ANSWER', pageNumber: 1, inputText: '小兔躲在树后。', replyText: '你从画面哪里看出来的？' },
       ],
     })
     expect(wrapper.text()).toContain('孩子的回答：')
     expect(wrapper.text()).toContain('小兔躲在树后。')
+    expect(wrapper.get('.question-card [role="status"]').text()).toBe('芽芽：你从画面哪里看出来的？')
 
     await wrapper.setProps({
       session: { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3], revision: 4 },
     })
     expect(displayedPageNumber()).toBe(3)
     expect(wrapper.text()).not.toContain('小兔躲在树后。')
+    expect(wrapper.text()).not.toContain('你从画面哪里看出来的？')
   })
 
   it('offers only approved branches from the current page', async () => {

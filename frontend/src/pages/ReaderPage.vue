@@ -765,8 +765,9 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
           <p v-else-if="guidanceError">{{ guidanceError }}</p>
           <p v-else>当前页暂时没有可用的问题。</p>
           <p v-if="guidanceError && (currentQuestion || questionSkipped || questionBlocked)" class="question-error" role="alert">{{ guidanceError }}</p>
-          <p v-if="answerText" class="question-saved" role="status"><strong>孩子的回答：</strong>{{ answerText }}</p>
+          <p v-if="answerText" class="question-saved"><strong>孩子的回答：</strong>{{ answerText }}</p>
           <p v-else-if="savedAnswer" class="question-saved" role="status">本页回答已保存。</p>
+          <p v-if="authenticated && savedAnswer?.replyText" class="question-saved" role="status"><strong>芽芽：</strong>{{ savedAnswer.replyText }}</p>
           <button v-if="guidanceError && !currentQuestion && !questionSkipped && !questionBlocked && !session.preview" class="text-button question-retry" type="button" :disabled="interactionBusy || guidanceLoading || syncRequired" @click="retryQuestion">重新生成本页问题</button>
           <div class="question-actions">
             <button class="secondary feedback-understood" type="button" :disabled="!canSubmitFeedback || guidanceLoading || recordingBusy" @click="submitUnderstanding('UNDERSTOOD')"><span aria-hidden="true">✓</span> 已理解</button>
@@ -799,6 +800,10 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
             <button class="text-button" type="button" :disabled="!canSkipQuestion || recordingBusy" @click="skipQuestion">跳过本页</button>
             <button v-if="!session.preview" class="text-button" type="button" :disabled="!mediaAllowed || guidanceLoading || recordingBusy" @click="openStoryQuestion">问问芽芽</button>
           </div>
+          <div v-if="storyAnswer" class="question-saved" role="status">
+            <p><strong>芽芽的回答：</strong>{{ storyAnswer.outputText }}</p>
+            <button v-if="mediaAllowed && storyAnswer.revision === session.revision && storyAnswer.strategyType !== 'SAFETY_BLOCK'" class="secondary" type="button" :disabled="!canNarratePage" @click="playNarration(storyAnswer.interactionEventId)">播放故事回答</button>
+          </div>
         </section>
         <section class="side-card parent-tip">
           <h2><span class="reader-card-icon reader-card-icon--bulb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 17h8m-7 3h6m-3 2h0M9 17v-2c0-1-4-3-4-7a7 7 0 0 1 14 0c0 4-4 6-4 7v2"/></svg></span> 给家长的共读提示</h2>
@@ -820,11 +825,6 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
               {{ branch.choiceLabel }}
             </button>
           </div>
-        </section>
-        <section v-if="storyAnswer" class="side-card">
-          <h2>芽芽的回答</h2>
-          <p>{{ storyAnswer.outputText }}</p>
-          <button v-if="mediaAllowed && storyAnswer.revision === session.revision && storyAnswer.strategyType !== 'SAFETY_BLOCK'" class="secondary" type="button" :disabled="!canNarratePage" @click="playNarration(storyAnswer.interactionEventId)">播放故事回答</button>
         </section>
       </aside>
     </div>

@@ -1528,7 +1528,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。已保存完整响应的 API-017 引导事件还返回 outputText、strategyType 和事件写入后的 revision，实际反馈事件另含 feedback，供刷新后恢复。儿童在 IN_PROGRESS 时另收到 data.answerOptions 字符串数组，供 API-015 作答。该数组取自当前页最近一道可展示的问题，包括首次 QUESTION 和理解反馈 FEEDBACK 中保存的追问。跳过、拦截及空正文不算作问题。API-017 的儿童问题及回退均可用固定短答作答，最终响应 data.answerOptions 保存实际选项。旧提问未带此字段时使用固定短答“是”“不是”“不知道”。当前页尚无可展示提问时沿用已审核的分支选项文案。默认阅读详情仅向家长返回 data.session.childProfileId 和 data.session.sourceType（ORIGINAL 或 LIBRARY），用于确认续写来源和切换档案。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。ANSWER 事件的 inputText 仅向本人家长返回。阅读详情响应使用 private, no-store。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
+      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。已保存完整响应的 API-017 引导事件还返回 outputText、strategyType 和事件写入后的 revision，实际反馈事件另含 feedback，供刷新后恢复。儿童在 IN_PROGRESS 时另收到 data.answerOptions 字符串数组，供 API-015 作答。该数组取自当前页最近一道可展示的问题，包括首次 QUESTION 和理解反馈 FEEDBACK 中保存的追问。跳过、拦截及空正文不算作问题。API-017 的儿童问题及回退均可用固定短答作答，最终响应 data.answerOptions 保存实际选项。旧提问未带此字段时使用固定短答“是”“不是”“不知道”。当前页尚无可展示提问时沿用已审核的分支选项文案。默认阅读详情仅向家长返回 data.session.childProfileId 和 data.session.sourceType（ORIGINAL 或 LIBRARY），用于确认续写来源和切换档案。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。ANSWER 事件的 inputText 和已有 replyText 仅向本人家长返回。阅读详情响应使用 private, no-store。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
       "interfaceId": "API-013",
       "uniqueKey": "GET /api/v1/reading-sessions/{session_id}",
       "additionalExamples": [
@@ -1647,7 +1647,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "类型STARTED/PAGE_CHANGED/ANSWER/FEEDBACK；SKIPPED是feedback取值，不是eventType。儿童 ANSWER 的 inputText 去除两端空白后须精确匹配服务端按 API-013 data.answerOptions 计算的当前选项，否则返回 422 VALIDATION_ERROR 并保持进度。家长共读仍可提交文本。QUESTION、ASK、BRANCH_CHOSEN由对应服务写入；同键先重放，新键检查revision。",
+      "constraints": "类型STARTED/PAGE_CHANGED/ANSWER/FEEDBACK；SKIPPED是feedback取值，不是eventType。儿童 ANSWER 的 inputText 去除两端空白后须精确匹配服务端按 API-013 data.answerOptions 计算的当前选项，否则返回 422 VALIDATION_ERROR 并保持进度。家长共读仍可提交文本，成功和同键重放随 data.replyText 返回已保存的即时回应。回应在服务端生成，作答原文不发送给模型。QUESTION、ASK、BRANCH_CHOSEN由对应服务写入；同键先重放，新键检查revision。",
       "interfaceId": "API-015",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/events"
     },
@@ -1677,7 +1677,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "亲子共读提交家长已确认的1至200字符文本。儿童凭证仅可提交“这一页发生了什么？”或“故事里有谁？”。处理前后核验revision与到时状态。执行前后遵循common.requestExecution；相同键并发最多一次应用层模型调用尝试。API-013读回ASK结果，API-023以interactionEventId合成当前修订号的可播放回答。",
+      "constraints": "亲子共读提交家长已确认的1至200字符文本。儿童凭证仅可提交“这一页发生了什么？”或“故事里有谁？”。配有支持视觉的百炼模型时，亲子共读可依据当前授权配图中的可见细节回答。模型仅支持文本或配图不可用时沿用已核验的正文句子。处理前后核验revision与到时状态。执行前后遵循common.requestExecution；相同键并发最多一次应用层模型调用尝试。API-013读回ASK结果，API-023以interactionEventId合成当前修订号的可播放回答。",
       "interfaceId": "API-016",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/questions"
     },
@@ -1707,7 +1707,7 @@
         "requestId": "req-initial"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "STARTED成功或翻页/分支/续写切换进入当前页后，前端在需要情境提问且无可恢复问题时发送INITIAL；不由GET或STARTED响应隐式调用模型。首次不要求既往问题或反馈。百炼文本模型参考年龄、当前页、最近三个实际已读的前文页面及当前问题。家长共读时，缺少检索知识但当前页有可用正文，仍可基于绘本正文生成，来源列表为空。联系前文的两个引文分别核验来源。UNDERSTOOD/NOT_UNDERSTOOD针对当前页最后展示的首题或追问，缺失时409 PROMPT_REQUIRED。家长提交反馈时，可用本次到达当前页、且在最新提问或反馈后保存的最后一条回答，在服务端忽略回答中「我觉得」等常用表达，用完整分句匹配故事细节，再从命中的位置截取当前页短引文供模型参考并保留受控追问作为回退。回答原文不发送给模型。SKIPPED不要求已有问题，直接保存反馈并递增revision，outputText为空、strategyType=SKIP、status=FALLBACK。CHILD_SOLO的可作答问题与超时、无知识回退均带已核验的answerOptions。模型TIMEOUT可保存TIMEOUT_FALLBACK。其他API_ERROR返回503 DEPENDENCY_UNAVAILABLE并记录FAILED，原键重放该错误，未写事件或递增revision。执行前按common.requestExecution占位。翻页或跳过先提交后，迟到的问题不得保存或播放。",
+      "constraints": "STARTED成功或翻页/分支/续写切换进入当前页后，前端在需要情境提问且无可恢复问题时发送INITIAL；不由GET或STARTED响应隐式调用模型。首次不要求既往问题或反馈。百炼模型参考年龄、当前正文、最近三个实际已读的前文页面及当前问题。支持视觉的模型还可参考当前授权插画缩图，按可见角色、颜色、数量、动作或位置提问。家长共读时，缺少检索知识但当前页有可用正文，仍可基于绘本正文生成，来源列表为空。联系前文的两个引文分别核验来源。UNDERSTOOD/NOT_UNDERSTOOD针对当前页最后展示的首题或追问，缺失时409 PROMPT_REQUIRED。家长提交反馈时，可用本次到达当前页、且在最新提问或反馈后保存的最后一条回答，在服务端忽略回答中「我觉得」等常用表达，用完整分句匹配故事细节，再从命中的位置截取当前页短引文供模型参考并保留受控追问作为回退。回答原文不发送给模型。SKIPPED不要求已有问题，直接保存反馈并递增revision，outputText为空、strategyType=SKIP、status=FALLBACK。CHILD_SOLO的可作答问题与超时、无知识回退均带已核验的answerOptions。模型TIMEOUT可保存TIMEOUT_FALLBACK。其他API_ERROR返回503 DEPENDENCY_UNAVAILABLE并记录FAILED，原键重放该错误，未写事件或递增revision。执行前按common.requestExecution占位。翻页或跳过先提交后，迟到的问题不得保存或播放。",
       "interfaceId": "API-017",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/guidance",
       "additionalExamples": [
@@ -2060,7 +2060,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "4～6个页面节点；branching=true时1～2决策节点，每节点至少两选项；branching=false时无决策节点且branches为空；所有路径4～6页且无环；响应含checkResults。新草稿coverRef取第一张可用的内页资源键，无可用图片时为null。续写另带sourceReadingSessionId，固定前文，按新增页数选择适龄授权插画。自定义媒体目录中缺少或暂不可读的可选模板插画按页返回imageRef=null。可选布尔字段generateIllustrations为true时启用FR-19可选扩展，逐页生成新增正文的AI插画，服务端固定图片并在AI页返回imageSource=AI_GENERATED，经API-024预览，API-026审核沿用同一张图。false或省略沿用模板及原幂等摘要。生图预算45秒，整次请求占位115秒；未配置或生成失败返回可重试503，不创建草稿，已开始的原请求只重放其结果。续写请求同时提交expectedRevision，年龄由源会话档案确定而无需传ageBand；服务端短事务固定源版本、当前路径和revision，已读前缀按阅读顺序映射为新版本1..k页且保留文字与配图，resumePageNumber=k+1。整本仍为4～6个节点，不能满足范围时422 CONTINUATION_LIMIT。返回不可由客户端改写的continuation对象，家长同时预览继续点。生成及批准不结束旧会话。调用前按STORY_GENERATION范围占位。有限续写属于本期FR-17 P1验收范围；经API-026审核后由API-011原子切换，覆盖TC-FR17-04/05，审批状态见common.deliveryScope。普通原创及阅读主链路无需触发续写。",
+      "constraints": "4～6个页面节点；branching=true时1～2决策节点，每节点至少两选项；branching=false时无决策节点且branches为空；所有路径4～6页且无环；响应含checkResults。新草稿coverRef取第一张可用的内页资源键，无可用图片时为null。续写另带sourceReadingSessionId，固定前文，按新增页数选择适龄授权插画。自定义媒体目录中缺少或暂不可读的可选模板插画按页返回imageRef=null。可选布尔字段generateIllustrations为true时启用FR-19可选扩展，文本模型在原请求中为每个新增页另给单场景画面描述。生图只收到独立画面描述和主题、场景及统一角色外观。服务端固定图片并在AI页返回imageSource=AI_GENERATED，经API-024预览，API-026审核沿用同一张图。false或省略沿用模板及原幂等摘要。生图预算45秒，整次请求占位115秒；未配置或生成失败返回可重试503，不创建草稿，已开始的原请求只重放其结果。续写请求同时提交expectedRevision，年龄由源会话档案确定而无需传ageBand；服务端短事务固定源版本、当前路径和revision，已读前缀按阅读顺序映射为新版本1..k页且保留文字与配图，resumePageNumber=k+1。整本仍为4～6个节点，不能满足范围时422 CONTINUATION_LIMIT。返回不可由客户端改写的continuation对象，家长同时预览继续点。生成及批准不结束旧会话。调用前按STORY_GENERATION范围占位。有限续写属于本期FR-17 P1验收范围；经API-026审核后由API-011原子切换，覆盖TC-FR17-04/05，审批状态见common.deliveryScope。普通原创及阅读主链路无需触发续写。",
       "interfaceId": "API-025",
       "uniqueKey": "POST /api/v1/story-generations",
       "additionalExamples": [

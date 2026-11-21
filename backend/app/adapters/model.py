@@ -10,6 +10,10 @@ class ModelAdapter:
         # The application owns the gateway's connection pool and lifecycle.
         self._gateway = gateway
 
+    @property
+    def supports_page_images(self) -> bool:
+        return self._gateway.supports_page_images
+
     async def generate(self, request: ModelGenerateRequest) -> ModelGenerateResult:
         try:
             kwargs = {}
@@ -17,6 +21,8 @@ class ModelAdapter:
                 kwargs["timeout_seconds"] = request.timeout_seconds
             if request.json_object:
                 kwargs["json_object"] = True
+            if request.page_image_url is not None:
+                kwargs["page_image_url"] = request.page_image_url
             text = await self._gateway.generate(
                 input_text=request.user_input,
                 system_prompt=request.system_prompt,

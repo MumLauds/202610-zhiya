@@ -297,8 +297,9 @@ describe('authoritative reading progress', () => {
     })
   })
 
-  it('submits a trimmed ANSWER through API-015 and updates the revision', async () => {
-    reading.addReadingEvent.mockResolvedValueOnce({ interactionEventId: 9, revision: 3 })
+  it('submits a trimmed ANSWER through API-015 and preserves the immediate reply', async () => {
+    const replyText = '你能在图里找到刚才的线索吗？'
+    reading.addReadingEvent.mockResolvedValueOnce({ interactionEventId: 9, revision: 3, replyText })
     expect(await actions.submitAnswer('  小兔躲在树后。  ')).toBe(true)
     expect(reading.addReadingEvent.mock.calls[0][1]).toMatchObject({
       eventType: 'ANSWER',
@@ -307,7 +308,7 @@ describe('authoritative reading progress', () => {
       expectedRevision: 1,
     })
     expect(state.currentSession.revision).toBe(3)
-    expect(state.currentEvents.at(-1)).toMatchObject({ eventType: 'ANSWER', interactionEventId: 9 })
+    expect(state.currentEvents.at(-1)).toMatchObject({ eventType: 'ANSWER', interactionEventId: 9, replyText })
   })
 
   it('chooses an approved branch through API-018 and installs the authoritative path', async () => {

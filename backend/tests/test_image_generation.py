@@ -33,7 +33,7 @@ def provider_response(content):
 ])
 def test_dashscope_sends_consistent_illustration_brief_for_each_page(monkeypatch, model, supports_negative_prompt):
     settings = replace(SETTINGS, model=model)
-    pages = ["小兔跳进森林。", "小兔给戴黄帽子的松鼠递了一颗松果。"]
+    scenes = ["青苔覆盖的林间小径，小兔跃过树根", "小兔在树根旁把松果递给戴黄帽子的松鼠"]
     requests = []
     downloads = []
 
@@ -54,38 +54,36 @@ def test_dashscope_sends_consistent_illustration_brief_for_each_page(monkeypatch
 
     monkeypatch.setattr(image_generation, "pin_generated_illustrations", pin)
 
-    result = asyncio.run(image_generation.generate_story_illustrations(settings, pages, **BRIEF))
+    result = asyncio.run(image_generation.generate_story_illustrations(settings, scenes, **BRIEF))
 
     assert result == assets
     assert pinned == [b"/1.png", b"/2.png"]
-    assert len(requests) == len(downloads) == len(pages)
-    shared_prompts = set()
-    for request, page in zip(requests, pages, strict=True):
+    assert len(requests) == len(downloads) == len(scenes)
+    prompts = []
+    for request, scene in zip(requests, scenes, strict=True):
         assert str(request.url) == settings.endpoint
         assert request.headers["Authorization"] == "Bearer test-key"
         body = json.loads(request.content)
         prompt = body["input"]["messages"][0]["content"][0]["text"]
-        shared_prompt, page_material = prompt.rsplit("\n本页画面素材：", 1)
-        shared_prompts.add(shared_prompt)
-        assert json.loads(page_material) == page
-        assert "已选角色为画面主体" in shared_prompt
-        assert "动物角色保留动物外形" in shared_prompt
-        assert "不把正文写进插画" in shared_prompt
-        assert "书名：" not in prompt
-        assert json.loads(shared_prompt.split("\n全书画面设定：", 1)[1]) == {
-            "故事主题": "友谊",
-            "故事场景": "森林",
-            "固定角色设定": {"小兔": "奶白色绒毛、粉色长耳、圆短尾", "戴黄帽子的松鼠": "戴黄帽子的松鼠"},
-        }
+        prompts.append(prompt)
+        assert "单一连续场景" in prompt
+        assert "森林" in prompt and "友谊" in prompt and "戴黄帽子的松鼠" in prompt
+        assert "奶白色绒毛" in prompt and "粉色长耳" in prompt and "不穿衣服" in prompt
+        assert "无字" in prompt
+        assert all(label not in prompt for label in ("书名", "故事主题", "故事场景", "固定角色设定", "本页画面素材"))
+        assert all(mark not in prompt for mark in ('{', '}', '\n', '"'))
+        assert scene in prompt
         parameters = {"size": "1024*1024", "n": 1, "prompt_extend": False}
         if supports_negative_prompt:
-            parameters["negative_prompt"] = "文字、书名、标题、正文、字幕、签名、标识、水印"
+            parameters["negative_prompt"] = body["parameters"]["negative_prompt"]
+            assert all(item in parameters["negative_prompt"] for item in ("文字", "角色设定表", "多格分镜"))
         assert body == {
             "model": model,
             "input": {"messages": [{"role": "user", "content": [{"text": prompt}]}]},
             "parameters": parameters,
         }
-    assert len(shared_prompts) == 1
+    assert prompts[0].replace(scenes[0], "") == prompts[1].replace(scenes[1], "")
+    assert scenes[1] not in prompts[0] and scenes[0] not in prompts[1]
     for index, request in enumerate(downloads, start=1):
         assert request.method == "GET"
         assert str(request.url) == f"{RESULT_BASE}/{index}.png?signature=test"

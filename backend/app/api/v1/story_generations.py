@@ -44,6 +44,7 @@ PATH = "/api/v1/story-generations"
 SCOPE = "STORY_GENERATION"
 ShortText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 PageText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+IllustrationScene = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=240, pattern=r"^[^\r\n]+$")]
 
 
 class StoryGeneration(BaseModel):
@@ -76,6 +77,7 @@ class GeneratedText(BaseModel):
     title: ShortText
     pages: list[PageText] = Field(min_length=1, max_length=6)
     choices: list[ShortText] = Field(default_factory=list, max_length=2)
+    imageScenes: list[IllustrationScene] = Field(default_factory=list, max_length=6)
 
 
 def source_session(db, owner, session_id):
@@ -199,6 +201,12 @@ async def generate_text(request, payload, source, carried_pages, total, decision
         '新增页数须精确等于 newPageCount。decisionPage 为 null 时 choices 为空。'
         '有决策页时恰有两个选项，第一个读下一页，第二个跳过下一页；两条路线随后汇合，均须能读懂结局。'
     )
+    if payload.generateIllustrations:
+        prompt += (
+            '另输出 imageScenes 字符串数组，与新增正文逐页对应。每个元素用一句简短的画面描述，'
+            '只写一个连续镜头中可见的角色、动作、物品和地点。突出该页出场的所选角色，动物保持动物外形。'
+            '沿用角色外观，不增添无关人物或服饰。不要复述正文，不写标题、对白、旁白、标签或分镜。'
+        )
     adapter = getattr(request.app.state, "model_adapter", None)
     if adapter is None:
         raise RuntimeError("model adapter unavailable")
@@ -218,6 +226,10 @@ async def generate_text(request, payload, source, carried_pages, total, decision
         raise ValueError("generated draft does not match page plan")
     if decision is None and draft.choices:
         raise ValueError("unexpected choices")
+    if payload.generateIllustrations and (
+        len(draft.imageScenes) != count or any(scene in draft.pages for scene in draft.imageScenes)
+    ):
+        raise ValueError("illustration scenes do not match the new pages")
     return draft
 
 
@@ -396,10 +408,10 @@ async def generate_story(payload: StoryGeneration, request: Request):
         result = await generate_text(request, payload, *reserved[3:])
         if image_settings is not None:
             if any(SENSITIVE.search(unicodedata.normalize("NFKC", value))
-                   for value in (result.title, *result.pages, *result.choices)):
+                   for value in (result.title, *result.pages, *result.choices, *result.imageScenes)):
                 raise ValueError("generated draft did not pass content checks")
             images = await generate_story_illustrations(
-                image_settings, result.pages, topic=payload.topic, characters=payload.characters, scene=payload.scene,
+                image_settings, result.imageScenes, topic=payload.topic, characters=payload.characters, scene=payload.scene,
             )
             reserved = (*reserved[:2], images, *reserved[3:])
     except TimeoutError:

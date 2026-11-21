@@ -4,12 +4,14 @@ import json
 import logging
 import sqlite3
 import time
+from base64 import b64encode
 from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Path, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from starlette.concurrency import run_in_threadpool
 
 from app.api.v1.auth import authorized_db, error
 from app.api.v1.reading_sessions import (
@@ -18,9 +20,11 @@ from app.api.v1.reading_sessions import (
 )
 from app.schemas.agent import AgentResult
 from app.services.reading_agent import CHILD_QUESTIONS, run_agent, answer_question
+from app.services.story_media import MediaDependencyError, delivery_image, read_pinned_asset_bytes
 
 router = APIRouter(prefix="/api/v1/reading-sessions")
 logger = logging.getLogger("zhiya.guidance")
+MAX_MODEL_IMAGE_BYTES = 512 * 1024
 
 
 class PageRequest(BaseModel):
@@ -135,6 +139,8 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
     endpoint = "questions" if ask else "guidance"
     digest = request_digest(f"/api/v1/reading-sessions/{session_id}/{endpoint}", payload.model_dump())
     key = payload.clientEventId
+    model = getattr(request.app.state, "model_adapter", None)
+    page_image = None
     try:
         with authorized_db(request, write=True) as (db, principal, failure):
             if failure:
@@ -180,7 +186,7 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
                 return JSONResponse(status_code=201, content=response)
 
             context = db.execute(
-                """SELECT p.age_band, v.topics_json, page.body_text FROM reading_sessions s
+                """SELECT p.age_band, v.topics_json, page.body_text, page.image_ref FROM reading_sessions s
                    JOIN child_profiles p ON p.id = s.profile_id JOIN story_versions v ON v.id = s.version_id
                    JOIN story_pages page ON page.version_id = v.id AND page.page_no = s.current_page_no
                    WHERE s.id = ?""", (session_id,),
@@ -188,6 +194,15 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
             if context is None:
                 return fail_session_event(db, request, owner, session_id, key, digest, 404,
                                           "RESOURCE_NOT_FOUND", "当前页不可用")
+            if (principal.role == "GUARDIAN" and session["mode"] == "PARENT_CHILD"
+                    and getattr(model, "supports_page_images", False) is True
+                    and context["image_ref"] not in (None, "", "none", "/assets/placeholder.png")):
+                version = db.execute("SELECT * FROM story_versions WHERE id = ?", (session["version_id"],)).fetchone()
+                try:
+                    page_image = read_pinned_asset_bytes(db, version, payload.pageNumber)
+                except MediaDependencyError:
+                    # Guidance can still use the already authorized page text.
+                    pass
             earlier_pages = []
             if not ask:
                 path = json.loads(session["visited_pages_json"])
@@ -212,10 +227,18 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
     try:
         context_args = dict(age_band=context["age_band"], topics=json.loads(context["topics_json"]),
                             page_text=context["body_text"])
+        if page_image is not None:
+            try:
+                data, media_type = await run_in_threadpool(delivery_image, *page_image, "thumbnail")
+            except (OSError, ValueError):
+                pass
+            else:
+                if len(data) <= MAX_MODEL_IMAGE_BYTES and media_type in ("image/png", "image/jpeg", "image/webp"):
+                    context_args["page_image_url"] = f"data:{media_type};base64,{b64encode(data).decode('ascii')}"
         if ask:
-            result = await answer_question(request.app.state.model_adapter, input_text=payload.inputText, **context_args)
+            result = await answer_question(model, input_text=payload.inputText, **context_args)
         else:
-            result = await run_agent(request.app.state.model_adapter, feedback=payload.feedback,
+            result = await run_agent(model, feedback=payload.feedback,
                                      previous_question=previous_question, child_mode=session["mode"] == "CHILD_SOLO",
                                      confirmed_answer=confirmed_answer, earlier_pages=earlier_pages,
                                      **context_args)

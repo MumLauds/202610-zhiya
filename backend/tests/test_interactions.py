@@ -4,13 +4,16 @@ import asyncio
 import json
 import sqlite3
 import time
+from base64 import b64decode
 from contextlib import closing
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.api.v1 import guidance as guidance_api
 from app.api.v1.auth import _login_attempts
@@ -458,6 +461,74 @@ def test_child_questions_only_accept_short_choices_and_never_open_free_text(chil
     res = client.post(url, headers=headers, json={**payload, "inputText": "故事里有谁？"})
     assert res.status_code == 201 and res.json()["data"]["strategyType"] == "NO_KNOWLEDGE_FALLBACK"
     guidance_model.assert_not_awaited()
+
+
+def test_parent_answer_returns_an_immediate_local_reply_and_replays_it(started_session, guidance_model):
+    client, headers, _, sid = started_session
+    url = f"/api/v1/reading-sessions/{sid}"
+    replies = []
+    for revision, text in enumerate(("雨伞", "不知道", "我的手机号"), start=1):
+        payload = {"eventType": "ANSWER", "pageNumber": 1, "expectedRevision": revision,
+                   "clientEventId": f"reply-{revision}", "inputText": text}
+        first = client.post(url + "/events", headers=headers, json=payload)
+        replay = client.post(url + "/events", headers=headers, json=payload)
+        assert (first.status_code, replay.status_code) == (201, 200)
+        data = first.json()["data"]
+        assert replay.json()["data"] == data
+        assert data["revision"] == revision + 1
+        replies.append(data["replyText"])
+    assert "小兔打开雨伞" in replies[0]
+    assert "先看看图里有谁" in replies[1]
+    assert replies[2] == reading_agent.HANDOFF
+    assert [item["replyText"] for item in client.get(url).json()["data"]["events"] if item["eventType"] == "ANSWER"] == replies
+    guidance_model.assert_not_awaited()
+
+
+def test_parent_guidance_and_ask_use_only_the_current_illustration(started_session, monkeypatch):
+    existing, headers, path, sid = started_session
+    buffer = BytesIO()
+    Image.new("RGB", (640, 640), "teal").save(buffer, format="PNG")
+    calls = []
+    reads = []
+    outputs = iter(["图|位置|松果", "图|小兔手里的红雨伞", "图|树根旁的松果", "图|找|请告诉家庭地址"])
+
+    def pinned_image(db, version, number):
+        reads.append((version["id"], number))
+        return buffer.getvalue(), "image/png"
+
+    def provider(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [
+            {"finish_reason": "stop", "message": {"role": "assistant", "content": next(outputs)}},
+        ]})
+
+    monkeypatch.setattr(guidance_api, "read_pinned_asset_bytes", pinned_image)
+    monkeypatch.setattr("app.main.ModelGateway", lambda settings: ModelGateway(settings, transport=httpx.MockTransport(provider)))
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET image_ref='fixture.png' WHERE version_id=11 AND page_no=1")
+    settings = Settings(model_api_key="test-only")
+    with TestClient(create_app(settings), base_url="https://testserver") as client:
+        client.cookies.update(existing.cookies)
+        first = guidance(client, headers, sid, "image-initial")
+        assert first.status_code == 201
+        assert first.json()["data"]["outputText"] == "图里的松果在哪里？"
+        ask_url = f"/api/v1/reading-sessions/{sid}/questions"
+        for revision, text, expected in ((2, "雨伞是什么颜色？", "图里能看到小兔手里的红雨伞。"),
+                                         (3, "松果在哪里？", "图里能看到树根旁的松果。")):
+            result = client.post(ask_url, headers=headers, json={
+                "pageNumber": 1, "expectedRevision": revision, "clientEventId": f"image-ask-{revision}", "inputText": text,
+            })
+            assert result.status_code == 201 and result.json()["data"]["outputText"] == expected
+        blocked = guidance(client, headers, sid, "image-unsafe", revision=4)
+        assert blocked.status_code == 201 and blocked.json()["data"]["status"] == "BLOCKED"
+    assert reads == [(11, 1)] * 4
+    for call in calls:
+        multimodal = call["messages"][-1]["content"]
+        assert [item["type"] for item in multimodal] == ["image_url", "text"]
+        url = multimodal[0]["image_url"]["url"]
+        assert url.startswith("data:image/webp;base64,")
+        with Image.open(BytesIO(b64decode(url.split(",", 1)[1]))) as picture:
+            assert picture.size == (480, 480)
 
 
 def test_story_question_safety_and_model_failure(started_session, guidance_model):

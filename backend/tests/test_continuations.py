@@ -257,6 +257,8 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
     title = "森林里的朋友"
     original_pages = ["兔子到森林散步。", "兔子遇见了松鼠。", "兔子和松鼠一起找松果。", "他们带着松果回家。"]
     continued_pages = ["兔子和松鼠读了一本书。", "他们约好明天再见。"]
+    original_scenes = ["林间小径上的兔子", "树根旁相遇的兔子与松鼠", "松树下拾取松果", "兔子和松鼠提篮走向家门"]
+    continued_scenes = ["树荫下两只动物翻开绘本", "傍晚的小径上兔子和松鼠挥手道别"]
     model_calls = []
     image_calls = []
     png_batches = []
@@ -272,12 +274,13 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
         async def generate(self, request):
             context = json.loads(request.context_text)
             model_calls.append(context["newPageCount"])
-            pages = continued_pages if context["previousPages"] else original_pages
-            return ModelGenerateResult(success=True, text=json.dumps({"title": title, "pages": pages}))
+            assert "imageScenes" in request.system_prompt
+            pages, scenes = (continued_pages, continued_scenes) if context["previousPages"] else (original_pages, original_scenes)
+            return ModelGenerateResult(success=True, text=json.dumps({"title": title, "pages": pages, "imageScenes": scenes}))
 
-    async def generate_images(settings, *args, **brief):
+    async def generate_images(settings, scenes, **brief):
         batch = png_batches[len(image_calls)]
-        image_calls.append((args, brief))
+        image_calls.append((scenes, brief))
         return pin_generated_illustrations(batch)
 
     monkeypatch.setattr(client.app.state, "model_adapter", StoryModel())
@@ -304,7 +307,7 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
     replay = client.post(generations, headers=headers, json=original)
     assert replay.status_code == 200 and replay.json()["data"] == draft
     assert model_calls == [4]
-    assert image_calls == [((original_pages,), expected_brief)]
+    assert image_calls == [(original_scenes, expected_brief)]
     approved = client.post(f"/api/v1/story-versions/{version}/approvals", headers=headers,
                            json={"versionNumber": draft["versionNumber"], "reviewedAllBranches": True})
     assert approved.status_code == 200, approved.text
@@ -334,7 +337,7 @@ def test_ai_illustrations_survive_approval_and_are_carried_into_continuation(con
         png_batches[0][:2] + png_batches[1]
     )
     assert model_calls == [4, 2]
-    assert image_calls == [((original_pages,), expected_brief), ((continued_pages,), expected_brief)]
+    assert image_calls == [(original_scenes, expected_brief), (continued_scenes, expected_brief)]
 
 
 @pytest.mark.parametrize("generate_illustrations", [False, True], ids=["template", "ai"])
@@ -366,10 +369,14 @@ def test_generated_cover_matches_the_first_illustration_before_and_after_approva
 
     class StoryModel:
         async def generate(self, request):
-            return ModelGenerateResult(success=True, text=json.dumps({
+            draft = {
                 "title": "森林里的朋友",
                 "pages": ["兔子到森林散步。", "兔子遇见了松鼠。", "他们一起找松果。", "他们带着松果回家。"],
-            }))
+            }
+            assert ("imageScenes" in request.system_prompt) == generate_illustrations
+            if generate_illustrations:
+                draft["imageScenes"] = ["林间小径上的兔子", "树根旁相遇", "树下捡松果", "提着松果走向家门"]
+            return ModelGenerateResult(success=True, text=json.dumps(draft))
 
     async def generate_images(settings, pages, **brief):
         assert generate_illustrations
@@ -420,6 +427,7 @@ def test_ai_illustration_failure_replays_without_creating_a_draft(cont_env, monk
             calls.append("text")
             return ModelGenerateResult(success=True, text=json.dumps({
                 "title": "森林里的朋友", "pages": ["兔子到森林散步。", "它见到了松鼠。", "它们一同玩耍。", "它们回家了。"],
+                "imageScenes": ["林间小径上的兔子", "树根旁相遇", "树下玩耍", "两只动物走向家门"],
             }))
 
     async def generate_images(settings, pages, **brief):
@@ -438,6 +446,37 @@ def test_ai_illustration_failure_replays_without_creating_a_draft(cont_env, monk
     with closing(sqlite3.connect(db_path)) as db:
         assert db.execute("SELECT COUNT(*) FROM storybooks").fetchone() == (1,)
         assert db.execute("SELECT COUNT(*) FROM story_versions").fetchone() == (1,)
+
+
+@pytest.mark.parametrize("scenes", [
+    None,
+    ["林间小径上的小兔"],
+    ["小兔今天去了森林。", "树根旁相遇", "树下玩耍", "小兔走向家门"],
+    ["林间小径上的小兔", "树根旁相遇", "树下玩耍", "画面里写下电话号码"],
+], ids=["omitted", "count-mismatch", "copied-page", "unsafe"])
+def test_invalid_illustration_scenes_never_reach_image_provider(cont_env, monkeypatch, scenes):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    client, _, db_path, _ = cont_env
+    headers = {"X-CSRF-Token": client.cookies["zhiya_csrf"]}
+    monkeypatch.setenv("IMAGE_API_URL", "https://images.test/generate")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-image-api-key")
+    draft = {"title": "森林里的朋友", "pages": ["小兔今天去了森林。", "它遇到了松鼠。", "它们一同玩耍。", "小兔回家了。"]}
+    if scenes is not None:
+        draft["imageScenes"] = scenes
+    text_provider = AsyncMock(return_value=ModelGenerateResult(success=True, text=json.dumps(draft)))
+    image_provider = AsyncMock()
+    monkeypatch.setattr(client.app.state, "model_adapter", SimpleNamespace(generate=text_provider))
+    monkeypatch.setattr("app.api.v1.story_generations.generate_story_illustrations", image_provider)
+    response = client.post("/api/v1/story-generations", headers=headers, json={
+        "ageBand": "AGE_4_5", "topic": "友谊", "characters": ["小兔"], "scene": "森林",
+        "branching": False, "generateIllustrations": True, "clientRequestId": "ai-invalid-scenes",
+    })
+    assert response.status_code == 422, response.text
+    image_provider.assert_not_awaited()
+    with closing(sqlite3.connect(db_path)) as db:
+        assert db.execute("SELECT COUNT(*) FROM story_versions WHERE status = 'PENDING_REVIEW'").fetchone() == (0,)
 
 
 def test_ai_illustration_checks_media_before_calling_providers(cont_env, monkeypatch, tmp_path):

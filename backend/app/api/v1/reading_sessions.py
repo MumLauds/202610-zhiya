@@ -31,6 +31,7 @@ from app.services.reading_reports import (
     session_read_pages,
 )
 from app.services.story_media import MediaDependencyError, ensure_opening_media
+from app.services.reading_agent import reply_to_child_answer
 
 router = APIRouter(prefix="/api/v1/reading-sessions")
 MAX_ID = 9007199254740991
@@ -348,6 +349,8 @@ def session_event_object(event: sqlite3.Row, *, include_answer: bool) -> dict:
     data = {"interactionEventId": event["id"], "eventType": event["event_type"], "pageNumber": event["page_no"]}
     if include_answer and event["event_type"] == "ANSWER" and event["input_text"] is not None:
         data["inputText"] = event["input_text"]
+        if event["saved_id"] == event["id"] and event["reply_text"]:
+            data["replyText"] = event["reply_text"]
     # Only project a finalized guidance response; older rows may contain unverified text.
     if (event["event_type"] in ("QUESTION", "FEEDBACK", "ASK") and event["strategy_type"]
             and event["saved_id"] == event["id"]):
@@ -377,6 +380,7 @@ def get_session(request: Request, response: Response, session_id: int = Path(ge=
             if not row:
                 return error(request, 404, "RESOURCE_NOT_FOUND", "会话不可用")
             event_query = """SELECT id, event_type, page_no, feedback, input_text, output_text, strategy_type, revision_after,
+                                    json_extract(response_json, '$.data.replyText') AS reply_text,
                                     json_extract(response_json, '$.data.interactionEventId') AS saved_id
                              FROM interaction_events WHERE session_id = ?"""
             event_params = [session_id]
@@ -609,8 +613,10 @@ def replay_execution(db, request: Request, scope_type: str, scope_id: int, clien
         if target is None or owned_generation_version(db, scope_id, target) is None:
             return error(request, 404, "RESOURCE_NOT_FOUND", "生成的绘本不可用")
     body["requestId"] = request.state.request_id
-    if principal is not None and principal.role == "CHILD" and isinstance(body.get("data"), dict) and "report" in body["data"]:
-        body["data"]["report"] = None
+    if principal is not None and principal.role == "CHILD" and isinstance(body.get("data"), dict):
+        if "report" in body["data"]:
+            body["data"]["report"] = None
+        body["data"].pop("replyText", None)
     return JSONResponse(status_code=200 if previous["status"] == "SUCCEEDED" else previous["response_status"],
                         content=body)
 
@@ -715,6 +721,12 @@ def add_reading_event(payload: ReadingEvent, request: Request, session_id: int =
                 (session_id, row["version_id"], payload.clientEventId, digest, payload.pageNumber,
                  payload.eventType, payload.feedback, payload.inputText, revision, now))
             response = {"data": {"interactionEventId": cursor.lastrowid, "revision": revision}, "requestId": request.state.request_id}
+            if payload.eventType == "ANSWER" and principal.role == "GUARDIAN" and row["mode"] == "PARENT_CHILD":
+                page_text = db.execute(
+                    "SELECT body_text FROM story_pages WHERE version_id = ? AND page_no = ?",
+                    (row["version_id"], payload.pageNumber),
+                ).fetchone()
+                response["data"]["replyText"] = reply_to_child_answer(page_text[0] if page_text else "", payload.inputText)
             db.execute("UPDATE interaction_events SET response_json = ? WHERE id = ?",
                        (json.dumps(response, ensure_ascii=False), cursor.lastrowid))
             record_session_event(db, principal.guardian_id, session_id, payload.clientEventId, digest, now, 201, response)
