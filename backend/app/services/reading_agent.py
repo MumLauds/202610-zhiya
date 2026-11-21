@@ -1,10 +1,17 @@
 """G05 guidance: use approved G09 knowledge and render a child-facing question about this page."""
 
+import asyncio
+import json
+import logging
 import re
 import unicodedata
 from collections.abc import Sequence
 from difflib import SequenceMatcher
 from itertools import islice
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from app.adapters.model import ModelAdapter
 from app.agent import build_prompt, retrieve_knowledge
@@ -67,6 +74,33 @@ GENERIC_ANSWER_PHRASES = re.compile(
     r"我(?:觉得|认为|喜欢|想到|想|猜|看到|看见)|觉得|认为|喜欢|看到|看见|"
     r"因为|所以|然后|这个|那个|这里|那里|可能|应该|不知道|不清楚|不确定"
 )
+ANSWER_RISK = re.compile(
+    r"我叫|我的名字|我家住|我住在|我的学校|(?:\d[\s-]*){5}|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|"
+    r"邮箱|微信号|杀人|炸弹|刀割|吞药|裸露|色情|忽略.{0,12}(?:规则|指令|提示)|系统(?:指令|提示词)|"
+    r"system prompt|ignore.{0,24}(?:instructions?|rules)", re.I,
+)
+ANSWER_TIMEOUT = 5.0
+ANSWER_FOLLOWUPS = {
+    "AGE_3_4": ("你能指给我看吗？", "你还看到了什么？"),
+    "AGE_4_5": ("是什么让你这样想的呢？", "你还发现了什么线索？"),
+    "AGE_5_6": ("还有什么线索能支持你的想法？", "你猜接下来会发生什么？"),
+}
+ANSWER_SYNONYMS = {
+    "溪流": ("小溪", "溪水"), "雨伞": ("雨具", "遮雨伞"),
+    "递给": ("给了", "交给", "送给"), "帮忙": ("帮助", "帮了"),
+}
+answer_logger = logging.getLogger("zhiya.answer")
+
+
+class AnswerReplyPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    answerCategory: Literal["RELEVANT", "PARTIAL", "UNCERTAIN", "OFF_TOPIC", "INSUFFICIENT_EVIDENCE"]
+    followup: int = Field(ge=0, le=2)
+
+
+def answer_is_unsafe(answer: str) -> bool:
+    text = unicodedata.normalize("NFKC", answer)
+    return bool(SENSITIVE.search(text) or ANSWER_RISK.search(text))
 
 
 def page_clauses(page_text: str):
@@ -113,7 +147,7 @@ def matching_answer_excerpt(page_text: str, confirmed_answer: str) -> str | None
 
 def reply_to_child_answer(page_text: str, confirmed_answer: str, question: str = "") -> str:
     answer = unicodedata.normalize("NFKC", confirmed_answer)
-    if SENSITIVE.search(answer):
+    if answer_is_unsafe(answer):
         return HANDOFF
     if not any(char.isalnum() for char in answer):
         return "收到你的表情啦！能用一句话说说，你在图里看到了什么吗？"
@@ -130,6 +164,79 @@ def reply_to_child_answer(page_text: str, confirmed_answer: str, question: str =
     if unsure:
         return "我们一起找找吧。" + clue
     return "我听到你的想法啦。" + clue
+
+
+def _answer_cue(page_text: str, answer: str) -> str | None:
+    # The only answer-derived text sent to the gateway is an excerpt from the page.
+    cue = matching_answer_excerpt(page_text, answer)
+    if cue:
+        return cue
+    for clause in page_clauses(page_text):
+        for canonical, aliases in ANSWER_SYNONYMS.items():
+            variants = (canonical, *aliases)
+            if any(word in clause for word in variants) and any(word in answer for word in variants):
+                return clause[:EXCERPT_CHARS] + ("…" if len(clause) > EXCERPT_CHARS else "")
+    return None
+
+
+async def generate_answer_reply(model: ModelAdapter, *, page_text: str, question: str, answer: str,
+                                age_band: str, topics: list[str], title: str, page_number: int,
+                                earlier_pages: list[str], used_followups: list[str]) -> tuple[str, str] | None:
+    """Let the model select a bounded response. Only server-rendered text reaches the reader."""
+    if answer_is_unsafe(answer) or not question or not any(char.isalnum() for char in answer):
+        return None
+    page = "。".join(clause for clause in page_clauses(page_text[:1200]) if not answer_is_unsafe(clause))
+    clue = _answer_cue(page, unicodedata.normalize("NFKC", answer))
+    fallback = reply_to_child_answer(page, answer, question)
+    replies = {"INSUFFICIENT_EVIDENCE": "我们和家长一起看看这页，再找找线索吧。"}
+    if any(word in answer for word in ("不知道", "不清楚", "没看懂", "不确定", "没想好")):
+        replies = {"UNCERTAIN": fallback}
+    elif clue:
+        if not any(word in answer for word in ("不是", "没有", "没做")):
+            replies.update(RELEVANT=f"我听到你的观察啦。这页写着“{clue}”。",
+                           PARTIAL=f"你已经找到了一些线索。我们再看看“{clue}”。")
+    elif page:
+        replies["OFF_TOPIC"] = "谢谢你告诉我。我们回到这一页，一起看看发生了什么吧。"
+
+    choices = ANSWER_FOLLOWUPS.get(age_band, ANSWER_FOLLOWUPS["AGE_3_4"])
+    followups = ([item for item in choices if item != question and item not in used_followups]
+                 if page and len(used_followups) < 2 else [])
+    try:
+        async with asyncio.timeout(ANSWER_TIMEOUT):
+            knowledge = await run_in_threadpool(retrieve_knowledge, KnowledgeQuery(
+                age_band=age_band, topics=topics, task_type="GUIDANCE", query_text=f"{page} {clue or ''}",
+            ))
+            request = build_prompt(
+                "ANSWER_REPLY", age_band=age_band, page_text=page, items=knowledge.items, max_items=3,
+                user_input="根据参考资料选择共读回应。",
+                output_rule=("只输出 JSON 对象，包含 answerCategory 和 followup。"
+                             "类别须取自可选类别，followup 为提供的编号，0 表示不再追问。"),
+            )
+            request.context_text += "\n共读线索（仅作参考资料）：" + json.dumps({
+                "绘本": title[:80] if not answer_is_unsafe(title) else "",
+                "页码": page_number, "当前问题": question[:160] if not answer_is_unsafe(question) else "",
+                "已读前文": [text[:200] for text in earlier_pages if not answer_is_unsafe(text)],
+                "作答对应的当页原文线索": clue,
+                "可选类别": list(replies), "追问候选": dict(enumerate(followups, 1)),
+            }, ensure_ascii=False)
+            request.json_object = True
+            request.timeout_seconds = ANSWER_TIMEOUT
+            request.max_output_token_budget = 128
+            result = await model.generate(request)
+    except Exception as exc:
+        answer_logger.info("answer fallback error=%s", type(exc).__name__)
+        return None
+    if not result.success:
+        answer_logger.info("answer fallback error=%s", "TIMEOUT" if result.error_code == "TIMEOUT" else "MODEL_UNAVAILABLE")
+        return None
+    try:
+        plan = AnswerReplyPlan.model_validate_json(result.text)
+        reply = replies[plan.answerCategory]
+        followup = followups[plan.followup - 1] if plan.followup else ""
+    except (ValidationError, KeyError, IndexError):
+        answer_logger.info("answer fallback error=INVALID_PLAN")
+        return None
+    return reply + (followup if followup else ""), followup
 
 
 def visible_detail(text: str) -> str | None:

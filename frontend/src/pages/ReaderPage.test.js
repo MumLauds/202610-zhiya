@@ -254,6 +254,40 @@ describe('recording lifecycle', () => {
 })
 
 describe('parent transcript review', () => {
+  it('shows a pending reply, blocks duplicate answers, and then shows the server reply below the answer', async () => {
+    const pending = deferred()
+    const submitAnswer = vi.fn(() => pending.promise)
+    render({ submitAnswer })
+    const form = wrapper.get('.reader-answer')
+    await form.get('textarea').setValue('雨伞')
+    await form.trigger('submit')
+    expect(wrapper.get('.question-reply').text()).toContain('芽芽正在想怎么回应')
+    expect(button('正在保存').element.disabled).toBe(true)
+    await form.trigger('submit')
+    expect(submitAnswer).toHaveBeenCalledExactlyOnceWith('雨伞')
+    await wrapper.setProps({ events: [questionEvent, {
+      eventType: 'ANSWER', pageNumber: 1, inputText: '雨伞', replyText: '我听到你的观察啦。',
+    }] })
+    pending.resolve(true)
+    await flushPromises()
+    expect(wrapper.get('.question-saved').text()).toContain('雨伞')
+    expect(wrapper.get('.question-reply').text()).toBe('芽芽：我听到你的观察啦。')
+  })
+
+  it('keeps a late answer failure off the new reading page', async () => {
+    const pending = deferred()
+    render({ submitAnswer: vi.fn(() => pending.promise) })
+    const form = wrapper.get('.reader-answer')
+    await form.get('textarea').setValue('雨伞')
+    await form.trigger('submit')
+    expect(wrapper.get('.question-reply').text()).toContain('芽芽正在想怎么回应')
+    await wrapper.setProps({ session: { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3], revision: 2 } })
+    pending.resolve(false)
+    await flushPromises()
+    expect(wrapper.find('.question-reply').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('回答尚未确认保存')
+  })
+
   it.each(['direct', 'denied', 'unsupported'])('accepts a typed answer with %s input', async (entry) => {
     const submitAnswer = vi.fn().mockResolvedValue(true)
     render({ submitAnswer })
