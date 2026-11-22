@@ -670,6 +670,46 @@ describe('guardian answer follow-ups', () => {
     expect(api.addEvent).not.toHaveBeenCalled()
   })
 
+  it('reconciles a saved answer after 503 without re-submitting the draft or repeating its follow-up', async () => {
+    const fallback = { interactionEventId: 23, pageNumber: 1, eventType: 'ANSWER', inputText: '雨伞',
+      replyText: '我们一起看看画面。' }
+    const fetch = vi.fn(async (_path, { method }) => {
+      if (method === 'GET') {
+        return Response.json({ data: { session: { ...parent, revision: 3 }, events: [question, fallback], report: null } })
+      }
+      const writes = fetch.mock.calls.filter(([, options]) => options.method === 'POST').length
+      if (writes === 1) {
+        return Response.json({ error: { code: 'DEPENDENCY_UNAVAILABLE',
+          message: '回答已保存，请核对会话进度', retryable: true } }, { status: 503 })
+      }
+      return Response.json({ data: receipt })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const live = new ReadingSessionsApi()
+    const api = await openReader({ snapshot: parent, events: [question],
+      sessionApi: { get: live.get.bind(live), addEvent: live.addEvent.bind(live) } })
+
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue('雨伞')
+    await clickButton('确认回答')
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('上次操作的结果仍待核对。')
+    expect(wrapper.findAll('button').map(button => button.text())).not.toContain('孩子回答')
+    expect(fetch.mock.calls.map(([, { method }]) => method)).toEqual(['POST', 'GET'])
+
+    await clickButton('重新核对进度')
+
+    expect(fetch.mock.calls.map(([, { method }]) => method)).toEqual(['POST', 'GET', 'GET', 'POST'])
+    expect(JSON.parse(fetch.mock.calls[3][1].body)).toEqual(JSON.parse(fetch.mock.calls[0][1].body))
+    expectFollowup()
+    expect(api.submitGuidance).not.toHaveBeenCalled()
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    expect(wrapper.get('textarea').element.value).toBe('')
+  })
+
   it('does not render a prior visit follow-up when a branch revisits the same page', async () => {
     const newPrompt = { ...initialQuestion, outputText: '回到这里，你现在看到了什么？', interactionEventId: 28, revision: 6 }
     const api = await openReader({

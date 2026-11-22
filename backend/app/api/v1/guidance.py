@@ -15,8 +15,8 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.v1.auth import authorized_db, error
 from app.api.v1.reading_sessions import (
-    CHILD_SHORT_ANSWERS, MAX_ID, current_parent_question, current_question, fail_session_event, owned_session, record_session_event,
-    replay_session_event, request_digest,
+    CHILD_SHORT_ANSWERS, MAX_ID, current_page_arrival_id, current_parent_question, current_question, fail_session_event,
+    owned_session, record_session_event, replay_session_event, request_digest,
 )
 from app.schemas.agent import AgentResult
 from app.services.reading_agent import CHILD_QUESTIONS, run_agent, answer_question
@@ -160,25 +160,30 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
             previous_question = confirmed_answer = ""
             if not ask and payload.feedback in ("UNDERSTOOD", "NOT_UNDERSTOOD"):
                 parent_reading = principal.role == "GUARDIAN" and session["mode"] == "PARENT_CHILD"
-                question = current_parent_question(db, session) if parent_reading else current_question(db, session)
+                if parent_reading:
+                    arrival_id = current_page_arrival_id(db, session)
+                    question = current_parent_question(db, session, arrival_id=arrival_id)
+                else:
+                    question = current_question(db, session)
                 if question is None:
                     return fail_session_event(db, request, owner, session_id, key, digest, 409,
                                               "PROMPT_REQUIRED", "当前页尚未有引导问题")
                 previous_question = question["output_text"]
                 if parent_reading:
-                    # An answer only follows the latest question in the current visit.
-                    answer = db.execute(
-                        """SELECT input_text FROM interaction_events
-                           WHERE session_id = ? AND version_id = ? AND page_no = ?
-                             AND event_type = 'ANSWER' AND result_status = 'SUCCESS'
-                             AND id > ?
-                             AND id > (SELECT MAX(id) FROM interaction_events WHERE session_id = ?
-                                       AND event_type IN ('STARTED', 'PAGE_CHANGED', 'BRANCH_CHOSEN', 'QUESTION', 'FEEDBACK'))
-                           ORDER BY id DESC LIMIT 1""",
-                        (session_id, session["version_id"], session["current_page_no"], question["id"], session_id),
-                    ).fetchone()
-                    if answer:
-                        confirmed_answer = answer["input_text"] or ""
+                    if question["event_type"] == "ANSWER":
+                        # A generated follow-up and the answer that prompted it share one event.
+                        confirmed_answer = question["input_text"] or ""
+                    else:
+                        after_id = max(question["id"], arrival_id)
+                        answer = db.execute(
+                            """SELECT input_text FROM interaction_events
+                               WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ?
+                                 AND event_type = 'ANSWER' AND result_status = 'SUCCESS'
+                               ORDER BY id DESC LIMIT 1""",
+                            (session_id, session["version_id"], session["current_page_no"], after_id),
+                        ).fetchone()
+                        if answer:
+                            confirmed_answer = answer["input_text"] or ""
 
             now = int(time.time() * 1000)
             if not ask and payload.feedback == "SKIPPED":

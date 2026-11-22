@@ -566,24 +566,48 @@ def test_parent_answer_preserves_safe_action_signals(started_session, guidance_m
 
 
 @pytest.mark.parametrize("feedback", ["UNDERSTOOD", "NOT_UNDERSTOOD"])
-def test_parent_feedback_uses_latest_answer_followup(started_session, guidance_model, feedback):
+@pytest.mark.parametrize("answer_twice", [False, True])
+def test_parent_feedback_uses_latest_answer_followup(started_session, guidance_model, feedback, answer_twice):
     client, headers, _, sid = started_session
     first = guidance(client, headers, sid, "question-before-followup")
     assert first.status_code == 201
     guidance_model.return_value = ModelGenerateResult(success=True, text='{"answerCategory":"PARTIAL","followup":1}')
+    raw_answer = "我看到小兔撑开了雨伞啦"
     response = client.post(f"/api/v1/reading-sessions/{sid}/events", headers=headers, json={
-        "eventType": "ANSWER", "pageNumber": 1, "expectedRevision": 2, "clientEventId": "answer-with-followup", "inputText": "雨伞",
+        "eventType": "ANSWER", "pageNumber": 1, "expectedRevision": 2, "clientEventId": "answer-with-followup", "inputText": raw_answer,
     })
     assert response.status_code == 201
     clues = json.loads(guidance_model.await_args.args[0].context_text.split("共读线索（仅作参考资料）：", 1)[1])
     followup = clues["追问候选"]["1"]
     assert response.json()["data"]["replyText"].endswith(followup)
     assert followup != first.json()["data"]["outputText"]
+    revision = 3
+    expected_clue = "小兔打开雨伞"
+    if answer_twice:
+        previous_followup = followup
+        raw_answer = "我看到它走到小熊身边啦"
+        guidance_model.return_value = ModelGenerateResult(
+            success=True, text='{"answerCategory":"INSUFFICIENT_EVIDENCE","followup":1}',
+        )
+        second = client.post(f"/api/v1/reading-sessions/{sid}/events", headers=headers, json={
+            "eventType": "ANSWER", "pageNumber": 1, "expectedRevision": revision,
+            "clientEventId": "second-answer-with-followup", "inputText": raw_answer,
+        })
+        assert second.status_code == 201
+        context = json.loads(guidance_model.await_args.args[0].context_text.split("\n共读线索（仅作参考资料）：", 1)[1])
+        assert context["当前问题"] == previous_followup
+        followup = second.json()["data"]["followupQuestion"]
+        assert followup != previous_followup
+        revision = second.json()["data"]["revision"]
+        expected_clue = "走到小熊身边"
     guidance_model.return_value = ModelGenerateResult(success=True, text="1")
-    assert guidance(client, headers, sid, "feedback-after-followup", feedback=feedback, revision=3).status_code == 201
-    context = guidance_model.await_args.args[0].context_text
-    assert "当前页已保存的问题（仅作参考）：" + followup in context
-    assert "刚才回答对应到的当页原文线索：" not in context
+    assert guidance(client, headers, sid, "feedback-after-followup", feedback=feedback, revision=revision).status_code == 201
+    request = guidance_model.await_args.args[0]
+    assert "当前页已保存的问题（仅作参考）：" + followup in request.context_text
+    assert "刚才回答对应到的当页原文线索：" + expected_clue in request.context_text
+    model_prompt = request.context_text + request.user_input + request.system_prompt
+    assert raw_answer not in model_prompt
+    assert ("身边啦" if answer_twice else "雨伞啦") not in model_prompt
 
 
 @pytest.mark.parametrize("outcome", [
@@ -917,15 +941,17 @@ def test_answer_followup_budget_survives_fallback_replay_and_revisits(started_se
     assert question.status_code == 201
     revision = question.json()["data"]["revision"]
     answer("other-page-followup", with_followup, choices, choices[0])
-    for key, plan in (("revisit-one", with_followup), ("revisit-two", no_followup)):
-        if key == "revisit-two":
+    for visit in ("revisit-one", "revisit-two"):
+        if visit == "revisit-two":
             turn(2)
         turn(1)
         guidance_model.return_value = ModelGenerateResult(success=True, text="1")
-        question = guidance(client, headers, sid, f"{key}-question", page=1, revision=revision)
+        question = guidance(client, headers, sid, f"{visit}-question", page=1, revision=revision)
         assert question.status_code == 201
         revision = question.json()["data"]["revision"]
-        answer(key, plan, ())
+        answer(f"{visit}-first", with_followup, choices, choices[0])
+        answer(f"{visit}-second", with_followup, choices[1:], choices[1])
+        answer(f"{visit}-over-budget", with_followup, ())
     detail = client.get(url).json()["data"]
     assert detail["session"]["visitedPageNumbers"] == [1, 2, 1, 2, 1]
 
@@ -990,6 +1016,39 @@ def test_parent_revisit_starts_without_old_question_or_followup(started_session,
     # History is retained, but the revisit must not reactivate its old follow-up.
     events = client.get(url).json()["data"]["events"]
     assert any(item.get("followupQuestion") == question for item in events)
+    guidance_model.return_value = ModelGenerateResult(success=True, text="1")
+    current = guidance(client, headers, sid, "fresh-visit-question", revision=6)
+    assert current.status_code == 201
+    guidance_model.return_value = ModelGenerateResult(success=True, text='{"answerCategory":"PARTIAL","followup":1}')
+    fresh_answer = send_event("ANSWER", 1, 7, "fresh-visit-answer", inputText="雨伞")
+    assert fresh_answer.status_code == 201
+    assert fresh_answer.json()["data"]["followupQuestion"] == question
+
+
+def test_guidance_on_next_page_does_not_use_previous_page_answer(started_session, guidance_model):
+    client, headers, path, sid = started_session
+    url = f"/api/v1/reading-sessions/{sid}/events"
+    # Use matching words on both pages so a leaked answer could otherwise yield a clue.
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET body_text = '小兔打开雨伞。' WHERE version_id = 11 AND page_no = 2")
+    assert guidance(client, headers, sid, "before-old-answer").status_code == 201
+    guidance_model.return_value = ModelGenerateResult(success=True, text='{"answerCategory":"INSUFFICIENT_EVIDENCE","followup":1}')
+    old_answer = client.post(url, headers=headers, json=dict(
+        eventType="ANSWER", pageNumber=1, expectedRevision=2, clientEventId="old-page-answer", inputText="雨伞",
+    ))
+    assert old_answer.status_code == 201 and "followupQuestion" in old_answer.json()["data"]
+    moved = client.post(url, headers=headers, json=dict(
+        eventType="PAGE_CHANGED", pageNumber=2, expectedRevision=3, clientEventId="move-to-next-page",
+    ))
+    assert moved.status_code == 201
+    guidance_model.return_value = ModelGenerateResult(success=True, text="1")
+    current = guidance(client, headers, sid, "next-page-question", page=2, revision=4)
+    assert current.status_code == 201
+    response = guidance(client, headers, sid, "next-page-feedback", feedback="UNDERSTOOD", page=2, revision=5)
+    assert response.status_code == 201
+    request = guidance_model.await_args.args[0]
+    assert "当前页已保存的问题（仅作参考）：" + current.json()["data"]["outputText"] in request.context_text
+    assert "刚才回答对应到的当页原文线索：" not in request.context_text
 
 
 def test_parent_answer_without_model_keeps_saved_rule_reply(started_session, guidance_model, monkeypatch):
@@ -1201,7 +1260,10 @@ def test_guidance_parent_paraphrase_uses_page_wide_question_without_excerpt(star
     )
 
 
-def test_guidance_uses_current_parent_answer_without_sending_it_to_model(started_session, guidance_model):
+@pytest.mark.parametrize("unrelated_feedback", [False, True])
+def test_guidance_uses_current_parent_answer_without_sending_it_to_model(
+    started_session, guidance_model, unrelated_feedback,
+):
     client, headers, _, sid = started_session
     url = f"/api/v1/reading-sessions/{sid}"
     question = guidance(client, headers, sid, "initial-answer-context")
@@ -1215,8 +1277,17 @@ def test_guidance_uses_current_parent_answer_without_sending_it_to_model(started
     saved = client.get(url).json()["data"]["events"][-1]
     assert saved["eventType"] == "ANSWER" and saved["inputText"] == raw_answer
 
-    follow = guidance(client, headers, sid, "follow-current-answer", feedback="UNDERSTOOD",
-                      revision=answer.json()["data"]["revision"])
+    revision = answer.json()["data"]["revision"]
+    if unrelated_feedback:
+        # An API-015 feedback without question text must not invalidate that answer.
+        recorded = client.post(url + "/events", headers=headers, json={
+            "eventType": "FEEDBACK", "pageNumber": 1, "expectedRevision": revision,
+            "clientEventId": "feedback-without-question", "feedback": "UNDERSTOOD",
+        })
+        assert recorded.status_code == 201
+        revision = recorded.json()["data"]["revision"]
+
+    follow = guidance(client, headers, sid, "follow-current-answer", feedback="UNDERSTOOD", revision=revision)
     assert follow.status_code == 201
     result = follow.json()["data"]
     controlled = "读到“小兔打开雨伞”时，你从画面里的哪个细节看出来的？"
@@ -1235,6 +1306,7 @@ def test_guidance_uses_current_parent_answer_without_sending_it_to_model(started
     assert next_follow.json()["data"]["outputText"] != controlled
     assert guidance_model.await_count == 4
     request = guidance_model.await_args.args[0]
+    assert "刚才回答对应到的当页原文线索：" not in request.context_text
     assert "私人例子" not in request.system_prompt + request.context_text
 
 

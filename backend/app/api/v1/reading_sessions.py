@@ -112,7 +112,7 @@ class ModeSettings(BaseModel):
 
 def current_question(db: sqlite3.Connection, session: sqlite3.Row, *, after_id: int = 0) -> sqlite3.Row | None:
     questions = db.execute(
-        """SELECT id, output_text, response_json FROM interaction_events
+        """SELECT id, event_type, output_text, response_json FROM interaction_events
            WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ?
              AND (event_type = 'QUESTION' OR
                   (event_type = 'FEEDBACK' AND feedback IN ('UNDERSTOOD', 'NOT_UNDERSTOOD')))
@@ -125,15 +125,25 @@ def current_question(db: sqlite3.Connection, session: sqlite3.Row, *, after_id: 
     return next((question for question in questions if question["output_text"].strip()), None)
 
 
-def current_parent_question(db: sqlite3.Connection, session: sqlite3.Row) -> sqlite3.Row | None:
-    arrival_id = db.execute(
-        """SELECT COALESCE(MAX(id), 0) FROM interaction_events WHERE session_id = ?
+def current_page_arrival_id(db: sqlite3.Connection, session: sqlite3.Row) -> int:
+    # BRANCH_CHOSEN is recorded on the source page, so the boundary is the latest
+    # successful arrival event in this session/version, not the latest one on this page.
+    return db.execute(
+        """SELECT COALESCE(MAX(id), 0) FROM interaction_events WHERE session_id = ? AND version_id = ?
            AND event_type IN ('STARTED', 'PAGE_CHANGED', 'BRANCH_CHOSEN') AND result_status = 'SUCCESS'""",
-        (session["id"],),
+        (session["id"], session["version_id"]),
     ).fetchone()[0]
+
+
+def current_parent_question(
+    db: sqlite3.Connection, session: sqlite3.Row, *, arrival_id: int | None = None,
+) -> sqlite3.Row | None:
+    if arrival_id is None:
+        arrival_id = current_page_arrival_id(db, session)
     question = current_question(db, session, after_id=arrival_id)
     latest_answer = db.execute(
-        """SELECT id, output_text FROM interaction_events WHERE session_id = ? AND version_id = ? AND page_no = ?
+        """SELECT id, event_type, input_text, output_text FROM interaction_events
+           WHERE session_id = ? AND version_id = ? AND page_no = ?
            AND event_type = 'ANSWER' AND result_status = 'SUCCESS' AND id > ? ORDER BY id DESC LIMIT 1""",
         (session["id"], session["version_id"], session["current_page_no"], arrival_id),
     ).fetchone()
@@ -813,12 +823,14 @@ def answer_context(db, session, answer: str) -> dict:
            WHERE p.version_id = ? AND p.page_no = ?""",
         (session["profile_id"], session["version_id"], session["current_page_no"]),
     ).fetchone()
-    question = current_parent_question(db, session)
+    arrival_id = current_page_arrival_id(db, session)
+    question = current_parent_question(db, session, arrival_id=arrival_id)
     followups = db.execute(
         """SELECT TRIM(output_text) AS question FROM interaction_events WHERE session_id = ? AND version_id = ? AND page_no = ?
-           AND event_type = 'ANSWER' AND NULLIF(TRIM(output_text), '') IS NOT NULL
+           AND event_type = 'ANSWER' AND result_status = 'SUCCESS' AND id > ?
+           AND NULLIF(TRIM(output_text), '') IS NOT NULL
            GROUP BY TRIM(output_text) ORDER BY MAX(id) DESC LIMIT ?""",
-        (session["id"], session["version_id"], session["current_page_no"], MAX_ANSWER_FOLLOWUPS),
+        (session["id"], session["version_id"], session["current_page_no"], arrival_id, MAX_ANSWER_FOLLOWUPS),
     ).fetchall()
     visited = json.loads(session["visited_pages_json"])
     earlier = [number for number in visited[:-1] if number != session["current_page_no"]][-3:]
