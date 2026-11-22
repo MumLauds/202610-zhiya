@@ -42,7 +42,7 @@ jobs:
     steps:
       - name: Wait for the ECS receipt and verify public HTTPS
         env:
-          SITE: https://zhiya.47-238-246-210.sslip.io
+          SITE: https://zhiyahuiben.xyz
           GH_TOKEN: ${{ github.token }}
         run: |
           for attempt in $(seq 1 110); do
