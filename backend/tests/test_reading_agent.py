@@ -40,6 +40,10 @@ def test_matching_answer_excerpt_accepts_two_character_story_detail():
     ("它没有撑伞或拿起书包", ["打开", "拿起"], [True, True], ["冲突", "未证实"], False),
     ("它把伞收起来啦，然后放下雨伞", ["收起", "放下"], [False, False], ["冲突", "有依据"], False),
     ("小熊撑伞", ["打开"], [False], ["未证实"], False),
+    ("熊猫打开雨伞", ["打开"], [False], ["未证实"], False),
+    ("小熊猫打开雨伞", ["打开"], [False], ["未证实"], False),
+    ("大熊猫打开雨伞", ["打开"], [False], ["未证实"], False),
+    ("它打开雨伞", ["打开"], [False], ["有依据"], False),
     ("小兔打开电脑", ["打开"], [False], ["未证实"], False),
     ("它关上窗户", ["收起"], [False], ["未证实"], False),
     ("它可能撑伞", ["打开"], [False], ["未证实"], False),
@@ -51,6 +55,22 @@ def test_scoped_actions_in_child_speech(answer, actions, negated, evidence, wron
     assert signals.evidence == evidence
     assert signals.order_conflict is wrong_order
     assert signals.supports_page_reply is (not wrong_order and all(item == "有依据" for item in evidence))
+
+
+@pytest.mark.parametrize("page,answer,grounded", [
+    ("熊猫打开雨伞。", "小熊猫打开雨伞", False),
+    ("小熊猫打开雨伞。", "熊猫打开雨伞", False),
+    ("大熊猫打开雨伞。", "熊猫打开雨伞", True),
+    ("小松鼠打开雨伞。", "小兔打开雨伞", False),
+    ("小兔跑开了，小松鼠打开雨伞。", "小兔打开雨伞", False),
+    ("小兔跑开了。打开雨伞。", "小兔打开雨伞", False),
+    ("小松鼠打开雨伞。", "它打开雨伞", True),
+    ("小兔打开雨伞放下雨伞。", "小兔放下雨伞", True),
+])
+def test_explicit_actor_requires_matching_actor_in_story(page, answer, grounded):
+    signals = reading_agent._answer_signals(answer, page, "这一页发生了什么？")
+    assert signals.evidence == ["有依据" if grounded else "未证实"]
+    assert signals.supports_page_reply is grounded
 
 
 @pytest.mark.parametrize("page,answer,grounded", [

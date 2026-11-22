@@ -634,3 +634,55 @@ describe('ReaderView session recovery and interaction', () => {
     expect(api.addEvent).not.toHaveBeenCalled()
   })
 })
+
+describe('guardian answer follow-ups', () => {
+  const parent = { ...questionedPageOne, mode: 'PARENT_CHILD' }
+  const question = savedQuestion(1, 2)
+  const followupQuestion = '雨伞是什么颜色？'
+  const replyText = '你找到小狐狸的雨伞啦。'
+  const receipt = { interactionEventId: 23, revision: 3, replyText: replyText + followupQuestion, followupQuestion }
+  const answer = { ...receipt, pageNumber: 1, eventType: 'ANSWER', inputText: '雨伞' }
+
+  function expectFollowup() {
+    expect(wrapper.get('.agent-text').text()).toBe(followupQuestion)
+    expect(wrapper.get('.guardian-answer-reply').text()).toBe('芽芽：' + replyText)
+    expect(wrapper.text().split(followupQuestion)).toHaveLength(2)
+  }
+
+  it('renders the reply and promotes its follow-up instead of the original question', async () => {
+    const api = await openReader({
+      snapshot: parent, events: [question],
+      sessionApi: { addEvent: vi.fn().mockResolvedValue({ data: receipt }) },
+    })
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue('雨伞')
+    await clickButton('确认回答')
+    expectFollowup()
+    expect(wrapper.text()).not.toContain(question.outputText)
+    expect(api.addEvent).toHaveBeenCalledTimes(1)
+  })
+
+  it('restores a completed answer and its exact follow-up from the current visit', async () => {
+    const api = await openReader({ snapshot: { ...parent, revision: 3 }, events: [question, answer] })
+    expectFollowup()
+    expect(api.submitGuidance).not.toHaveBeenCalled()
+    expect(api.addEvent).not.toHaveBeenCalled()
+  })
+
+  it('does not render a prior visit follow-up when a branch revisits the same page', async () => {
+    const newPrompt = { ...initialQuestion, outputText: '回到这里，你现在看到了什么？', interactionEventId: 28, revision: 6 }
+    const api = await openReader({
+      snapshot: { ...parent, revision: 5, visitedPageNumbers: [1, 2, 1] },
+      events: [question, answer,
+        { eventType: 'PAGE_CHANGED', pageNumber: 2, interactionEventId: 24 },
+        { eventType: 'BRANCH_CHOSEN', pageNumber: 2, interactionEventId: 27 },
+      ],
+      sessionApi: { submitGuidance: vi.fn().mockResolvedValue({ data: newPrompt }) },
+    })
+    expect(wrapper.get('.agent-text').text()).toBe(newPrompt.outputText)
+    expect(wrapper.find('.guardian-answer-reply').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain(followupQuestion)
+    expect(api.submitGuidance).toHaveBeenCalledTimes(1)
+  })
+})

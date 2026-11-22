@@ -110,27 +110,32 @@ class ModeSettings(BaseModel):
     timeLimitSeconds: int = Field(ge=60, le=1800, strict=True)
 
 
-def current_question(db: sqlite3.Connection, session: sqlite3.Row) -> sqlite3.Row | None:
+def current_question(db: sqlite3.Connection, session: sqlite3.Row, *, after_id: int = 0) -> sqlite3.Row | None:
     questions = db.execute(
         """SELECT id, output_text, response_json FROM interaction_events
-           WHERE session_id = ? AND version_id = ? AND page_no = ?
+           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ?
              AND (event_type = 'QUESTION' OR
                   (event_type = 'FEEDBACK' AND feedback IN ('UNDERSTOOD', 'NOT_UNDERSTOOD')))
              AND result_status IN ('SUCCESS', 'FALLBACK') AND output_text IS NOT NULL
              AND COALESCE(strategy_type, json_extract(response_json, '$.data.strategyType'), '')
                  NOT IN ('SKIP', 'SAFETY_BLOCK')
            ORDER BY id DESC""",
-        (session["id"], session["version_id"], session["current_page_no"]),
+        (session["id"], session["version_id"], session["current_page_no"], after_id),
     )
     return next((question for question in questions if question["output_text"].strip()), None)
 
 
 def current_parent_question(db: sqlite3.Connection, session: sqlite3.Row) -> sqlite3.Row | None:
-    question = current_question(db, session)
+    arrival_id = db.execute(
+        """SELECT COALESCE(MAX(id), 0) FROM interaction_events WHERE session_id = ?
+           AND event_type IN ('STARTED', 'PAGE_CHANGED', 'BRANCH_CHOSEN') AND result_status = 'SUCCESS'""",
+        (session["id"],),
+    ).fetchone()[0]
+    question = current_question(db, session, after_id=arrival_id)
     latest_answer = db.execute(
         """SELECT id, output_text FROM interaction_events WHERE session_id = ? AND version_id = ? AND page_no = ?
-           AND event_type = 'ANSWER' ORDER BY id DESC LIMIT 1""",
-        (session["id"], session["version_id"], session["current_page_no"]),
+           AND event_type = 'ANSWER' AND result_status = 'SUCCESS' AND id > ? ORDER BY id DESC LIMIT 1""",
+        (session["id"], session["version_id"], session["current_page_no"], arrival_id),
     ).fetchone()
     if latest_answer and latest_answer["output_text"] and (question is None or latest_answer["id"] > question["id"]):
         return latest_answer
@@ -362,8 +367,14 @@ def session_event_object(event: sqlite3.Row, *, include_answer: bool) -> dict:
     data = {"interactionEventId": event["id"], "eventType": event["event_type"], "pageNumber": event["page_no"]}
     if include_answer and event["event_type"] == "ANSWER" and event["input_text"] is not None:
         data["inputText"] = event["input_text"]
-        if event["saved_id"] == event["id"] and event["reply_text"]:
-            data["replyText"] = event["reply_text"]
+        if event["saved_id"] == event["id"]:
+            if event["reply_text"]:
+                data["replyText"] = event["reply_text"]
+            followup = event["followup_question"] or event["output_text"]
+            # Earlier versions stored the follow-up only in output_text and as a reply suffix.
+            if (isinstance(event["reply_text"], str) and isinstance(followup, str)
+                    and followup and event["reply_text"].endswith(followup)):
+                data["followupQuestion"] = followup
     # Only project a finalized guidance response; older rows may contain unverified text.
     if (event["event_type"] in ("QUESTION", "FEEDBACK", "ASK") and event["strategy_type"]
             and event["saved_id"] == event["id"]):
@@ -394,6 +405,7 @@ def get_session(request: Request, response: Response, session_id: int = Path(ge=
                 return error(request, 404, "RESOURCE_NOT_FOUND", "会话不可用")
             event_query = """SELECT id, event_type, page_no, feedback, input_text, output_text, strategy_type, revision_after,
                                     json_extract(response_json, '$.data.replyText') AS reply_text,
+                                    json_extract(response_json, '$.data.followupQuestion') AS followup_question,
                                     json_extract(response_json, '$.data.interactionEventId') AS saved_id
                              FROM interaction_events WHERE session_id = ?"""
             event_params = [session_id]
@@ -637,6 +649,18 @@ def replay_execution(db, request: Request, scope_type: str, scope_id: int, clien
         if "report" in body["data"]:
             body["data"]["report"] = None
         body["data"].pop("replyText", None)
+        body["data"].pop("followupQuestion", None)
+    elif status == "SUCCEEDED" and scope_type == "SESSION_EVENT" and principal is not None and principal.role == "GUARDIAN":
+        data = body.get("data", {})
+        reply_text = data.get("replyText")
+        if isinstance(reply_text, str) and not data.get("followupQuestion"):
+            legacy = db.execute(
+                """SELECT output_text FROM interaction_events WHERE id = ? AND session_id = ? AND request_key = ?
+                   AND event_type = 'ANSWER' AND result_status = 'SUCCESS'""",
+                (data.get("interactionEventId"), scope_id, client_request_id),
+            ).fetchone()
+            if legacy and legacy["output_text"] and reply_text.endswith(legacy["output_text"]):
+                data["followupQuestion"] = legacy["output_text"]
     return JSONResponse(status_code=200 if status == "SUCCEEDED" else previous["response_status"],
                         content=body)
 
@@ -739,9 +763,13 @@ def save_reading_event(request: Request, session_id: int, payload: ReadingEvent,
             else:  # FEEDBACK
                 valid = row["status"] == "IN_PROGRESS" and payload.pageNumber == row["current_page_no"]
                 next_page_no = row["current_page_no"]
-                if valid and current_question(db, row) is None:
-                    return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
-                                              digest, 409, "PROMPT_REQUIRED", "当前页尚未有引导问题，无法提交反馈")
+                if valid:
+                    question = (current_parent_question(db, row)
+                                if principal.role == "GUARDIAN" and row["mode"] == "PARENT_CHILD"
+                                else current_question(db, row))
+                    if question is None:
+                        return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
+                                                  digest, 409, "PROMPT_REQUIRED", "当前页尚未有引导问题，无法提交反馈")
             if not valid:
                 return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
                                           digest, 409, "SESSION_CONFLICT", "当前状态或页面不允许此操作")
@@ -832,6 +860,8 @@ def finalize_answer_reply(request: Request, session_id: int, payload: ReadingEve
                 and session["revision"] == response["data"]["revision"]):
             reply_text, followup = reply
             finalized = {**response, "data": {**response["data"], "replyText": reply_text}}
+            if followup:
+                finalized["data"]["followupQuestion"] = followup
             db.execute("UPDATE interaction_events SET response_json = ?, output_text = ? WHERE id = ?",
                        (json.dumps(finalized, ensure_ascii=False), followup or None,
                         response["data"]["interactionEventId"]))

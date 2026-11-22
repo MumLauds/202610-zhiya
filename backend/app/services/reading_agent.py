@@ -173,10 +173,13 @@ OBJECT_ALIASES = {"伞": "雨伞", "雨具": "雨伞", "遮雨伞": "雨伞", "�
                   "窗": "窗户", "房门": "门", "大门": "门"}
 OBJECT_REQUIRED_ACTIONS = {"打开", "收起", "拿起", "放下"}
 OBJECT_LEAD = re.compile(r"^(?:[了着过]|[一这那][把扇个本盏]|[这那]个)+")
-ACTOR_WORD = re.compile(r"小兔子|小兔|兔子|小熊|小狐狸|狐狸|小猫|小狗|小鸟|妈妈|爸爸")
-ACTOR_ALIASES = {"小兔子": "小兔", "兔子": "小兔", "小狐狸": "狐狸"}
+ACTOR_WORD = re.compile(r"小兔子|小兔|兔子|小熊猫|大熊猫|熊猫|小熊|小狐狸|狐狸|小猫|小狗|小鸟|妈妈|爸爸")
+ACTOR_ALIASES = {"小兔子": "小兔", "兔子": "小兔", "小狐狸": "狐狸",
+                 "大熊猫": "熊猫"}
 ACTION_BREAK = re.compile(r"[，。！？；,.!?;]|而是|但是|可是|然后|接着|(?<!不)再|后来|随后|最后|才|就|因为|所以")
 DETAIL_BREAK = re.compile(ACTION_BREAK.pattern + r"|并且|而且|又")
+ACTION_CLAUSE = re.compile(f"({ACTION_BREAK.pattern})")
+CONTINUED_ACTOR = re.compile(r"(?:它|他|她)?(?:也|又|还|没(?:有)?|不是|并非|未曾|不曾|并不|不|先|在)*")
 ACTION_NEGATION = re.compile(r"(?:没(?:有)?|不是|并非|未曾|不曾|并不|不)(?:再|先|在)?(?:把.{1,10})?$")
 COORDINATED_NEGATION = re.compile(r"^(?:[\u3400-\u9fff]{0,5})(?:或者|或|、|也没(?:有)?|也不)$")
 SPECULATION = re.compile(r"我猜|也许|可能|大概|好像|会不会|如果|应该|想|打算|试图|没能|担心|害怕|(?<!一)会(?!儿)")
@@ -203,11 +206,15 @@ def _actions(text: str) -> list[AnswerAction]:
 
     text = EARLIER_ACTION.sub(put_earlier_action_first, text)
     actions = []
-    for part in ACTION_BREAK.split(text):
+    parts = ACTION_CLAUSE.split(text)
+    actor = ""
+    for part_index in range(0, len(parts), 2):
+        part = parts[part_index]
+        if part_index and parts[part_index - 1] not in ("，", ","):
+            actor = ""
         matches = list(ACTION_WORD.finditer(part))
         previous_end = 0
         negated = False
-        actor = ""
         for index, match in enumerate(matches):
             before = part[previous_end:match.start()]
             end = matches[index + 1].start() if index + 1 < len(matches) else len(part)
@@ -219,8 +226,12 @@ def _actions(text: str) -> list[AnswerAction]:
             target_text = target[0] if target else ""
             if verb in OBJECT_REQUIRED_ACTIONS and object_phrase not in ("", "它", "这个", "那个") and not target:
                 target_text = "未识别"
-            if subject := ACTOR_WORD.search(before.partition("把")[0]):
+            subject_prefix = before.partition("把")[0].strip()
+            if subject := ACTOR_WORD.search(subject_prefix):
                 actor = ACTOR_ALIASES.get(subject[0], subject[0])
+            elif index == 0 and not CONTINUED_ACTOR.fullmatch(subject_prefix):
+                # A new unrecognized subject is not the actor from the prior clause.
+                actor = ""
             negated = bool(ACTION_NEGATION.search(before) or (negated and COORDINATED_NEGATION.fullmatch(before)))
             actions.append(AnswerAction(verb, OBJECT_ALIASES.get(target_text, target_text),
                                         actor, negated, bool(SPECULATION.search(before))))
@@ -235,7 +246,7 @@ def _action_evidence(actions: list[AnswerAction], page_actions: list[AnswerActio
     for action in actions:
         facts = [(index, fact) for index, fact in enumerate(page_actions) if fact.target != "未识别"
                  if (not action.target or not fact.target or action.target == fact.target)
-                 and (not action.actor or not fact.actor or action.actor == fact.actor)]
+                 and (not action.actor or action.actor == fact.actor)]
         positions = [index for index, fact in facts if fact.verb == action.verb and fact.negated == action.negated]
         opposite = any(
             (fact.verb == action.verb and fact.negated != action.negated)

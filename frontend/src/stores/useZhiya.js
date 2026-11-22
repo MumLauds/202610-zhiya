@@ -1845,11 +1845,12 @@ function appendReadingInteraction(operation, result) {
       pageNumber: operation.payload.pageNumber,
       inputText: operation.payload.inputText,
       replyText: result.replyText,
+      ...(result.followupQuestion ? { followupQuestion: result.followupQuestion } : {}),
     }
     session.revision = Math.max(session.revision, result.revision)
     if (state.currentEvents.some(item => item.interactionEventId === event.interactionEventId)) {
       state.currentEvents = state.currentEvents.map(item => item.interactionEventId === event.interactionEventId
-        ? { ...item, replyText: event.replyText }
+        ? { ...item, ...event }
         : item)
       return
     }
@@ -1925,6 +1926,10 @@ async function writeReading(operation) {
       setToast(`已进入第 ${result.currentPage} 页的故事分支`)
     } else {
       const session = state.currentSession
+      // Keep the visit boundary in the same order as API-013 snapshots.
+      if (result.interactionEventId) state.currentEvents = [...state.currentEvents, {
+        interactionEventId: result.interactionEventId, eventType: operation.payload.eventType, pageNumber: operation.payload.pageNumber,
+      }]
       session.currentPage = operation.payload.pageNumber
       session.visitedPageNumbers = [...session.visitedPageNumbers, operation.payload.pageNumber]
       session.status = 'IN_PROGRESS'

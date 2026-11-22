@@ -121,10 +121,11 @@ describe('authoritative reading progress', () => {
   it('preserves each visit after resuming a branch and revisiting the default next page', async () => {
     reading.getReadingSession.mockResolvedValueOnce(detail({ visitedPageNumbers: [1, 3, 1], revision: 3 }))
     await actions.loadReaderRoute()
-    reading.addReadingEvent.mockResolvedValueOnce({ revision: 4 })
+    reading.addReadingEvent.mockResolvedValueOnce({ interactionEventId: 44, revision: 4 })
     expect(await actions.recordPageChange(3)).toBe(true)
     expect(state.currentSession.visitedPageNumbers).toEqual([1, 3, 1, 3])
     expect(state.currentSession.revision).toBe(4)
+    expect(state.currentEvents.at(-1)).toMatchObject({ interactionEventId: 44, eventType: 'PAGE_CHANGED', pageNumber: 3 })
   })
 
   it('serializes page writes and rejects destinations other than the default next page', async () => {
@@ -297,8 +298,9 @@ describe('authoritative reading progress', () => {
   })
 
   it('submits a trimmed ANSWER through API-015 and preserves the immediate reply', async () => {
-    const replyText = '你能在图里找到刚才的线索吗？'
-    reading.addReadingEvent.mockResolvedValueOnce({ interactionEventId: 9, revision: 3, replyText })
+    const followupQuestion = '你能在图里找到刚才的线索吗？'
+    const replyText = '一起看看。' + followupQuestion
+    reading.addReadingEvent.mockResolvedValueOnce({ interactionEventId: 9, revision: 3, replyText, followupQuestion })
     expect(await actions.submitAnswer('  小兔躲在树后。  ')).toBe(true)
     expect(reading.addReadingEvent.mock.calls[0][1]).toMatchObject({
       eventType: 'ANSWER',
@@ -307,7 +309,7 @@ describe('authoritative reading progress', () => {
       expectedRevision: 1,
     })
     expect(state.currentSession.revision).toBe(3)
-    expect(state.currentEvents.at(-1)).toMatchObject({ eventType: 'ANSWER', interactionEventId: 9, replyText })
+    expect(state.currentEvents.at(-1)).toMatchObject({ eventType: 'ANSWER', interactionEventId: 9, replyText, followupQuestion })
   })
 
   it.each([
@@ -321,7 +323,7 @@ describe('authoritative reading progress', () => {
     const advanced = { ...detail({ revision: 3, currentPage: 3, visitedPageNumbers: [1, 3] }), events: [answer, pageTurn] }
     reading.addReadingEvent.mockRejectedValueOnce(error)
       .mockRejectedValueOnce(new ApiError('pending', { status: 409, code: 'REQUEST_IN_PROGRESS', retryAfter: '2' }))
-      .mockResolvedValueOnce({ interactionEventId: 9, revision: 2, replyText: '更新后的规则回应' })
+      .mockResolvedValueOnce({ interactionEventId: 9, revision: 2, replyText: '更新后的回应你看到了什么？', followupQuestion: '你看到了什么？' })
     reading.getReadingSession.mockResolvedValueOnce(saved).mockResolvedValue(advanced)
 
     expect(await actions.submitAnswer('雨伞')).toBe(false)
@@ -338,7 +340,7 @@ describe('authoritative reading progress', () => {
 
     const original = reading.addReadingEvent.mock.calls[0][1]
     expect(reading.addReadingEvent.mock.calls).toEqual([[55, original], [55, original], [55, original]])
-    expect(state.currentEvents).toEqual([{ ...answer, replyText: '更新后的规则回应' }, pageTurn])
+    expect(state.currentEvents).toEqual([{ ...answer, replyText: '更新后的回应你看到了什么？', followupQuestion: '你看到了什么？' }, pageTurn])
     expect(state.currentSession).toMatchObject({ revision: 3, currentPage: 3 })
     expect(state.readingSyncRequired).toBe(false)
   })

@@ -101,6 +101,11 @@ export class ReadingSessionMachine {
     }
   }
 
+  _addGuardianVisit(eventType, pageNumber, { interactionEventId } = {}) {
+    if (this.session.mode !== 'PARENT_CHILD') return
+    this.events = [...this.events, { eventType, pageNumber, interactionEventId }]
+  }
+
   async start({ signal, clientEventId = this.keyFactory('start') } = {}) {
     if (!this.session) throw new Error('尚无阅读会话')
     const pageNumber = this.session.currentPage
@@ -121,6 +126,7 @@ export class ReadingSessionMachine {
           revision: data.revision,
           visitedPageNumbers: [...(this.session.visitedPageNumbers ?? []), pageNumber],
         }
+        this._addGuardianVisit('STARTED', pageNumber, data)
         this.answerOptions = null
       },
     })
@@ -145,6 +151,7 @@ export class ReadingSessionMachine {
           revision: data.revision,
           visitedPageNumbers: [...(this.session.visitedPageNumbers ?? []), pageNumber],
         }
+        this._addGuardianVisit('PAGE_CHANGED', pageNumber, data)
         this.answerOptions = null
       },
     })
@@ -165,6 +172,7 @@ export class ReadingSessionMachine {
           visitedPageNumbers: data.visitedPageNumbers,
           revision: data.revision,
         }
+        this._addGuardianVisit('BRANCH_CHOSEN', data.currentPage, data)
         this.answerOptions = null
       },
     })
@@ -193,14 +201,28 @@ export class ReadingSessionMachine {
     const text = inputText.trim()
     if (!text || [...text].length > 200) throw new Error('回答应为 1 至 200 个字符')
     if (this.session?.status !== 'IN_PROGRESS') throw new Error('请先开始阅读')
+    const { readingSessionId, currentPage, revision, visitedPageNumbers } = this.session
     const payload = {
-      eventType: 'ANSWER', inputText: text, pageNumber: this.session.currentPage,
-      expectedRevision: this.session.revision, clientEventId: this.keyFactory('answer'),
+      eventType: 'ANSWER', inputText: text, pageNumber: currentPage,
+      expectedRevision: revision, clientEventId: this.keyFactory('answer'),
     }
     return this._runMutation({
       answer: payload,
-      request: () => this.api.addEvent(this.session.readingSessionId, payload),
-      apply: (data) => { this.session = { ...this.session, revision: Math.max(this.session.revision, data.revision) } },
+      answerVisitCount: visitedPageNumbers?.length,
+      request: () => this.api.addEvent(readingSessionId, payload),
+      apply: (data) => {
+        this.session = { ...this.session, revision: Math.max(this.session.revision, data.revision) }
+        if (this.session.mode !== 'PARENT_CHILD' || !data.interactionEventId) return
+        const answerEvent = { ...data, eventType: 'ANSWER', pageNumber: currentPage, inputText: text }
+        const index = this.events.findIndex(event => event.interactionEventId >= data.interactionEventId)
+        if (index < 0) this.events = [...this.events, answerEvent]
+        else if (this.events[index].interactionEventId === data.interactionEventId) {
+          this.events = this.events.map((event, position) => position === index ? { ...event, ...answerEvent } : event)
+        } else {
+          // A delayed receipt belongs before any navigation event saved after it.
+          this.events = [...this.events.slice(0, index), answerEvent, ...this.events.slice(index)]
+        }
+      },
     })
   }
 
@@ -267,7 +289,9 @@ export class ReadingSessionMachine {
     const answer = retry.operation.answer
     try {
       const recovered = await this._runMutation(retry.operation)
-      return { ...recovered, confirmedAnswer: answer?.pageNumber === this.session.currentPage ? answer.inputText : undefined }
+      const currentVisit = answer?.pageNumber === this.session.currentPage
+        && retry.operation.answerVisitCount === this.session.visitedPageNumbers?.length
+      return { ...recovered, confirmedAnswer: currentVisit ? answer.inputText : undefined }
     } catch (error) {
       if (!(error instanceof ApiError) || this.unconfirmed) throw error
       // A retryable 503 during INITIAL replay does not settle the original request.
@@ -312,7 +336,8 @@ export class ReadingSessionMachine {
             await this.sleep(retryDelay(error))
             continue
           }
-          const recoverable = error instanceof ApiError && (RECOVERABLE_CODES.has(error.code) || error.code === 'REQUEST_IN_PROGRESS')
+          const recoverable = error instanceof ApiError && (RECOVERABLE_CODES.has(error.code)
+            || error.code === 'REQUEST_IN_PROGRESS' || isSavedAnswerDependencyError(operation, error))
           const initial = operation.supersededInitial
           if (!recoverable && !initial) throw error
           this.syncRequired = true
@@ -328,9 +353,11 @@ export class ReadingSessionMachine {
           const recovered = await this.restore(this.session.readingSessionId, { signal })
           if (recoverable) {
             throw new RecoverableSessionError(
-              error.code === 'REQUEST_OUTCOME_UNKNOWN'
-                ? '请求结果未知，已重新读取会话状态。'
-                : '阅读进度已变化，已恢复为服务端最新状态。',
+              isSavedAnswerDependencyError(operation, error)
+                ? '回答已保存。请重新核对进度以确认原回答。'
+                : error.code === 'REQUEST_OUTCOME_UNKNOWN'
+                  ? '请求结果未知，已重新读取会话状态。'
+                  : '阅读进度已变化，已恢复为服务端最新状态。',
               { code: error.code, cause: error, recoveredSession: recovered.session },
             )
           }
@@ -352,8 +379,13 @@ export class ReadingSessionMachine {
 function pendingReceipt(operation, revision, error) {
   if (!(error instanceof ApiError)) return null
   const transportUnconfirmed = error.code === 'REQUEST_OUTCOME_UNKNOWN' && !error.payload?.error?.code
-  if (!transportUnconfirmed && error.code !== 'REQUEST_IN_PROGRESS') return null
+  if (!transportUnconfirmed && error.code !== 'REQUEST_IN_PROGRESS' && !isSavedAnswerDependencyError(operation, error)) return null
   return { operation, revision, retryAt: Date.now() + (error.retryAfter ? retryDelay(error) : 0) }
+}
+
+function isSavedAnswerDependencyError(operation, error) {
+  // API-015's retryable 503 is returned after committing the answer but before finalizing its reply.
+  return Boolean(operation.answer && error.status === 503 && error.code === 'DEPENDENCY_UNAVAILABLE' && error.retryable)
 }
 
 function retryDelay(error) {

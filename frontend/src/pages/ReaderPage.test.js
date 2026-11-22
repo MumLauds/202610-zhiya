@@ -1284,3 +1284,47 @@ describe('guided reading interactions', () => {
     expect(chooseBranch).toHaveBeenCalledWith(501)
   })
 })
+
+it('uses a saved follow-up as the current question and does not print it twice', async () => {
+  const answer = {
+    interactionEventId: 11, eventType: 'ANSWER', pageNumber: 1, inputText: '树后。',
+    replyText: '你找到了一条线索。你还看到了什么？', followupQuestion: '你还看到了什么？',
+  }
+  render()
+  await wrapper.setProps({ events: [questionEvent, answer] })
+  const replies = wrapper.get('.question-reply')
+  expect(replies.text()).toContain('你找到了一条线索。')
+  expect(replies.text()).not.toContain(answer.followupQuestion)
+  expect(wrapper.get('.reader-side').text()).toContain(answer.followupQuestion)
+  expect(wrapper.get('.reader-side').text()).not.toContain(questionEvent.outputText)
+  await wrapper.get('.reader-answer textarea').setValue('草地。')
+  await wrapper.get('.reader-answer').trigger('submit')
+  expect(wrapper.props('submitAnswer')).toHaveBeenCalledWith('草地。')
+})
+
+it('restores the follow-up from a saved answer on a fresh reader view', () => {
+  render({ events: [questionEvent, {
+    interactionEventId: 11, eventType: 'ANSWER', pageNumber: 1, inputText: '树后。',
+    replyText: '很好。你还看到了什么？', followupQuestion: '你还看到了什么？',
+  }] })
+  expect(wrapper.get('.reader-side').text()).toContain('你还看到了什么？')
+  expect(wrapper.get('.reader-side').text()).not.toContain(questionEvent.outputText)
+})
+
+it('requests current-visit guidance after a branch returns to the same page', () => {
+  const requestGuidance = vi.fn().mockResolvedValue(true)
+  render({
+    session: { ...initialSession, visitedPageNumbers: [1, 3, 1], revision: 6 },
+    events: [questionEvent, {
+      interactionEventId: 11, eventType: 'ANSWER', pageNumber: 1,
+      replyText: '很好。旧追问？', followupQuestion: '旧追问？',
+    }, {
+      interactionEventId: 12, eventType: 'BRANCH_CHOSEN', pageNumber: 1,
+    }, {
+      interactionEventId: 13, eventType: 'BRANCH_CHOSEN', pageNumber: 3,
+    }],
+    requestGuidance,
+  })
+  expect(requestGuidance).toHaveBeenCalledExactlyOnceWith('INITIAL')
+  expect(wrapper.get('.reader-side').text()).not.toContain('旧追问？')
+})

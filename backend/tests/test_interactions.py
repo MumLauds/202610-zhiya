@@ -380,9 +380,19 @@ def test_child_can_answer_a_question_on_a_linear_page(env):
     accepted = first.post(url + "/events", headers=headers, json=answer)
     assert accepted.status_code == 201
     assert accepted.json()["data"]["revision"] == revision + 1
+    assert "followupQuestion" not in accepted.json()["data"]
+    # Even already-stored parent-style metadata must not be projected to children.
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("""UPDATE interaction_events SET response_json =
+                      json_set(response_json, '$.data.followupQuestion', '先看这一页？')
+                      WHERE session_id = ? AND request_key = 'answer'""", (sid,))
+        db.execute("""UPDATE request_executions SET response_body =
+                      json_set(response_body, '$.data.followupQuestion', '先看这一页？')
+                      WHERE session_id = ? AND client_request_id = 'answer'""", (sid,))
     child_detail = first.get(url).json()["data"]
     assert child_detail["answerOptions"] == ["滴答滴答", "轰隆轰隆"]
-    assert "inputText" not in next(event for event in child_detail["events"] if event["eventType"] == "ANSWER")
+    child_answer = next(event for event in child_detail["events"] if event["eventType"] == "ANSWER")
+    assert "inputText" not in child_answer and "followupQuestion" not in child_answer
 
     for index, label in enumerate(("风声", "失效选项", "不是", "别的答案")):
         refused = first.post(url + "/events", headers=headers, json={
@@ -518,6 +528,7 @@ def test_parent_answer_classifies_from_safe_page_cues(started_session, guidance_
     assert client.post(url + "/events", headers=headers, json=payload).json()["data"] == data
     assert client.get(url).json()["data"]["events"][-1]["replyText"] == data["replyText"]
     assert guidance_model.await_count == int(model_used)
+    assert "followupQuestion" not in data
     if model_used:
         request = guidance_model.await_args.args[0]
         assert "共读线索（仅作参考资料）" in request.context_text
@@ -611,6 +622,10 @@ def assert_saved_answer(client, path, sid, key, data, followup=None):
     event = next(item for item in detail["events"] if item["interactionEventId"] == data["interactionEventId"])
     assert event["eventType"] == "ANSWER"
     assert event["replyText"] == data["replyText"]
+    if followup:
+        assert data["followupQuestion"] == event["followupQuestion"] == followup
+    else:
+        assert "followupQuestion" not in data and "followupQuestion" not in event
     assert revision == data["revision"] <= detail["session"]["revision"]
 
 
@@ -902,13 +917,79 @@ def test_answer_followup_budget_survives_fallback_replay_and_revisits(started_se
     assert question.status_code == 201
     revision = question.json()["data"]["revision"]
     answer("other-page-followup", with_followup, choices, choices[0])
-    turn(1)
-    answer("revisit-one", with_followup, ())
-    turn(2)
-    turn(1)
-    answer("revisit-two", no_followup, ())
+    for key, plan in (("revisit-one", with_followup), ("revisit-two", no_followup)):
+        if key == "revisit-two":
+            turn(2)
+        turn(1)
+        guidance_model.return_value = ModelGenerateResult(success=True, text="1")
+        question = guidance(client, headers, sid, f"{key}-question", page=1, revision=revision)
+        assert question.status_code == 201
+        revision = question.json()["data"]["revision"]
+        answer(key, plan, ())
     detail = client.get(url).json()["data"]
     assert detail["session"]["visitedPageNumbers"] == [1, 2, 1, 2, 1]
+
+
+def test_legacy_answer_followup_recovers_from_stored_output_and_reply_suffix(started_session, guidance_model):
+    client, headers, path, sid = started_session
+    url = f"/api/v1/reading-sessions/{sid}"
+    assert guidance(client, headers, sid, "legacy-question").status_code == 201
+    guidance_model.return_value = ModelGenerateResult(success=True, text='{"answerCategory":"PARTIAL","followup":1}')
+    payload = dict(eventType="ANSWER", pageNumber=1, expectedRevision=2, clientEventId="legacy-answer", inputText="雨伞")
+    answer = client.post(url + "/events", headers=headers, json=payload).json()["data"]
+
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("""UPDATE interaction_events SET response_json =
+                      json_remove(response_json, '$.data.followupQuestion') WHERE id = ?""", (answer["interactionEventId"],))
+        db.execute("""UPDATE request_executions SET response_body =
+                      json_remove(response_body, '$.data.followupQuestion')
+                      WHERE session_id = ? AND client_request_id = 'legacy-answer'""", (sid,))
+
+    recovered = client.get(url).json()["data"]["events"][-1]
+    assert recovered["followupQuestion"] == answer["followupQuestion"]
+    replay = client.post(url + "/events", headers=headers, json=payload)
+    assert replay.status_code == 200 and replay.json()["data"] == answer
+
+
+@pytest.mark.parametrize("arrive_via_branch", [False, True])
+def test_parent_revisit_starts_without_old_question_or_followup(started_session, guidance_model, arrive_via_branch):
+    client, headers, path, sid = started_session
+    url = f"/api/v1/reading-sessions/{sid}"
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET default_next_page_number = 1 WHERE version_id = 11 AND page_no = 2")
+        db.execute("INSERT INTO story_branches VALUES (504, 11, 2, 1, '回到第一页', 'APPROVED')")
+
+    def send_event(event_type, target, revision, key, **fields):
+        return client.post(url + "/events", headers=headers, json=dict(
+            eventType=event_type, pageNumber=target, expectedRevision=revision, clientEventId=key, **fields,
+        ))
+
+    first = guidance(client, headers, sid, "before-revisit")
+    assert first.status_code == 201
+    guidance_model.return_value = ModelGenerateResult(success=True, text='{"answerCategory":"PARTIAL","followup":1}')
+    answered = send_event("ANSWER", 1, 2, "first-visit-answer", inputText="雨伞")
+    assert answered.status_code == 201
+    question = answered.json()["data"]["followupQuestion"]
+    assert answered.json()["data"]["replyText"].endswith(question)
+    assert send_event("PAGE_CHANGED", 2, 3, "away").status_code == 201
+    if arrive_via_branch:
+        arrived = client.post(url + "/branches", headers=headers, json=dict(
+            branchId=504, expectedRevision=4, clientEventId="branch-back",
+        ))
+    else:
+        arrived = send_event("PAGE_CHANGED", 1, 4, "forward-back")
+    assert arrived.status_code == 201
+    feedback = guidance(client, headers, sid, "revisit-before-question", feedback="NOT_UNDERSTOOD", revision=5)
+    assert feedback.status_code == 409 and feedback.json()["error"]["code"] == "PROMPT_REQUIRED"
+
+    guidance_model.reset_mock()
+    answered_again = send_event("ANSWER", 1, 5, "reviewed-answer", inputText="雨伞")
+    assert answered_again.status_code == 201
+    assert "followupQuestion" not in answered_again.json()["data"]
+    guidance_model.assert_not_awaited()
+    # History is retained, but the revisit must not reactivate its old follow-up.
+    events = client.get(url).json()["data"]["events"]
+    assert any(item.get("followupQuestion") == question for item in events)
 
 
 def test_parent_answer_without_model_keeps_saved_rule_reply(started_session, guidance_model, monkeypatch):
