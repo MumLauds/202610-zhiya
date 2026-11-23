@@ -14,8 +14,10 @@ def case(answer, *, expected=None, blocked=False):
         context=DecisionContext(
             age_band="AGE_4_5", approved_page="小兔打开雨伞。",
             evidence=(Evidence(id="e1", quote="小兔打开雨伞"),), followups_remaining=1,
+            questions=(Question(id="q1", focus_id="f1", intent="PLOT", focus="ACTION",
+                                evidence_ids=("e1",), text="小兔做了什么？"),),
         ),
-        question="小兔做了什么？", answer=answer, known_focuses={},
+        question="小兔做了什么？", answer=answer, known_focuses={"f1": ("e1",)},
         expected=expected or SemanticSignals(), blocked=blocked,
     )
 
@@ -26,7 +28,16 @@ def test_comparison_uses_existing_projection_actual_extraction_and_an_independen
     local = ab.extract_semantic_signals(
         question=fixture.question, answer=fixture.answer, page_text=fixture.context.approved_page,
         evidence=fixture.context.evidence, known_focuses=fixture.known_focuses,
+        reviewed_focuses=fixture.context.questions,
     )
+    extract = ab.extract_semantic_signals
+    extraction_inputs = []
+
+    def check_focuses(**kwargs):
+        extraction_inputs.append(kwargs)
+        return extract(**kwargs)
+
+    monkeypatch.setattr(ab, "extract_semantic_signals", check_focuses)
     seen = []
     original = ab._ScriptedAdapter.generate
 
@@ -37,10 +48,18 @@ def test_comparison_uses_existing_projection_actual_extraction_and_an_independen
 
     monkeypatch.setattr(ab._ScriptedAdapter, "generate", capture)
     data = asyncio.run(ab.compare([fixture]))
-    assert len(seen) == 3
+    assert extraction_inputs == [{
+        "question": fixture.question, "answer": fixture.answer, "page_text": fixture.context.approved_page,
+        "evidence": fixture.context.evidence, "known_focuses": fixture.known_focuses,
+        "reviewed_focuses": fixture.context.questions,
+    }]
+    assert len(seen) == 3 and not any("reviewedFocuses" in row for row in seen)
     actual, oracle = local.signals, fixture.expected
     assert [row["localSignals"]["speechAct"] for row in seen] == ["UNKNOWN", actual.speech_act, oracle.speech_act]
     assert [row["localSignals"]["polarity"] for row in seen] == ["UNKNOWN", actual.polarity, oracle.polarity]
+    assert [row["localSignals"]["referencedFocusIds"] for row in seen] == [
+        [], list(actual.referenced_focus_ids), list(oracle.referenced_focus_ids),
+    ]
     assert [row["ageBand"] for row in seen] == ["AGE_4_5"] * 3
     assert [row["evidence"] for row in seen] == [[{"id": "e1", "quote": "小兔打开雨伞"}]] * 3
     assert all(row["localSignals"]["answerRelation"] == "UNKNOWN" for row in seen)
@@ -89,3 +108,24 @@ def test_script_does_not_select_followup_without_required_ids():
     # ASK_FOLLOWUP sorts before INVITE_OBSERVATION; the script must not select it with null IDs.
     assert all(arm["offered_followups"] == 1 and arm["action"] == "INVITE_OBSERVATION"
                and arm["source"] == "MODEL" for arm in row["arms"].values())
+
+
+def test_reviewed_emotion_focus_in_b_does_not_become_evidence_or_answered_state(monkeypatch):
+    fixture = next(item for item in ab.load_cases() if item.id == "a4")
+    seen = []
+    original = ab._ScriptedAdapter.generate
+
+    async def capture(self, request):
+        assert fixture.answer not in request.model_dump_json()
+        seen.append(json.loads(request.context_text))
+        return await original(self, request)
+
+    monkeypatch.setattr(ab._ScriptedAdapter, "generate", capture)
+    result = asyncio.run(ab.compare([fixture]))
+    assert [entry["localSignals"]["referencedFocusIds"] for entry in seen] == [[], ["f3"], ["f3"]]
+    for entry in seen:
+        assert entry["localSignals"]["referencedEvidenceIds"] == []
+        assert entry["localSignals"]["answerRelation"] == "UNKNOWN"
+        assert entry["answeredFocusIds"] == [] and entry["supportedAnswerEvidenceIds"] == []
+        assert entry["followupsRemaining"] == fixture.context.followups_remaining
+    assert result["actual_provider_calls"] == 0

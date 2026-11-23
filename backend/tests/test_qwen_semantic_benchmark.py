@@ -7,6 +7,7 @@ from hashlib import sha256
 
 import pytest
 
+from qa.p6.co_reading_eval import semantic_extractor
 from qa.p6.co_reading_eval.qwen_decision import SemanticSignals
 from qa.p6.co_reading_eval.semantic_benchmark import (
     AGES, CATEGORIES, FIELDS, FIXTURE, FIXTURE_V1, _run_case, evaluate, load_cases,
@@ -34,6 +35,9 @@ def test_corpus_has_independent_labels_and_controlled_pairs():
 def test_v2_label_revision_log_exactly_matches_independent_changes_to_retained_v1_rows():
     assert sha256(FIXTURE_V1.read_bytes()).hexdigest() == (
         "5316ec91f0a3cab3c0466ef554d8b2ddd5096a07420d55522c2f0fb10ee38f12"
+    )
+    assert sha256(FIXTURE.read_bytes()).hexdigest() == (
+        "3c4806e64c24687c40062b32ed1afa2071528e851910616403cc40e8560feed3"
     )
     assert len(load_cases(FIXTURE_V1)) == 49
     before = json.loads(FIXTURE_V1.read_text(encoding="utf-8"))
@@ -71,12 +75,25 @@ def test_load_rejects_pair_that_changes_page_or_question(tmp_path):
         load_cases(file)
 
 
-def test_gold_cannot_influence_actual_semantics_or_payload():
+def test_gold_cannot_influence_actual_semantics_or_payload(monkeypatch):
     case = load_cases()[0]
     different_gold = SemanticSignals(speech_act="ASKS", polarity="UNKNOWN")
     assert case.expected != different_gold
+    extract = semantic_extractor.extract_semantic_signals
+    extraction_inputs = []
+
+    def record(**kwargs):
+        extraction_inputs.append(kwargs)
+        return extract(**kwargs)
+
+    monkeypatch.setattr(semantic_extractor, "extract_semantic_signals", record)
     actual = asyncio.run(_run_case(case))
     modified = asyncio.run(_run_case(replace(case, expected=different_gold)))
+    assert extraction_inputs == [{
+        "question": case.question, "answer": case.answer, "page_text": case.context.approved_page,
+        "evidence": case.context.evidence, "known_focuses": case.known_focuses,
+        "reviewed_focuses": case.context.questions,
+    }] * 2
     assert actual == modified and actual.signals != different_gold
     first = json.loads(actual.baseline_wire)
     second = json.loads(actual.extracted_wire)

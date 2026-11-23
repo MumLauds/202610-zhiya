@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from qa.p6.co_reading_eval.qwen_decision import DecisionContext, Evidence, choose_reading_plan
+from qa.p6.co_reading_eval.qwen_decision import DecisionContext, Evidence, Question, choose_reading_plan
 from qa.p6.co_reading_eval.semantic_extractor import extract_semantic_signals
 
 PAGE = "因为下雨，所以小兔打开雨伞。小熊没有雨伞。小兔把雨伞递给小熊。小兔跑开了。"
@@ -111,6 +111,100 @@ def test_repeated_object_stays_unassigned_without_a_distinguishing_action_or_act
     named = extract("小熊打开蓝雨伞。", page=page, evidence=evidence, focuses=mapping)
     assert named.signals.referenced_evidence_ids == ("e2",)
     assert named.signals.referenced_focus_ids == ("f2",)
+
+
+def test_short_evidence_window_does_not_hide_a_second_actor_or_object_mention():
+    page = "小兔打开雨伞。小熊打开雨伞。"
+    evidence = (Evidence(id="e1", quote="小兔打开雨伞"),)
+    for answer in ("雨伞。", "它打开雨伞。"):
+        signals = extract(answer, "谁打开了雨伞？", page=page, evidence=evidence, focuses={"f1": ("e1",)}).signals
+        assert signals.referenced_evidence_ids == signals.referenced_focus_ids == ()
+    for answer, question in (("小兔打开雨伞。", "谁打开了雨伞？"), ("伞伞呀。", "小兔打开了什么？")):
+        signals = extract(answer, question, page=page, evidence=evidence, focuses={"f1": ("e1",)}).signals
+        assert signals.referenced_evidence_ids == ("e1",)
+        assert signals.referenced_focus_ids == ("f1",)
+
+
+FOCUS_PAGE = "小兔打开雨伞。小熊拿起雨伞。小熊走到海边。"
+FOCUS_EVIDENCE = (
+    Evidence(id="e1", quote="小兔打开雨伞"),
+    Evidence(id="e2", quote="小熊拿起雨伞"),
+    Evidence(id="e3", quote="小熊走到海边"),
+)
+FOCUS_CATALOG = (
+    Question(id="q1", focus_id="f1", intent="EMOTION", evidence_ids=("e1",), text="你猜小兔是什么心情？"),
+    Question(id="q3", focus_id="f3", intent="EMOTION", evidence_ids=("e2", "e3"), text="你猜小熊是什么心情？"),
+)
+FOCUS_REGISTRY = {q.focus_id: q.evidence_ids for q in FOCUS_CATALOG}
+
+
+@pytest.mark.parametrize("answer,act,polarity,expected_focus", [
+    ("我觉得小熊有点害怕。", "UNSURE", "UNKNOWN", ("f3",)),
+    ("我不知道小熊是什么心情。", "UNSURE", "UNKNOWN", ("f3",)),
+    ("小熊可能有点着急。", "UNSURE", "UNKNOWN", ("f3",)),
+    ("如果我是小熊，我会帮助小兔。", "IMAGINES", "UNKNOWN", ()),
+    ("我觉得小兔不是害怕，而是着急。", "CORRECTS", "MIXED", ("f1",)),
+    ("我觉得它不是害怕，而是有点着急。", "CORRECTS", "MIXED", ()),
+    ("它有点害怕。", "UNKNOWN", "UNKNOWN", ()),
+    ("小兔看到有点害怕的小熊。", "UNKNOWN", "UNKNOWN", ()),
+])
+def test_named_relation_can_reference_focus_without_claiming_fact_or_answered(answer, act, polarity, expected_focus):
+    signals = extract_semantic_signals(
+        question="你猜小熊是什么心情？", answer=answer, page_text=FOCUS_PAGE, evidence=FOCUS_EVIDENCE,
+        known_focuses=FOCUS_REGISTRY, reviewed_focuses=FOCUS_CATALOG,
+    ).signals
+    assert (signals.speech_act, signals.polarity) == (act, polarity)
+    assert signals.referenced_evidence_ids == ()
+    assert signals.referenced_focus_ids == expected_focus
+    assert not hasattr(signals, "answered_focus_ids")
+
+
+def test_roleplay_reference_is_distinct_and_shared_location_evidence_does_not_imply_emotion():
+    roleplay = Question(id="q4", focus_id="f4", intent="IMAGINATION", evidence_ids=("e2",),
+                        text="如果你是小熊，你会怎么做？")
+    args = dict(question="小熊去了哪里？", page_text=FOCUS_PAGE, evidence=FOCUS_EVIDENCE,
+                known_focuses={**FOCUS_REGISTRY, "f4": ("e2",)}, reviewed_focuses=(*FOCUS_CATALOG, roleplay))
+    imagined = extract_semantic_signals(answer="如果我是小熊，我会有点害怕。", **args).signals
+    assert (imagined.speech_act, imagined.referenced_evidence_ids, imagined.referenced_focus_ids) == (
+        "IMAGINES", (), ("f4",),
+    )
+    location = extract_semantic_signals(answer="小熊走到海边。", **args).signals
+    assert location.referenced_evidence_ids == ("e3",)
+    assert location.referenced_focus_ids == ()
+
+
+def test_focus_requires_same_visit_registry_and_unique_role_relation():
+    args = dict(question="你猜小熊是什么心情？", answer="我觉得小熊有点害怕。",
+                page_text=FOCUS_PAGE, evidence=FOCUS_EVIDENCE)
+    missing = extract_semantic_signals(**args, known_focuses={"f1": ("e1",)}, reviewed_focuses=FOCUS_CATALOG)
+    assert missing.signals.referenced_focus_ids == ()
+    wrong_anchor = Question(id="q5", focus_id="f5", intent="EMOTION", evidence_ids=("e1",),
+                            text="你猜小熊是什么心情？")
+    unresolved = extract_semantic_signals(**args, reviewed_focuses=(wrong_anchor,))
+    assert unresolved.signals.referenced_focus_ids == ()
+    another = Question(id="q6", focus_id="f6", intent="EMOTION", evidence_ids=("e3",),
+                       text="读到“小熊走到海边”时，你觉得小熊是什么心情？")
+    ambiguous = extract_semantic_signals(**args, reviewed_focuses=(*FOCUS_CATALOG, another))
+    assert ambiguous.signals.referenced_focus_ids == ()
+
+
+def test_explicit_empty_catalog_does_not_reuse_prior_visit_focus_ids():
+    args = dict(question="小熊去了哪里？", answer="小熊走到海边。", page_text=FOCUS_PAGE,
+                evidence=FOCUS_EVIDENCE, known_focuses={"f3": ("e3",)})
+    assert extract_semantic_signals(**args).signals.referenced_focus_ids == ("f3",)
+    next_visit = extract_semantic_signals(**args, reviewed_focuses=()).signals
+    assert next_visit.referenced_evidence_ids == ("e3",)
+    assert next_visit.referenced_focus_ids == ()
+
+
+def test_private_input_cannot_match_even_an_explicit_named_focus():
+    result = extract_semantic_signals(
+        question="你猜小熊是什么心情？", answer="我觉得小熊有点害怕。手机号13800000000。",
+        page_text=FOCUS_PAGE, evidence=FOCUS_EVIDENCE, known_focuses=FOCUS_REGISTRY,
+        reviewed_focuses=FOCUS_CATALOG,
+    )
+    assert result.unsafe_turn
+    assert result.signals.referenced_evidence_ids == result.signals.referenced_focus_ids == ()
 
 
 @pytest.mark.parametrize("raw", [

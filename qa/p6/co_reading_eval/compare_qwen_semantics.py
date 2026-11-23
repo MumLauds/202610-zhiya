@@ -48,7 +48,7 @@ async def _case(case: SemanticCase) -> tuple[dict, dict[str, bytes | None]]:
     if not blocked:
         local = extract_semantic_signals(
             question=case.question, answer=case.answer, page_text=ctx.approved_page,
-            evidence=ctx.evidence, known_focuses=case.known_focuses,
+            evidence=ctx.evidence, known_focuses=case.known_focuses, reviewed_focuses=ctx.questions,
         )
         blocked = local.unsafe_turn
 

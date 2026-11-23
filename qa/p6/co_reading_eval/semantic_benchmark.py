@@ -184,6 +184,7 @@ async def _run_case(case: SemanticCase) -> _Outcome:
     extracted = extract_semantic_signals(
         question=case.question, answer=case.answer, page_text=case.context.approved_page,
         evidence=case.context.evidence, known_focuses=case.known_focuses,
+        reviewed_focuses=case.context.questions,
     )
     ctx = _with_extraction(case.context, extracted.signals, extracted.unsafe_turn)
     baseline = _wire(case.context) if not extracted.unsafe_turn else None
@@ -289,7 +290,8 @@ async def evaluate(path: Path = FIXTURE) -> dict:
             "baseline": "existing wire shape with default UNKNOWN/empty semantic signals",
             "extracted": "existing wire shape with actual local extractor signals, never gold input",
             "unknown": "gold UNKNOWN is a valid label; false-confidence denominator is gold UNKNOWN for that field",
-            "references": "exact ID-set agreement; gold evidence capped at two, prioritizing the current question",
+            "references": "separate exact evidence and focus ID-set agreement; gold evidence capped at two, prioritizing the current question",
+            "focus_inputs": "trusted current-visit reviewed questions are used only by local extraction",
             "privacy": "actual local extractor and mock decision boundary; zero provider calls by design",
         },
         "overall": measure(),
