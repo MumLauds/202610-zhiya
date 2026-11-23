@@ -251,3 +251,46 @@ def test_grounded_answer_fragments_and_near_miss(page, question, answer, support
         assert quote in fallback
         assert quote in result[0]
         assert quote in context["作答对应的当页原文线索"]
+
+
+@pytest.mark.parametrize("page,question,answer,quote", [
+    ("小兔穿着红色的外套，戴着蓝色的帽子。", "小兔戴什么颜色的帽子？", "蓝色的", "戴着蓝色的帽子"),
+    ("小兔穿着红色的外套，戴着蓝色的帽子。", "小兔戴什么颜色的帽子？", "小兔戴着蓝色的帽子", "戴着蓝色的帽子"),
+    ("小兔穿着红色的外套，戴着蓝色的帽子。", "小兔戴什么颜色的帽子？", "小熊戴着蓝色的帽子", None),
+    ("小兔穿着红色的外套，戴着蓝色的帽子。", "小兔戴什么颜色的帽子？", "红色的", None),
+    ("小兔戴着一顶帽子，帽子是黄色的。", "小兔戴什么颜色的帽子？", "黄色的", "帽子是黄色的"),
+    ("小兔戴着一顶帽子。帽子是黄色的。", "小兔戴什么颜色的帽子？", "黄色的", None),
+    ("小兔戴着一顶帽子，小鹿戴着蓝色的帽子。", "小兔戴什么颜色的帽子？", "蓝色的", None),
+    ("小兔戴着蓝色的帽子，戴明戴着红色的帽子。", "小兔戴什么颜色的帽子？", "红色的", None),
+    ("小兔戴着蓝色的帽子又穿着红色的外套。", "小兔的帽子是什么颜色？", "红色的", None),
+    ("小兔穿着红色的外套，戴着蓝色的帽子。", "小兔的帽子是什么颜色？", "红外套", None),
+    ("小兔冒着雨往前走，它到了海边。", "小兔去了哪里？", "海边", "它到了海边"),
+    ("小兔冒着雨往前走，小鹿到了海边。", "小兔去了哪里？", "海边", None),
+    ("小兔留在山坡，跑跑到了海边。", "小兔去了哪里？", "海边", None),
+    ("小兔冒着雨往前走。它到了海边。", "小兔去了哪里？", "海边", None),
+    ("小兔差一点摔倒，后来还是摔倒了。", "小兔怎么了？", "小兔摔倒了", "后来还是摔倒了"),
+    ("小兔差一点摔倒，后来小熊摔倒了。", "小兔怎么了？", "摔倒了", None),
+])
+def test_answer_and_guidance_share_grounded_continuation(page, question, answer, quote):
+    fallback = reading_agent.reply_to_child_answer(page, answer, question)
+    assert ("这一页也写到" in fallback) == bool(quote)
+    model = AsyncMock()
+    model.generate.return_value = ModelGenerateResult(success=True, text='{"candidateId":1}')
+    result = reply(model, page=page, answer=answer, question=question)
+    assert result is not None
+    context = answer_context(model.generate.await_args.args[0])
+    assert ("RELEVANT" in context["可选类别"]) == bool(quote)
+    if quote:
+        assert quote in fallback and quote in result[0]
+        assert quote == context["作答对应的当页原文线索"]
+
+    model.generate.return_value = ModelGenerateResult(success=True, text="1")
+    asyncio.run(reading_agent.run_agent(
+        model, feedback="UNDERSTOOD", age_band="AGE_4_5", topics=[], page_text=page,
+        previous_question=question, child_mode=False, confirmed_answer=answer,
+    ))
+    label = "刚才回答对应到的当页原文线索："
+    context = model.generate.await_args.args[0].context_text
+    assert (label in context) == bool(quote)
+    if quote:
+        assert label + quote in context

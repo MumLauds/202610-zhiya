@@ -191,6 +191,13 @@ NAMED_DETAIL_QUESTION = re.compile(
     r"[戴穿拿][着了]?(?:什么|哪种)颜色的[\u3400-\u9fff]{1,6})[？?]?"
 )
 COLOR_MODIFIER = r"(?:浅|深)?[红黄蓝绿青紫白黑灰棕橙粉](?:色的?|的)?"
+COLOR_OBJECT_QUESTION = re.compile(
+    r"(?:颜色的([\u3400-\u9fff]{1,6})|的([\u3400-\u9fff]{1,6})是(?:什么|哪种)颜色)[？?]?$"
+)
+CONTINUATION = re.compile(
+    r"^(?:它|他|她|没(?:有)?|并不|不|还(?:是)?|也|又|再|后来|随后|最后|接着|终于|真的|确实|却|但(?:是)?)*"
+    r"(?:[走跑][到了去]|来到|到了|去[了往]|[戴穿拿][着了上起]|摔倒|跌倒|摔了一跤)"
+)
 NEAR_MISS = r"差一?点儿?|险些|几乎"
 ACTION_BREAK = re.compile(
     r"[，。！？；,.!?;]|而是|但是|可是|然后|接着|(?<!不)再|后来|随后|最后|才|因为|所以|"
@@ -221,7 +228,7 @@ class AnswerAction:
     near_miss: bool
 
 
-def _actions(text: str) -> list[AnswerAction]:
+def _actions(text: str, *, scoped_actor: str = "") -> list[AnswerAction]:
     def put_earlier_action_first(match: re.Match) -> str:
         later, earlier = match.groups()
         return f"{earlier}，{later}" if ACTION_WORD.search(later) and ACTION_WORD.search(earlier) else match[0]
@@ -255,6 +262,8 @@ def _actions(text: str) -> list[AnswerAction]:
             actor_prefix = re.sub(rf"(?:{NEAR_MISS})就?$", "", subject_prefix)
             if subject := ACTOR_WORD.search(subject_prefix):
                 actor = ACTOR_ALIASES.get(subject[0], subject[0])
+            elif scoped_actor and re.fullmatch(r"(?:它|他|她)?(?:又|还(?:是)?|终于|真的|确实)*", actor_prefix):
+                actor = actor or scoped_actor
             elif index == 0 and not CONTINUED_ACTOR.fullmatch(actor_prefix):
                 # An explicit name outside the known vocabulary is not an omitted subject.
                 actor = SUBJECT_SUFFIX.sub("", SUBJECT_LEAD.sub("", subject_prefix))
@@ -388,6 +397,8 @@ class AnswerSignals:
     causal: str
     unverified_detail: bool
     evidence_page: str
+    color_cue: str | None
+    scoped: bool
 
     @property
     def supports_page_reply(self) -> bool:
@@ -396,23 +407,64 @@ class AnswerSignals:
                 and all(item == "有依据" for item in self.evidence))
 
 
-def _question_evidence_page(page: str, question: str) -> str:
+def _question_evidence(page: str, question: str) -> tuple[str, str, str]:
     def roles(text: str) -> set[str]:
         return {ACTOR_ALIASES.get(name, name) for name in ACTOR_WORD.findall(text)}
 
     # A generated question may quote a different character before asking about this one.
     anchor, _, prompt = question.rpartition("”时，")
     asked = roles(prompt)
-    if not asked and (named := NAMED_DETAIL_QUESTION.fullmatch(prompt)):
-        # An unfamiliar explicit name is recognized in this bounded question form.
-        return "。".join(clause for clause in page_clauses(page)
-                        if clause.startswith(named[1]) and not roles(clause))
-    if not asked and re.match(r"^(?:角色|它|他|她)", prompt):
+    named = NAMED_DETAIL_QUESTION.fullmatch(prompt) if not asked else None
+    if not asked and not named and re.match(r"^(?:角色|它|他|她)", prompt):
         asked = roles(anchor)
-    if len(asked) != 1 or not DETAIL_QUESTION.search(prompt):
-        return page
-    # For these simple factual prompts, keep only unambiguous mentions of the asked role.
-    return "。".join(clause for clause in page_clauses(page) if roles(clause) == asked)
+    if not named and (len(asked) != 1 or not DETAIL_QUESTION.search(prompt)):
+        return page, "", ""
+    actor = named[1] if named else next(iter(asked))
+    item = COLOR_OBJECT_QUESTION.search(prompt)
+    color_object = (item[1] or item[2]) if item else ""
+    evidence = []
+    for sentence in re.split(r"[。！？；.!?;：:\n“”‘’「」]", page):
+        continuing = has_item = False
+        for part in re.split(r"[，,、]", sentence):
+            clause = next(page_clauses(part), "")
+            mentioned = roles(clause)
+            initial = re.sub(r"^(?:后来|随后|最后|接着|只有)+", "", clause)
+            if (named and initial.startswith(actor) and not mentioned) or (not named and mentioned == asked):
+                evidence.append(clause)
+                head = ACTOR_WORD.match(initial)
+                continuing = bool(named or (head and ACTOR_ALIASES.get(head[0], head[0]) == actor))
+                has_item = bool(continuing and color_object and re.search(
+                    r"(?:[戴穿拿]|的)[\u3400-\u9fff]{0,12}" + re.escape(color_object), initial[len(head[0]) if head else len(actor):],
+                ))
+            elif continuing and not mentioned and (CONTINUATION.match(clause) or (
+                has_item and clause.startswith(color_object + "是")
+            )):
+                evidence.append(clause)
+            else:
+                continuing = has_item = False
+    return "。".join(evidence), actor, color_object
+
+
+def _color_cue(page: str, answer: str, item: str, actor: str) -> str:
+    # Compare the color attached to the asked item, not common suffixes like "色的".
+    noun = re.escape(item)
+    answer = unicodedata.normalize("NFKC", answer).strip(" ，。！？,.!?呀啊呢啦")
+    names = "|".join(re.escape(name) for name in (actor, *(
+        name for name, canonical in ACTOR_ALIASES.items() if canonical == actor
+    )))
+    answer = re.sub(rf"^(?:(?:{names}|它|他|她)(?=[戴穿拿的]))?(?:[戴穿拿][着了]?|的)", "", answer)
+    color = re.fullmatch(rf"(?:{noun}(?:的颜色)?是)?({COLOR_MODIFIER})(?:{noun})?", answer.removesuffix("了"))
+    if not color:
+        return ""
+    color_key = re.split(r"[色的]", color[1], maxsplit=1)[0]
+    detail = re.compile(rf"({COLOR_MODIFIER}){noun}|{noun}(?:的颜色)?是({COLOR_MODIFIER})")
+    for clause in page_clauses(page):
+        if re.search(r"不是|并非|没有|未曾|不曾|没[戴穿拿]|不[戴穿拿]", clause):
+            continue
+        for match in detail.finditer(clause):
+            if re.split(r"[色的]", match[1] or match[2], maxsplit=1)[0] == color_key:
+                return matching_answer_excerpt(clause, match[0]) or ""
+    return ""
 
 
 def _answer_signals(answer: str, page: str, question: str) -> AnswerSignals:
@@ -430,12 +482,14 @@ def _answer_signals(answer: str, page: str, question: str) -> AnswerSignals:
         stance = "肯定"
 
     causal = _causal_evidence(answer, page, question)
-    evidence_page = _question_evidence_page(page, question) if causal == "未表达" else page
-    page_actions = [action for action in _actions(evidence_page) if not action.hypothetical]
+    evidence_page, actor, color_object = _question_evidence(page, question)
+    page_actions = [action for action in _actions(evidence_page, scoped_actor=actor) if not action.hypothetical]
     evidence, order_conflict = _action_evidence(actions, page_actions, bool(EXPLICIT_ORDER.search(answer)),
                                                 page=evidence_page)
-    unverified_detail = causal == "未表达" and _has_unverified_detail(answer, evidence_page)
-    return AnswerSignals(stance, actions, evidence, order_conflict, causal, unverified_detail, evidence_page)
+    color_cue = _color_cue(evidence_page, answer, color_object, actor) if color_object else None
+    unverified_detail = (not color_cue if color_cue is not None
+                         else causal == "未表达" and _has_unverified_detail(answer, evidence_page))
+    return AnswerSignals(stance, actions, evidence, order_conflict, causal, unverified_detail, evidence_page, color_cue, bool(actor))
 
 
 def _answer_page(text: str, limit: int = ANSWER_PAGE_CHARS) -> str:
@@ -492,6 +546,8 @@ def _rule_reply(question: str, excerpt: str | None, signals: AnswerSignals) -> s
 def _answer_cue(answer: str, signals: AnswerSignals) -> str | None:
     # The excerpt comes from the page, even when selected using the answer.
     page_text = signals.evidence_page
+    if signals.color_cue is not None:
+        return signals.color_cue or None
     sought = {(action.verb, action.near_miss) for action in signals.actions}
     if sought and (any(near_miss for _, near_miss in sought) or re.search(NEAR_MISS, page_text)):
         # Don't quote an almost-event as evidence of the actual event, or vice versa.
@@ -817,8 +873,14 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
         earlier_pages = tuple(_answer_page(text, GUIDANCE_EARLIER_PAGE_CHARS) for text in earlier_pages)
     strategy = "CONCRETE_RECALL" if feedback == "NOT_UNDERSTOOD" else "CONTEXT_QUESTION"
     followup = ANSWER_FOLLOWUP_FORMS.get(feedback)
-    answer_focus = (matching_answer_excerpt(_question_evidence_page(page_text, previous_question), confirmed_answer)
-                    if not child_mode and followup and not answer_is_unsafe(confirmed_answer) else None)
+    answer_focus = None
+    if not child_mode and followup and confirmed_answer and not answer_is_unsafe(confirmed_answer):
+        signals = _answer_signals(unicodedata.normalize("NFKC", confirmed_answer), page_text, previous_question)
+        if signals.scoped:
+            if signals.supports_page_reply:
+                answer_focus = _answer_cue(confirmed_answer, signals)
+        else:
+            answer_focus = matching_answer_excerpt(page_text, confirmed_answer)
     grounded_followup = f"读到“{answer_focus}”时，{followup}" if answer_focus else None
     visited_questions = _visit_questions(previous_question, seen_questions) if not child_mode else set()
     if grounded_followup and _question_key(grounded_followup) in visited_questions:

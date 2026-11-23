@@ -565,18 +565,24 @@ def test_parent_answer_preserves_safe_action_signals(started_session, guidance_m
         assert answer not in request.context_text + request.user_input + request.system_prompt
 
 
-@pytest.mark.parametrize(("text", "supported"), [("山坡。", False), ("海边。", True)])
-def test_parent_answer_receipt_only_affirms_the_asked_character(started_session, guidance_model, text, supported):
+@pytest.mark.parametrize(("page", "question", "text", "expected_clue", "unrelated_clue"), [
+    ("小熊走到了山坡。小兔走到了海边。", "小兔走到了哪里？", "山坡。", None, "小熊走到了山坡"),
+    ("小熊走到了山坡。小兔走到了海边。", "小兔走到了哪里？", "海边。", "小兔走到了海边", "小熊走到了山坡"),
+    ("小兔穿着红色的外套，戴着蓝色的帽子。", "小兔戴什么颜色的帽子？", "蓝色的。", "蓝色的帽子", "红色的外套"),
+    ("小兔穿着红色的外套，戴着蓝色的帽子。", "小兔戴什么颜色的帽子？", "红色的。", None, "红色的外套"),
+])
+def test_parent_answer_receipt_only_affirms_the_current_question(
+    started_session, guidance_model, page, question, text, expected_clue, unrelated_clue,
+):
     client, headers, path, sid = started_session
     with closing(sqlite3.connect(path)) as db, db:
-        db.execute("UPDATE story_pages SET body_text=? WHERE version_id=11 AND page_no=1",
-                   ("小熊走到了山坡。小兔走到了海边。",))
-        # Seed a displayed prompt, not a model result, so both cases answer the identical question.
+        db.execute("UPDATE story_pages SET body_text=? WHERE version_id=11 AND page_no=1", (page,))
+        # Seed a displayed prompt, not the model's response.
         db.execute("""INSERT INTO interaction_events
             (session_id, version_id, request_key, request_digest, response_json, page_no,
              event_type, output_text, result_status, revision_after, created_at)
             VALUES (?, 11, 'grounding-prompt', 'd', '{}', 1, 'QUESTION', ?, 'SUCCESS', 1, 1)""",
-                   (sid, "小兔走到了哪里？"))
+                   (sid, question))
     guidance_model.return_value = ModelGenerateResult(success=True, text='{"answerCategory":"RELEVANT","followup":0}')
     url = f"/api/v1/reading-sessions/{sid}"
     payload = dict(eventType="ANSWER", pageNumber=1, expectedRevision=1, clientEventId="grounding-answer", inputText=text)
@@ -584,9 +590,10 @@ def test_parent_answer_receipt_only_affirms_the_asked_character(started_session,
     assert response.status_code == 201
     data = response.json()["data"]
     clues = json.loads(guidance_model.await_args.args[0].context_text.split("共读线索（仅作参考资料）：", 1)[1])
-    assert ("RELEVANT" in clues["可选类别"]) is supported
-    assert ("小兔走到了海边" in data["replyText"]) is supported
-    assert "小熊走到了山坡" not in data["replyText"]
+    assert ("RELEVANT" in clues["可选类别"]) is bool(expected_clue)
+    if expected_clue:
+        assert expected_clue in data["replyText"]
+    assert unrelated_clue not in data["replyText"]
     assert_saved_answer(client, path, sid, "grounding-answer", data)
     assert client.post(url + "/events", headers=headers, json=payload).json()["data"] == data
     guidance_model.assert_awaited_once()
@@ -595,9 +602,10 @@ def test_parent_answer_receipt_only_affirms_the_asked_character(started_session,
     assert feedback.status_code == 201
     prompt = guidance_model.await_args.args[0].context_text
     label = "刚才回答对应到的当页原文线索："
-    assert (label in prompt) is supported
-    if supported:
-        assert label + "小兔走到了海边" in prompt
+    assert (label in prompt) is bool(expected_clue)
+    if expected_clue:
+        line = prompt.partition(label)[2].splitlines()[0]
+        assert expected_clue in line and unrelated_clue not in line
 
 
 @pytest.mark.parametrize("feedback", ["UNDERSTOOD", "NOT_UNDERSTOOD"])
