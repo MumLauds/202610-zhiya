@@ -275,8 +275,12 @@ def _question_supported(
     """Only the pilot's known question forms are eligible for safe display."""
     anchor, text = _question_parts(question.text)
     cited = {quotes[evidence_id] for evidence_id in question.evidence_ids}
-    if anchor and anchor not in {unicodedata.normalize("NFKC", quote) for quote in cited}:
-        return False
+    if anchor:
+        if anchor not in {unicodedata.normalize("NFKC", quote) for quote in cited}:
+            return False
+        if not any(anchor in {unicodedata.normalize("NFKC", clause) for clause in page_clauses(sentence)}
+                   for sentence in actual_sentences):
+            return False
     if question.intent == "OBSERVATION":
         if text in _BROAD_QUESTIONS:
             return True  # An open observation does not presuppose a named fact.

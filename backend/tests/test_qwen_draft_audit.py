@@ -64,6 +64,27 @@ def test_hypothesis_cannot_hide_a_separate_unsupported_fact():
     assert [item.kind for item in result.claims] == ["HYPOTHESIS", "FACT"]
 
 
+@pytest.mark.parametrize("page", [
+    "如果雨下大了，小熊跑回家。",
+    "小兔猜测：小熊跑回家？",
+    "小兔说：“小熊跑回家”。",
+])
+def test_condition_question_or_dialogue_is_not_proof_of_asserted_fact(page):
+    ctx = DecisionContext(age_band="AGE_4_5", approved_page=page,
+                          evidence=(Evidence(id="e1", quote="小熊跑回家"),))
+    result = audit_draft(ctx, SyntheticDraft("书里写着“小熊跑回家”。", None), cited_evidence_ids=("e1",))
+    assert result.verdict == "REJECT"
+    assert result.issues == ("UNSUPPORTED_FACT_OR_CITATION",)
+
+
+def test_same_clause_still_has_literal_evidence_if_it_is_also_asserted():
+    ctx = DecisionContext(age_band="AGE_4_5", approved_page="如果雨下大了，小熊跑回家。后来小兔走了。小熊跑回家。",
+                          evidence=(Evidence(id="e1", quote="小熊跑回家"),))
+    result = audit_draft(ctx, SyntheticDraft("小熊跑回家。", None), cited_evidence_ids=("e1",))
+    assert result.verdict == "MANUAL_REVIEW" and not result.issues
+    assert result.claims[0].check == "LITERAL_MATCH"
+
+
 def test_factual_wording_in_a_question_is_not_flagged_as_a_verified_claim():
     result = audit_draft(context(), SyntheticDraft(None, "书里写着小兔打开雨伞？"))
     assert result.verdict == "MANUAL_REVIEW"

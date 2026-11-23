@@ -1,0 +1,198 @@
+"""QA-only, local reduction of a synthetic answer to closed semantic cues.
+
+Nothing here scores a child, decides a response, or proves an answer correct.
+Evidence/focus IDs describe references, never an answered focus.
+"""
+
+import re
+import unicodedata
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+
+from app.services.reading_agent import (
+    ACTOR_ALIASES, ACTOR_WORD, NEAR_MISS, OBJECT_ALIASES, OBJECT_WORD, AnswerAction, AnswerSignals,
+    _actions, _answer_cue, _answer_page, _answer_signals, _fact_phrase, _spoken_answer,
+    answer_is_unsafe, page_clauses,
+)
+from qa.p6.co_reading_eval.qwen_decision import Evidence, SemanticSignals
+
+_EXTRA_PRIVATE = re.compile(
+    r"(?:[\w.+-]+\s*@\s*[\w.-]+\s*\.\s*[A-Za-z]{2,})|"
+    r"(?:[\u3400-\u9fff]{1,16}(?:路|街|巷)\s*\d{1,6}\s*号)|"
+    r"(?:(?:忽略|无视|绕过|别管)[^。！？!?]{0,14}(?:规则|指令|要求|提示))|"
+    r"(?:(?:泄露|显示|念出|告诉我|输出)[^。！？!?]{0,14}(?:系统提示|开发者指令|系统规则))|"
+    r"(?:disregard|reveal|print).{0,28}(?:system|developer).{0,12}(?:prompt|instructions)",
+    re.IGNORECASE,
+)
+_ACKNOWLEDGEMENT = re.compile(r"(?:嗯{1,3}(?:,?(?:是这样|对|是的|我懂了))?|好(?:的|呀)?|知道了|明白了|懂了|是这样)")
+_EXPLICIT_POSITIVE = {"是", "是的", "对", "对的", "有"}
+_EXPLICIT_NEGATIVE = {"不", "没", "没有", "不对", "不是", "没做"}
+_CONTRAST = re.compile(r"(?:不是|并非).{1,32}(?:而是|[,，]\s*是)[^,，]+")
+_CORRECTION = re.compile(r"^不对[,，]|^(?:刚才说错了|我改一下)")
+_QUESTION_ACT = re.compile(r"^(?:为什么|为啥|怎么|哪里|是谁|什么是|是不是|会不会|能不能|可不可以)|(?:吗|么)[?？]?$")
+_EXPLICIT_UNSURE = re.compile(r"^(?:我)?(?:不明白|没听懂|忘了|不记得)")
+_IMAGINATIVE_START = re.compile(r"^(?:(?:我)?(?:猜|想象)|如果|假如|要是|也许|说不定)")
+_EMOTION_GUESS = re.compile(r"^我觉得.{0,20}(?:害怕|开心|着急|生气|难过|紧张)")
+_FABRICATION_MARKERS = re.compile(r"(?:想(?:用|把|让).{1,12}(?:变成|变出)|想.{0,12}魔法|在想象里)")
+_PROSPECTIVE = re.compile(r"(?:准备|快要|将要|打算)(?:把|打开|撑开|拿起|走|跑|收起|递给)")
+_IF_OPENING = re.compile(r"^(?:如果|假如|要是)")
+_NEGATION = re.compile(r"没有|并非|并不|不是|从来没|未曾|没能|没(?:把|去|做|看|拿|带|到)|不(?:把|去|做|肯|愿意)|别(?:把|打|撑|拿)")
+_PLAIN_STATEMENT = re.compile(r"^(?:(?:我|它|他|她|小兔|小熊|小狐狸)?(?:喜欢|想把|想给|想要)|(?:等)?(?:雨停|雨下完))")
+_RECIPIENT = re.compile(rf"(?:递给|交给|送给|给了?)({ACTOR_WORD.pattern})")
+_ID = re.compile(r"f[1-9][0-9]?")
+_MAX_ANSWER = 200
+_MAX_REFS = 2
+
+
+@dataclass(frozen=True)
+class ExtractionResult:
+    signals: SemanticSignals
+    unsafe_turn: bool = False
+
+
+def _unsafe(text: str) -> bool:
+    return answer_is_unsafe(text) or bool(_EXTRA_PRIVATE.search(text))
+
+
+def _canonical(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text).strip(" ,。.!?")
+    text = re.sub(r"雨(?:下完|停了)", "雨停", text)
+    text = ACTOR_WORD.sub(lambda match: ACTOR_ALIASES.get(match[0], match[0]), text)
+    return _fact_phrase(text)
+
+
+def _same_action(answer: AnswerAction, candidate: AnswerAction) -> bool:
+    # Negation is preserved separately: mentioning a denied action still refers to it.
+    return (
+        answer.verb == candidate.verb and answer.target != "未识别" and candidate.target != "未识别"
+        and (not answer.actor or answer.actor == candidate.actor)
+        and (not answer.target or answer.target == candidate.target)
+        and (answer.verb not in {"打开", "收起", "拿起", "放下"} or bool(answer.target))
+    )
+
+
+def _references(
+    raw: str, checked: str, signals: AnswerSignals, allowed: Sequence[Evidence],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    def phrase(text: str) -> str:
+        return _canonical(re.sub(r"^(?:因为|所以|由于|因此)", "", text))
+
+    phrases = {phrase(clause) for clause in page_clauses(checked)}
+    mentioned: set[str] = set()
+    corroborated: set[str] = set()
+    for item in allowed:
+        if phrase(item.quote) in phrases:
+            mentioned.add(item.id)
+            corroborated.add(item.id)
+
+    for action, status in zip(signals.actions, signals.evidence):
+        options = {item.id for item in allowed if any(_same_action(action, candidate) for candidate in _actions(item.quote))}
+        if len(options) == 1:
+            mentioned.update(options)
+            if status == "有依据" and not (action.hypothetical or action.near_miss or signals.unverified_detail):
+                corroborated.update(options)
+
+    recipient = _RECIPIENT.fullmatch(checked.strip(" ,。.!?呀啊啦呢哦"))
+    if recipient:
+        # A short utterance can name the recipient without asserting a giver or object.
+        actor = ACTOR_ALIASES.get(recipient[1], recipient[1])
+        transfers = {
+            item.id for item in allowed if not _NEGATION.search(item.quote)
+            and any(ACTOR_ALIASES.get(match[1], match[1]) == actor for match in _RECIPIENT.finditer(item.quote))
+        }
+        if len(transfers) == 1:
+            mentioned.update(transfers)
+            corroborated.update(transfers)
+
+    raw_fragment = raw.strip(" ,。.!?呀啊啦呢哦")
+    if raw_fragment == "伞伞":
+        raw_fragment = "雨伞"
+    fragment_items = {
+        item.id for item in allowed if any(
+            OBJECT_ALIASES.get(name, name) == OBJECT_ALIASES.get(raw_fragment, raw_fragment)
+            for name in OBJECT_WORD.findall(item.quote)
+        ) and not _NEGATION.search(item.quote)
+    } if OBJECT_WORD.fullmatch(raw_fragment) else set()
+    if len(fragment_items) == 1:
+        mentioned.update(fragment_items)
+        corroborated.update(fragment_items)
+
+    # Only an exact full approved clause may carry the existing locally checked cue.
+    cue = _answer_cue(checked, signals) if signals.scoped and signals.supports_page_reply else None
+    corroborated.update(item.id for item in allowed if item.quote == cue)
+    mentioned.update(corroborated)
+    if (signals.stance in ("推测", "不确定") or _EXPLICIT_UNSURE.search(raw) or _PROSPECTIVE.search(raw)
+            or _QUESTION_ACT.search(raw) or raw.endswith(("?", "？"))):
+        corroborated.clear()
+    return (tuple(item.id for item in allowed if item.id in corroborated)[:_MAX_REFS],
+            tuple(item.id for item in allowed if item.id in mentioned)[:_MAX_REFS])
+
+
+def _speech_and_polarity(raw: str, checked: str, signals: AnswerSignals, refs: tuple[str, ...]) -> tuple[str, str]:
+    text = raw.strip(" ,。.!?！？，")
+    if signals.stance == "不确定" or _EXPLICIT_UNSURE.search(text):
+        return "UNSURE", "UNKNOWN"
+    if _CONTRAST.search(text):
+        return "CORRECTS", "MIXED"
+    if _CORRECTION.search(text) and text not in _EXPLICIT_NEGATIVE:
+        return "CORRECTS", "UNKNOWN"
+    if _ACKNOWLEDGEMENT.fullmatch(text) or text in _EXPLICIT_POSITIVE:
+        return "ACKNOWLEDGES", "AFFIRMS" if text in _EXPLICIT_POSITIVE else "UNKNOWN"
+    if _QUESTION_ACT.search(text) or raw.endswith(("?", "？")):
+        return "ASKS", "UNKNOWN"
+    if _IF_OPENING.match(text) and not re.search(r",|，|就|那么|可能会", text):
+        return "UNKNOWN", "UNKNOWN"
+    if _IMAGINATIVE_START.search(text) or _EMOTION_GUESS.search(text) or _FABRICATION_MARKERS.search(text):
+        return "IMAGINES", "UNKNOWN"
+
+    if _PROSPECTIVE.search(text):
+        return "ASSERTS", "UNKNOWN"
+    direct = [action for action in signals.actions if not (action.hypothetical or action.near_miss)]
+    unqualified = [part for part in page_clauses(text) if not re.search(NEAR_MISS, part)]
+    negated = (any(action.negated for action in direct) or any(_NEGATION.search(part) for part in unqualified)
+               or text in _EXPLICIT_NEGATIVE)
+    positive = any(not action.negated for action in direct)
+    if negated:
+        return "ASSERTS", "MIXED" if positive else "NEGATES"
+    if positive or signals.causal == "有当页因果依据":
+        return "ASSERTS", "AFFIRMS"
+    if refs or _PLAIN_STATEMENT.search(text) or checked != raw or any(action.near_miss for action in signals.actions):
+        return "ASSERTS", "UNKNOWN"
+    return "UNKNOWN", "UNKNOWN"
+
+
+def extract_semantic_signals(
+    *, question: str, answer: str, page_text: str, evidence: Sequence[Evidence] = (),
+    known_focuses: Mapping[str, Sequence[str]] | None = None,
+) -> ExtractionResult:
+    """Recompute AnswerSignals from local text; return only closed cues and a block flag."""
+    raw = unicodedata.normalize("NFKC", answer).strip()
+    normalized_question = unicodedata.normalize("NFKC", question).strip()
+    if _unsafe(raw) or _unsafe(normalized_question):
+        return ExtractionResult(SemanticSignals(), unsafe_turn=True)
+    if not raw or len(raw) > _MAX_ANSWER or not any(c.isalnum() for c in raw):
+        return ExtractionResult(SemanticSignals())
+
+    page = _answer_page(page_text)
+    clauses = set(page_clauses(page))
+    allowed = tuple(item for item in evidence if item.quote in clauses and not _unsafe(item.quote))
+    if len({item.id for item in allowed}) != len(allowed):
+        allowed = ()
+    # Reuse the production's narrowly grounded umbrella reduplication before other safe local forms.
+    checked = _spoken_answer(raw, normalized_question, page)
+    checked = re.sub(r"跑跑(?=了|呀|啊|[,.!?]|$)", "跑", checked)
+    checked = re.sub(r"(?<=给)熊熊(?=啦|呀|啊|[,.!?]|$)", "小熊", checked)
+    signals = _answer_signals(checked, page, normalized_question)
+    refs, mentioned = _references(raw, checked, signals, allowed)
+    speech, polarity = _speech_and_polarity(raw, checked, signals, refs)
+
+    focus_map = known_focuses or {}
+    focus_ids = []
+    for evidence_id in mentioned:
+        choices = [focus_id for focus_id, sources in focus_map.items() if _ID.fullmatch(focus_id) and evidence_id in sources]
+        if len(choices) == 1 and choices[0] not in focus_ids:
+            focus_ids.append(choices[0])
+    return ExtractionResult(SemanticSignals(
+        speech_act=speech, polarity=polarity, referenced_evidence_ids=refs,
+        referenced_focus_ids=tuple(focus_ids[:_MAX_REFS]),
+    ))

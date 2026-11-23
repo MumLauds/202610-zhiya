@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
-from app.services.reading_agent import ACTOR_WORD, answer_is_unsafe
+from app.services.reading_agent import ACTOR_WORD, DIRECT_SPEECH, _answer_page, answer_is_unsafe, page_clauses
 from qa.p6.co_reading_eval.qwen_decision import DecisionContext, SyntheticDraft
 
 DraftField = Literal["response", "followup"]
@@ -39,6 +39,7 @@ _FACT = re.compile(r"^(?:书里|故事里|这(?:一)?页|当页)(?:写(?:着|到
 _EXPERIENCE = re.compile(r"^(?:(?:你)?在生活[里中]|如果(?:你)?在生活[里中]|你有没有遇到过|你有过类似)")
 _HYPOTHESIS = re.compile(r"^(?:我猜|也许|大概|可能|如果|假如|想象一下|你猜)")
 _MIXED = re.compile(r"[，,、：:]|因为|所以|虽然|但[是也]|因此|然后|而且|其实|已经|事实是")
+_CONDITIONAL_SOURCE = re.compile(r"如果|假如|要是|倘若|除非|一旦|只要|也许|可能|大概|似乎|好像|我猜|差点|险些")
 _LOW_AGE_COMPLEX = re.compile(r"为什么|什么原因|如何|如果|假如|生活[里中]|想象|比较")
 _LENGTHS = {"AGE_3_4": (32, 20), "AGE_4_5": (48, 32), "AGE_5_6": (64, 45)}
 _OUTER_PUNCTUATION = '。！？.!?；;“”「」" '
@@ -87,9 +88,19 @@ def audit_draft(
         for _, text in fields
     ):
         return DraftAudit("REJECT", (), ("UNSAFE_OR_NONPRINTABLE",))
-    evidence = {item.id: _key(item.quote) for item in ctx.evidence}
+    # A complete clause can still be the consequent of a hypothetical, or a
+    # character's quotation. Do not use that clause as an asserted story fact.
+    cited_ids = {item.id for item in ctx.evidence}
+    narrated = DIRECT_SPEECH.sub(" ", _answer_page(ctx.approved_page))
+    asserted_clauses = {
+        _key(clause)
+        for sentence in _SENTENCES.findall(narrated)
+        if not _CONDITIONAL_SOURCE.search(sentence) and not sentence.endswith(("？", "?"))
+        for clause in page_clauses(sentence)
+    }
+    evidence = {item.id: _key(item.quote) for item in ctx.evidence if _key(item.quote) in asserted_clauses}
     cited = set(cited_evidence_ids) if cited_evidence_ids is not None else None
-    if cited is not None and not cited <= evidence.keys():
+    if cited is not None and not cited <= cited_ids:
         return DraftAudit("REJECT", (), ("UNKNOWN_EVIDENCE_ID",))
 
     claims = tuple(

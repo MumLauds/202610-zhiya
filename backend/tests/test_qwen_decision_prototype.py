@@ -255,6 +255,21 @@ def test_six_intents_require_their_own_evidence_and_controlled_question_form(int
     assert forced.reason == "INVALID_PLAN" and forced.followup is None
 
 
+@pytest.mark.parametrize("page,supported", [
+    ("小熊跑回家。", True), ("如果雨下大了，小熊跑回家。", False), ("小兔说：“小熊跑回家”。", False),
+])
+def test_anchored_open_observation_does_not_turn_a_condition_or_dialogue_into_fact(page, supported):
+    quote = "小熊跑回家"
+    question = proto.Question(id="q1", focus_id="f1", intent="OBSERVATION", evidence_ids=("e1",),
+                              text=f"读到“{quote}”时，画面里有什么？")
+    ctx = context(approved_page=page, evidence=(proto.Evidence(id="e1", quote=quote),),
+                  questions=(question,), answer_relation="UNKNOWN", answer_evidence_ids=())
+    plan, model = run(wire(understanding="UNVERIFIED"), ctx=ctx)
+    questions = json.loads(model.generate.await_args.args[0].context_text)["questions"]
+    assert bool(questions) is supported
+    assert bool(plan.followup) is supported
+
+
 @pytest.mark.parametrize("intent,bodies", [
     ("IMAGINATION", ("如果换种办法，接下来可能怎样？", "假如换一种方法，接下来会发生什么？")),
     ("LIFE_CONNECTION", ("如果在生活里遇到类似情况，你会怎么做？", "在生活中碰到这样的事，你打算怎么办？")),
