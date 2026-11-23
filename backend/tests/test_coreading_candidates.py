@@ -168,3 +168,35 @@ def test_parent_guidance_keeps_safe_story_and_knowledge_references(monkeypatch):
     assert "fixture" not in request.context_text + request.user_input + request.system_prompt
     assert "刚才回答对应到的当页原文线索：" not in request.context_text
     assert all(value in request.context_text for value in ("小兔打开雨伞", "小熊坐在窗前", "鼓励读者观察插画"))
+
+
+@pytest.mark.parametrize("page,answer,question,supported", [
+    ("这不是红色的，是黄色的。", "红色的", "是什么颜色？", False),
+    ("这不是红色的，是黄色的。", "黄色的", "是什么颜色？", True),
+    ("这不是红色的而是黄色的。", "红色的", "是什么颜色？", False),
+    ("这不是红色的而是黄色的。", "黄色的", "是什么颜色？", True),
+    ("小兔没去海边。", "去海边", "它去了哪里？", False),
+    ("小兔不去海边。", "去海边", "它去了哪里？", False),
+    ("小兔去海边。", "去海边", "它去了哪里？", True),
+    ("小兔不去海边，改去河边。", "去河边", "它去了哪里？", True),
+    ("外面下雨了。小兔打开了雨伞。", "小鸟提醒小兔下雨了", "谁说外面下雨了？", False),
+    ("外面下雨了。小兔打开了雨伞。", "小兔说过下雨了", "谁说外面下雨了？", False),
+    ("只有小兔打开雨伞。", "小松鼠打开雨伞", "谁打开了雨伞？", False),
+    ("只有小兔打开雨伞。", "小兔子撑开了伞", "谁打开了雨伞？", True),
+    ("小松鼠打开雨伞。", "小松鼠撑开了伞", "谁打开了雨伞？", True),
+    ("小兔撑开雨伞，然后放下雨伞。", "小兔先打开伞，再放下伞。", "它做了什么？", True),
+])
+def test_fact_recognition_agrees_in_rule_and_model_choices(page, answer, question, supported):
+    fallback = reading_agent.reply_to_child_answer(page, answer, question)
+    assert ("这一页也写到" in fallback) == supported
+    model = AsyncMock()
+    model.generate.return_value = ModelGenerateResult(success=True, text='{"candidateId":1}')
+    assert reply(model, page=page, answer=answer, question=question) is not None
+    context = answer_context(model.generate.await_args.args[0])
+    assert ("RELEVANT" in context["可选类别"]) == supported
+    assert bool({"AFFIRM", "EXTEND"} & {item["策略"] for item in context["共读候选"].values()}) == supported
+    if not supported:
+        model.generate.return_value = ModelGenerateResult(
+            success=True, text='{"answerCategory":"RELEVANT","followup":0}',
+        )
+        assert reply(model, page=page, answer=answer, question=question) is None

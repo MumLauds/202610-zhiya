@@ -892,7 +892,9 @@ def test_parent_answer_follows_age_band_and_limits_followups(started_session, gu
     with closing(sqlite3.connect(path)) as db, db:
         db.execute("UPDATE child_profiles SET age_band = ? WHERE id = (SELECT profile_id FROM reading_sessions WHERE id = ?)",
                    (age_band, sid))
-    assert guidance(client, headers, sid, "first-question").status_code == 201
+    initial = guidance(client, headers, sid, "first-question")
+    assert initial.status_code == 201
+    revision = initial.json()["data"]["revision"]
     prompts = []
 
     async def choose_first(request):
@@ -903,14 +905,17 @@ def test_parent_answer_follows_age_band_and_limits_followups(started_session, gu
         }))
 
     guidance_model.side_effect = choose_first
-    for revision in range(2, 5):
+    for turn in range(3):
         response = client.post(f"/api/v1/reading-sessions/{sid}/events", headers=headers, json={
             "eventType":"ANSWER", "pageNumber":1, "expectedRevision":revision,
-            "clientEventId":f"followup-{revision}", "inputText":"雨伞",
+            "clientEventId":f"followup-{turn}", "inputText":"雨伞",
         })
         assert response.status_code == 201
-        if revision < 4:
-            assert response.json()["data"]["replyText"].endswith(reading_agent.ANSWER_FOLLOWUPS[age_band][revision-2])
+        data = response.json()["data"]
+        assert data["revision"] == revision + (2 if turn < 2 else 1)
+        revision = data["revision"]
+        if turn < 2:
+            assert data["replyText"].endswith(reading_agent.ANSWER_FOLLOWUPS[age_band][turn])
     assert prompts[1]["当前问题"] == reading_agent.ANSWER_FOLLOWUPS[age_band][0]
     assert prompts[2]["当前问题"] == reading_agent.ANSWER_FOLLOWUPS[age_band][1]
     assert prompts[2]["追问候选"] == {}
@@ -1032,19 +1037,22 @@ def test_parent_revisit_starts_without_old_question_or_followup(started_session,
     assert answered.status_code == 201
     question = answered.json()["data"]["followupQuestion"]
     assert answered.json()["data"]["replyText"].endswith(question)
-    assert send_event("PAGE_CHANGED", 2, 3, "away").status_code == 201
+    left = send_event("PAGE_CHANGED", 2, answered.json()["data"]["revision"], "away")
+    assert left.status_code == 201
+    left_revision = left.json()["data"]["revision"]
     if arrive_via_branch:
         arrived = client.post(url + "/branches", headers=headers, json=dict(
-            branchId=504, expectedRevision=4, clientEventId="branch-back",
+            branchId=504, expectedRevision=left_revision, clientEventId="branch-back",
         ))
     else:
-        arrived = send_event("PAGE_CHANGED", 1, 4, "forward-back")
+        arrived = send_event("PAGE_CHANGED", 1, left_revision, "forward-back")
     assert arrived.status_code == 201
-    feedback = guidance(client, headers, sid, "revisit-before-question", feedback="NOT_UNDERSTOOD", revision=5)
+    arrived_revision = arrived.json()["data"]["revision"]
+    feedback = guidance(client, headers, sid, "revisit-before-question", feedback="NOT_UNDERSTOOD", revision=arrived_revision)
     assert feedback.status_code == 409 and feedback.json()["error"]["code"] == "PROMPT_REQUIRED"
 
     guidance_model.reset_mock()
-    answered_again = send_event("ANSWER", 1, 5, "reviewed-answer", inputText="雨伞")
+    answered_again = send_event("ANSWER", 1, arrived_revision, "reviewed-answer", inputText="雨伞")
     assert answered_again.status_code == 201
     assert "followupQuestion" not in answered_again.json()["data"]
     guidance_model.assert_not_awaited()
@@ -1052,10 +1060,10 @@ def test_parent_revisit_starts_without_old_question_or_followup(started_session,
     events = client.get(url).json()["data"]["events"]
     assert any(item.get("followupQuestion") == question for item in events)
     guidance_model.return_value = ModelGenerateResult(success=True, text="1")
-    current = guidance(client, headers, sid, "fresh-visit-question", revision=6)
+    current = guidance(client, headers, sid, "fresh-visit-question", revision=answered_again.json()["data"]["revision"])
     assert current.status_code == 201
     guidance_model.return_value = ModelGenerateResult(success=True, text='{"answerCategory":"PARTIAL","followup":1}')
-    fresh_answer = send_event("ANSWER", 1, 7, "fresh-visit-answer", inputText="雨伞")
+    fresh_answer = send_event("ANSWER", 1, current.json()["data"]["revision"], "fresh-visit-answer", inputText="雨伞")
     assert fresh_answer.status_code == 201
     assert fresh_answer.json()["data"]["followupQuestion"] == question
 
@@ -1077,19 +1085,19 @@ def test_co_reading_model_history_is_scoped_to_one_visit(started_session, guidan
         return res.json()["data"]
 
     first = guidance(client, headers, sid, "visit-history-initial").json()["data"]["outputText"]
-    event("ANSWER", 1, 2, "visit-history-answer", inputText="合成作答甲")
-    event("ANSWER", 1, 3, "visit-history-followup", inputText="合成作答乙")
+    answer = event("ANSWER", 1, 2, "visit-history-answer", inputText="合成作答甲")
+    followup = event("ANSWER", 1, answer["revision"], "visit-history-followup", inputText="合成作答乙")
     ctx = fake.await_args.kwargs
     assert ctx["seen_questions"] == (first, "下一页会怎样？")
     assert ctx["prior_reply"] == "先看看小兔。"
     assert ctx["question"] == "下一页会怎样？"
 
-    event("PAGE_CHANGED", 2, 4, "visit-history-leave")
-    event("PAGE_CHANGED", 1, 5, "visit-history-return")
-    new = guidance(client, headers, sid, "visit-history-new-question", revision=6).json()["data"]["outputText"]
-    event("ANSWER", 1, 7, "visit-history-fresh-answer", inputText="合成作答丙")
+    left = event("PAGE_CHANGED", 2, followup["revision"], "visit-history-leave")
+    returned = event("PAGE_CHANGED", 1, left["revision"], "visit-history-return")
+    new = guidance(client, headers, sid, "visit-history-new-question", revision=returned["revision"]).json()["data"]
+    event("ANSWER", 1, new["revision"], "visit-history-fresh-answer", inputText="合成作答丙")
     ctx = fake.await_args.kwargs
-    assert ctx["seen_questions"] == (new,)
+    assert ctx["seen_questions"] == (new["outputText"],)
     assert ctx["prior_reply"] == ""
     assert ctx["used_followups"] == []
 
@@ -1107,13 +1115,14 @@ def test_guidance_on_next_page_does_not_use_previous_page_answer(started_session
     ))
     assert old_answer.status_code == 201 and "followupQuestion" in old_answer.json()["data"]
     moved = client.post(url, headers=headers, json=dict(
-        eventType="PAGE_CHANGED", pageNumber=2, expectedRevision=3, clientEventId="move-to-next-page",
+        eventType="PAGE_CHANGED", pageNumber=2, expectedRevision=old_answer.json()["data"]["revision"], clientEventId="move-to-next-page",
     ))
     assert moved.status_code == 201
     guidance_model.return_value = ModelGenerateResult(success=True, text="1")
-    current = guidance(client, headers, sid, "next-page-question", page=2, revision=4)
+    current = guidance(client, headers, sid, "next-page-question", page=2, revision=moved.json()["data"]["revision"])
     assert current.status_code == 201
-    response = guidance(client, headers, sid, "next-page-feedback", feedback="UNDERSTOOD", page=2, revision=5)
+    response = guidance(client, headers, sid, "next-page-feedback", feedback="UNDERSTOOD",
+                        page=2, revision=current.json()["data"]["revision"])
     assert response.status_code == 201
     request = guidance_model.await_args.args[0]
     assert "当前页已保存的问题（仅作参考）：" + current.json()["data"]["outputText"] in request.context_text
@@ -1229,6 +1238,38 @@ def test_story_question_safety_and_model_failure(started_session, guidance_model
     assert post("timeout", 2, "雨伞是什么？").json()["data"]["strategyType"] == "TIMEOUT_FALLBACK"
     guidance_model.return_value = ModelGenerateResult(success=True, text="泄露未审核的内容")
     assert post("unsafe-output", 3, "雨伞是什么？").json()["data"]["status"] == "BLOCKED"
+
+
+@pytest.mark.parametrize("private_text", [
+    "fixture-child@example.invalid，小兔在哪里？",
+    "我的名字是测试角色，小兔拿了什么？",
+    "我住在虚构森林，小兔在哪里？",
+    "１２３４５６７８，小兔在哪里？",
+])
+def test_parent_free_question_keeps_private_text_out_of_model_and_event(started_session, guidance_model, private_text):
+    client, headers, path, sid = started_session
+    url = f"/api/v1/reading-sessions/{sid}/questions"
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("""UPDATE knowledge_items SET task_types_json='["RETRIEVAL"]' WHERE id=81""")
+    payload = {"pageNumber": 1, "expectedRevision": 1, "clientEventId": "private-ask", "inputText": private_text}
+
+    blocked = client.post(url, headers=headers, json=payload)
+    replay = client.post(url, headers=headers, json=payload)
+    assert (blocked.status_code, replay.status_code) == (201, 200)
+    data = blocked.json()["data"]
+    assert replay.json()["data"] == data
+    assert data["status"] == "BLOCKED" and data["strategyType"] == "SAFETY_BLOCK"
+    assert private_text not in blocked.text and private_text not in replay.text
+    guidance_model.assert_not_awaited()
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT input_text FROM interaction_events WHERE request_key='private-ask'").fetchone() == (None,)
+
+    guidance_model.return_value = ModelGenerateResult(success=True, text="1")
+    normal = client.post(url, headers=headers, json={
+        **payload, "expectedRevision": data["revision"], "clientEventId": "safe-ask", "inputText": "小兔打开了什么？",
+    })
+    assert normal.status_code == 201 and normal.json()["data"]["status"] == "GENERATED"
+    guidance_model.assert_awaited_once()
 
 
 @pytest.fixture

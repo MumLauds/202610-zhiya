@@ -902,10 +902,14 @@ def finalize_answer_reply(request: Request, session_id: int, payload: ReadingEve
             reply_text, followup = reply
             finalized = {**response, "data": {**response["data"], "replyText": reply_text}}
             if followup:
+                # A fresh question invalidates feedback based on the provisional answer snapshot.
+                revision = session["revision"] + 1
                 finalized["data"]["followupQuestion"] = followup
-            db.execute("UPDATE interaction_events SET response_json = ?, output_text = ? WHERE id = ?",
+                finalized["data"]["revision"] = revision
+                db.execute("UPDATE reading_sessions SET revision = ? WHERE id = ?", (revision, session_id))
+            db.execute("UPDATE interaction_events SET response_json = ?, output_text = ?, revision_after = ? WHERE id = ?",
                        (json.dumps(finalized, ensure_ascii=False), followup or None,
-                        response["data"]["interactionEventId"]))
+                        finalized["data"]["revision"], response["data"]["interactionEventId"]))
         db.execute("UPDATE request_executions SET status = 'SUCCEEDED', completed_at = ?, response_body = ? WHERE id = ?",
                    (now, json.dumps(finalized, ensure_ascii=False), execution["id"]))
         return JSONResponse(status_code=201, content=finalized)

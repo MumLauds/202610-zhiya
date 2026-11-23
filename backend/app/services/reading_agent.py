@@ -188,6 +188,8 @@ ACTION_BREAK = re.compile(r"[，。！？；,.!?;]|而是|但是|可是|然后|�
 DETAIL_BREAK = re.compile(ACTION_BREAK.pattern + r"|并且|而且|又")
 ACTION_CLAUSE = re.compile(f"({ACTION_BREAK.pattern})")
 CONTINUED_ACTOR = re.compile(r"(?:它|他|她)?(?:也|又|还|没(?:有)?|不是|并非|未曾|不曾|并不|不|先|在)*")
+SUBJECT_LEAD = re.compile(r"^(?:只有(?:那只)?|我看见|我看到|我注意到|我发现|我觉得|我想|只见)+")
+SUBJECT_SUFFIX = re.compile(r"(?:也|又|还|没(?:有)?|不是|并非|未曾|不曾|并不|不|先|在)+$")
 ACTION_NEGATION = re.compile(r"(?:没(?:有)?|不是|并非|未曾|不曾|并不|不)(?:再|先|在)?(?:把.{1,10})?$")
 COORDINATED_NEGATION = re.compile(r"^(?:[\u3400-\u9fff]{0,5})(?:或者|或|、|也没(?:有)?|也不)$")
 SPECULATION = re.compile(r"我猜|也许|可能|大概|好像|会不会|如果|应该|想|打算|试图|没能|担心|害怕|(?<!一)会(?!儿)")
@@ -238,11 +240,17 @@ def _actions(text: str) -> list[AnswerAction]:
             if subject := ACTOR_WORD.search(subject_prefix):
                 actor = ACTOR_ALIASES.get(subject[0], subject[0])
             elif index == 0 and not CONTINUED_ACTOR.fullmatch(subject_prefix):
-                # A new unrecognized subject is not the actor from the prior clause.
-                actor = ""
+                # An explicit name outside the known vocabulary is not an omitted subject.
+                actor = SUBJECT_SUFFIX.sub("", SUBJECT_LEAD.sub("", subject_prefix))
+                if actor in ("它", "他", "她"):
+                    actor = ""
             negated = bool(ACTION_NEGATION.search(before) or (negated and COORDINATED_NEGATION.fullmatch(before)))
+            # A weather location is not an actor, but a report of rain is not the weather event.
+            action_actor = "" if verb == "下雨" and re.fullmatch(
+                r"(?:外面|天上|天空|天)?(?:没(?:有)?|不|还|也|在)*", subject_prefix,
+            ) else actor
             actions.append(AnswerAction(verb, OBJECT_ALIASES.get(target_text, target_text),
-                                        actor, negated, bool(SPECULATION.search(before))))
+                                        action_actor, negated, bool(SPECULATION.search(before))))
             previous_end = match.end()
     return actions
 
@@ -322,7 +330,9 @@ def _causal_evidence(answer: str, page: str, question: str) -> str:
 
 
 def _has_unverified_detail(answer: str, page: str) -> bool:
-    facts = [_fact_phrase(clause) for clause in page_clauses(page)]
+    facts = [_fact_phrase(part) for clause in page_clauses(page)
+             for part in re.split(r"而是|但是|可是", clause)
+             if not re.search(r"不是|并非|并不|没有|从未|未曾|不曾", part)]
     for clause in DETAIL_BREAK.split(answer):
         if len(clause) < 2:
             continue
@@ -338,7 +348,9 @@ def _has_unverified_detail(answer: str, page: str) -> bool:
             detail = _fact_phrase(clause[last.start():])
         else:
             detail = _fact_phrase(re.sub(r"^(?:我觉得|我看到|我看见|就是|还有|那是|这是|[一那这]把)", "", clause))
-        if detail and not any(detail in fact for fact in facts):
+        # Reject a bare 没/不 directly before the matching phrase, not unrelated
+        # words elsewhere in the clause (e.g. 一动不动地望着海边).
+        if detail and not any(re.search(r"(?<![没不])" + re.escape(detail), fact) for fact in facts):
             return True
     return False
 
@@ -653,7 +665,7 @@ def visible_detail(text: str) -> str | None:
 
 async def answer_question(model_adapter: ModelAdapter, *, input_text: str, age_band: str | None,
                           topics: list[str], page_text: str, page_image_url: str | None = None) -> AgentResult:
-    if SENSITIVE.search(unicodedata.normalize("NFKC", input_text)):
+    if answer_is_unsafe(input_text):
         return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)
     knowledge = retrieve_knowledge(KnowledgeQuery(age_band=age_band, topics=topics,
                                                   task_type="RETRIEVAL", query_text=input_text))
