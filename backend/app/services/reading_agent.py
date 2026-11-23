@@ -84,7 +84,16 @@ ANSWER_TIMEOUT = 5.0
 ANSWER_PAGE_CHARS = 1200
 ANSWER_PAGE_LOOKAHEAD = 256  # Enough context for a complete email address across the cap.
 GUIDANCE_EARLIER_PAGE_CHARS = 600
+ANSWER_EARLIER_PAGE_CHARS = 200
 MAX_ANSWER_FOLLOWUPS = 2
+MAX_RECENT_TURNS = 2
+CLOSE_ACKNOWLEDGEMENTS = {"嗯", "嗯嗯", "哦", "噢", "好", "好的", "好呀", "知道了", "懂了", "明白了"}
+CLOSE_REQUESTS = {"继续看吧", "继续读吧", "往下看吧", "翻页吧", "下一页吧", "这页看完了"}
+CLOSE_REPLIES = {
+    "AGE_3_4": "好呀，我们接着看故事吧！",
+    "AGE_4_5": "这一页先聊到这儿，我们接着看吧！",
+    "AGE_5_6": "我们把这个想法留着，接着看看故事怎么发展吧！",
+}
 ANSWER_FOLLOWUPS = {
     "AGE_3_4": ("你能指给我看吗？", "你还看到了什么？"),
     "AGE_4_5": ("是什么让你这样想的呢？", "你还发现了什么线索？"),
@@ -106,6 +115,21 @@ class AnswerReplyPlan(BaseModel):
 class CoReadingChoice(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     candidateId: int = Field(ge=1, le=8)
+
+
+@dataclass(frozen=True)
+class RecentReadingTurn:
+    question: str
+    answer: str
+    reply: str
+
+
+def close_reading_reply(answer: str, age_band: str | None, *, question_answered: bool) -> str | None:
+    key = unicodedata.normalize("NFKC", answer).strip(" ，。！？,.!?~～")
+    request = re.sub(r"^(?:嗯嗯?|好(?:的|呀)?)[, ]*", "", key).removeprefix("我们")
+    if request in CLOSE_REQUESTS or (question_answered and key in CLOSE_ACKNOWLEDGEMENTS):
+        return CLOSE_REPLIES.get(age_band, CLOSE_REPLIES["AGE_3_4"])
+    return None
 
 
 def answer_is_unsafe(answer: str) -> bool:
@@ -260,6 +284,9 @@ def _actions(text: str, *, scoped_actor: str = "") -> list[AnswerAction]:
             verb = ACTION_ALIASES[match[0]]
             object_phrase = before.partition("把")[2] if "把" in before else after
             object_phrase = OBJECT_LEAD.sub("", object_phrase.strip()).rstrip("呀啊哦呢啦吧了")
+            colored_object = re.match(COLOR_MODIFIER + rf"(?={OBJECT_WORD.pattern})", object_phrase)
+            if colored_object:
+                object_phrase = object_phrase[colored_object.end():]
             target = OBJECT_WORD.search(match[0]) or OBJECT_WORD.match(object_phrase)
             target_text = target[0] if target else ""
             if verb in OBJECT_REQUIRED_ACTIONS and object_phrase not in ("", "它", "这个", "那个") and not target:
@@ -537,6 +564,21 @@ def _answer_signals(answer: str, page: str, question: str) -> AnswerSignals:
     return AnswerSignals(stance, actions, evidence, order_conflict, causal, unverified_detail, evidence_page, color_cue, bool(actor))
 
 
+def _spoken_answer(answer: str, question: str, page: str) -> str:
+    answer = unicodedata.normalize("NFKC", answer)
+    if (re.fullmatch(r"伞伞[呀啊哦呢啦]?[。！.!]?", answer.strip())
+            and re.search(r"(?:打开|撑开|拿起)了?什么[？?]$", question)):
+        asked = _actions(question)
+        if len(asked) == 1 and asked[0].actor:
+            action = asked[0]
+            targets = {match.target for match in _actions(DIRECT_SPEECH.sub("。", page))
+                       if match.actor == action.actor and match.verb == action.verb
+                       and not (match.hypothetical or match.negated or match.near_miss)}
+            if targets == {"雨伞"}:
+                return action.actor + action.verb + "雨伞"
+    return answer
+
+
 def _answer_page(text: str, limit: int = ANSWER_PAGE_CHARS) -> str:
     # Keep sentence and clause boundaries so unrelated facts cannot form a causal claim.
     page = text[:limit]
@@ -558,13 +600,17 @@ def _answer_page(text: str, limit: int = ANSWER_PAGE_CHARS) -> str:
     return "".join(parts)
 
 
-def reply_to_child_answer(page_text: str, confirmed_answer: str, question: str = "") -> str:
+def reply_to_child_answer(page_text: str, confirmed_answer: str, question: str = "", *,
+                          age_band: str | None = None, question_answered: bool = False) -> str:
     answer = unicodedata.normalize("NFKC", confirmed_answer)
     if answer_is_unsafe(answer):
         return HANDOFF
+    if closing := close_reading_reply(answer, age_band, question_answered=question_answered):
+        return closing
     if not any(char.isalnum() for char in answer):
         return "收到你的表情啦！试着用一句话说说你在图里看到了什么。"
     page = _answer_page(page_text)
+    answer = _spoken_answer(answer, question, page)
     signals = _answer_signals(answer, page, question)
     return _rule_reply(question, _answer_cue(answer, signals), signals)
 
@@ -649,12 +695,84 @@ def _question_key(text: str) -> str:
     return key
 
 
-def _visit_questions(previous: str, seen: Sequence[str]) -> set[str]:
-    return {_question_key(question) for question in (*seen, previous) if question.strip()}
+_QUESTION_FAMILIES = (
+    ("LIFE_CONNECTION", "LIFE", r"生活里|生活中|遇到类似情况"),
+    ("IMAGINATION", "COUNTERFACTUAL", r"如果(?:换种办法|你是)"),
+    ("IMAGINATION", "PREDICTION", r"猜.*(?:接下来|下一页|会发生)|(?:接下来|下一页).*(?:可能|会)"),
+    ("EMOTION", "FEELING", r"心情|表情|感受|什么感觉|开不开心"),
+    ("CAUSAL", "CAUSE", r"为什么|为何|怎么会|什么让"),
+    ("OBSERVATION", "EVIDENCE", r"看出来|发现了什么线索|线索能支持|从哪里看出"),
+    ("PLOT", "ACTION", r"做(?:了)?什么|在做什么|发生了什么"),
+    ("OBSERVATION", "COLOR", r"什么颜色|哪种颜色"),
+    ("OBSERVATION", "COUNT", r"几个|多少"),
+    ("OBSERVATION", "LOCATION", r"哪里|哪儿|在哪"),
+    ("OBSERVATION", "WHO", r"谁|画面里的角色"),
+    ("OBSERVATION", "FIND", r"指给我看|指一指|找到"),
+    ("OBSERVATION", "SCAN", r"看(?:见|到)了?什么|发现了?什么|画面.*有什么|图里.*有什么"),
+)
+
+
+def _question_signature(text: str) -> tuple[str, str, str]:
+    if CONTEXT_QUESTION.fullmatch(text):
+        return "PLOT", "CONNECT", _question_key(text)
+    anchor, _, body = text.rpartition("”时，")
+    body = unicodedata.normalize("NFKC", body)
+    for intent, family, cue in _QUESTION_FAMILIES:
+        if re.search(cue, body):
+            # A broad scan or retelling doesn't become a new question by changing
+            # the quoted sentence. Concrete prompts can still change target.
+            if family in {"EVIDENCE", "COLOR", "COUNT", "LOCATION", "WHO", "FIND", "CAUSE", "FEELING", "ACTION"}:
+                explicit_focus = tuple(OBJECT_WORD.findall(body)) + tuple(ACTOR_WORD.findall(body))
+                focus = "".join(OBJECT_ALIASES.get(name, ACTOR_ALIASES.get(name, name))
+                                for name in explicit_focus)
+                if not focus and family in {"COLOR", "COUNT", "LOCATION", "FIND"}:
+                    # Keep named visual details not in the story's small noun vocabulary.
+                    focus = _question_key(re.sub(cue, "", body))
+                if not focus and family in {"CAUSE", "FEELING"}:
+                    focus = _question_key(anchor.removeprefix('读到“'))
+                if not focus and family == "ACTION":
+                    focus = "".join(action.verb + action.target + action.actor for action in _actions(anchor))
+                if family == "CAUSE":
+                    cause_effect = anchor.removeprefix('读到“') if anchor else re.sub(cue, "", body, count=1)
+                    actions = _actions(cause_effect)
+                    if actions:
+                        focus = "".join(action.verb + action.target + action.actor for action in actions)
+                return intent, family, focus
+            return intent, family, ""
+    return "", "", _question_key(text)
+
+
+def _question_repeats(text: str, seen: set[tuple[str, str, str]]) -> bool:
+    return _question_signature(text) in seen
+
+
+def _visit_questions(previous: str, seen: Sequence[str]) -> set[tuple[str, str, str]]:
+    return {_question_signature(question) for question in (*seen, previous) if question.strip()}
+
+
+def _safe_recent_turns(page: str, turns: Sequence[RecentReadingTurn]) -> list[dict[str, str]]:
+    summary = []
+    for turn in turns[-MAX_RECENT_TURNS:]:
+        if not turn.question or not turn.answer or answer_is_unsafe(turn.question) or answer_is_unsafe(turn.answer):
+            continue
+        intent, _, _ = _question_signature(turn.question)
+        answer = _spoken_answer(turn.answer, turn.question, page)
+        signals = _answer_signals(answer, page, turn.question)
+        ground = _answer_cue(answer, signals) if signals.supports_page_reply else None
+        turn_state = ("有当页线索" if ground else "想象" if signals.stance == "推测"
+                      else "不确定" if signals.stance == "不确定" else "待核对")
+        item = {"问题意图": intent or "OTHER", "作答状态": turn_state}
+        if ground and not answer_is_unsafe(ground):
+            item["当页线索"] = ground
+        if turn.reply in CLOSE_REPLIES.values():
+            item["回应方式"] = "CLOSE"
+        summary.append(item)
+    return summary
 
 
 def _intent_questions(
-    page: str, clue: str | None, age_band: str | None, seen: set[str], *, simpler: bool = False,
+    page: str, clue: str | None, age_band: str | None, seen: set[tuple[str, str, str]], *, simpler: bool = False,
+    specific: bool = False,
 ) -> list[tuple[str, str]]:
     anchor = (clue or "").removesuffix("…")
     if not (anchor and anchor in page and not answer_is_unsafe(anchor)):
@@ -663,6 +781,11 @@ def _intent_questions(
         return []
 
     anchors = {"OBSERVATION": anchor, "PLOT": anchor}
+    if simpler:
+        return [(intent, text) for intent, text in (
+            ("OBSERVATION", f"读到“{anchor}”时，你能指一指画面里的角色吗？"),
+            ("OBSERVATION", f"读到“{anchor}”时，你看见了什么？"),
+        ) if not _question_repeats(text, seen)]
     if age_band in ("AGE_4_5", "AGE_5_6") and not simpler:
         for sentence in re.split(r"[。！？；.!?;]", page):
             parts = _causal_parts(sentence)
@@ -678,12 +801,15 @@ def _intent_questions(
             anchors["EMOTION"] = emotion_anchor
         if age_band == "AGE_5_6":
             anchors.update(IMAGINATION=anchor, LIFE_CONNECTION=anchor)
-    candidates = [(intent, f"读到“{evidence}”时，{INTERACTION_QUESTIONS[intent]}") for intent, evidence in anchors.items()]
-    candidates = [(intent, question) for intent, question in candidates if _question_key(question) not in seen]
+    candidates = [
+        (intent, f"为什么{evidence}？" if intent == "CAUSAL" and specific
+         else f"读到“{evidence}”时，{INTERACTION_QUESTIONS[intent]}")
+        for intent, evidence in anchors.items()
+    ]
+    candidates = [(intent, question) for intent, question in candidates if not _question_repeats(question, seen)]
     # Keep the strongest local anchor, but prefer an unused kind of question over a cosmetic rewording.
-    return sorted(candidates, key=lambda item: any(
-        key.endswith(_question_key(INTERACTION_QUESTIONS[item[0]])) for key in seen
-    ))
+    used_intents = {intent for intent, _, _ in seen}
+    return sorted(candidates, key=lambda item: item[0] in used_intents)
 
 
 def _safe_answer_knowledge(items: Sequence[KnowledgeItem]) -> list[KnowledgeItem]:
@@ -693,7 +819,8 @@ def _safe_answer_knowledge(items: Sequence[KnowledgeItem]) -> list[KnowledgeItem
 
 
 def _answer_choices(
-    replies: dict[str, str], signals: AnswerSignals, questions: list[tuple[str, str]], prior_reply: str, question: str,
+    replies: dict[str, str], signals: AnswerSignals, questions: list[tuple[str, str]], prior_reply: str,
+    *, imagination: bool, closing: str = "",
 ) -> dict[int, tuple[str, str, str, str]]:
     styles = []
     for category, strategy in (("RELEVANT", "AFFIRM"), ("PARTIAL", "EXTEND"), ("UNCERTAIN", "ENCOURAGE"),
@@ -705,7 +832,6 @@ def _answer_choices(
     prior = _question_key(prior_reply[:200]) if not answer_is_unsafe(prior_reply) else ""
     styles.sort(key=lambda item: bool(prior and prior.startswith(_question_key(item[1]))))
     candidates = []
-    imagination = signals.stance == "推测" or bool(re.search(r"猜|想象|可能|如果", question))
     for intent, followup in questions:
         if intent == "IMAGINATION" and imagination:
             strategy, reply = "IMAGINE", "我们先把它当成一个猜想。"
@@ -714,6 +840,10 @@ def _answer_choices(
         else:
             strategy, reply = styles[len(candidates) % len(styles)]
         candidates.append((intent, strategy, reply, followup))
+    if closing:
+        candidates.insert(min(len(candidates), 6), ("", "CLOSE", closing, ""))
+    if imagination and not any(strategy == "IMAGINE" for _, strategy, _, _ in candidates):
+        candidates.append(("", "IMAGINE", "我们先把它当成一个猜想。", ""))
     candidates.extend(("", strategy, reply, "") for strategy, reply in styles)
     return dict(enumerate(candidates[:8], 1))
 
@@ -721,13 +851,17 @@ def _answer_choices(
 async def generate_answer_reply(model: ModelAdapter, *, page_text: str, question: str, answer: str,
                                 age_band: str, topics: list[str], title: str, page_number: int,
                                 earlier_pages: list[str], used_followups: list[str], seen_questions: Sequence[str] = (),
-                                prior_reply: str = "") -> tuple[str, str] | None:
+                                prior_reply: str = "", recent_turns: Sequence[RecentReadingTurn] = (),
+                                ) -> tuple[str, str] | None:
     """Let the model select a bounded response. Only server-rendered text reaches the reader."""
     if answer_is_unsafe(answer) or not question or not any(char.isalnum() for char in answer):
         return None
+    question_answered = bool(recent_turns and recent_turns[-1].question == question)
+    if closing := close_reading_reply(answer, age_band, question_answered=question_answered):
+        return closing, ""
     page = _answer_page(page_text)
     has_page_facts = any(page_clauses(page))
-    normalized_answer = unicodedata.normalize("NFKC", answer)
+    normalized_answer = _spoken_answer(answer, question, page)
     signals = _answer_signals(normalized_answer, page, question)
     clue = _answer_cue(normalized_answer, signals)
     fallback = _rule_reply(question, clue, signals)
@@ -743,13 +877,21 @@ async def generate_answer_reply(model: ModelAdapter, *, page_text: str, question
     elif has_page_facts and signals.stance == "未明确" and not signals.actions:
         replies["OFF_TOPIC"] = ANSWER_REPLY_TEXT["OFF_TOPIC"][variant]
 
-    choices = ANSWER_FOLLOWUPS.get(age_band, ANSWER_FOLLOWUPS["AGE_3_4"])
+    recent = _safe_recent_turns(page, recent_turns)
+    simpler = signals.stance == "不确定"
+    choices = ANSWER_FOLLOWUPS["AGE_3_4"] if simpler else ANSWER_FOLLOWUPS.get(age_band, ANSWER_FOLLOWUPS["AGE_3_4"])
     remaining = max(MAX_ANSWER_FOLLOWUPS - len(used_followups), 0)
     visited_questions = _visit_questions(question, (*seen_questions, *used_followups))
-    followups = [item for item in choices if _question_key(item) not in visited_questions][:remaining] if has_page_facts else []
-    questions = (_intent_questions(page, clue, age_band, visited_questions, simpler=signals.stance == "不确定")
+    followups = [item for item in choices if not _question_repeats(item, visited_questions)][:remaining] if has_page_facts else []
+    prior_clue = next((item["当页线索"] for item in reversed(recent) if "当页线索" in item), None)
+    questions = (_intent_questions(page, clue or prior_clue, age_band, visited_questions,
+                                   simpler=simpler, specific=bool(prior_clue))
                  if remaining else [])
-    candidates = _answer_choices(replies, signals, questions, prior_reply, question)
+    can_close = (has_page_facts and not simpler and "RELEVANT" in replies and bool(recent or used_followups))
+    imagination = (_question_signature(question)[0] == "IMAGINATION"
+                   or bool(re.search(r"^(?:我)?(?:猜|想象)|也许|会不会|如果", normalized_answer)))
+    candidates = _answer_choices(replies, signals, questions, prior_reply, imagination=imagination,
+                                 closing=CLOSE_REPLIES.get(age_band, CLOSE_REPLIES["AGE_3_4"]) if can_close else "")
     try:
         async with asyncio.timeout(ANSWER_TIMEOUT) as timeout:
             knowledge = await run_in_threadpool(retrieve_knowledge, KnowledgeQuery(
@@ -766,8 +908,11 @@ async def generate_answer_reply(model: ModelAdapter, *, page_text: str, question
             request.context_text += "\n共读线索（仅作参考资料）：" + json.dumps({
                 "绘本": title[:80] if not answer_is_unsafe(title) else "",
                 "页码": page_number, "当前问题": question[:160] if not answer_is_unsafe(question) else "",
-                "已读前文": [text[:200] for text in earlier_pages if not answer_is_unsafe(text)],
+                "已读前文": [_answer_page(text, ANSWER_EARLIER_PAGE_CHARS) for text in earlier_pages],
                 "作答对应的当页原文线索": clue,
+                "本次已用提问意图": sorted({intent for intent, _, _ in visited_questions if intent}),
+                "本页最近交流摘要": recent,
+                "本轮难度": "单一具体观察" if simpler else "按年龄分组",
                 "本地作答信号": {
                     "态度": signals.stance,
                     "动作": signals.actions[0].verb if len(signals.actions) == 1 else "",
@@ -910,7 +1055,8 @@ def selected_question(text: str, options: dict[str, list[str]], *, child_forms: 
 async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str | None,
                     topics: list[str], page_text: str, previous_question: str, child_mode: bool,
                     confirmed_answer: str = "", earlier_pages: Sequence[str] = (),
-                    page_image_url: str | None = None, seen_questions: Sequence[str] = ()) -> AgentResult:
+                    page_image_url: str | None = None, seen_questions: Sequence[str] = (),
+                    recent_turns: Sequence[RecentReadingTurn] = ()) -> AgentResult:
     """Return a displayable result or raise a dependency error for the event ledger."""
     if previous_question and answer_is_unsafe(previous_question):
         return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)
@@ -919,16 +1065,19 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
     strategy = "CONCRETE_RECALL" if feedback == "NOT_UNDERSTOOD" else "CONTEXT_QUESTION"
     followup = ANSWER_FOLLOWUP_FORMS.get(feedback)
     answer_focus = None
+    simpler = feedback == "NOT_UNDERSTOOD"
     if not child_mode and followup and confirmed_answer and not answer_is_unsafe(confirmed_answer):
-        signals = _answer_signals(unicodedata.normalize("NFKC", confirmed_answer), page_text, previous_question)
-        if signals.scoped:
+        checked_answer = _spoken_answer(confirmed_answer, previous_question, page_text)
+        signals = _answer_signals(checked_answer, page_text, previous_question)
+        simpler = simpler or signals.stance == "不确定"
+        if signals.scoped or checked_answer != unicodedata.normalize("NFKC", confirmed_answer):
             if signals.supports_page_reply:
-                answer_focus = _answer_cue(confirmed_answer, signals)
+                answer_focus = _answer_cue(checked_answer, signals)
         else:
             answer_focus = matching_answer_excerpt(page_text, confirmed_answer)
     grounded_followup = f"读到“{answer_focus}”时，{followup}" if answer_focus else None
     visited_questions = _visit_questions(previous_question, seen_questions) if not child_mode else set()
-    if grounded_followup and _question_key(grounded_followup) in visited_questions:
+    if grounded_followup and _question_repeats(grounded_followup, visited_questions):
         grounded_followup = None
     knowledge = retrieve_knowledge(KnowledgeQuery(age_band=age_band, topics=topics,
                                                   task_type="GUIDANCE", query_text=page_text))
@@ -937,7 +1086,7 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
         if grounded_followup:
             return AgentResult(status="GENERATED", outputText=grounded_followup, strategyType=strategy)
         question = "你喜欢这一页吗？" if child_mode else "这个故事里，你最喜欢谁呀？"
-        if _question_key(question) in visited_questions:
+        if _question_repeats(question, visited_questions):
             question = ""
         return AgentResult(status="FALLBACK", strategyType="NO_KNOWLEDGE_FALLBACK", outputText=question)
 
@@ -949,13 +1098,14 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
     candidates = [option for group in options.values() for option in group]
     if grounded_followup:
         candidates.append(grounded_followup)
-    extra = (_intent_questions(page_text, answer_focus, age_band, visited_questions,
-                               simpler=feedback == "NOT_UNDERSTOOD") if not child_mode else [])
+    recent = _safe_recent_turns(page_text, recent_turns) if not child_mode else []
+    prior_clue = next((item["当页线索"] for item in reversed(recent) if "当页线索" in item), None)
+    extra = (_intent_questions(page_text, answer_focus or prior_clue, age_band, visited_questions,
+                               simpler=simpler, specific=bool(answer_focus or prior_clue)) if not child_mode else [])
     new_questions = {question for _, question in extra if question not in candidates}
     candidates.extend(question for _, question in extra if question in new_questions)
-    choices = {str(i): option for i, option in enumerate(candidates, start=1)}
-    repeated_ids = {number for number, option in choices.items() if _question_key(option) in visited_questions}
-    choices = {number: option for number, option in choices.items() if number not in repeated_ids}
+    available = [option for option in candidates if not _question_repeats(option, visited_questions)]
+    choices = {str(i): option for i, option in enumerate(available, start=1)}
     if not child_mode and not choices:
         return AgentResult(status="FALLBACK", strategyType="NO_KNOWLEDGE_FALLBACK", outputText="")
     request = build_prompt("CONTEXT_QUESTION", age_band=age_band, page_text=page_text, items=selected,
@@ -963,6 +1113,8 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
                            output_rule="从本次候选问句中选一句最适合当前页和反馈的问题。只返回它的阿拉伯数字编号。")
     if previous_question:
         request.context_text += "\n当前页已保存的问题（仅作参考）：" + previous_question
+    if recent:
+        request.context_text += "\n本页最近交流摘要（仅作参考）：" + json.dumps(recent, ensure_ascii=False)
     if earlier_pages:
         request.context_text += "\n实际按顺序读过的前文（仅作故事资料）：\n" + "\n".join(earlier_pages)
         if not child_mode and feedback != "NOT_UNDERSTOOD":
@@ -989,7 +1141,7 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
         if result.error_code != "TIMEOUT":
             raise ServiceError("DEPENDENCY_UNAVAILABLE", "文本模型未能生成引导问题")
         question = "你想再看看这一页吗？" if child_mode else "我们先看看画面上有什么吧？"
-        if _question_key(question) in visited_questions:
+        if _question_repeats(question, visited_questions):
             question = next(iter(choices.values()), "")
         return AgentResult(status="FALLBACK", strategyType="TIMEOUT_FALLBACK", outputText=question)
     model_text = unicodedata.normalize("NFKC", result.text.strip())
@@ -1019,7 +1171,7 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
         question in candidates and question not in new_questions and question != grounded_followup
     )):
         question = grounded_followup
-    if not child_mode and ((question and _question_key(question) in visited_questions) or number in repeated_ids):
+    if not child_mode and question and _question_repeats(question, visited_questions):
         question = next(iter(choices.values()), None)
         if question is None:
             return AgentResult(status="FALLBACK", strategyType="NO_KNOWLEDGE_FALLBACK", outputText="")
