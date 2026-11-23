@@ -1845,8 +1845,15 @@ function appendReadingInteraction(operation, result) {
       pageNumber: operation.payload.pageNumber,
       inputText: operation.payload.inputText,
       replyText: result.replyText,
+      ...(result.followupQuestion ? { followupQuestion: result.followupQuestion } : {}),
     }
-    session.revision = result.revision
+    session.revision = Math.max(session.revision, result.revision)
+    if (state.currentEvents.some(item => item.interactionEventId === event.interactionEventId)) {
+      state.currentEvents = state.currentEvents.map(item => item.interactionEventId === event.interactionEventId
+        ? { ...item, ...event }
+        : item)
+      return
+    }
   } else if (operation.kind === 'branch') {
     event = {
       interactionEventId: result.interactionEventId,
@@ -1888,7 +1895,7 @@ async function writeReading(operation) {
   // User writes supersede an automatic prompt. The server arbitrates via expectedRevision.
   activeInitialGuidance = initial ? operation : null
   if (!initial) state.sessionBusy = true
-  const isCurrent = () => sameReading(operation, epoch, generation) && (!initial || (
+  const isCurrent = () => routeHash === location.hash && sameReading(operation, epoch, generation) && (!initial || (
     activeInitialGuidance === operation && state.currentSession.status === 'IN_PROGRESS'
     && state.currentSession.currentPage === operation.payload.pageNumber
     && state.currentSession.revision === operation.payload.expectedRevision
@@ -1907,7 +1914,9 @@ async function writeReading(operation) {
         ? '已生成本页共读问题'
         : feedback === 'SKIPPED'
           ? '已跳过本页提问'
-          : '已根据理解程度换一个引导问题')
+          : result.outputText?.trim()
+            ? '已根据理解程度换一个引导问题'
+            : '已记录理解反馈，保留当前问题')
     } else if (operation.kind === 'ask') {
       appendReadingInteraction(operation, result)
       setToast('已保存本页问答')
@@ -1919,6 +1928,10 @@ async function writeReading(operation) {
       setToast(`已进入第 ${result.currentPage} 页的故事分支`)
     } else {
       const session = state.currentSession
+      // Keep the visit boundary in the same order as API-013 snapshots.
+      if (result.interactionEventId) state.currentEvents = [...state.currentEvents, {
+        interactionEventId: result.interactionEventId, eventType: operation.payload.eventType, pageNumber: operation.payload.pageNumber,
+      }]
       session.currentPage = operation.payload.pageNumber
       session.visitedPageNumbers = [...session.visitedPageNumbers, operation.payload.pageNumber]
       session.status = 'IN_PROGRESS'
@@ -1930,7 +1943,9 @@ async function writeReading(operation) {
   } catch (error) {
     if (!isCurrent()) return false
     const terminalUnknown = error.status === 504 && error.code === 'REQUEST_OUTCOME_UNKNOWN'
-    const retrySameKey = error.status === 0 || error.code === 'REQUEST_IN_PROGRESS' || (error.status === 504 && !terminalUnknown)
+    const answerMayBeSaved = operation.kind === 'answer' && error.status === 503 && error.retryable
+    const retrySameKey = error.status === 0 || error.code === 'REQUEST_IN_PROGRESS'
+      || (error.status === 504 && !terminalUnknown) || answerMayBeSaved
     pendingReading = retrySameKey ? { ...operation, retryAt: Date.now() + (Number(error.retryAfter) || 1) * 1000 } : null
     state.readingSyncRequired = retrySameKey || terminalUnknown || error.status === 409
     if (state.readingSyncRequired) {
@@ -1938,7 +1953,8 @@ async function writeReading(operation) {
         const detail = await getReadingSession(operation.sessionId)
         if (!isCurrent()) return false
         applyReadingDetail(detail)
-        if (!pendingReading || detail.session.revision !== operation.payload.expectedRevision) {
+        // An answer advances the revision before its reply is ready. Replay its original key after readback.
+        if (!pendingReading || (operation.kind !== 'answer' && detail.session.revision !== operation.payload.expectedRevision)) {
           pendingReading = null
           state.readingSyncRequired = false
         }
@@ -1974,17 +1990,21 @@ async function refreshReading() {
   const epoch = authEpoch
   const generation = readingEpoch
   const target = { sessionId: session.readingSessionId }
+  const routeHash = location.hash
+  const isCurrent = () => routeHash === location.hash && sameReading(target, epoch, generation)
   state.sessionBusy = true
   try {
     const detail = await getReadingSession(target.sessionId)
-    if (!sameReading(target, epoch, generation)) return false
+    if (!isCurrent()) return false
     if (session.status === 'FINISHED' && !state.readingSyncRequired) {
       state.currentReport = detail.report
       return true
     }
     applyReadingDetail(detail)
     const operation = pendingReading
-    if (operation && ['CREATED', 'IN_PROGRESS'].includes(detail.session.status) && detail.session.revision === operation.payload.expectedRevision) {
+    if (operation && (operation.kind === 'answer' || (
+      ['CREATED', 'IN_PROGRESS'].includes(detail.session.status) && detail.session.revision === operation.payload.expectedRevision
+    ))) {
       if (Date.now() < operation.retryAt) {
         setToast('原请求仍在处理，请稍后再次确认。', 'error')
         return false
@@ -1996,7 +2016,7 @@ async function refreshReading() {
     state.readingSyncRequired = false
     return true
   } catch (error) {
-    if (sameReading(target, epoch, generation)) setToast(describeApiError(error), 'error')
+    if (isCurrent()) setToast(describeApiError(error), 'error')
     return false
   } finally {
     if (sameReading(target, epoch, generation)) state.sessionBusy = false

@@ -11,6 +11,7 @@ from uuid import uuid4
 from fastapi import APIRouter, BackgroundTasks, Path, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from starlette.concurrency import run_in_threadpool
 
 from app.api.v1.auth import (
     Principal,
@@ -31,7 +32,7 @@ from app.services.reading_reports import (
     session_read_pages,
 )
 from app.services.story_media import MediaDependencyError, ensure_opening_media
-from app.services.reading_agent import reply_to_child_answer
+from app.services.reading_agent import MAX_ANSWER_FOLLOWUPS, answer_is_unsafe, generate_answer_reply, reply_to_child_answer
 
 router = APIRouter(prefix="/api/v1/reading-sessions")
 MAX_ID = 9007199254740991
@@ -109,19 +110,62 @@ class ModeSettings(BaseModel):
     timeLimitSeconds: int = Field(ge=60, le=1800, strict=True)
 
 
-def current_question(db: sqlite3.Connection, session: sqlite3.Row) -> sqlite3.Row | None:
+def current_question(db: sqlite3.Connection, session: sqlite3.Row, *, after_id: int = 0) -> sqlite3.Row | None:
     questions = db.execute(
-        """SELECT output_text, response_json FROM interaction_events
-           WHERE session_id = ? AND version_id = ? AND page_no = ?
+        """SELECT id, event_type, output_text, response_json FROM interaction_events
+           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ?
              AND (event_type = 'QUESTION' OR
                   (event_type = 'FEEDBACK' AND feedback IN ('UNDERSTOOD', 'NOT_UNDERSTOOD')))
              AND result_status IN ('SUCCESS', 'FALLBACK') AND output_text IS NOT NULL
              AND COALESCE(strategy_type, json_extract(response_json, '$.data.strategyType'), '')
                  NOT IN ('SKIP', 'SAFETY_BLOCK')
            ORDER BY id DESC""",
-        (session["id"], session["version_id"], session["current_page_no"]),
+        (session["id"], session["version_id"], session["current_page_no"], after_id),
     )
     return next((question for question in questions if question["output_text"].strip()), None)
+
+
+def current_page_arrival_id(db: sqlite3.Connection, session: sqlite3.Row) -> int:
+    # BRANCH_CHOSEN is recorded on the source page, so the boundary is the latest
+    # successful arrival event in this session/version, not the latest one on this page.
+    return db.execute(
+        """SELECT COALESCE(MAX(id), 0) FROM interaction_events WHERE session_id = ? AND version_id = ?
+           AND event_type IN ('STARTED', 'PAGE_CHANGED', 'BRANCH_CHOSEN') AND result_status = 'SUCCESS'""",
+        (session["id"], session["version_id"]),
+    ).fetchone()[0]
+
+
+def current_parent_question(
+    db: sqlite3.Connection, session: sqlite3.Row, *, arrival_id: int | None = None,
+) -> sqlite3.Row | None:
+    if arrival_id is None:
+        arrival_id = current_page_arrival_id(db, session)
+    question = current_question(db, session, after_id=arrival_id)
+    # An answer without a follow-up does not replace an already-emitted question.
+    followups = db.execute(
+        """SELECT id, event_type, output_text FROM interaction_events
+           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ?
+           AND event_type = 'ANSWER' AND result_status = 'SUCCESS' AND output_text IS NOT NULL
+           ORDER BY id DESC""",
+        (session["id"], session["version_id"], session["current_page_no"], question["id"] if question else arrival_id),
+    )
+    return next((followup for followup in followups if followup["output_text"].strip()), question)
+
+
+def parent_visit_questions(db, session, arrival_id: int) -> tuple[str, ...]:
+    # The full local exclusion list is not included in the model prompt.
+    questions = db.execute(
+        """SELECT output_text FROM interaction_events
+           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ? AND output_text IS NOT NULL
+             AND ((event_type = 'ANSWER' AND result_status = 'SUCCESS')
+                  OR ((event_type = 'QUESTION' OR (event_type = 'FEEDBACK' AND feedback IN ('UNDERSTOOD', 'NOT_UNDERSTOOD')))
+                      AND result_status IN ('SUCCESS', 'FALLBACK')
+                      AND COALESCE(strategy_type, json_extract(response_json, '$.data.strategyType'), '')
+                          NOT IN ('SKIP', 'SAFETY_BLOCK')))
+           GROUP BY output_text ORDER BY MAX(id)""",
+        (session["id"], session["version_id"], session["current_page_no"], arrival_id),
+    )
+    return tuple(row["output_text"].strip() for row in questions if row["output_text"].strip())
 
 
 def child_answer_options(db: sqlite3.Connection, session: sqlite3.Row) -> list[str]:
@@ -349,8 +393,14 @@ def session_event_object(event: sqlite3.Row, *, include_answer: bool) -> dict:
     data = {"interactionEventId": event["id"], "eventType": event["event_type"], "pageNumber": event["page_no"]}
     if include_answer and event["event_type"] == "ANSWER" and event["input_text"] is not None:
         data["inputText"] = event["input_text"]
-        if event["saved_id"] == event["id"] and event["reply_text"]:
-            data["replyText"] = event["reply_text"]
+        if event["saved_id"] == event["id"]:
+            if event["reply_text"]:
+                data["replyText"] = event["reply_text"]
+            followup = event["followup_question"] or event["output_text"]
+            # Earlier versions stored the follow-up only in output_text and as a reply suffix.
+            if (isinstance(event["reply_text"], str) and isinstance(followup, str)
+                    and followup and event["reply_text"].endswith(followup)):
+                data["followupQuestion"] = followup
     # Only project a finalized guidance response; older rows may contain unverified text.
     if (event["event_type"] in ("QUESTION", "FEEDBACK", "ASK") and event["strategy_type"]
             and event["saved_id"] == event["id"]):
@@ -381,6 +431,7 @@ def get_session(request: Request, response: Response, session_id: int = Path(ge=
                 return error(request, 404, "RESOURCE_NOT_FOUND", "会话不可用")
             event_query = """SELECT id, event_type, page_no, feedback, input_text, output_text, strategy_type, revision_after,
                                     json_extract(response_json, '$.data.replyText') AS reply_text,
+                                    json_extract(response_json, '$.data.followupQuestion') AS followup_question,
                                     json_extract(response_json, '$.data.interactionEventId') AS saved_id
                              FROM interaction_events WHERE session_id = ?"""
             event_params = [session_id]
@@ -586,9 +637,17 @@ def replay_execution(db, request: Request, scope_type: str, scope_id: int, clien
         # An older failed response has no source ID. A matching replay supplies its verified association.
         db.execute("UPDATE request_executions SET source_reading_session_id = ? WHERE id = ?",
                    (source_session_id, previous["id"]))
-    if previous["status"] == "RUNNING":
+    status = previous["status"]
+    if status == "RUNNING":
         now = int(time.time() * 1000)
-        if previous["deadline_at"] <= now:
+        if previous["deadline_at"] > now:
+            return error(request, 409, "REQUEST_IN_PROGRESS", "请求正在处理", retryable=True, headers={"Retry-After": "1"})
+        if scope_type == "SESSION_EVENT" and previous["response_status"] == 201:
+            # API-015 already committed the answer and its rule reply before calling the model.
+            db.execute("UPDATE request_executions SET status = 'SUCCEEDED', completed_at = ? WHERE id = ?",
+                       (now, previous["id"]))
+            status = "SUCCEEDED"
+        else:
             failure = error(request, 504, "REQUEST_OUTCOME_UNKNOWN", "请求结果未知，请先查询会话")
             db.execute("""UPDATE request_executions SET status = 'UNKNOWN', completed_at = ?,
                           response_status = 504, response_body = ? WHERE scope_type = ?
@@ -596,19 +655,18 @@ def replay_execution(db, request: Request, scope_type: str, scope_id: int, clien
                           AND deadline_at <= ?""",
                        (now, failure.body.decode('utf-8'), scope_type, scope_id, client_request_id, now))
             return failure
-        return error(request, 409, "REQUEST_IN_PROGRESS", "请求正在处理", retryable=True, headers={"Retry-After": "1"})
-    if previous["status"] == "UNKNOWN":
+    if status == "UNKNOWN":
         return error(request, 504, "REQUEST_OUTCOME_UNKNOWN", "请求结果未知，请先查询会话")
-    if (previous["status"] == "SUCCEEDED" and page_version_id is not None
+    if (status == "SUCCEEDED" and page_version_id is not None
             and readable_story_version(db, principal, page_version_id) is None):
         return error(request, 404, "RESOURCE_NOT_FOUND", "绘本不可用")
     body = json.loads(previous["response_body"])
-    if previous["status"] == "SUCCEEDED" and scope_type == "SESSION_CREATE" and principal is not None:
+    if status == "SUCCEEDED" and scope_type == "SESSION_CREATE" and principal is not None:
         target = body["data"]["readingSessionId"]
         session = owned_session(db, target, principal)
         if session is None or session["created_at"] != previous["started_at"]:
             return error(request, 404, "RESOURCE_NOT_FOUND", "会话不可用")
-    if previous["status"] == "SUCCEEDED" and scope_type == "STORY_GENERATION":
+    if status == "SUCCEEDED" and scope_type == "STORY_GENERATION":
         target = body.get("data", {}).get("storyVersionId")
         if target is None or owned_generation_version(db, scope_id, target) is None:
             return error(request, 404, "RESOURCE_NOT_FOUND", "生成的绘本不可用")
@@ -617,7 +675,19 @@ def replay_execution(db, request: Request, scope_type: str, scope_id: int, clien
         if "report" in body["data"]:
             body["data"]["report"] = None
         body["data"].pop("replyText", None)
-    return JSONResponse(status_code=200 if previous["status"] == "SUCCEEDED" else previous["response_status"],
+        body["data"].pop("followupQuestion", None)
+    elif status == "SUCCEEDED" and scope_type == "SESSION_EVENT" and principal is not None and principal.role == "GUARDIAN":
+        data = body.get("data", {})
+        reply_text = data.get("replyText")
+        if isinstance(reply_text, str) and not data.get("followupQuestion"):
+            legacy = db.execute(
+                """SELECT output_text FROM interaction_events WHERE id = ? AND session_id = ? AND request_key = ?
+                   AND event_type = 'ANSWER' AND result_status = 'SUCCESS'""",
+                (data.get("interactionEventId"), scope_id, client_request_id),
+            ).fetchone()
+            if legacy and legacy["output_text"] and reply_text.endswith(legacy["output_text"]):
+                data["followupQuestion"] = legacy["output_text"]
+    return JSONResponse(status_code=200 if status == "SUCCEEDED" else previous["response_status"],
                         content=body)
 
 
@@ -632,7 +702,7 @@ def record_execution(db, owner: int, scope_type: str, scope_id: int, session_id:
          source_reading_session_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (owner, session_id, scope_type, scope_id, client_request_id, digest, status, token, now, now + 25000,
-         now, status_code, json.dumps(response, ensure_ascii=False), source_session_id))
+         None if status == "RUNNING" else now, status_code, json.dumps(response, ensure_ascii=False), source_session_id))
     return token
 
 
@@ -666,7 +736,22 @@ def fail_session_event(db, request: Request, owner: int, session_id: int, client
 
 
 @router.post("/{session_id}/events", status_code=201)
-def add_reading_event(payload: ReadingEvent, request: Request, session_id: int = Path(ge=1, le=MAX_ID)):
+async def add_reading_event(payload: ReadingEvent, request: Request, session_id: int = Path(ge=1, le=MAX_ID)):
+    model = getattr(request.app.state, "model_adapter", None)
+    saved = await run_in_threadpool(save_reading_event, request, session_id, payload, model is not None)
+    if isinstance(saved, JSONResponse):
+        return saved
+    response, token, context = saved
+    reply = await generate_answer_reply(model, **context)
+    for _ in range(2):
+        try:
+            return await run_in_threadpool(finalize_answer_reply, request, session_id, payload, response, token, reply)
+        except sqlite3.Error:
+            continue
+    return error(request, 503, "DEPENDENCY_UNAVAILABLE", "回答已保存，请核对会话进度", retryable=True)
+
+
+def save_reading_event(request: Request, session_id: int, payload: ReadingEvent, model_available: bool):
     digest = request_digest(f"/api/v1/reading-sessions/{session_id}/events", payload.model_dump(exclude_none=True))
     try:
         with authorized_db(request, write=True) as (db, principal, failure):
@@ -704,12 +789,19 @@ def add_reading_event(payload: ReadingEvent, request: Request, session_id: int =
             else:  # FEEDBACK
                 valid = row["status"] == "IN_PROGRESS" and payload.pageNumber == row["current_page_no"]
                 next_page_no = row["current_page_no"]
-                if valid and current_question(db, row) is None:
-                    return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
-                                              digest, 409, "PROMPT_REQUIRED", "当前页尚未有引导问题，无法提交反馈")
+                if valid:
+                    question = (current_parent_question(db, row)
+                                if principal.role == "GUARDIAN" and row["mode"] == "PARENT_CHILD"
+                                else current_question(db, row))
+                    if question is None:
+                        return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
+                                                  digest, 409, "PROMPT_REQUIRED", "当前页尚未有引导问题，无法提交反馈")
             if not valid:
                 return fail_session_event(db, request, principal.guardian_id, session_id, payload.clientEventId,
                                           digest, 409, "SESSION_CONFLICT", "当前状态或页面不允许此操作")
+            context = None
+            if payload.eventType == "ANSWER" and principal.role == "GUARDIAN" and row["mode"] == "PARENT_CHILD":
+                context = answer_context(db, row, payload.inputText)
             revision = row["revision"] + 1
             db.execute("""UPDATE reading_sessions SET status = 'IN_PROGRESS', current_page_no = ?,
                        started_at = COALESCE(started_at, ?), revision = ?, visited_pages_json = ? WHERE id = ?""",
@@ -721,21 +813,106 @@ def add_reading_event(payload: ReadingEvent, request: Request, session_id: int =
                 (session_id, row["version_id"], payload.clientEventId, digest, payload.pageNumber,
                  payload.eventType, payload.feedback, payload.inputText, revision, now))
             response = {"data": {"interactionEventId": cursor.lastrowid, "revision": revision}, "requestId": request.state.request_id}
-            if payload.eventType == "ANSWER" and principal.role == "GUARDIAN" and row["mode"] == "PARENT_CHILD":
-                page_text = db.execute(
-                    "SELECT body_text FROM story_pages WHERE version_id = ? AND page_no = ?",
-                    (row["version_id"], payload.pageNumber),
-                ).fetchone()
-                question = current_question(db, row)
+            if context is not None:
                 response["data"]["replyText"] = reply_to_child_answer(
-                    page_text[0] if page_text else "", payload.inputText, question["output_text"] if question else "",
+                    context["page_text"], payload.inputText, context["question"],
                 )
+                if not model_available or not context["question"] or answer_is_unsafe(payload.inputText) or not any(
+                    char.isalnum() for char in payload.inputText
+                ):
+                    context = None
             db.execute("UPDATE interaction_events SET response_json = ? WHERE id = ?",
                        (json.dumps(response, ensure_ascii=False), cursor.lastrowid))
-            record_session_event(db, principal.guardian_id, session_id, payload.clientEventId, digest, now, 201, response)
+            token = record_session_event(db, principal.guardian_id, session_id, payload.clientEventId, digest, now,
+                                         201, response, status="RUNNING" if context is not None else "SUCCEEDED")
+            if context is not None:
+                return response, token, context
             return JSONResponse(status_code=201, content=response)
     except sqlite3.Error:
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用")
+
+
+def answer_context(db, session, answer: str) -> dict:
+    page = db.execute(
+        """SELECT p.body_text, v.title, v.topics_json, c.age_band FROM story_pages p
+           JOIN story_versions v ON v.id = p.version_id JOIN child_profiles c ON c.id = ?
+           WHERE p.version_id = ? AND p.page_no = ?""",
+        (session["profile_id"], session["version_id"], session["current_page_no"]),
+    ).fetchone()
+    arrival_id = current_page_arrival_id(db, session)
+    question = current_parent_question(db, session, arrival_id=arrival_id)
+    followups = db.execute(
+        """SELECT TRIM(output_text) AS question FROM interaction_events WHERE session_id = ? AND version_id = ? AND page_no = ?
+           AND event_type = 'ANSWER' AND result_status = 'SUCCESS' AND id > ?
+           AND NULLIF(TRIM(output_text), '') IS NOT NULL
+           GROUP BY TRIM(output_text) ORDER BY MAX(id) DESC LIMIT ?""",
+        (session["id"], session["version_id"], session["current_page_no"], arrival_id, MAX_ANSWER_FOLLOWUPS),
+    ).fetchall()
+    prior = db.execute(
+        """SELECT json_extract(response_json, '$.data.replyText') AS reply,
+                  output_text AS appended_question
+           FROM interaction_events
+           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ?
+             AND event_type = 'ANSWER' AND result_status = 'SUCCESS'
+           ORDER BY id DESC LIMIT 1""",
+        (session["id"], session["version_id"], session["current_page_no"], arrival_id),
+    ).fetchone()
+    prior_reply = prior["reply"] if prior and isinstance(prior["reply"], str) else ""
+    if prior_reply and prior["appended_question"]:
+        prior_reply = prior_reply.removesuffix(prior["appended_question"])
+    visited = json.loads(session["visited_pages_json"])
+    earlier = [number for number in visited[:-1] if number != session["current_page_no"]][-3:]
+    texts = {}
+    if earlier:
+        texts = dict(db.execute(
+            "SELECT page_no, body_text FROM story_pages WHERE version_id = ? AND page_no IN (%s)"
+            % ",".join("?" * len(earlier)), (session["version_id"], *earlier),
+        ))
+    return dict(
+        page_text=page["body_text"] if page else "", question=question["output_text"] if question else "", answer=answer,
+        title=page["title"] if page else "", page_number=session["current_page_no"],
+        age_band=page["age_band"] if page else "", topics=json.loads(page["topics_json"]) if page else [],
+        earlier_pages=[texts[number][:600] for number in earlier if number in texts],
+        used_followups=[item["question"] for item in followups],
+        seen_questions=parent_visit_questions(db, session, arrival_id), prior_reply=prior_reply[:160],
+    )
+
+
+def finalize_answer_reply(request: Request, session_id: int, payload: ReadingEvent, response: dict, token: str, reply):
+    with authorized_db(request, write=True, guardian_only=True) as (db, principal, failure):
+        if failure:
+            return failure
+        session = owned_session(db, session_id, principal)
+        if session is None:
+            return error(request, 404, "RESOURCE_NOT_FOUND", "会话不可用")
+        execution = db.execute(
+            """SELECT id, status, deadline_at, response_body FROM request_executions
+               WHERE session_id = ? AND client_request_id = ? AND execution_token = ?""",
+            (session_id, payload.clientEventId, token),
+        ).fetchone()
+        if execution is None:
+            return error(request, 409, "SESSION_CONFLICT", "回答状态已变化，请核对进度")
+        if execution["status"] != "RUNNING":
+            return JSONResponse(status_code=201, content=json.loads(execution["response_body"]))
+        now = int(time.time() * 1000)
+        finalized = response
+        if (reply is not None and now < execution["deadline_at"] and session["status"] == "IN_PROGRESS"
+                and session["mode"] == "PARENT_CHILD" and session["current_page_no"] == payload.pageNumber
+                and session["revision"] == response["data"]["revision"]):
+            reply_text, followup = reply
+            finalized = {**response, "data": {**response["data"], "replyText": reply_text}}
+            if followup:
+                # A fresh question invalidates feedback based on the provisional answer snapshot.
+                revision = session["revision"] + 1
+                finalized["data"]["followupQuestion"] = followup
+                finalized["data"]["revision"] = revision
+                db.execute("UPDATE reading_sessions SET revision = ? WHERE id = ?", (revision, session_id))
+            db.execute("UPDATE interaction_events SET response_json = ?, output_text = ?, revision_after = ? WHERE id = ?",
+                       (json.dumps(finalized, ensure_ascii=False), followup or None,
+                        finalized["data"]["revision"], response["data"]["interactionEventId"]))
+        db.execute("UPDATE request_executions SET status = 'SUCCEEDED', completed_at = ?, response_body = ? WHERE id = ?",
+                   (now, json.dumps(finalized, ensure_ascii=False), execution["id"]))
+        return JSONResponse(status_code=201, content=finalized)
 
 
 @router.post("/{session_id}/branches", status_code=201)

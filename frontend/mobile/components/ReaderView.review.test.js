@@ -142,6 +142,44 @@ describe('ReaderView session recovery and interaction', () => {
     expect(api.addEvent).not.toHaveBeenCalled()
   })
 
+  it('does not show or play an ASK reply from before a branch returned to the same page', async () => {
+    const oldAnswer = { interactionEventId: 23, revision: 3, eventType: 'ASK', pageNumber: 1,
+      outputText: '上次回答：小兔拿着黄伞。', strategyType: 'CONCRETE_RECALL' }
+    const newAnswer = { interactionEventId: 28, revision: 8, outputText: '本次回答：小兔走到树旁。',
+      status: 'GENERATED', strategyType: 'CONCRETE_RECALL' }
+    const api = await openReader({
+      snapshot: { ...questionedPageOne, mode: 'PARENT_CHILD', revision: 3 },
+      events: [savedQuestion(1, 2), oldAnswer],
+      readerBook: { ...book, branches: [{ branchId: 7, fromPageNumber: 2, nextPageNumber: 1,
+        choiceLabel: '回到第一页', reviewStatus: 'APPROVED' }] },
+      sessionApi: {
+        addEvent: vi.fn().mockResolvedValue({ data: { interactionEventId: 24, revision: 4 } }),
+        chooseBranch: vi.fn().mockResolvedValue({ data: { interactionEventId: 26, revision: 6,
+          branchId: 7, currentPage: 1, visitedPageNumbers: [1, 2, 1] } }),
+        submitGuidance: vi.fn(async (_, { expectedRevision }) => ({
+          data: { ...initialQuestion, interactionEventId: expectedRevision + 21, revision: expectedRevision + 1 },
+        })),
+        submitQuestion: vi.fn().mockResolvedValue({ data: newAnswer }),
+      },
+    })
+    expect(wrapper.text()).toContain(oldAnswer.outputText)
+    expect(wrapper.text()).toContain('播放芽芽的回答')
+
+    await clickButton('下一页 →')
+    await clickButton('回到第一页')
+    expect(wrapper.get('.page-scene').text()).toBe('第一页')
+    expect(wrapper.text()).not.toContain(oldAnswer.outputText)
+    expect(wrapper.text()).not.toContain('播放芽芽的回答')
+
+    await clickButton('提出本页问题')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue('小兔现在在哪里？')
+    await clickButton('确认提问')
+    expect(api.submitQuestion).toHaveBeenCalledOnce()
+    expect(wrapper.text()).toContain(newAnswer.outputText)
+    expect(wrapper.text()).toContain('播放芽芽的回答')
+  })
+
   it('directs an unknown create outcome to growth records without a retry button', async () => {
     const api = await openReader({
       snapshot: null,
@@ -632,5 +670,189 @@ describe('ReaderView session recovery and interaction', () => {
       pageNumber: 2, feedback: 'INITIAL', expectedRevision: 2,
     }), expect.any(Object))
     expect(api.addEvent).not.toHaveBeenCalled()
+  })
+})
+
+describe('guardian answer follow-ups', () => {
+  const parent = { ...questionedPageOne, mode: 'PARENT_CHILD' }
+  const question = savedQuestion(1, 2)
+  const followupQuestion = '雨伞是什么颜色？'
+  const replyText = '你找到小狐狸的雨伞啦。'
+  const receipt = { interactionEventId: 23, revision: 3, replyText: replyText + followupQuestion, followupQuestion }
+  const answer = { ...receipt, pageNumber: 1, eventType: 'ANSWER', inputText: '雨伞' }
+
+  function expectFollowup() {
+    const card = wrapper.get('section[aria-labelledby="interaction-title"]')
+    expect(card.findAll('.answer-confirmation, .agent-text').map(item => item.text())).toEqual([
+      '上一轮回答：雨伞', '芽芽：' + replyText, '芽芽追问：' + followupQuestion,
+    ])
+    expect(wrapper.text().split(followupQuestion)).toHaveLength(2)
+  }
+
+  it('renders the reply and promotes its follow-up instead of the original question', async () => {
+    const api = await openReader({
+      snapshot: parent, events: [question],
+      sessionApi: { addEvent: vi.fn().mockResolvedValue({ data: receipt }) },
+    })
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue('雨伞')
+    await clickButton('确认回答')
+    expectFollowup()
+    expect(wrapper.text()).not.toContain(question.outputText)
+    expect(api.addEvent).toHaveBeenCalledTimes(1)
+  })
+
+  it('announces while an answer is in progress and prevents duplicate confirmation', async () => {
+    let resolve
+    const response = new Promise(done => { resolve = done })
+    const addEvent = vi.fn().mockReturnValue(response)
+    await openReader({ snapshot: parent, events: [question], sessionApi: { addEvent } })
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue('雨伞')
+    await clickButton('确认回答')
+
+    const dialog = wrapper.get('[role="dialog"]')
+    expect(dialog.get('[role="status"]').text()).toBe('芽芽正在想怎么回应…')
+    const confirm = dialog.get('.dialog-actions .button-primary')
+    expect(confirm.element.disabled).toBe(true)
+    await confirm.trigger('click')
+    expect(addEvent).toHaveBeenCalledTimes(1)
+
+    resolve({ data: receipt })
+    await flushPromises()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expectFollowup()
+  })
+
+  it('restores a completed answer and its exact follow-up from the current visit', async () => {
+    const api = await openReader({ snapshot: { ...parent, revision: 3 }, events: [question, answer] })
+    expectFollowup()
+    expect(api.submitGuidance).not.toHaveBeenCalled()
+    expect(api.addEvent).not.toHaveBeenCalled()
+  })
+
+  it('keeps the real question after a saved fallback without a follow-up and labels the next round correctly', async () => {
+    const secondFollowup = '你在哪里看到了这一把伞？'
+    const secondAnswer = { interactionEventId: 24, revision: 4, eventType: 'ANSWER', pageNumber: 1, inputText: '红色。',
+      replyText: '你看清了颜色。' + secondFollowup, followupQuestion: secondFollowup }
+    const fallbackReceipt = { interactionEventId: 25, revision: 5, replyText: '谢谢你分享。我们一起看看画面。' }
+    const noFollowup = { ...fallbackReceipt, eventType: 'ANSWER', pageNumber: 1, inputText: '蓝色。' }
+    const blankFeedback = { interactionEventId: 26, revision: 6, status: 'FALLBACK',
+      strategyType: 'CONTEXT_QUESTION', outputText: '  ' }
+    const nextPromptReceipt = { ...initialQuestion, interactionEventId: 27, revision: 7, outputText: '树旁边有什么？' }
+    const priorEvents = [question, answer, secondAnswer]
+    await openReader({ snapshot: { ...parent, revision: 4 }, events: priorEvents,
+      sessionApi: { addEvent: vi.fn().mockResolvedValue({ data: fallbackReceipt }) } })
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue(noFollowup.inputText)
+    await clickButton('确认回答')
+
+    function expectRetainedQuestion() {
+      const card = wrapper.get('section[aria-labelledby="interaction-title"]')
+      expect(card.text()).not.toContain(question.outputText)
+      expect(card.text()).not.toContain(followupQuestion)
+      expect(card.findAll('.agent-text, .answer-confirmation').map(item => item.text())).toEqual([
+        secondFollowup, '家长确认文本：' + noFollowup.inputText, '芽芽：' + fallbackReceipt.replyText,
+      ])
+    }
+
+    expectRetainedQuestion()
+    wrapper.unmount()
+    const api = await openReader({ snapshot: { ...parent, revision: 5 }, events: [...priorEvents, noFollowup],
+      sessionApi: { submitGuidance: vi.fn().mockResolvedValue({ data: blankFeedback }) } })
+    expectRetainedQuestion()
+    expect(api.submitGuidance).not.toHaveBeenCalled()
+    await clickButton('已听懂')
+    expect(api.submitGuidance).toHaveBeenCalledTimes(1)
+    expectRetainedQuestion()
+
+    wrapper.unmount()
+    await openReader({ snapshot: { ...parent, revision: 6 }, events: [...priorEvents, noFollowup, {
+      ...blankFeedback, status: undefined, eventType: 'FEEDBACK', pageNumber: 1, feedback: 'UNDERSTOOD',
+    }], sessionApi: { submitGuidance: vi.fn().mockResolvedValue({ data: nextPromptReceipt }) } })
+    expectRetainedQuestion()
+    await clickButton('已听懂')
+    const card = wrapper.get('section[aria-labelledby="interaction-title"]')
+    expect(card.get('.agent-text').text()).toBe(nextPromptReceipt.outputText)
+    expect(card.text()).not.toContain(followupQuestion)
+    expect(card.text()).not.toContain(secondFollowup)
+    expect(card.get('.answer-confirmation').text()).toBe('上一轮回答：' + noFollowup.inputText)
+  })
+
+  it('keeps a blank settled initial receipt without generating another prompt', async () => {
+    const api = await openReader({ snapshot: parent, events: [{
+      ...question, strategyType: 'CONTEXT_QUESTION', outputText: '',
+    }] })
+    expect(wrapper.text()).toContain('本次没有生成可展示的文字。')
+    expect(api.submitGuidance).not.toHaveBeenCalled()
+  })
+
+  it('keeps the earlier ordinary question after a blank feedback result', async () => {
+    const api = await openReader({ snapshot: parent, events: [question],
+      sessionApi: { submitGuidance: vi.fn().mockResolvedValue({ data: {
+        interactionEventId: 23, revision: 3, status: 'FALLBACK', strategyType: 'CONTEXT_QUESTION', outputText: '',
+      } }) } })
+    await clickButton('已听懂')
+    expect(wrapper.get('.agent-text').text()).toBe(question.outputText)
+    expect(api.submitGuidance).toHaveBeenCalledTimes(1)
+  })
+
+  it('reconciles a saved answer after 503 without re-submitting the draft or repeating its follow-up', async () => {
+    const fallback = { interactionEventId: 23, pageNumber: 1, eventType: 'ANSWER', inputText: '雨伞',
+      replyText: '我们一起看看画面。' }
+    const fetch = vi.fn(async (_path, { method }) => {
+      if (method === 'GET') {
+        return Response.json({ data: { session: { ...parent, revision: 3 }, events: [question, fallback], report: null } })
+      }
+      const writes = fetch.mock.calls.filter(([, options]) => options.method === 'POST').length
+      if (writes === 1) {
+        return Response.json({ error: { code: 'DEPENDENCY_UNAVAILABLE',
+          message: '回答已保存，请核对会话进度', retryable: true } }, { status: 503 })
+      }
+      return Response.json({ data: receipt })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const live = new ReadingSessionsApi()
+    const api = await openReader({ snapshot: parent, events: [question],
+      sessionApi: { get: live.get.bind(live), addEvent: live.addEvent.bind(live) } })
+
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue('雨伞')
+    await clickButton('确认回答')
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('上次操作的结果仍待核对。')
+    expect(wrapper.findAll('button').map(button => button.text())).not.toContain('孩子回答')
+    expect(fetch.mock.calls.map(([, { method }]) => method)).toEqual(['POST', 'GET'])
+
+    await clickButton('重新核对进度')
+
+    expect(fetch.mock.calls.map(([, { method }]) => method)).toEqual(['POST', 'GET', 'GET', 'POST'])
+    expect(JSON.parse(fetch.mock.calls[3][1].body)).toEqual(JSON.parse(fetch.mock.calls[0][1].body))
+    expectFollowup()
+    expect(api.submitGuidance).not.toHaveBeenCalled()
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    expect(wrapper.get('textarea').element.value).toBe('')
+  })
+
+  it('does not render a prior visit follow-up when a branch revisits the same page', async () => {
+    const newPrompt = { ...initialQuestion, outputText: '回到这里，你现在看到了什么？', interactionEventId: 28, revision: 6 }
+    const api = await openReader({
+      snapshot: { ...parent, revision: 5, visitedPageNumbers: [1, 2, 1] },
+      events: [question, answer,
+        { eventType: 'PAGE_CHANGED', pageNumber: 2, interactionEventId: 24 },
+        { eventType: 'BRANCH_CHOSEN', pageNumber: 2, interactionEventId: 27 },
+      ],
+      sessionApi: { submitGuidance: vi.fn().mockResolvedValue({ data: newPrompt }) },
+    })
+    expect(wrapper.get('.agent-text').text()).toBe(newPrompt.outputText)
+    expect(wrapper.find('.guardian-answer-reply').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain(followupQuestion)
+    expect(api.submitGuidance).toHaveBeenCalledTimes(1)
   })
 })

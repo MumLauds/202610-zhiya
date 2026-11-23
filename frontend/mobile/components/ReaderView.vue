@@ -8,6 +8,7 @@ import VoiceAnswerDialog from './VoiceAnswerDialog.vue'
 import { useAudioController } from '../composables/useAudioController'
 import { useReadingSession } from '../composables/useReadingSession'
 import { approvedBranchesAt } from '../../src/data/readingBranches'
+import { latestReadingQuestion } from '../../src/data/readingQuestions'
 
 const props = defineProps({
   book: { type: Object, required: true },
@@ -33,14 +34,12 @@ const showPinyin = ref(true)
 const highlightIndex = ref(-1)
 const interactionResult = ref(null)
 const questionReady = computed(() => {
-  const result = interactionResult.value
+  const result = displayedQuestion.value
   return Boolean(result?.outputText?.trim()) && result.status !== 'BLOCKED' &&
     !['SKIP', 'SAFETY_BLOCK'].includes(result.strategyType) && result.feedback !== 'SKIPPED'
 })
 const showAnswerDialog = ref(false)
 const asking = ref(false)
-const storyAnswer = computed(() => session.state.events.findLast(event =>
-  event.eventType === 'ASK' && event.pageNumber === currentPageNumber.value && event.outputText))
 const lastAnswerText = ref('')
 const answerDraft = ref('')
 const pageAudioSrc = ref('')
@@ -78,6 +77,37 @@ const visitIndex = computed(() => reviewing.value ? historyIndex.value : lastVis
 const currentPageNumber = computed(() => reviewing.value ? visited.value[visitIndex.value]
   : (session.state.session?.currentPage ?? props.book.pages[0]?.page ?? 1))
 const isChildMode = computed(() => props.mode === 'live' && session.state.session?.mode === 'CHILD_SOLO')
+const isParentReading = computed(() => props.mode === 'live' && session.state.session?.mode === 'PARENT_CHILD')
+const parentVisitIndex = computed(() => isParentReading.value ? lastVisitIndex.value : null)
+const currentVisitEvents = computed(() => {
+  const events = session.state.events
+  if (!isParentReading.value) return events
+  const boundary = events.findLastIndex((event) => ['STARTED', 'PAGE_CHANGED', 'BRANCH_CHOSEN'].includes(event.eventType))
+  return events.slice(boundary + 1)
+})
+const currentPageEvents = computed(() => currentVisitEvents.value.filter(event => event.pageNumber === currentPageNumber.value))
+const storyAnswer = computed(() => currentPageEvents.value.findLast(event => event.eventType === 'ASK' && event.outputText))
+const savedAnswer = computed(() => isParentReading.value && !reviewing.value
+  ? currentPageEvents.value.findLast(event => event.eventType === 'ANSWER')
+  : null)
+const displayedQuestion = computed(() => {
+  const settled = interactionResult.value
+  if (!isParentReading.value || reviewing.value) return settled
+  const guidance = !settled || isVisibleGuidance(settled) ? settled
+    : currentPageEvents.value.findLast(event => isPageGuidance(event) && isVisibleGuidance(event))
+  // Blank settled feedback is not a new question. Without an older prompt, it still prevents automatic resubmission.
+  return latestReadingQuestion(currentPageEvents.value, guidance) ?? settled
+})
+const previousAnswer = computed(() => questionReady.value
+  && displayedQuestion.value?.interactionEventId >= savedAnswer.value?.interactionEventId)
+const answerFollowup = computed(() => displayedQuestion.value?.eventType === 'ANSWER' && previousAnswer.value)
+const savedReply = computed(() => {
+  const reply = savedAnswer.value?.replyText
+  const question = savedAnswer.value?.followupQuestion
+  return question && reply?.endsWith(question)
+    ? reply.slice(0, -question.length).trimEnd() : reply
+})
+const confirmedAnswerText = computed(() => isParentReading.value ? savedAnswer.value?.inputText : lastAnswerText.value)
 const childAnswerOptions = computed(() => interactionResult.value && !questionReady.value ? [] : session.state.answerOptions)
 
 const currentPageIndex = computed(() => {
@@ -119,20 +149,20 @@ const errorMessage = computed(() => session.error.value?.message ?? session.erro
 const creationUnconfirmed = computed(() => !props.initialSessionId && !session.state.session && session.error.value?.code === 'REQUEST_OUTCOME_UNKNOWN')
 const serverErrorHint = computed(() => (session.error.value?.status ?? 0) >= 500 ? '阅读服务暂不可用，请稍后重试。' : '')
 
-watch([currentPageNumber, reviewing], () => {
+watch([currentPageNumber, reviewing, parentVisitIndex], () => {
   resetInteractionForPage()
   restorePageQuestion()
 })
 watch(() => session.state.events, () => restorePageQuestion())
 const activePageKey = computed(() => props.mode === 'live' && !childAuthorizationExpired.value && !reviewing.value && !session.state.syncRequired
-  && session.state.session?.status === 'IN_PROGRESS' ? `${sessionId.value}:${currentPageNumber.value}` : '')
+  && session.state.session?.status === 'IN_PROGRESS' ? `${sessionId.value}:${currentPageNumber.value}:${parentVisitIndex.value ?? ''}` : '')
 const textCanPlay = computed(() => !navigationPending.value && !showAnswerDialog.value
   && (activePageKey.value || (props.mode === 'demo' && pageAudioSrc.value)))
 watch(activePageKey, (key) => {
   if (key && !pageAudioSrc.value) void loadPageAudio(true)
   else if (!key) resetAudio()
 }, { immediate: true, flush: 'post' })
-watch([activePageKey, pending, interactionResult], ([key, busy, question]) => {
+watch([activePageKey, pending, displayedQuestion], ([key, busy, question]) => {
   if (!key || busy || question || autoQuestionPage === key) return
   autoQuestionPage = key
   void submitFeedback('INITIAL', { background: true })
@@ -222,12 +252,20 @@ function resetInteractionForPage() {
   highlightIndex.value = -1
 }
 
+function isPageGuidance(event) {
+  return event.eventType === 'QUESTION' ||
+    (event.eventType === 'FEEDBACK' && ['UNDERSTOOD', 'NOT_UNDERSTOOD', 'SKIPPED'].includes(event.feedback))
+}
+
+function isVisibleGuidance(event) {
+  return Boolean(event?.outputText?.trim()) || event?.status === 'BLOCKED'
+    || ['SKIP', 'SAFETY_BLOCK'].includes(event?.strategyType) || event?.feedback === 'SKIPPED'
+}
+
 function restorePageQuestion() {
   if (reviewing.value || session.state.session?.status !== 'IN_PROGRESS') return
-  interactionResult.value = session.state.events.findLast((event) =>
-    event.pageNumber === currentPageNumber.value && (event.strategyType || event.outputText?.trim() || event.feedback === 'SKIPPED') &&
-    (event.eventType === 'QUESTION' ||
-      (event.eventType === 'FEEDBACK' && ['UNDERSTOOD', 'NOT_UNDERSTOOD', 'SKIPPED'].includes(event.feedback)))) ?? null
+  interactionResult.value = currentPageEvents.value.findLast((event) =>
+    isPageGuidance(event) && (event.strategyType || event.outputText?.trim() || event.feedback === 'SKIPPED')) ?? null
 }
 
 async function syncReading() {
@@ -237,7 +275,7 @@ async function syncReading() {
     historyIndex.value = null
     restorePageQuestion()
     if (recovered?.confirmedAnswer) {
-      lastAnswerText.value = recovered.confirmedAnswer
+      if (!isParentReading.value) lastAnswerText.value = recovered.confirmedAnswer
       answerDraft.value = ''
     }
   } catch {
@@ -333,10 +371,10 @@ async function refreshChildOptions() {
 }
 
 async function openAnswerDialog(question = false) {
-  if (isChildMode.value) return
+  if (isChildMode.value || session.state.syncRequired) return
   if (pageAudioLoading.value) cancelPageAudioRequest()
   asking.value = question
-  if (!question && !interactionResult.value) {
+  if (!question && !displayedQuestion.value) {
     const result = await submitFeedback('INITIAL')
     if (!result) return
   }
@@ -361,17 +399,21 @@ async function selectChildAnswer(text) {
 async function submitAnswerText(text, question) {
   if (pending.value || reviewing.value || session.state.syncRequired || checkChildAuthorization()) return
   if (!isChildMode.value) answerDraft.value = text
+  const generation = requestGeneration
+  const isCurrent = () => active && generation === requestGeneration
   try {
     if (question) await session.askQuestion(text)
     else {
       await session.answer(text)
-      lastAnswerText.value = text
+      if (!isCurrent()) return
+      if (!isParentReading.value) lastAnswerText.value = text
     }
+    if (!isCurrent()) return
     answerDraft.value = ''
     showAnswerDialog.value = false
   } catch {
-    // Keep the edited text for a rejected write. Uncertain writes use session reconciliation.
-    if (session.state.syncRequired || session.notice.value) showAnswerDialog.value = false
+    // Keep a rejected draft on this visit; uncertain writes must use the original receipt.
+    if (isCurrent() && (session.state.syncRequired || session.notice.value)) showAnswerDialog.value = false
   }
 }
 
@@ -585,9 +627,10 @@ function exitReading() {
 
         <p v-if="reviewing" class="inline-notice">正在回看已读页，回到当前进度后可继续互动。</p>
         <InteractionCard v-else
-          :result="interactionResult"
+          :result="displayedQuestion"
+          :followup="answerFollowup"
           :revision="revision"
-          :pending="pending"
+          :pending="pending || (isParentReading && session.state.syncRequired)"
           :demo="mode === 'demo'"
           :question-ready="questionReady"
           :child-mode="isChildMode"
@@ -603,7 +646,16 @@ function exitReading() {
           @understood="submitFeedback('UNDERSTOOD')"
           @skip="submitFeedback('SKIPPED')"
           @play-answer="playAnswerAudio()"
-        />
+        >
+          <p v-if="confirmedAnswerText" class="answer-confirmation">
+            <strong>{{ isChildMode ? '已提交回答：' : previousAnswer ? '上一轮回答：' : '家长确认文本：' }}</strong>{{ confirmedAnswerText }}
+          </p>
+          <div v-if="isParentReading" role="status">
+            <p v-if="savedReply" class="answer-confirmation guardian-answer-reply">
+              <strong>芽芽：</strong>{{ savedReply }}
+            </p>
+          </div>
+        </InteractionCard>
         <section v-if="mode === 'live' && !reviewing" class="interaction-card">
           <h2>问问芽芽</h2>
           <template v-if="session.state.session.mode === 'CHILD_SOLO'">
@@ -614,9 +666,6 @@ function exitReading() {
           <button v-if="storyAnswer?.interactionEventId && storyAnswer.strategyType !== 'SAFETY_BLOCK'" class="button button-ghost" type="button" :disabled="answerAudioLoading" @click="playAnswerAudio(storyAnswer)">{{ answerAudioLoading ? '回答音频准备中…' : '播放芽芽的回答' }}</button>
         </section>
 
-        <p v-if="lastAnswerText" class="answer-confirmation">
-          <strong>{{ isChildMode ? '已提交回答：' : '家长确认文本：' }}</strong>{{ lastAnswerText }}
-        </p>
         <p v-if="answerAudioNotice" class="inline-notice">{{ answerAudioNotice }}</p>
         <p v-if="session.notice.value" class="inline-notice">{{ session.notice.value }}</p>
         <p v-if="session.error.value" class="inline-error">{{ errorMessage }}</p>

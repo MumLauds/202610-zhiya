@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { vModalFocus } from '../components/modalFocus'
 import { approvedBranchesAt } from '../data/readingBranches'
 import FlipBook from '../components/FlipBook.vue'
@@ -7,6 +7,7 @@ import { synthesize, transcribe } from '../api/voice'
 import { describeApiError } from '../api/client'
 import { readingProfileKey, recordPlanActivity } from '../data/readingPlan'
 import { canContinueStory } from '../data/readingProgress'
+import { latestReadingQuestion } from '../data/readingQuestions'
 
 const props = defineProps({
   book: { type: Object, default: null },
@@ -110,25 +111,73 @@ const readerPages = computed(() => {
 const currentPage = computed(() => readerPages.value[pageIndex.value] || readerPages.value[0] || null)
 const pageGuidanceKey = computed(() => `${props.session?.readingSessionId}:${currentPage.value?.pageNumber}:${props.session?.revision}`)
 const guidanceLoading = computed(() => pendingGuidanceKey.value === pageGuidanceKey.value)
-const pageEvents = computed(() => (props.events || []).filter((event) => event.pageNumber === currentPage.value?.pageNumber))
+const rereading = computed(() => pageIndex.value !== progressIndex.value)
+const pageEvents = computed(() => {
+  const events = props.events || []
+  const page = currentPage.value?.pageNumber
+  const matchingPage = events.filter(event => event.pageNumber === page)
+  if (props.session?.mode === 'CHILD_SOLO') return matchingPage
+  const isArrival = event => ['STARTED', 'PAGE_CHANGED', 'BRANCH_CHOSEN'].includes(event.eventType)
+  if (!reviewingHistory.value && !rereading.value) {
+    const arrival = events.findLast(isArrival)
+    return arrival ? matchingPage.filter(event => event.interactionEventId >= arrival.interactionEventId) : matchingPage
+  }
+  if (props.session?.mode !== 'PARENT_CHILD' || props.session.preview) return matchingPage
+
+  const visits = props.session.visitedPageNumbers || []
+  const carried = props.session.carriedPrefixPageCount ?? 0
+  const arrivals = events.filter(isArrival)
+  // Carried pages have no events in this session. Branch arrivals store the page they left.
+  if (arrivals[0]?.eventType === 'STARTED' && visitedPages.value.length === visits.length
+      && arrivals.length === visits.length - carried
+      && arrivals.every((event, i) => Number.isSafeInteger(event.interactionEventId)
+        && event.pageNumber === visits[carried + i - (event.eventType === 'BRANCH_CHOSEN' ? 1 : 0)])) {
+    const index = pageIndex.value - carried
+    if (index < 0) return []
+    const arrival = arrivals[index]?.interactionEventId
+    const departure = arrivals[index + 1]?.interactionEventId
+    return matchingPage.filter(event => event.interactionEventId >= arrival
+      && (departure === undefined || event.interactionEventId < departure))
+  }
+  // A partial snapshot cannot tell which repeat an interaction belonged to.
+  return visits.indexOf(page) === visits.lastIndexOf(page) ? matchingPage : []
+})
 const storyAnswer = computed(() => pageEvents.value.findLast(event => event.eventType === 'ASK' && event.outputText))
-const latestGuidanceEvent = computed(() => pageEvents.value.filter((event) => ['QUESTION', 'FEEDBACK'].includes(event.eventType)).at(-1) || null)
-const currentQuestion = computed(() => pageEvents.value.filter((event) => (
+const latestGuidanceEvent = computed(() => pageEvents.value.findLast(event => ['QUESTION', 'FEEDBACK'].includes(event.eventType)))
+const guidanceQuestion = computed(() => pageEvents.value.findLast((event) => (
   ['QUESTION', 'FEEDBACK'].includes(event.eventType)
   && (!event.feedback || ['UNDERSTOOD', 'NOT_UNDERSTOOD'].includes(event.feedback))
   && typeof event.outputText === 'string'
   && event.outputText.trim()
   && !['SKIP', 'SAFETY_BLOCK'].includes(event.strategyType)
-)).at(-1) || null)
+)))
 const questionSkipped = computed(() => latestGuidanceEvent.value?.feedback === 'SKIPPED')
 const questionBlocked = computed(() => latestGuidanceEvent.value?.strategyType === 'SAFETY_BLOCK')
 const savedAnswer = computed(() => pageEvents.value.findLast(event => event.eventType === 'ANSWER'))
+const showParentFollowup = computed(() => props.authenticated && !props.session?.preview && props.session?.mode !== 'CHILD_SOLO')
+const currentQuestion = computed(() => showParentFollowup.value
+  ? latestReadingQuestion(pageEvents.value, guidanceQuestion.value) : guidanceQuestion.value)
+const previousAnswer = computed(() => showParentFollowup.value && !questionSkipped.value && !questionBlocked.value
+  && currentQuestion.value?.interactionEventId >= savedAnswer.value?.interactionEventId)
+const answerFollowup = computed(() => {
+  const question = currentQuestion.value
+  return question?.eventType === 'ANSWER' && previousAnswer.value ? question.outputText : ''
+})
+const answerReply = computed(() => {
+  const { replyText, followupQuestion } = savedAnswer.value || {}
+  return replyText && followupQuestion && replyText.endsWith(followupQuestion)
+    ? replyText.slice(0, -followupQuestion.length).trimEnd()
+    : replyText
+})
+const answerViewKey = computed(() => `${props.session?.readingSessionId}:${pageIndex.value}:${currentPage.value?.pageNumber}`)
+const pendingAnswerView = shallowRef(null)
+const answerPending = computed(() => pendingAnswerView.value?.view === answerViewKey.value
+  && !pendingAnswerView.value.isStoryQuestion)
 const answerText = computed(() => {
   if (props.session?.preview) return previewAnswer.value
   return props.authenticated ? savedAnswer.value?.inputText : ''
 })
 const currentBranches = computed(() => approvedBranchesAt(props.book?.branches, currentPage.value?.pageNumber))
-const rereading = computed(() => pageIndex.value !== progressIndex.value)
 const navigationLocked = computed(() => edgeTurnBusy.value || turnBusy.value || interactionBusy.value || props.syncRequired)
 const canTurnNext = computed(() => !navigationLocked.value && Boolean(readerPages.value[pageIndex.value + 1])
   && (reviewingHistory.value || props.session?.status === 'IN_PROGRESS'))
@@ -620,18 +669,27 @@ async function submitConfirmedAnswer() {
   }
   interactionBusy.value = true
   voiceError.value = ''
+  const submission = { view: answerViewKey.value, isStoryQuestion: voiceOpen.value }
+  pendingAnswerView.value = submission
   try {
-    const isStoryQuestion = voiceOpen.value
+    const { isStoryQuestion, view } = submission
     const saved = isStoryQuestion ? await props.askQuestion(text) : await props.submitAnswer(text)
+    if (pendingAnswerView.value !== submission || answerViewKey.value !== view) return
     if (saved) {
       if (isStoryQuestion) closeStoryQuestion()
       else childAnswerDraft.value = null
-    } else {
+    } else if (!props.syncRequired) {
       voiceError.value = isStoryQuestion ? '提问尚未确认保存，请核对进度后重试。' : '回答尚未确认保存，请检查页面提示后重试。'
     }
   } finally {
-    interactionBusy.value = false
+    if (pendingAnswerView.value === submission) clearPendingAnswer()
   }
+}
+
+function clearPendingAnswer() {
+  if (!pendingAnswerView.value) return
+  pendingAnswerView.value = null
+  interactionBusy.value = false
 }
 
 function cancelRecording() {
@@ -710,6 +768,10 @@ async function refreshProgress() {
 // A recording uses a revision-bound recognition request. Narration belongs to the page.
 // An ASK write changes the revision without changing the child's question.
 watch(() => props.session?.revision, closeStoryQuestion)
+watch([answerViewKey, () => props.loading, () => props.authenticated, () => props.accountId], () => {
+  clearPendingAnswer()
+  voiceError.value = ''
+})
 watch([() => currentQuestion.value?.interactionEventId, questionSkipped, questionBlocked], () => {
   if (!voiceOpen.value) cancelRecording()
   childAnswerDraft.value = null
@@ -729,7 +791,7 @@ watch([
   stopNarration()
   closeVoice()
 })
-onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
+onBeforeUnmount(() => { clearPendingAnswer(); clearPreparedAudio(); stopNarration(); closeVoice() })
 </script>
 
 <template>
@@ -813,14 +875,18 @@ onBeforeUnmount(() => { clearPreparedAudio(); stopNarration(); closeVoice() })
           <p v-if="session.preview">{{ currentPage?.question || '看看这一页，你发现了什么？' }}</p>
           <p v-else-if="questionSkipped">这一页的提问已跳过，可以继续翻页。</p>
           <p v-else-if="questionBlocked">{{ latestGuidanceEvent.outputText || '这个问题先请家长和孩子一起聊一聊。' }}</p>
-          <p v-else-if="currentQuestion">{{ currentQuestion.outputText }}</p>
+          <p v-else-if="currentQuestion && !answerFollowup">{{ currentQuestion.outputText }}</p>
           <p v-else-if="guidanceLoading">正在根据这一页生成问题…</p>
-          <p v-else>看看这一页，你发现了什么？</p>
+          <p v-else-if="!answerFollowup">看看这一页，你发现了什么？</p>
           <p v-if="guidanceError" class="question-error" role="alert">{{ guidanceError }}</p>
-          <p v-if="answerText" class="question-saved"><strong>孩子的回答：</strong>{{ answerText }}</p>
+          <p v-if="answerText" class="question-saved"><strong>{{ previousAnswer ? '上一轮回答：' : '孩子的回答：' }}</strong>{{ answerText }}</p>
           <p v-else-if="savedAnswer" class="question-saved" role="status">本页回答已保存。</p>
-          <p v-if="authenticated && savedAnswer" class="question-reply" role="status"><strong>芽芽：</strong>{{ savedAnswer.replyText || '谢谢你分享！你能指一指图里的线索吗？' }}</p>
-          <p v-else-if="session.preview && previewAnswer" class="question-reply" role="status"><strong>芽芽：</strong>{{ currentPage?.answer || '我们一起看看图里发生了什么吧。' }}</p>
+          <div role="status">
+            <p v-if="answerPending" class="question-reply">芽芽正在想怎么回应…</p>
+            <p v-else-if="authenticated && savedAnswer" class="question-reply"><strong>芽芽：</strong>{{ answerReply || '谢谢你分享！' }}</p>
+            <p v-else-if="session.preview && previewAnswer" class="question-reply"><strong>芽芽：</strong>{{ currentPage?.answer || '我们一起看看图里发生了什么吧。' }}</p>
+            <p v-if="answerFollowup" class="question-followup"><strong>芽芽追问：</strong>{{ answerFollowup }}</p>
+          </div>
           <button v-if="guidanceError && !currentQuestion && !questionSkipped && !questionBlocked && !session.preview" class="text-button question-retry" type="button" :disabled="interactionBusy || guidanceLoading || syncRequired" @click="retryQuestion">重新生成本页问题</button>
           <div class="question-actions">
             <button class="secondary feedback-understood" type="button" :disabled="!canSubmitFeedback || guidanceLoading || recordingBusy" @click="submitUnderstanding('UNDERSTOOD')"><span aria-hidden="true">✓</span> 已理解</button>

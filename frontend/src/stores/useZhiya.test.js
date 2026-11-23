@@ -121,10 +121,11 @@ describe('authoritative reading progress', () => {
   it('preserves each visit after resuming a branch and revisiting the default next page', async () => {
     reading.getReadingSession.mockResolvedValueOnce(detail({ visitedPageNumbers: [1, 3, 1], revision: 3 }))
     await actions.loadReaderRoute()
-    reading.addReadingEvent.mockResolvedValueOnce({ revision: 4 })
+    reading.addReadingEvent.mockResolvedValueOnce({ interactionEventId: 44, revision: 4 })
     expect(await actions.recordPageChange(3)).toBe(true)
     expect(state.currentSession.visitedPageNumbers).toEqual([1, 3, 1, 3])
     expect(state.currentSession.revision).toBe(4)
+    expect(state.currentEvents.at(-1)).toMatchObject({ interactionEventId: 44, eventType: 'PAGE_CHANGED', pageNumber: 3 })
   })
 
   it('serializes page writes and rejects destinations other than the default next page', async () => {
@@ -294,11 +295,22 @@ describe('authoritative reading progress', () => {
       feedback: 'UNDERSTOOD',
       outputText: '你能指一指小兔吗？',
     })
+    expect(state.toast.message).toBe('已根据理解程度换一个引导问题')
+  })
+
+  it.each(['UNDERSTOOD', 'NOT_UNDERSTOOD'])('does not claim there is a new prompt after blank %s feedback', async (feedback) => {
+    reading.requestReadingGuidance.mockResolvedValueOnce({ interactionEventId: 2, revision: 2,
+      status: 'FALLBACK', strategyType: 'NO_KNOWLEDGE_FALLBACK', outputText: '  ' })
+    expect(await actions.requestGuidance(feedback)).toBe(true)
+    expect(state.currentSession.revision).toBe(2)
+    expect(state.currentEvents.at(-1)).toMatchObject({ eventType: 'FEEDBACK', feedback, outputText: '  ' })
+    expect(state.toast.message).toBe('已记录理解反馈，保留当前问题')
   })
 
   it('submits a trimmed ANSWER through API-015 and preserves the immediate reply', async () => {
-    const replyText = '你能在图里找到刚才的线索吗？'
-    reading.addReadingEvent.mockResolvedValueOnce({ interactionEventId: 9, revision: 3, replyText })
+    const followupQuestion = '你能在图里找到刚才的线索吗？'
+    const replyText = '一起看看。' + followupQuestion
+    reading.addReadingEvent.mockResolvedValueOnce({ interactionEventId: 9, revision: 3, replyText, followupQuestion })
     expect(await actions.submitAnswer('  小兔躲在树后。  ')).toBe(true)
     expect(reading.addReadingEvent.mock.calls[0][1]).toMatchObject({
       eventType: 'ANSWER',
@@ -307,7 +319,40 @@ describe('authoritative reading progress', () => {
       expectedRevision: 1,
     })
     expect(state.currentSession.revision).toBe(3)
-    expect(state.currentEvents.at(-1)).toMatchObject({ eventType: 'ANSWER', interactionEventId: 9, replyText })
+    expect(state.currentEvents.at(-1)).toMatchObject({ eventType: 'ANSWER', interactionEventId: 9, replyText, followupQuestion })
+  })
+
+  it.each([
+    new ApiError('response lost'),
+    new ApiError('finalization unavailable', { status: 503, retryable: true }),
+  ])('replays the original answer after readback finds it saved', async (error) => {
+    const answer = { interactionEventId: 9, eventType: 'ANSWER', pageNumber: 1, revision: 2,
+      inputText: '雨伞', replyText: '规则回应' }
+    const pageTurn = { interactionEventId: 10, eventType: 'PAGE_CHANGED', pageNumber: 3, revision: 3 }
+    const saved = { ...detail({ revision: 2 }), events: [answer] }
+    const advanced = { ...detail({ revision: 3, currentPage: 3, visitedPageNumbers: [1, 3] }), events: [answer, pageTurn] }
+    reading.addReadingEvent.mockRejectedValueOnce(error)
+      .mockRejectedValueOnce(new ApiError('pending', { status: 409, code: 'REQUEST_IN_PROGRESS', retryAfter: '2' }))
+      .mockResolvedValueOnce({ interactionEventId: 9, revision: 2, replyText: '更新后的回应你看到了什么？', followupQuestion: '你看到了什么？' })
+    reading.getReadingSession.mockResolvedValueOnce(saved).mockResolvedValue(advanced)
+
+    expect(await actions.submitAnswer('雨伞')).toBe(false)
+    expect(state.readingSyncRequired).toBe(true)
+    expect(await actions.submitAnswer('雨伞')).toBe(false)
+    expect(await actions.refreshReading()).toBe(false)
+    expect(reading.addReadingEvent).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(await actions.refreshReading()).toBe(false)
+    expect(state.readingSyncRequired).toBe(true)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(await actions.refreshReading()).toBe(true)
+
+    const original = reading.addReadingEvent.mock.calls[0][1]
+    expect(reading.addReadingEvent.mock.calls).toEqual([[55, original], [55, original], [55, original]])
+    expect(state.currentEvents).toEqual([{ ...answer, replyText: '更新后的回应你看到了什么？', followupQuestion: '你看到了什么？' }, pageTurn])
+    expect(state.currentSession).toMatchObject({ revision: 3, currentPage: 3 })
+    expect(state.readingSyncRequired).toBe(false)
   })
 
   it('chooses an approved branch through API-018 and installs the authoritative path', async () => {
@@ -512,6 +557,41 @@ describe('authoritative reading progress', () => {
     expect(state.currentSession.currentPage).toBe(7)
     expect(state.currentSession.revision).toBe(5)
   })
+
+  it.each(['success', 'network loss'])('discards an answer after leaving the reader on %s and restores API-013 events', async (outcome) => {
+    await actions.signIn('parent-a', 'password123')
+    window.history.replaceState({}, '', '/#reader/55')
+    await actions.syncRoute()
+    const pending = deferred()
+    reading.addReadingEvent.mockReturnValueOnce(pending.promise)
+    const oldWrite = actions.submitAnswer('旧页面的回答')
+    window.history.replaceState({}, '', '/#home')
+    await actions.syncRoute()
+
+    const priorReads = reading.getReadingSession.mock.calls.length
+    if (outcome === 'success') pending.resolve({ interactionEventId: 15, revision: 2, replyText: '旧页面的即时回应' })
+    else pending.reject(new ApiError('offline'))
+    expect(await oldWrite).toBe(false)
+    expect(reading.getReadingSession).toHaveBeenCalledTimes(priorReads)
+    expect(state.currentEvents).toEqual([])
+    expect(state.readingSyncRequired).toBe(false)
+
+    const newAnswer = { interactionEventId: 26, eventType: 'ANSWER', pageNumber: 1, replyText: '新会话的已保存回应' }
+    reading.getReadingSession.mockResolvedValueOnce({ ...detail({ readingSessionId: 66, revision: 4 }), events: [newAnswer] })
+    window.history.replaceState({}, '', '/#reader/66')
+    await actions.syncRoute()
+    expect(reading.getReadingSession).toHaveBeenLastCalledWith(66)
+    expect(state.currentEvents).toEqual([newAnswer])
+
+    const restored = { interactionEventId: 15, eventType: 'ANSWER', pageNumber: 1, replyText: '原会话读回的回应' }
+    reading.getReadingSession.mockResolvedValueOnce({ ...detail({ revision: 3 }), events: [restored] })
+    window.history.replaceState({}, '', '/#reader/55')
+    await actions.syncRoute()
+    expect(reading.getReadingSession).toHaveBeenLastCalledWith(55)
+    expect(state.currentSession.revision).toBe(3)
+    expect(state.currentEvents).toEqual([restored])
+  })
+
 })
 
 describe('recommendations and content operations', () => {

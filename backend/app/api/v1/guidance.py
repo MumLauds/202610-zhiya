@@ -15,11 +15,13 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.v1.auth import authorized_db, error
 from app.api.v1.reading_sessions import (
-    CHILD_SHORT_ANSWERS, MAX_ID, current_question, fail_session_event, owned_session, record_session_event,
-    replay_session_event, request_digest,
+    CHILD_SHORT_ANSWERS, MAX_ID, current_page_arrival_id, current_parent_question, current_question, fail_session_event,
+    owned_session, parent_visit_questions, record_session_event, replay_session_event, request_digest,
 )
 from app.schemas.agent import AgentResult
-from app.services.reading_agent import CHILD_QUESTIONS, run_agent, answer_question
+from app.services.reading_agent import (
+    ANSWER_PAGE_LOOKAHEAD, CHILD_QUESTIONS, GUIDANCE_EARLIER_PAGE_CHARS, answer_question, run_agent,
+)
 from app.services.story_media import MediaDependencyError, delivery_image, read_pinned_asset_bytes
 
 router = APIRouter(prefix="/api/v1/reading-sessions")
@@ -158,22 +160,23 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
                 return fail_session_event(db, request, owner, session_id, key, digest, 409,
                                           "SESSION_CONFLICT", "当前状态或页面不允许此操作")
             previous_question = confirmed_answer = ""
+            parent_guidance = not ask and principal.role == "GUARDIAN" and session["mode"] == "PARENT_CHILD"
+            arrival_id = current_page_arrival_id(db, session) if parent_guidance else 0
             if not ask and payload.feedback in ("UNDERSTOOD", "NOT_UNDERSTOOD"):
-                question = current_question(db, session)
+                question = (current_parent_question(db, session, arrival_id=arrival_id) if parent_guidance
+                            else current_question(db, session))
                 if question is None:
                     return fail_session_event(db, request, owner, session_id, key, digest, 409,
                                               "PROMPT_REQUIRED", "当前页尚未有引导问题")
                 previous_question = question["output_text"]
-                if principal.role == "GUARDIAN" and session["mode"] == "PARENT_CHILD":
-                    # An answer only follows the latest question in the current visit.
+                if parent_guidance:
+                    # For an ANSWER-produced question, that event's input answered the previous question.
                     answer = db.execute(
                         """SELECT input_text FROM interaction_events
-                           WHERE session_id = ? AND version_id = ? AND page_no = ?
+                           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ?
                              AND event_type = 'ANSWER' AND result_status = 'SUCCESS'
-                             AND id > (SELECT MAX(id) FROM interaction_events WHERE session_id = ?
-                                       AND event_type IN ('STARTED', 'PAGE_CHANGED', 'BRANCH_CHOSEN', 'QUESTION', 'FEEDBACK'))
                            ORDER BY id DESC LIMIT 1""",
-                        (session_id, session["version_id"], session["current_page_no"], session_id),
+                        (session_id, session["version_id"], session["current_page_no"], max(question["id"], arrival_id)),
                     ).fetchone()
                     if answer:
                         confirmed_answer = answer["input_text"] or ""
@@ -185,6 +188,7 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
                 record_session_event(db, owner, session_id, key, digest, now, 201, response)
                 return JSONResponse(status_code=201, content=response)
 
+            seen_questions = parent_visit_questions(db, session, arrival_id) if parent_guidance else ()
             context = db.execute(
                 """SELECT p.age_band, v.topics_json, page.body_text, page.image_ref FROM reading_sessions s
                    JOIN child_profiles p ON p.id = s.profile_id JOIN story_versions v ON v.id = s.version_id
@@ -212,7 +216,9 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
                         "SELECT page_no, body_text FROM story_pages WHERE version_id = ? AND page_no IN (%s)"
                         % ",".join("?" * len(earlier)), (session["version_id"], *earlier),
                     ))
-                    earlier_pages = [texts[number][:600] for number in earlier if number in texts]
+                    # Privacy screening needs the tail to detect identifiers across the cap.
+                    earlier_limit = GUIDANCE_EARLIER_PAGE_CHARS + ANSWER_PAGE_LOOKAHEAD
+                    earlier_pages = [texts[number][:earlier_limit] for number in earlier if number in texts]
             token = str(uuid4())
             db.execute(
                 """INSERT INTO request_executions
@@ -241,6 +247,7 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
             result = await run_agent(model, feedback=payload.feedback,
                                      previous_question=previous_question, child_mode=session["mode"] == "CHILD_SOLO",
                                      confirmed_answer=confirmed_answer, earlier_pages=earlier_pages,
+                                     seen_questions=seen_questions,
                                      **context_args)
     except Exception as exc:
         # Keep private prompts and provider messages out of logs; record a definite failure for this key.
