@@ -4,8 +4,7 @@ import json
 from pathlib import Path
 
 
-def main() -> None:
-    data = json.loads(Path(__file__).with_name("visit-cases-v2.json").read_text(encoding="utf-8"))
+def validate(data: dict) -> None:
     assert data["dataOrigin"] == "SYNTHETIC_ONLY"
     assert set(data["ageBands"]) == {"AGE_3_4", "AGE_4_5", "AGE_5_6"}
     story = data["story"]
@@ -19,12 +18,18 @@ def main() -> None:
         "CAUSAL_ERROR", "TIMEOUT", "INVALID_JSON", "PRIVACY", "VISIT_ISOLATION",
     } <= {case["category"] for case in scenarios}
     for case in scenarios:
+        assert isinstance(case["mockOnly"], bool)
         assert case["expect"].strip()
         assert 1 <= len(case["steps"]) <= 3
         for step in case["steps"]:
             assert 1 <= len(step["question"].strip()) <= 200
             assert 1 <= len(step["answer"].strip()) <= 200
             assert "adapter" not in step or case["mockOnly"]
+
+
+def main() -> None:
+    data = json.loads(Path(__file__).with_name("visit-cases-v2.json").read_text(encoding="utf-8"))
+    validate(data)
     print("OK: 11 synthetic visit scenarios, 3 ages; fixture structure only")
 
 

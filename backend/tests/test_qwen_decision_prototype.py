@@ -224,6 +224,113 @@ def test_unknown_accepts_hypothesis_for_blind_review_but_cannot_grant_an_affirma
     assert run(wire(proposedUnderstanding="GROUNDED"), ctx=ctx, review=True)[0].reason == "INVALID_PLAN"
 
 
+@pytest.mark.parametrize("intent,page,quotes,accepted,rejected", [
+    ("OBSERVATION", "小兔打开雨伞。", ("小兔打开雨伞",), "你能找到雨伞吗？", "你能找到书包吗？"),
+    ("PLOT", "小兔打开雨伞。", ("小兔打开雨伞",), "小兔做了什么？", "小熊做了什么？"),
+    ("CAUSAL", "因为下雨，小兔打开雨伞。", ("因为下雨", "小兔打开雨伞"),
+     "为什么小兔打开雨伞？", "为什么小熊打开雨伞？"),
+    ("EMOTION", "小兔打开雨伞。", ("小兔打开雨伞",), "你猜小兔是什么心情？", "小兔是什么心情？"),
+    ("EMOTION", "小兔很开心。", ("小兔很开心",), "小兔是什么心情？", "小熊是什么心情？"),
+    ("IMAGINATION", "小兔打开雨伞。", ("小兔打开雨伞",),
+     "读到“小兔打开雨伞”时，如果换种办法，接下来可能怎样？",
+     "读到“小兔收起雨伞”时，如果换种办法，接下来可能怎样？"),
+    ("LIFE_CONNECTION", "小兔打开雨伞。", ("小兔打开雨伞",),
+     "读到“小兔打开雨伞”时，如果在生活里遇到类似情况，你会怎么做？",
+     "如果在生活里遇到类似情况，你会怎么做？"),
+])
+def test_six_intents_require_their_own_evidence_and_controlled_question_form(intent, page, quotes, accepted, rejected):
+    evidence = tuple(proto.Evidence(id=f"e{n}", quote=quote) for n, quote in enumerate(quotes, start=1))
+    ids = tuple(item.id for item in evidence)
+    good = proto.Question(id="q1", focus_id="f1", intent=intent, evidence_ids=ids, text=accepted)
+    bad = proto.Question(id="q2", focus_id="f2", intent=intent, evidence_ids=ids, text=rejected)
+    fields = dict(
+        age_band="AGE_5_6", approved_page=page, evidence=evidence, answer_relation="UNKNOWN",
+        answer_evidence_ids=(), questions=(bad, good),
+    )
+    plan, model = run(wire(understanding="UNVERIFIED", evidenceIds=list(ids)), ctx=context(**fields))
+    assert (plan.source, plan.followup) == ("MODEL", accepted)
+    assert [q["questionId"] for q in json.loads(model.generate.await_args.args[0].context_text)["questions"]] == ["q1"]
+    forced, _ = run(wire(understanding="UNVERIFIED", questionId="q2", focusId="f2", evidenceIds=list(ids)),
+                    ctx=context(**fields))
+    assert forced.reason == "INVALID_PLAN" and forced.followup is None
+
+
+@pytest.mark.parametrize("intent,bodies", [
+    ("IMAGINATION", ("如果换种办法，接下来可能怎样？", "假如换一种方法，接下来会发生什么？")),
+    ("LIFE_CONNECTION", ("如果在生活里遇到类似情况，你会怎么做？", "在生活中碰到这样的事，你打算怎么办？")),
+])
+def test_history_dedups_paraphrased_same_event_but_keeps_different_imaginary_or_life_focus(intent, bodies):
+    quotes = ("小兔打开雨伞", "兔子把伞撑开", "小兔收起雨伞")
+    evidence = tuple(proto.Evidence(id=f"e{n}", quote=quote) for n, quote in enumerate(quotes, start=1))
+    first = f"读到“{quotes[0]}”时，{bodies[0]}"
+    rephrased = f"读到“{quotes[1]}”时，{bodies[1]}"
+    different = f"读到“{quotes[2]}”时，{bodies[0]}"
+    assert proto.question_signature(first) == proto.question_signature(rephrased)
+    assert proto.question_signature(first) != proto.question_signature(different)
+    old = proto.VisitQuestion(id="q1", signature=proto.question_signature(first))
+    questions = (
+        proto.Question(id="q2", focus_id="f2", intent=intent, evidence_ids=("e2",), text=rephrased),
+        proto.Question(id="q3", focus_id="f3", intent=intent, evidence_ids=("e3",), text=different),
+    )
+    ctx = context(age_band="AGE_5_6", approved_page="。".join(quotes), evidence=evidence,
+                  answer_relation="UNKNOWN", answer_evidence_ids=(), questions=questions,
+                  current_question_id="q1", shown_question_history=(old,))
+    plan, model = run(wire(understanding="UNVERIFIED", questionId="q3", focusId="f3", evidenceIds=["e3"]), ctx=ctx)
+    assert (plan.source, plan.followup) == ("MODEL", different)
+    assert [q["questionId"] for q in json.loads(model.generate.await_args.args[0].context_text)["questions"]] == ["q3"]
+
+
+def test_coarse_signals_do_not_supply_facts_and_misunderstanding_prefers_concrete_observation():
+    concrete = proto.Question(id="q1", focus_id="f1", intent="OBSERVATION", evidence_ids=("e1",), text="你能找到雨伞吗？")
+    broad = proto.Question(id="q2", focus_id="f2", intent="OBSERVATION", evidence_ids=("e1",), text="画面里有什么？")
+    plot = proto.Question(id="q3", focus_id="f3", intent="PLOT", evidence_ids=("e1",), text="小兔做了什么？")
+    signals = proto.SemanticSignals(speech_act="UNSURE", polarity="NEGATES",
+                                    referenced_evidence_ids=("e1",), referenced_focus_ids=("f2",))
+    ctx = context(questions=(broad, plot, concrete), semantic_signals=signals,
+                  answer_relation="UNKNOWN", answer_evidence_ids=())
+    plan, model = run(wire(understanding="UNVERIFIED", proposedUnderstanding="GROUNDED"), ctx=ctx, review=True)
+    payload = json.loads(model.generate.await_args.args[0].context_text)
+    assert payload["localSignals"] == {
+        "turnIntent": "ORDINARY", "answerRelation": "UNKNOWN", "speechAct": "UNSURE", "polarity": "NEGATES",
+        "referencedEvidenceIds": ["e1"], "referencedFocusIds": ["f2"],
+    }
+    assert [q["questionId"] for q in payload["questions"]] == ["q1"]
+    assert plan.understanding == "UNVERIFIED" and plan.synthetic_draft.understanding == "GROUNDED"
+    assert "书里写着" not in plan.response
+    assert run(ctx=ctx)[0].reason == "INVALID_PLAN"
+
+
+def test_coarse_signal_schema_rejects_raw_or_unknown_references():
+    with pytest.raises(ValidationError):
+        proto.SemanticSignals(raw_child_answer="这是仅用于本地的合成标记")
+    with pytest.raises(ValidationError):
+        context(semantic_signals=proto.SemanticSignals(referenced_focus_ids=("f9",)))
+    with pytest.raises(ValidationError):
+        context(semantic_signals=proto.SemanticSignals(referenced_evidence_ids=("e9",)))
+
+
+@pytest.mark.parametrize("intent,body", [("PLOT", "小兔做了什么？"), ("EMOTION", "你猜小兔是什么心情？")])
+def test_same_actor_can_have_a_new_anchored_plot_or_feeling_focus(intent, body):
+    quotes = ("小兔打开雨伞", "小兔收起雨伞")
+    evidence = tuple(proto.Evidence(id=f"e{n}", quote=quote) for n, quote in enumerate(quotes, start=1))
+    texts = tuple(f"读到“{quote}”时，{body}" for quote in quotes)
+    old = proto.VisitQuestion(id="q1", signature=proto.question_signature(texts[0]))
+    fresh = proto.Question(id="q2", focus_id="f2", intent=intent, evidence_ids=("e2",), text=texts[1])
+    ctx = context(approved_page="。".join(quotes), evidence=evidence, answer_relation="UNKNOWN",
+                  answer_evidence_ids=(), questions=(fresh,), shown_question_history=(old,))
+    plan, _ = run(wire(understanding="UNVERIFIED", questionId="q2", focusId="f2", evidenceIds=["e2"]), ctx=ctx)
+    assert (plan.source, plan.followup) == ("MODEL", fresh.text)
+
+
+def test_answered_focus_blocks_reask_but_semantic_mention_only_does_not():
+    mentioned = proto.SemanticSignals(referenced_focus_ids=("f1",))
+    plan, _ = run(ctx=context(semantic_signals=mentioned))
+    assert plan.source == "MODEL"
+    plan, model = run(ctx=context(semantic_signals=mentioned, answered_focus_ids=("f1",)))
+    assert plan.reason == "INVALID_PLAN" and plan.followup is None
+    assert all(q["focusId"] != "f1" for q in json.loads(model.generate.await_args.args[0].context_text)["questions"])
+
+
 def test_timeout_unavailable_and_caught_cancellation_degrade_without_retry(monkeypatch):
     for error, expected in (("TIMEOUT", "TIMEOUT"), ("API_ERROR", "MODEL_ERROR")):
         plan, model = run(result=ModelGenerateResult(success=False, error_code=error))
