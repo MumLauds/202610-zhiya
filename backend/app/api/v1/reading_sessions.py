@@ -32,7 +32,11 @@ from app.services.reading_reports import (
     session_read_pages,
 )
 from app.services.story_media import MediaDependencyError, ensure_opening_media
-from app.services.reading_agent import MAX_ANSWER_FOLLOWUPS, answer_is_unsafe, generate_answer_reply, reply_to_child_answer
+from app.services.reading_agent import (
+    ANSWER_EARLIER_PAGE_CHARS, ANSWER_PAGE_LOOKAHEAD, MAX_ANSWER_FOLLOWUPS, MAX_RECENT_TURNS,
+    RecentReadingTurn, answer_is_unsafe, close_reading_reply,
+    generate_answer_reply, reply_to_child_answer,
+)
 
 router = APIRouter(prefix="/api/v1/reading-sessions")
 MAX_ID = 9007199254740991
@@ -110,17 +114,18 @@ class ModeSettings(BaseModel):
     timeLimitSeconds: int = Field(ge=60, le=1800, strict=True)
 
 
-def current_question(db: sqlite3.Connection, session: sqlite3.Row, *, after_id: int = 0) -> sqlite3.Row | None:
+def current_question(db: sqlite3.Connection, session: sqlite3.Row, *, after_id: int = 0,
+                     before_id: int = MAX_ID + 1) -> sqlite3.Row | None:
     questions = db.execute(
         """SELECT id, event_type, output_text, response_json FROM interaction_events
-           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ?
+           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ? AND id < ?
              AND (event_type = 'QUESTION' OR
                   (event_type = 'FEEDBACK' AND feedback IN ('UNDERSTOOD', 'NOT_UNDERSTOOD')))
              AND result_status IN ('SUCCESS', 'FALLBACK') AND output_text IS NOT NULL
              AND COALESCE(strategy_type, json_extract(response_json, '$.data.strategyType'), '')
                  NOT IN ('SKIP', 'SAFETY_BLOCK')
            ORDER BY id DESC""",
-        (session["id"], session["version_id"], session["current_page_no"], after_id),
+        (session["id"], session["version_id"], session["current_page_no"], after_id, before_id),
     )
     return next((question for question in questions if question["output_text"].strip()), None)
 
@@ -136,18 +141,19 @@ def current_page_arrival_id(db: sqlite3.Connection, session: sqlite3.Row) -> int
 
 
 def current_parent_question(
-    db: sqlite3.Connection, session: sqlite3.Row, *, arrival_id: int | None = None,
+    db: sqlite3.Connection, session: sqlite3.Row, *, arrival_id: int | None = None, before_id: int = MAX_ID + 1,
 ) -> sqlite3.Row | None:
     if arrival_id is None:
         arrival_id = current_page_arrival_id(db, session)
-    question = current_question(db, session, after_id=arrival_id)
+    question = current_question(db, session, after_id=arrival_id, before_id=before_id)
     # An answer without a follow-up does not replace an already-emitted question.
     followups = db.execute(
         """SELECT id, event_type, output_text FROM interaction_events
-           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ?
+           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ? AND id < ?
            AND event_type = 'ANSWER' AND result_status = 'SUCCESS' AND output_text IS NOT NULL
            ORDER BY id DESC""",
-        (session["id"], session["version_id"], session["current_page_no"], question["id"] if question else arrival_id),
+        (session["id"], session["version_id"], session["current_page_no"], question["id"] if question else arrival_id,
+         before_id),
     )
     return next((followup for followup in followups if followup["output_text"].strip()), question)
 
@@ -166,6 +172,27 @@ def parent_visit_questions(db, session, arrival_id: int) -> tuple[str, ...]:
         (session["id"], session["version_id"], session["current_page_no"], arrival_id),
     )
     return tuple(row["output_text"].strip() for row in questions if row["output_text"].strip())
+
+
+def parent_visit_turns(db, session, arrival_id: int) -> tuple[RecentReadingTurn, ...]:
+    rows = db.execute(
+        """SELECT id, input_text, output_text, json_extract(response_json, '$.data.replyText') AS reply
+           FROM interaction_events
+           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ?
+             AND event_type = 'ANSWER' AND result_status = 'SUCCESS'
+           ORDER BY id DESC LIMIT ?""",
+        (session["id"], session["version_id"], session["current_page_no"], arrival_id, MAX_RECENT_TURNS),
+    ).fetchall()
+    turns = []
+    for row in reversed(rows):
+        # A follow-up on this ANSWER is a new question, never the question it answered.
+        question = current_parent_question(db, session, arrival_id=arrival_id, before_id=row["id"])
+        if question and row["input_text"]:
+            reply = row["reply"] if isinstance(row["reply"], str) else ""
+            if row["output_text"]:
+                reply = reply.removesuffix(row["output_text"])
+            turns.append(RecentReadingTurn(question["output_text"], row["input_text"], reply[:160]))
+    return tuple(turns)
 
 
 def child_answer_options(db: sqlite3.Connection, session: sqlite3.Row) -> list[str]:
@@ -814,12 +841,15 @@ def save_reading_event(request: Request, session_id: int, payload: ReadingEvent,
                  payload.eventType, payload.feedback, payload.inputText, revision, now))
             response = {"data": {"interactionEventId": cursor.lastrowid, "revision": revision}, "requestId": request.state.request_id}
             if context is not None:
+                latest = context["recent_turns"][-1] if context["recent_turns"] else None
+                question_answered = bool(latest and latest.question == context["question"])
                 response["data"]["replyText"] = reply_to_child_answer(
                     context["page_text"], payload.inputText, context["question"],
+                    age_band=context["age_band"], question_answered=question_answered,
                 )
-                if not model_available or not context["question"] or answer_is_unsafe(payload.inputText) or not any(
-                    char.isalnum() for char in payload.inputText
-                ):
+                if (not model_available or not context["question"] or answer_is_unsafe(payload.inputText)
+                        or close_reading_reply(payload.inputText, context["age_band"], question_answered=question_answered)
+                        or not any(char.isalnum() for char in payload.inputText)):
                     context = None
             db.execute("UPDATE interaction_events SET response_json = ? WHERE id = ?",
                        (json.dumps(response, ensure_ascii=False), cursor.lastrowid))
@@ -848,18 +878,7 @@ def answer_context(db, session, answer: str) -> dict:
            GROUP BY TRIM(output_text) ORDER BY MAX(id) DESC LIMIT ?""",
         (session["id"], session["version_id"], session["current_page_no"], arrival_id, MAX_ANSWER_FOLLOWUPS),
     ).fetchall()
-    prior = db.execute(
-        """SELECT json_extract(response_json, '$.data.replyText') AS reply,
-                  output_text AS appended_question
-           FROM interaction_events
-           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ?
-             AND event_type = 'ANSWER' AND result_status = 'SUCCESS'
-           ORDER BY id DESC LIMIT 1""",
-        (session["id"], session["version_id"], session["current_page_no"], arrival_id),
-    ).fetchone()
-    prior_reply = prior["reply"] if prior and isinstance(prior["reply"], str) else ""
-    if prior_reply and prior["appended_question"]:
-        prior_reply = prior_reply.removesuffix(prior["appended_question"])
+    recent_turns = parent_visit_turns(db, session, arrival_id)
     visited = json.loads(session["visited_pages_json"])
     earlier = [number for number in visited[:-1] if number != session["current_page_no"]][-3:]
     texts = {}
@@ -872,9 +891,11 @@ def answer_context(db, session, answer: str) -> dict:
         page_text=page["body_text"] if page else "", question=question["output_text"] if question else "", answer=answer,
         title=page["title"] if page else "", page_number=session["current_page_no"],
         age_band=page["age_band"] if page else "", topics=json.loads(page["topics_json"]) if page else [],
-        earlier_pages=[texts[number][:600] for number in earlier if number in texts],
+        earlier_pages=[texts[number][:ANSWER_EARLIER_PAGE_CHARS + ANSWER_PAGE_LOOKAHEAD]
+                       for number in earlier if number in texts],
         used_followups=[item["question"] for item in followups],
-        seen_questions=parent_visit_questions(db, session, arrival_id), prior_reply=prior_reply[:160],
+        seen_questions=parent_visit_questions(db, session, arrival_id),
+        prior_reply=recent_turns[-1].reply if recent_turns else "", recent_turns=recent_turns,
     )
 
 

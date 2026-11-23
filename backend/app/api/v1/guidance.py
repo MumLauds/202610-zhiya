@@ -16,7 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from app.api.v1.auth import authorized_db, error
 from app.api.v1.reading_sessions import (
     CHILD_SHORT_ANSWERS, MAX_ID, current_page_arrival_id, current_parent_question, current_question, fail_session_event,
-    owned_session, parent_visit_questions, record_session_event, replay_session_event, request_digest,
+    owned_session, parent_visit_questions, parent_visit_turns, record_session_event, replay_session_event, request_digest,
 )
 from app.schemas.agent import AgentResult
 from app.services.reading_agent import (
@@ -189,6 +189,7 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
                 return JSONResponse(status_code=201, content=response)
 
             seen_questions = parent_visit_questions(db, session, arrival_id) if parent_guidance else ()
+            recent_turns = parent_visit_turns(db, session, arrival_id) if parent_guidance else ()
             context = db.execute(
                 """SELECT p.age_band, v.topics_json, page.body_text, page.image_ref FROM reading_sessions s
                    JOIN child_profiles p ON p.id = s.profile_id JOIN story_versions v ON v.id = s.version_id
@@ -247,7 +248,7 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
             result = await run_agent(model, feedback=payload.feedback,
                                      previous_question=previous_question, child_mode=session["mode"] == "CHILD_SOLO",
                                      confirmed_answer=confirmed_answer, earlier_pages=earlier_pages,
-                                     seen_questions=seen_questions,
+                                     seen_questions=seen_questions, recent_turns=recent_turns,
                                      **context_args)
     except Exception as exc:
         # Keep private prompts and provider messages out of logs; record a definite failure for this key.

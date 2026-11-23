@@ -21,11 +21,11 @@ def safe_retrieval(monkeypatch):
     ))
 
 
-def reply(model, *, answer=CONFIRMED, age="AGE_5_6", page=PAGE, question=QUESTION, used=(), seen=(), prior=""):
+def reply(model, *, answer=CONFIRMED, age="AGE_5_6", page=PAGE, question=QUESTION, used=(), seen=(), prior="", recent=()):
     return asyncio.run(reading_agent.generate_answer_reply(
         model, page_text=page, question=question, answer=answer, age_band=age, topics=[],
         title="雨中的小兔", page_number=1, earlier_pages=[], used_followups=list(used),
-        seen_questions=seen, prior_reply=prior,
+        seen_questions=seen, prior_reply=prior, recent_turns=recent,
     ))
 
 
@@ -39,6 +39,88 @@ def select_intent(intent):
         candidate_id = next(int(key) for key, spec in choices.items() if spec["意图"] == intent)
         return ModelGenerateResult(success=True, text=json.dumps({"candidateId": candidate_id}))
     return select
+
+
+def test_semantic_dedup_does_not_confuse_new_focus_with_new_wording():
+    signatures = reading_agent._visit_questions(
+        "读到“小兔打开雨伞”时，你看见了什么？", ("为什么小兔把伞撑开？", "图里的窗户是什么颜色？"),
+    )
+    assert reading_agent._question_repeats("读到“小熊看着它”时，画面里有什么？", signatures)
+    assert reading_agent._question_repeats("你发现了什么？", signatures)
+    assert reading_agent._question_repeats("读到“小兔打开雨伞”时，书里说为什么会这样？", signatures)
+    assert not reading_agent._question_repeats("为什么小兔放下雨伞？", signatures)
+    assert not reading_agent._question_repeats("图里的提灯是什么颜色？", signatures)
+    assert not reading_agent._question_repeats("你能指一指画面里的角色吗？", signatures)
+
+
+def test_recent_turn_summary_is_bounded_grounded_and_can_offer_a_causal_continuation():
+    model = AsyncMock()
+    model.generate.side_effect = select_intent("CAUSAL")
+    recent = (
+        reading_agent.RecentReadingTurn("更旧一问", "只属于更旧回答的标记", "只属于更旧回应的标记"),
+        reading_agent.RecentReadingTurn("电话号码是什么？", "孩子@example.invalid", "过去的接管正文"),
+        reading_agent.RecentReadingTurn("小兔做了什么？", CONFIRMED, "只属于过去回应的标记"),
+    )
+    result = reply(model, question="图里有哪些东西？", recent=recent)
+    assert result and result[1] == "为什么小兔打开雨伞？"
+    request = model.generate.await_args.args[0]
+    context = answer_context(request)
+    assert context["本页最近交流摘要"] == [
+        {"问题意图": "PLOT", "作答状态": "有当页线索", "当页线索": "小兔打开雨伞"},
+    ]
+    prompt = request.context_text + request.user_input + request.system_prompt
+    assert all(secret not in prompt for secret in (CONFIRMED, "example.invalid", "过去回应的标记", "更旧回答的标记"))
+
+
+def test_uncertain_turn_simplifies_only_current_questions():
+    model = AsyncMock()
+    model.generate.return_value = ModelGenerateResult(success=True, text='{"candidateId":1}')
+    assert reply(model, answer="我不知道", age="AGE_5_6") is not None
+    context = answer_context(model.generate.await_args.args[0])
+    assert context["本轮难度"] == "单一具体观察"
+    assert {candidate["意图"] for candidate in context["共读候选"].values() if candidate["追问"]} == {"OBSERVATION"}
+    assert reply(model, age="AGE_5_6", recent=(reading_agent.RecentReadingTurn(QUESTION, "我不知道", ""),)) is not None
+    context = answer_context(model.generate.await_args.args[0])
+    assert context["本轮难度"] == "按年龄分组"
+    assert "CAUSAL" in {candidate["意图"] for candidate in context["共读候选"].values()}
+
+
+@pytest.mark.parametrize("page,grounded", [
+    ("因为下雨，小狐狸打开黄雨伞。", True),
+    ("小熊打开黄雨伞。小狐狸打开了房门。", False),
+    ("小狐狸没有打开黄雨伞。", False),
+])
+def test_reduplicated_word_is_grounded_only_for_asked_character_and_action(page, grounded):
+    model = AsyncMock()
+    model.generate.return_value = ModelGenerateResult(success=True, text='{"candidateId":1}')
+    question, answer = "小狐狸打开了什么？", "伞伞呀。"
+    assert reply(model, question=question, page=page, answer=answer) is not None
+    request = model.generate.await_args.args[0]
+    assert ("RELEVANT" in answer_context(request)["可选类别"]) is grounded
+    assert ("这一页也写到" in reading_agent.reply_to_child_answer(page, answer, question)) is grounded
+    assert answer not in request.context_text
+
+
+@pytest.mark.parametrize("answer,question,closed", [
+    ("嗯，我们继续看吧！", "小兔撑伞了吗？", True),
+    ("不要继续读，我还想看看这幅图。", QUESTION, False),
+    ("嗯！", QUESTION, True),
+    ("嗯！", "小兔撑伞了吗？", False),
+])
+def test_close_distinguishes_explicit_intent_and_new_yes_no_question(answer, question, closed):
+    model = AsyncMock()
+    model.generate.return_value = ModelGenerateResult(success=True, text='{"candidateId":1}')
+    recent = (reading_agent.RecentReadingTurn(QUESTION, CONFIRMED, ""),)
+    result = reply(model, answer=answer, question=question, recent=recent)
+    assert result is not None
+    if closed:
+        assert result == (reading_agent.CLOSE_REPLIES["AGE_5_6"], "")
+        model.generate.assert_not_awaited()
+    else:
+        model.generate.assert_awaited_once()
+        if "不要继续读" in answer:
+            context = answer_context(model.generate.await_args.args[0])
+            assert not any(candidate["策略"] == "IMAGINE" for candidate in context["共读候选"].values())
 
 
 def test_answer_selects_whitelisted_compound_candidate_and_keeps_private_history_local():
@@ -67,6 +149,17 @@ def test_imagination_question_does_not_relabel_a_fact_as_a_guess():
     assert "猜想" not in response[0]
     choices = answer_context(model.generate.await_args.args[0])["共读候选"].values()
     assert all(item["策略"] != "IMAGINE" for item in choices)
+
+
+def test_prediction_question_without_explicit_guess_stays_imaginative():
+    model = AsyncMock()
+    model.generate.return_value = ModelGenerateResult(success=True, text='{"candidateId":1}')
+    result = reply(model, page="小狐狸扶着栏杆慢慢走。小兔来到湿漉漉的桥头。",
+                   question="小兔接下来可能怎么过桥？", answer="它可能会先看看栏杆，也慢慢走。")
+    assert result is not None
+    choices = answer_context(model.generate.await_args.args[0])["共读候选"].values()
+    assert any(item["策略"] == "IMAGINE" for item in choices)
+    assert all(item["策略"] != "AFFIRM" for item in choices)
 
 
 @pytest.mark.parametrize("age,intents", [

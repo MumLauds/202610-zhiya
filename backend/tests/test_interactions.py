@@ -1137,6 +1137,7 @@ def test_co_reading_model_history_is_scoped_to_one_visit(started_session, guidan
     assert ctx["seen_questions"] == (first, "下一页会怎样？")
     assert ctx["prior_reply"] == "先看看小兔。"
     assert ctx["question"] == "下一页会怎样？"
+    assert ctx["recent_turns"] == (reading_agent.RecentReadingTurn(first, "合成作答甲", "先看看小兔。"),)
 
     left = event("PAGE_CHANGED", 2, followup["revision"], "visit-history-leave")
     returned = event("PAGE_CHANGED", 1, left["revision"], "visit-history-return")
@@ -1146,6 +1147,28 @@ def test_co_reading_model_history_is_scoped_to_one_visit(started_session, guidan
     assert ctx["seen_questions"] == (new["outputText"],)
     assert ctx["prior_reply"] == ""
     assert ctx["used_followups"] == []
+    assert ctx["recent_turns"] == ()
+
+
+def test_parent_natural_close_needs_no_model_and_replays_without_advancing_question(started_session, guidance_model):
+    client, headers, path, sid = started_session
+    initial = guidance(client, headers, sid, "close-initial")
+    assert initial.status_code == 201
+    revision = initial.json()["data"]["revision"]
+    url = f"/api/v1/reading-sessions/{sid}/events"
+    payload = dict(eventType="ANSWER", pageNumber=1, expectedRevision=revision, clientEventId="local-close",
+                   inputText="嗯，我们继续看吧！")
+    guidance_model.reset_mock()
+    answer = client.post(url, headers=headers, json=payload)
+    assert answer.status_code == 201
+    receipt = answer.json()["data"]
+    assert receipt["revision"] == revision + 1
+    assert receipt["replyText"] in reading_agent.CLOSE_REPLIES.values()
+    assert "followupQuestion" not in receipt
+    assert_saved_answer(client, path, sid, "local-close", receipt)
+    replay = client.post(url, headers=headers, json=payload)
+    assert replay.status_code == 200 and replay.json()["data"] == receipt
+    guidance_model.assert_not_awaited()
 
 
 def test_guidance_on_next_page_does_not_use_previous_page_answer(started_session, guidance_model):
