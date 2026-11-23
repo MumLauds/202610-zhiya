@@ -644,8 +644,10 @@ describe('guardian answer follow-ups', () => {
   const answer = { ...receipt, pageNumber: 1, eventType: 'ANSWER', inputText: '雨伞' }
 
   function expectFollowup() {
-    expect(wrapper.get('.agent-text').text()).toBe(followupQuestion)
-    expect(wrapper.get('.guardian-answer-reply').text()).toBe('芽芽：' + replyText)
+    const card = wrapper.get('section[aria-labelledby="interaction-title"]')
+    expect(card.findAll('.answer-confirmation, .agent-text').map(item => item.text())).toEqual([
+      '上一轮回答：雨伞', '芽芽：' + replyText, '芽芽追问：' + followupQuestion,
+    ])
     expect(wrapper.text().split(followupQuestion)).toHaveLength(2)
   }
 
@@ -661,6 +663,29 @@ describe('guardian answer follow-ups', () => {
     expectFollowup()
     expect(wrapper.text()).not.toContain(question.outputText)
     expect(api.addEvent).toHaveBeenCalledTimes(1)
+  })
+
+  it('announces while an answer is in progress and prevents duplicate confirmation', async () => {
+    let resolve
+    const response = new Promise(done => { resolve = done })
+    const addEvent = vi.fn().mockReturnValue(response)
+    await openReader({ snapshot: parent, events: [question], sessionApi: { addEvent } })
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue('雨伞')
+    await clickButton('确认回答')
+
+    const dialog = wrapper.get('[role="dialog"]')
+    expect(dialog.get('[role="status"]').text()).toBe('芽芽正在想怎么回应…')
+    const confirm = dialog.get('.dialog-actions .button-primary')
+    expect(confirm.element.disabled).toBe(true)
+    await confirm.trigger('click')
+    expect(addEvent).toHaveBeenCalledTimes(1)
+
+    resolve({ data: receipt })
+    await flushPromises()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expectFollowup()
   })
 
   it('restores a completed answer and its exact follow-up from the current visit', async () => {

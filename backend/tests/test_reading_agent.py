@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.schemas.agent import ModelGenerateResult
+from app.schemas.agent import KnowledgeItem, KnowledgeRetrievalResult, ModelGenerateResult
 from app.services import reading_agent
 from app.services.reading_agent import matching_answer_excerpt
 
@@ -152,3 +152,67 @@ def test_reply_templates_vary_by_age_without_adding_story_facts_or_questions():
     ]
     assert len({text for text, _ in replies}) == 3
     assert all("“小兔打开雨伞”" in text and "？" not in text and not followup for text, followup in replies)
+
+
+@pytest.mark.parametrize("contact", ["fable-tester@example.invalid", "ｆａｂｌｅ－ｔｅｓｔｅｒ＠ｅｘａｍｐｌｅ．ｉｎｖａｌｉｄ"])
+def test_answer_page_reference_keeps_safe_facts_and_omits_private_spans(contact, monkeypatch):
+    page = f"小兔打开雨伞。{contact}。小熊撑伞回家。"
+    model = AsyncMock()
+    model.generate.return_value = ModelGenerateResult(
+        success=True, text='{"answerCategory":"RELEVANT","followup":0}',
+    )
+    monkeypatch.setattr(reading_agent, "retrieve_knowledge", lambda *_: KnowledgeRetrievalResult(
+        items=[], has_results=False,
+    ))
+    answer = "我看见它撑开了雨伞啦"
+    result = asyncio.run(reading_agent.generate_answer_reply(
+        model, page_text=page, question="小兔做了什么？", answer=answer,
+        age_band="AGE_3_4", topics=[], title="小兔", page_number=1, earlier_pages=[], used_followups=[],
+    ))
+    prompt = model.generate.await_args.args[0].context_text
+    assert "小兔打开雨伞" in prompt and "小熊撑伞回家" in prompt
+    assert "fable" not in prompt and "invalid" not in prompt
+    assert "ｆａｂｌｅ" not in prompt and "ｉｎｖａｌｉｄ" not in prompt
+    assert result is not None and "小兔打开雨伞" in result[0]
+    fallback = reading_agent.reply_to_child_answer(page, answer)
+    assert "小兔打开雨伞" in fallback and contact not in fallback
+
+
+def test_answer_page_checks_for_private_spans_across_the_context_limit():
+    first_clause = "小兔打开雨伞。"
+    filler = "，" * (reading_agent.ANSWER_PAGE_CHARS - len(first_clause) - 16)
+    contact = "fable-tester@example.invalid"
+    page = first_clause + filler + contact
+    assert reading_agent.ANSWER_PAGE_CHARS < len(page)
+    reference = reading_agent._answer_page(page)
+    assert reference.startswith(first_clause)
+    assert len(reference) <= reading_agent.ANSWER_PAGE_CHARS
+    assert "fable-tester" not in reference
+
+
+def test_answer_retrieval_filters_all_serialized_fields_but_keeps_safe_approved_knowledge(monkeypatch):
+    safe = dict(item_key="picture-reading", content="指一指绘本上的伞。", source_title="亲子共读手册")
+    unsafe_markers = {
+        "item_key": "fixture-key@example.invalid",
+        "content": "fixture-content@example.invalid",
+        "source_title": "fixture-title@example.invalid",
+    }
+    retrieved = [KnowledgeItem(knowledge_item_id=n, **{**safe, field: marker})
+                 for n, (field, marker) in enumerate(unsafe_markers.items(), 1)]
+    retrieved.append(KnowledgeItem(knowledge_item_id=4, **safe))
+    monkeypatch.setattr(reading_agent, "retrieve_knowledge", lambda *_: KnowledgeRetrievalResult(
+        items=retrieved, has_results=True,
+    ))
+    model = AsyncMock()
+    model.generate.return_value = ModelGenerateResult(
+        success=True, text='{"answerCategory":"RELEVANT","followup":0}',
+    )
+    result = asyncio.run(reading_agent.generate_answer_reply(
+        model, page_text="小兔打开雨伞。", question="小兔做了什么？", answer="它撑开雨伞了",
+        age_band="AGE_3_4", topics=[], title="小兔", page_number=1, earlier_pages=[], used_followups=[],
+    ))
+    assert result is not None
+    prompt = model.generate.await_args.args[0].context_text
+    assert "[picture-reading] 指一指绘本上的伞。（来源：亲子共读手册）" in prompt
+    assert all(marker not in prompt for marker in unsafe_markers.values())
+    assert "fixture-" not in prompt

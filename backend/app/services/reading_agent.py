@@ -81,6 +81,8 @@ ANSWER_RISK = re.compile(
     r"system prompt|ignore.{0,24}(?:instructions?|rules)", re.I,
 )
 ANSWER_TIMEOUT = 5.0
+ANSWER_PAGE_CHARS = 1200
+ANSWER_PAGE_LOOKAHEAD = 256  # Enough context for a complete email address across the cap.
 MAX_ANSWER_FOLLOWUPS = 2
 ANSWER_FOLLOWUPS = {
     "AGE_3_4": ("你能指给我看吗？", "你还看到了什么？"),
@@ -374,9 +376,23 @@ def _answer_signals(answer: str, page: str, question: str) -> AnswerSignals:
 
 def _answer_page(text: str) -> str:
     # Keep sentence and clause boundaries so unrelated facts cannot form a causal claim.
-    parts = re.split(r"([，。！？；：、‘’“”「」\n,.!?;:])", text[:1200])
-    return "".join(part if index % 2 or not answer_is_unsafe(part) else "。"
-                   for index, part in enumerate(parts))
+    page = text[:ANSWER_PAGE_CHARS]
+    parts = re.split(r"([，。！？；：、‘’“”「」\n,.!?;:])", page)
+    normalized = [unicodedata.normalize("NFKC", part) for part in parts]
+    # Match before considering punctuation boundaries: an unsafe span can cross them.
+    # Keep the unmodified original wording of safe clauses for grounded quotes.
+    tail = text[ANSWER_PAGE_CHARS:ANSWER_PAGE_CHARS + ANSWER_PAGE_LOOKAHEAD]
+    reference = "".join(normalized) + unicodedata.normalize("NFKC", tail)
+    spans = [match.span() for pattern in (SENSITIVE, ANSWER_RISK) for match in pattern.finditer(reference)]
+    if not spans:
+        return page
+    offset = 0
+    for index, part in enumerate(normalized):
+        end = offset + len(part)
+        if part and index % 2 == 0 and any(start < end and offset < stop for start, stop in spans):
+            parts[index] = "。"
+        offset = end
+    return "".join(parts)
 
 
 def reply_to_child_answer(page_text: str, confirmed_answer: str, question: str = "") -> str:
@@ -470,7 +486,11 @@ async def generate_answer_reply(model: ModelAdapter, *, page_text: str, question
                 age_band=age_band, topics=topics, task_type="GUIDANCE", query_text=f"{page} {clue or ''}",
             ))
             request = build_prompt(
-                "ANSWER_REPLY", age_band=age_band, page_text=page, items=knowledge.items, max_items=3,
+                "ANSWER_REPLY", age_band=age_band, page_text=page,
+                items=[item for item in knowledge.items if not any(answer_is_unsafe(field) for field in (
+                    item.item_key, item.content, item.source_title,
+                ))],
+                max_items=3,
                 user_input="根据参考资料选择共读回应。",
                 output_rule=("只输出 JSON 对象，包含 answerCategory 和 followup。"
                              "类别须取自可选类别，followup 为提供的编号，0 表示不再追问。"),

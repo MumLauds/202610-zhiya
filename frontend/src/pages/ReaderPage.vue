@@ -134,11 +134,15 @@ const savedAnswer = computed(() => pageEvents.value.findLast(event => event.even
 const currentQuestion = computed(() => {
   const answer = savedAnswer.value
   const guidance = guidanceQuestion.value
-  if (props.session?.mode !== 'CHILD_SOLO' && answer?.followupQuestion
+  if (props.authenticated && !props.session?.preview && props.session?.mode !== 'CHILD_SOLO' && answer?.followupQuestion
       && (!guidance || answer.interactionEventId > guidance.interactionEventId)) {
-    return { interactionEventId: answer.interactionEventId, outputText: answer.followupQuestion }
+    return { interactionEventId: answer.interactionEventId, eventType: 'ANSWER', outputText: answer.followupQuestion }
   }
   return guidance
+})
+const answerFollowup = computed(() => {
+  const question = currentQuestion.value
+  return question?.eventType === 'ANSWER' && !questionSkipped.value && !questionBlocked.value ? question.outputText : ''
 })
 const answerReply = computed(() => {
   const { replyText, followupQuestion } = savedAnswer.value || {}
@@ -146,7 +150,7 @@ const answerReply = computed(() => {
     ? replyText.slice(0, -followupQuestion.length).trimEnd()
     : replyText
 })
-const answerViewKey = computed(() => `${props.session?.readingSessionId}:${currentPage.value?.pageNumber}`)
+const answerViewKey = computed(() => `${props.session?.readingSessionId}:${pageIndex.value}:${currentPage.value?.pageNumber}`)
 const pendingAnswerView = shallowRef(null)
 const answerPending = computed(() => pendingAnswerView.value?.view === answerViewKey.value
   && !pendingAnswerView.value.isStoryQuestion)
@@ -745,7 +749,10 @@ async function refreshProgress() {
 // A recording uses a revision-bound recognition request. Narration belongs to the page.
 // An ASK write changes the revision without changing the child's question.
 watch(() => props.session?.revision, closeStoryQuestion)
-watch([answerViewKey, () => props.loading, () => props.authenticated, () => props.accountId], clearPendingAnswer)
+watch([answerViewKey, () => props.loading, () => props.authenticated, () => props.accountId], () => {
+  clearPendingAnswer()
+  voiceError.value = ''
+})
 watch([() => currentQuestion.value?.interactionEventId, questionSkipped, questionBlocked], () => {
   if (!voiceOpen.value) cancelRecording()
   childAnswerDraft.value = null
@@ -849,15 +856,18 @@ onBeforeUnmount(() => { clearPendingAnswer(); clearPreparedAudio(); stopNarratio
           <p v-if="session.preview">{{ currentPage?.question || '看看这一页，你发现了什么？' }}</p>
           <p v-else-if="questionSkipped">这一页的提问已跳过，可以继续翻页。</p>
           <p v-else-if="questionBlocked">{{ latestGuidanceEvent.outputText || '这个问题先请家长和孩子一起聊一聊。' }}</p>
-          <p v-else-if="currentQuestion">{{ currentQuestion.outputText }}</p>
+          <p v-else-if="currentQuestion && !answerFollowup">{{ currentQuestion.outputText }}</p>
           <p v-else-if="guidanceLoading">正在根据这一页生成问题…</p>
-          <p v-else>看看这一页，你发现了什么？</p>
+          <p v-else-if="!answerFollowup">看看这一页，你发现了什么？</p>
           <p v-if="guidanceError" class="question-error" role="alert">{{ guidanceError }}</p>
-          <p v-if="answerText" class="question-saved"><strong>{{ savedAnswer?.followupQuestion && currentQuestion?.interactionEventId === savedAnswer.interactionEventId ? '上一轮回答：' : '孩子的回答：' }}</strong>{{ answerText }}</p>
+          <p v-if="answerText" class="question-saved"><strong>{{ answerFollowup ? '上一轮回答：' : '孩子的回答：' }}</strong>{{ answerText }}</p>
           <p v-else-if="savedAnswer" class="question-saved" role="status">本页回答已保存。</p>
-          <p v-if="answerPending" class="question-reply" role="status">芽芽正在想怎么回应…</p>
-          <p v-else-if="authenticated && savedAnswer" class="question-reply" role="status"><strong>芽芽：</strong>{{ answerReply || '谢谢你分享！' }}</p>
-          <p v-else-if="session.preview && previewAnswer" class="question-reply" role="status"><strong>芽芽：</strong>{{ currentPage?.answer || '我们一起看看图里发生了什么吧。' }}</p>
+          <div role="status">
+            <p v-if="answerPending" class="question-reply">芽芽正在想怎么回应…</p>
+            <p v-else-if="authenticated && savedAnswer" class="question-reply"><strong>芽芽：</strong>{{ answerReply || '谢谢你分享！' }}</p>
+            <p v-else-if="session.preview && previewAnswer" class="question-reply"><strong>芽芽：</strong>{{ currentPage?.answer || '我们一起看看图里发生了什么吧。' }}</p>
+            <p v-if="answerFollowup" class="question-followup"><strong>芽芽追问：</strong>{{ answerFollowup }}</p>
+          </div>
           <button v-if="guidanceError && !currentQuestion && !questionSkipped && !questionBlocked && !session.preview" class="text-button question-retry" type="button" :disabled="interactionBusy || guidanceLoading || syncRequired" @click="retryQuestion">重新生成本页问题</button>
           <div class="question-actions">
             <button class="secondary feedback-understood" type="button" :disabled="!canSubmitFeedback || guidanceLoading || recordingBusy" @click="submitUnderstanding('UNDERSTOOD')"><span aria-hidden="true">✓</span> 已理解</button>

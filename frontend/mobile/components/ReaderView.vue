@@ -89,14 +89,16 @@ const currentVisitEvents = computed(() => {
 const savedAnswer = computed(() => isParentReading.value && !reviewing.value
   ? currentVisitEvents.value.findLast((event) => event.eventType === 'ANSWER' && event.pageNumber === currentPageNumber.value)
   : null)
-const displayedQuestion = computed(() => {
+const answerFollowup = computed(() => {
   const answer = savedAnswer.value
   const prompt = interactionResult.value
   if (answer?.followupQuestion && (!prompt || answer.interactionEventId > prompt.interactionEventId)) {
-    return { outputText: answer.followupQuestion }
+    return answer.followupQuestion
   }
-  return prompt
+  return ''
 })
+const displayedQuestion = computed(() => answerFollowup.value
+  ? { outputText: answerFollowup.value } : interactionResult.value)
 const savedReply = computed(() => {
   const reply = savedAnswer.value?.replyText
   const question = savedAnswer.value?.followupQuestion
@@ -616,6 +618,7 @@ function exitReading() {
         <p v-if="reviewing" class="inline-notice">正在回看已读页，回到当前进度后可继续互动。</p>
         <InteractionCard v-else
           :result="displayedQuestion"
+          :followup="Boolean(answerFollowup)"
           :revision="revision"
           :pending="pending || (isParentReading && session.state.syncRequired)"
           :demo="mode === 'demo'"
@@ -633,7 +636,16 @@ function exitReading() {
           @understood="submitFeedback('UNDERSTOOD')"
           @skip="submitFeedback('SKIPPED')"
           @play-answer="playAnswerAudio()"
-        />
+        >
+          <p v-if="confirmedAnswerText" class="answer-confirmation">
+            <strong>{{ isChildMode ? '已提交回答：' : answerFollowup ? '上一轮回答：' : '家长确认文本：' }}</strong>{{ confirmedAnswerText }}
+          </p>
+          <div v-if="isParentReading" role="status">
+            <p v-if="savedReply" class="answer-confirmation guardian-answer-reply">
+              <strong>芽芽：</strong>{{ savedReply }}
+            </p>
+          </div>
+        </InteractionCard>
         <section v-if="mode === 'live' && !reviewing" class="interaction-card">
           <h2>问问芽芽</h2>
           <template v-if="session.state.session.mode === 'CHILD_SOLO'">
@@ -644,12 +656,6 @@ function exitReading() {
           <button v-if="storyAnswer?.interactionEventId && storyAnswer.strategyType !== 'SAFETY_BLOCK'" class="button button-ghost" type="button" :disabled="answerAudioLoading" @click="playAnswerAudio(storyAnswer)">{{ answerAudioLoading ? '回答音频准备中…' : '播放芽芽的回答' }}</button>
         </section>
 
-        <p v-if="confirmedAnswerText" class="answer-confirmation">
-          <strong>{{ isChildMode ? '已提交回答：' : savedAnswer?.followupQuestion && displayedQuestion?.outputText === savedAnswer.followupQuestion ? '上一轮回答：' : '家长确认文本：' }}</strong>{{ confirmedAnswerText }}
-        </p>
-        <p v-if="savedReply" class="answer-confirmation guardian-answer-reply" role="status">
-          <strong>芽芽：</strong>{{ savedReply }}
-        </p>
         <p v-if="answerAudioNotice" class="inline-notice">{{ answerAudioNotice }}</p>
         <p v-if="session.notice.value" class="inline-notice">{{ session.notice.value }}</p>
         <p v-if="session.error.value" class="inline-error">{{ errorMessage }}</p>

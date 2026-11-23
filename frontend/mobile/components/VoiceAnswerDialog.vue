@@ -165,6 +165,9 @@ function formatDuration(seconds) {
         <p v-if="reliable === false" class="warning-note">识别结果未标记为可靠，请家长仔细核对。</p>
         <p v-if="recorder.error.value" class="inline-error">{{ recorder.error.value }}</p>
         <p v-if="submitError" class="inline-error" role="alert">{{ submitError }}</p>
+        <div role="status">
+          <p v-if="submitting && !asking" class="status-line">芽芽正在想怎么回应…</p>
+        </div>
         <div class="dialog-actions">
           <button class="button button-primary" type="button" :disabled="submitting || !transcript.trim()" @click="confirmAnswer">
             {{ submitting ? '正在提交…' : asking ? '确认提问' : '确认回答' }}

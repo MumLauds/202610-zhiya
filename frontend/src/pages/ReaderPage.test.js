@@ -1204,7 +1204,7 @@ describe('guided reading interactions', () => {
     })
     expect(wrapper.text()).toContain('孩子的回答：')
     expect(wrapper.text()).toContain('小兔躲在树后。')
-    expect(wrapper.get('.question-card .question-reply[role="status"]').text()).toBe('芽芽：你从画面哪里看出来的？')
+    expect(wrapper.get('.question-card [role="status"] .question-reply').text()).toBe('芽芽：你从画面哪里看出来的？')
 
     await wrapper.setProps({
       session: { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3], revision: 4 },
@@ -1265,6 +1265,33 @@ describe('guided reading interactions', () => {
     expect(editor.element.value).toBe('重新载入后的草稿')
   })
 
+  it('ignores a pending answer from the earlier visit after a branch returns to the same page', async () => {
+    const pending = deferred()
+    const submitAnswer = vi.fn().mockReturnValueOnce(pending.promise)
+    render({ submitAnswer })
+    await wrapper.get('.reader-answer textarea').setValue('上一次来时的回答')
+    await wrapper.get('.reader-answer').trigger('submit')
+    expect(wrapper.get('.question-reply').text()).toContain('芽芽正在想怎么回应')
+
+    await wrapper.setProps({
+      session: { ...initialSession, visitedPageNumbers: [1, 3, 1], revision: 6 },
+      events: [questionEvent,
+        { interactionEventId: 12, eventType: 'BRANCH_CHOSEN', pageNumber: 1 },
+        { interactionEventId: 13, eventType: 'BRANCH_CHOSEN', pageNumber: 3 },
+        { ...questionEvent, interactionEventId: 14, outputText: '回到这里，你看到了什么？' }],
+    })
+    expect(displayedPageNumber()).toBe(1)
+    expect(wrapper.find('.question-reply').exists()).toBe(false)
+    const editor = wrapper.get('.reader-answer textarea')
+    expect(editor.element.disabled).toBe(false)
+    await editor.setValue('这一次来的新草稿')
+
+    pending.resolve(false)
+    await flushPromises()
+    expect(wrapper.find('.question-error').exists()).toBe(false)
+    expect(editor.element.value).toBe('这一次来的新草稿')
+  })
+
   it('offers only approved branches from the current page', async () => {
     const chooseBranch = vi.fn().mockResolvedValue(true)
     render({
@@ -1292,11 +1319,12 @@ it('uses a saved follow-up as the current question and does not print it twice',
   }
   render()
   await wrapper.setProps({ events: [questionEvent, answer] })
-  const replies = wrapper.get('.question-reply')
-  expect(replies.text()).toContain('你找到了一条线索。')
-  expect(replies.text()).not.toContain(answer.followupQuestion)
-  expect(wrapper.get('.reader-side').text()).toContain(answer.followupQuestion)
-  expect(wrapper.get('.reader-side').text()).not.toContain(questionEvent.outputText)
+  const card = wrapper.get('.question-card')
+  expect(card.findAll('.question-saved, .question-reply, .question-followup').map(item => item.text())).toEqual([
+    '上一轮回答：树后。', '芽芽：你找到了一条线索。', '芽芽追问：你还看到了什么？',
+  ])
+  expect(wrapper.text().split(answer.followupQuestion)).toHaveLength(2)
+  expect(card.text()).not.toContain(questionEvent.outputText)
   await wrapper.get('.reader-answer textarea').setValue('草地。')
   await wrapper.get('.reader-answer').trigger('submit')
   expect(wrapper.props('submitAnswer')).toHaveBeenCalledWith('草地。')
