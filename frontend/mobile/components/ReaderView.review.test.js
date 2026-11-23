@@ -47,7 +47,9 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-async function openReader({ snapshot = inProgress, events = [], answerOptions, readerBook = book, sessionApi = {}, voiceApi = {} } = {}) {
+async function openReader({
+  snapshot = inProgress, initialSessionId = null, events = [], answerOptions, readerBook = book, sessionApi = {}, voiceApi = {},
+} = {}) {
   const api = {
     create: vi.fn(),
     get: vi.fn(),
@@ -63,6 +65,7 @@ async function openReader({ snapshot = inProgress, events = [], answerOptions, r
       book: readerBook,
       mode: 'live',
       storyVersionId: book.storyVersionId,
+      initialSessionId,
       initialSnapshot: snapshot ? { session: snapshot, events, report: null, answerOptions } : null,
       sessionApi: api,
       voiceApi: {
@@ -854,5 +857,126 @@ describe('guardian answer follow-ups', () => {
     expect(wrapper.find('.guardian-answer-reply').exists()).toBe(false)
     expect(wrapper.text()).not.toContain(followupQuestion)
     expect(api.submitGuidance).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('guardian short-answer acknowledgement', () => {
+  const parent = { ...questionedPageOne, mode: 'PARENT_CHILD' }
+  const question = { ...savedQuestion(1, 2), outputText: '你能指一指画面里的角色吗？' }
+  const text = '猫猫。'
+  const receipt = { interactionEventId: 23, revision: 3, replyText: '你说的是猫猫呀。我们找找画面里有没有。' }
+  const answer = { ...receipt, eventType: 'ANSWER', pageNumber: 1, inputText: text }
+
+  async function submitTypedShortAnswer() {
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue(text)
+    await clickButton('确认回答')
+  }
+
+  function expectAcknowledgement() {
+    const card = wrapper.get('section[aria-labelledby="interaction-title"]')
+    expect(card.get('.agent-text').text()).toBe(question.outputText)
+    expect(card.get('.answer-confirmation:not(.guardian-answer-reply)').text()).toBe('家长确认文本：' + text)
+    expect(card.get('[role="status"] .guardian-answer-reply').text()).toBe('芽芽：' + receipt.replyText)
+    expect(wrapper.findAll('.guardian-answer-reply')).toHaveLength(1)
+    expect(card.text()).not.toContain('芽芽追问')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+  }
+
+  it('shows the server short reply once and restores it via a fresh progress read', async () => {
+    const api = await openReader({ snapshot: parent, events: [question],
+      sessionApi: { addEvent: vi.fn().mockResolvedValue({ data: receipt }) } })
+    await submitTypedShortAnswer()
+    expect(api.addEvent).toHaveBeenCalledExactlyOnceWith(42, expect.objectContaining({
+      eventType: 'ANSWER', inputText: text, pageNumber: 1, expectedRevision: 2,
+    }))
+    expectAcknowledgement()
+
+    wrapper.unmount()
+    const restored = await openReader({ snapshot: null, initialSessionId: 42, sessionApi: {
+      get: vi.fn().mockResolvedValue({ data: {
+        session: { ...parent, revision: 3 }, events: [question, answer], report: null,
+      } }),
+    } })
+    expectAcknowledgement()
+    expect(restored.get).toHaveBeenCalledExactlyOnceWith(42, expect.any(Object))
+    expect(restored.addEvent).not.toHaveBeenCalled()
+    expect(restored.submitGuidance).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [2, [1, 2], []],
+    [1, [1, 2, 1], [{ interactionEventId: 25, eventType: 'BRANCH_CHOSEN', pageNumber: 2 }]],
+  ])('keeps a late acknowledgement off the new visit to page %i', async (pageNumber, visitedPageNumbers, branchEvents) => {
+    let resolveAnswer
+    const pending = new Promise(resolve => { resolveAnswer = resolve })
+    const api = await openReader({ snapshot: parent, events: [question],
+      sessionApi: { addEvent: vi.fn().mockReturnValue(pending) } })
+    await submitTypedShortAnswer()
+    expect(wrapper.get('.answer-dialog [role="status"]').text()).toBe('芽芽正在想怎么回应…')
+    expect(wrapper.get('.page-navigation .button-primary').element.disabled).toBe(true)
+
+    // The original reader can be left or refreshed while its receipt is in flight.
+    wrapper.unmount()
+    const nextQuestion = {
+      ...savedQuestion(pageNumber, 6), interactionEventId: 26, outputText: '你现在看到了什么？',
+    }
+    const restored = await openReader({
+      snapshot: { ...parent, currentPage: pageNumber, visitedPageNumbers, revision: 6 },
+      events: [question, answer, { interactionEventId: 24, eventType: 'PAGE_CHANGED', pageNumber: 2 },
+        ...branchEvents, nextQuestion],
+    })
+    expect(wrapper.get('.agent-text').text()).toBe(nextQuestion.outputText)
+    expect(wrapper.find('.guardian-answer-reply').exists()).toBe(false)
+    resolveAnswer({ data: receipt })
+    await flushPromises()
+    expect(wrapper.get('.agent-text').text()).toBe(nextQuestion.outputText)
+    expect(wrapper.find('.guardian-answer-reply').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain(text)
+    expect(api.addEvent).toHaveBeenCalledTimes(1)
+    expect(restored.addEvent).not.toHaveBeenCalled()
+  })
+
+  it('shows the reply only after the guardian confirms a voice-transcribed short answer', async () => {
+    const track = { stop: vi.fn() }
+    vi.stubGlobal('navigator', { mediaDevices: {
+      getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [track] }),
+    } })
+    vi.stubGlobal('URL', class extends URL {
+      static createObjectURL = vi.fn(() => 'blob:short-answer')
+      static revokeObjectURL = vi.fn()
+    })
+    vi.stubGlobal('MediaRecorder', class extends EventTarget {
+      state = 'inactive'
+      mimeType = 'audio/webm'
+      start() { this.state = 'recording' }
+      stop() {
+        this.state = 'inactive'
+        this.dispatchEvent(new MessageEvent('dataavailable', { data: new Blob(['sample'], { type: this.mimeType }) }))
+        this.dispatchEvent(new Event('stop'))
+      }
+    })
+    const transcribe = vi.fn().mockResolvedValue({ data: { text, reliable: false } })
+    const api = await openReader({ snapshot: parent, events: [question], voiceApi: { transcribe },
+      sessionApi: { addEvent: vi.fn().mockResolvedValue({ data: receipt }) } })
+    await clickButton('孩子回答')
+    await clickButton('开始录音')
+    await wrapper.get('.record-button').trigger('click')
+    await clickButton('提交转写')
+    expect(transcribe).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      file: expect.any(Blob), readingSessionId: 42, pageNumber: 1, revision: 2,
+    }))
+    expect(track.stop).toHaveBeenCalledOnce()
+    expect(wrapper.get('textarea').element.value).toBe(text)
+    expect(wrapper.get('.warning-note').text()).toContain('请家长仔细核对')
+    expect(api.addEvent).not.toHaveBeenCalled()
+    expect(wrapper.find('.guardian-answer-reply').exists()).toBe(false)
+
+    await clickButton('确认回答')
+    expect(api.addEvent).toHaveBeenCalledExactlyOnceWith(42, expect.objectContaining({
+      eventType: 'ANSWER', inputText: text, pageNumber: 1, expectedRevision: 2,
+    }))
+    expectAcknowledgement()
   })
 })

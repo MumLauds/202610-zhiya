@@ -365,3 +365,49 @@ def test_timeout_unavailable_and_caught_cancellation_degrade_without_retry(monke
     plan = asyncio.run(proto.choose_reading_plan(model, context()))
     assert (plan.source, plan.reason) == ("LOCAL", "TIMEOUT")
     model.generate.assert_awaited_once()
+
+
+def test_acknowledgement_draft_is_reviewer_only_and_has_no_raw_child_turn():
+    raw = wire(action="RESPOND", questionId=None, focusId=None, understanding="UNVERIFIED", evidenceIds=[],
+               proposedResponseStrategy="ACKNOWLEDGE", proposedResponse="你说的是一个细节，我们一起在图里找找吧。")
+    ctx = context(answer_relation="UNKNOWN", answer_evidence_ids=(),
+                  semantic_signals=proto.SemanticSignals(speech_act="ASSERTS", referenced_focus_ids=("f1",)))
+    plan, model = run(raw, ctx=ctx, review=True)
+    assert plan.source == "MODEL" and plan.synthetic_draft.response_strategy == "ACKNOWLEDGE"
+    assert plan.synthetic_draft.response not in plan.response
+    assert run(raw, ctx=ctx)[0].synthetic_draft is None
+    req = model.generate.await_args.args[0]
+    assert req.page_image_url is None
+    payload = json.loads(req.context_text)
+    assert payload["localSignals"]["referencedFocusIds"] == ["f1"]
+    assert {"rawAnswer", "answerText", "pageImage", "sessionId"}.isdisjoint(payload)
+    model.generate.assert_awaited_once()
+
+
+@pytest.mark.parametrize("strategy", ["AFFIRM", "IMAGINE", "CLOSE", "FREE_TEXT"])
+def test_draft_strategy_cannot_bypass_local_evidence_or_action(strategy):
+    raw = wire(action="RESPOND", questionId=None, focusId=None, understanding="UNVERIFIED", evidenceIds=[],
+               proposedResponseStrategy=strategy, proposedResponse="对，猫在妈妈旁边。")
+    plan, model = run(raw, ctx=context(answer_relation="UNKNOWN", answer_evidence_ids=()), review=True)
+    assert (plan.source, plan.reason, plan.synthetic_draft) == ("LOCAL", "INVALID_PLAN", None)
+    assert "猫在妈妈旁边" not in plan.response
+    model.generate.assert_awaited_once()
+
+
+def test_supported_affirm_draft_retains_citations_for_review_but_not_for_display():
+    from qa.p6.co_reading_eval.draft_audit import audit_draft
+
+    ctx = context()
+    raw = wire(action="RESPOND", questionId=None, focusId=None, proposedResponseStrategy="AFFIRM",
+               proposedResponse="书里写着“小兔打开雨伞”。")
+    plan, _ = run(raw, ctx=ctx, review=True)
+    assert plan.synthetic_draft.response_strategy == "AFFIRM"
+    assert plan.synthetic_draft.evidence_ids == ("e1",)
+    assert audit_draft(ctx, plan.synthetic_draft).verdict == "MANUAL_REVIEW"
+
+    # A valid plan's citation does not prove the draft's different claim.
+    disputed = wire(action="RESPOND", questionId=None, focusId=None, proposedResponseStrategy="AFFIRM",
+                    proposedResponse="书里写着“下雨了”。")
+    plan, _ = run(disputed, ctx=ctx, review=True)
+    assert audit_draft(ctx, plan.synthetic_draft).verdict == "REJECT"
+    assert plan.response == "书里写着“小兔打开雨伞”。"

@@ -288,6 +288,30 @@ describe('parent transcript review', () => {
     expect(wrapper.text()).not.toContain('回答尚未确认保存')
   })
 
+  it('does not display a late short-answer acknowledgement on the next page', async () => {
+    const pending = deferred()
+    const rolePrompt = { ...questionEvent, outputText: '你能指一指画面里的角色吗？' }
+    const nextPrompt = { ...questionEvent, interactionEventId: 13, pageNumber: 3, outputText: '这一页的伞是什么颜色？' }
+    render({ events: [rolePrompt], submitAnswer: vi.fn(() => pending.promise) })
+    await wrapper.get('.reader-answer textarea').setValue('猫猫')
+    await wrapper.get('.reader-answer').trigger('submit')
+    expect(wrapper.get('.question-reply').text()).toContain('芽芽正在想怎么回应')
+
+    await wrapper.setProps({
+      session: { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3], revision: 4 },
+      events: [rolePrompt, nextPrompt],
+    })
+    await wrapper.setProps({ events: [rolePrompt, {
+      interactionEventId: 11, revision: 2, eventType: 'ANSWER', pageNumber: 1,
+      inputText: '猫猫', replyText: '你说的是猫猫。我们一起找找图里有没有。'
+    }, nextPrompt] })
+    pending.resolve(true)
+    await flushPromises()
+    expect(wrapper.text()).toContain(nextPrompt.outputText)
+    expect(wrapper.text()).not.toContain('你说的是猫猫')
+    expect(wrapper.find('.question-reply').exists()).toBe(false)
+  })
+
   it.each(['direct', 'denied', 'unsupported'])('accepts a typed answer with %s input', async (entry) => {
     const submitAnswer = vi.fn().mockResolvedValue(true)
     render({ submitAnswer })

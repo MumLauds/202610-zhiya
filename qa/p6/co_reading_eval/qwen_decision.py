@@ -28,6 +28,7 @@ FocusId = Annotated[str, Field(pattern=r"^f[1-9][0-9]?$")]
 QuestionSignature = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 Understanding = Literal["GROUNDED", "PARTIAL", "UNCERTAIN", "IMAGINATIVE", "OFF_TOPIC", "UNVERIFIED"]
 Action = Literal["RESPOND", "ASK_FOLLOWUP", "CLOSE", "INVITE_OBSERVATION", "HANDOFF"]
+ResponseStrategy = Literal["ACKNOWLEDGE", "AFFIRM", "EXTEND", "GUIDE", "CLARIFY", "ENCOURAGE", "IMAGINE", "CLOSE"]
 TurnIntent = Literal["CONTINUE_READING", "CLOSE_TOPIC", "KEEP_OBSERVING", "REFUSE_READING", "ORDINARY"]
 Intent = Literal["OBSERVATION", "PLOT", "CAUSAL", "EMOTION", "IMAGINATION", "LIFE_CONNECTION"]
 Focus = Literal["CHARACTER", "OBJECT", "ACTION", "CAUSE", "FEELING", "PREDICTION", "DAILY_LIFE", "DETAIL"]
@@ -209,6 +210,7 @@ class DecisionPlan(ClosedModel):
     questionId: QuestionId | None
     focusId: FocusId | None
     evidenceIds: list[EvidenceId] = Field(max_length=3)
+    proposedResponseStrategy: ResponseStrategy | None = None
     proposedResponse: str | None = Field(default=None, min_length=1, max_length=90, repr=False)
     proposedFollowup: str | None = Field(default=None, min_length=1, max_length=65, repr=False)
     proposedConversationIntent: TurnIntent | None = None
@@ -232,6 +234,8 @@ class SyntheticDraft:
     followup: str | None = field(repr=False)
     conversation_intent: TurnIntent | None = None
     understanding: Understanding | None = None
+    response_strategy: ResponseStrategy | None = None
+    evidence_ids: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -258,7 +262,12 @@ _AGE_INTENTS = {
 PROTOCOL = (
     "这是隔离的亲子共读合成实验。只可返回一个 JSON 对象，不得添加字段。"
     "字段：understanding、action、questionId、focusId、evidenceIds；可选 proposedResponse、proposedFollowup、"
-    "proposedConversationIntent、proposedUnderstanding。"
+    "proposedConversationIntent、proposedUnderstanding、proposedResponseStrategy。"
+    "proposedResponseStrategy 可选 ACKNOWLEDGE、AFFIRM、EXTEND、GUIDE、CLARIFY、ENCOURAGE、IMAGINE、CLOSE。"
+    "草稿用一两句适龄短句承接本轮线索，不必追问。若没有可靠线索，不要猜出孩子说了哪个词。"
+    "AFFIRM 只用于本地已核实的完整回答；没有当页证据时，不能用问句暗示角色、物品或事件一定存在。"
+    "IMAGINE 只给已标为想象的回合；CLOSE 只配合 CLOSE 动作。"
+    "evidenceIds 引用当页证据；不得用假设、猜测或提及编号冒充事实依据。"
     "按当前允许值选择理解并规划回应动作。refuse 指不想继续读，不是答错；继续阅读和结束话题不等于替孩子翻页。"
     "ASK_FOLLOWUP 只能用本次提供的问题和关联焦点编号，必须带上它要求的证据；其他动作的 questionId/focusId 必须为 null。"
     "只有当页审查证据可作为事实；不要臆造儿童表现、故事细节或把前文当作当页事实。"
@@ -447,6 +456,14 @@ def _checked_plan(raw: str, ctx: DecisionContext, actions: set[Action], question
         raise ValueError("only a follow-up plan may contain a question")
     if plan.understanding in ("GROUNDED", "PARTIAL") and not evidence.intersection(ctx.answer_evidence_ids):
         raise ValueError("no evidence independently supports the current answer")
+    strategy = plan.proposedResponseStrategy
+    if strategy and (
+        not plan.proposedResponse
+        or (strategy == "AFFIRM" and plan.understanding != "GROUNDED")
+        or (strategy == "IMAGINE" and ctx.answer_relation != "IMAGINATIVE")
+        or (strategy == "CLOSE" and plan.action != "CLOSE")
+    ):
+        raise ValueError("draft strategy is incompatible with independently checked signals")
     if plan.proposedFollowup and (
         plan.proposedFollowup[-1] not in "？?" or sum(plan.proposedFollowup.count(mark) for mark in "？?") != 1
     ):
@@ -522,7 +539,8 @@ async def choose_reading_plan(
     except (ValidationError, ValueError, TypeError, RecursionError):
         return _fallback(ctx, "INVALID_PLAN")
     draft = (SyntheticDraft(plan.proposedResponse, plan.proposedFollowup,
-                            plan.proposedConversationIntent, plan.proposedUnderstanding)
+                            plan.proposedConversationIntent, plan.proposedUnderstanding,
+                            plan.proposedResponseStrategy, tuple(plan.evidenceIds))
              if synthetic_review and (plan.proposedResponse or plan.proposedFollowup
                                       or plan.proposedConversationIntent or plan.proposedUnderstanding)
              else None)

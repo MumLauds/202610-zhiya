@@ -79,8 +79,8 @@ def audit_draft(
 ) -> DraftAudit:
     """Audit only synthetic reviewer text against vetted fixture evidence.
 
-    Omitted citations mean inferred matches, not citations claimed by the model.
-    Supplied citations must belong to this context and support each literal match.
+    Use explicit citations if provided, otherwise the draft’s own cited IDs.
+    Only hand-built drafts with no citations infer matches from local evidence.
     """
     fields: tuple[tuple[DraftField, str | None], ...] = (("response", draft.response), ("followup", draft.followup))
     if ctx.unsafe_turn or any(
@@ -99,7 +99,8 @@ def audit_draft(
         for clause in page_clauses(sentence)
     }
     evidence = {item.id: _key(item.quote) for item in ctx.evidence if _key(item.quote) in asserted_clauses}
-    cited = set(cited_evidence_ids) if cited_evidence_ids is not None else None
+    citation_source = cited_evidence_ids if cited_evidence_ids is not None else draft.evidence_ids
+    cited = set(citation_source) if citation_source is not None else None
     if cited is not None and not cited <= cited_ids:
         return DraftAudit("REJECT", (), ("UNKNOWN_EVIDENCE_ID",))
 

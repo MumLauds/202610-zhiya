@@ -612,7 +612,9 @@ def reply_to_child_answer(page_text: str, confirmed_answer: str, question: str =
     page = _answer_page(page_text)
     answer = _spoken_answer(answer, question, page)
     signals = _answer_signals(answer, page, question)
-    return _rule_reply(question, _answer_cue(answer, signals), signals)
+    cue = _answer_cue(answer, signals)
+    local = _local_short_reply(confirmed_answer, question, grounded=bool(cue and signals.supports_page_reply))
+    return local.text if local else _rule_reply(question, cue, signals)
 
 
 def _rule_reply(question: str, excerpt: str | None, signals: AnswerSignals) -> str:
@@ -746,6 +748,88 @@ def _question_repeats(text: str, seen: set[tuple[str, str, str]]) -> bool:
     return _question_signature(text) in seen
 
 
+_SHORT_MENTIONS = {"猫猫": "小猫", "小猫咪": "小猫", "熊熊": "小熊", "伞伞": "雨伞"}
+_SHORT_DESCRIPTIONS = {"毛茸茸的": "毛茸茸", "那只橘色的": "橘色"}
+_SHORT_SUBJECT = rf"(?:它|他|她|{ACTOR_WORD.pattern})"
+_SHORT_HELP = rf"(?:帮助|帮忙|帮)(?P<recipient>{ACTOR_WORD.pattern})?"
+_HELP_INTENT = re.compile(rf"(?P<speaker>我觉得|我猜)?(?P<subject>{_SHORT_SUBJECT})"
+                          rf"(?P<uncertain>可能|也许)?想(?:要)?{_SHORT_HELP}")
+_HELP_IF = re.compile(rf"如果(?P<subject>{_SHORT_SUBJECT}){_SHORT_HELP},\s*会(?:怎么样|怎样|发生什么)")
+_OPEN_IDEA = re.compile(r"(?:我想(?:让|把)|我想象).{1,12}(?:变成|变出).{1,12}")
+
+
+@dataclass(frozen=True)
+class _LocalReply:
+    text: str
+    may_plan_followup: bool = False
+
+
+def _local_short_reply(answer: str, question: str, *, grounded: bool) -> _LocalReply | None:
+    """Accept a closed, short cue conversationally, not as a story fact."""
+    if not question:
+        return None
+    raw = unicodedata.normalize("NFKC", answer).strip()
+    text = raw.strip(" ，。！？,.!?…呀啊啦呢哦")
+    if _OPEN_IDEA.fullmatch(text):
+        return _LocalReply("你在想象一个不一样的故事。这个点子可以先留着。")
+    condition = _HELP_IF.fullmatch(text)
+    if help_intent := condition or _HELP_INTENT.fullmatch(text):
+        subject = help_intent["subject"]
+        recipient = help_intent["recipient"]
+        help_action = f"帮{ACTOR_ALIASES.get(recipient, recipient)}" if recipient else "帮忙"
+        if condition:
+            return _LocalReply(f"你问的是如果{subject}{help_action}，接下来会发生什么。我们来想一种可能。")
+        speaker, uncertain = help_intent["speaker"], help_intent["uncertain"]
+        if speaker == "我猜":
+            acknowledgement = f"你猜{subject}可能想{help_action}"
+        elif speaker == "我觉得" or uncertain:
+            acknowledgement = f"你觉得{subject}{'可能' if uncertain else ''}想{help_action}"
+        elif raw.endswith("?"):
+            acknowledgement = f"你在问{subject}想不想{help_action}"
+        elif recipient:
+            acknowledgement = f"你说{subject}想{help_action}"
+        else:
+            acknowledgement = "你提到了帮忙"
+        return _LocalReply(f"{acknowledgement}。我们再读读这一页，找找线索。")
+    if help_suggestion := re.fullmatch(rf"帮帮({ACTOR_WORD.pattern})", text):
+        role = help_suggestion[1]
+        return _LocalReply(f"你在提议帮{ACTOR_ALIASES.get(role, role)}。我们也可以想想怎么帮。")
+    if re.fullmatch(rf"{_SHORT_SUBJECT}在找朋友", text):
+        return _LocalReply("你提到了找朋友。我们再读读这一页，看看故事里怎么说。")
+    if re.fullmatch(rf"{_SHORT_SUBJECT}害怕", text):
+        return _LocalReply("你提到了害怕。我们再找找有没有和心情有关的线索。")
+    if description := _SHORT_DESCRIPTIONS.get(text):
+        return _LocalReply(f"你提到了{description}。可以指一指你说的是哪一处。")
+    if text in {"可能吧", "也许吧", "好像是吧", "不太确定"}:
+        return _LocalReply("还没想好也没关系。我们先从这一页找一条小线索。")
+    if text == "因为下雨" and not grounded:
+        return _LocalReply("你想到了下雨。我们读读这页，找找有没有说到原因。")
+
+    recipient = text.startswith("给")
+    mention = text.removeprefix("给") if recipient else text
+    # "小猫咪" is a local acknowledgment alias, not a new story evidence term.
+    if mention == "小猫咪":
+        grounded = False
+    mention = _SHORT_MENTIONS.get(mention, mention)
+    actor = ACTOR_WORD.fullmatch(mention)
+    obj = not recipient and OBJECT_WORD.fullmatch(mention)
+    if not (actor or obj):
+        return None
+    _, family, _ = _question_signature(question)
+    if recipient and not grounded and re.search(r"(?:给|递给|送给)了?谁", question):
+        return _LocalReply(f"你提到了{ACTOR_ALIASES.get(mention, mention)}。再看看书里有没有说交给了谁。")
+    if family not in {"ACTION", "WHO", "SCAN", "FIND", "CAUSE"} or (grounded and family != "ACTION"):
+        return None
+    label = ACTOR_ALIASES.get(mention, OBJECT_ALIASES.get(mention, mention))
+    # A named character or thing is a contribution, not an answer to what happened.
+    if family == "ACTION":
+        return _LocalReply(f"你提到了{label}。再说说角色做了什么吧。", may_plan_followup=grounded)
+    if family == "CAUSE":
+        return _LocalReply(f"你提到了{label}。我们再读读这页，看看书里有没有说为什么。")
+    return _LocalReply(f"你提到了{label}。一起看看这一页有没有你说的角色。" if actor
+                       else f"你提到了{label}。再看看这一页能找到哪些东西。")
+
+
 def _visit_questions(previous: str, seen: Sequence[str]) -> set[tuple[str, str, str]]:
     return {_question_signature(question) for question in (*seen, previous) if question.strip()}
 
@@ -759,6 +843,8 @@ def _safe_recent_turns(page: str, turns: Sequence[RecentReadingTurn]) -> list[di
         answer = _spoken_answer(turn.answer, turn.question, page)
         signals = _answer_signals(answer, page, turn.question)
         ground = _answer_cue(answer, signals) if signals.supports_page_reply else None
+        if _local_short_reply(turn.answer, turn.question, grounded=bool(ground)):
+            continue  # A local acknowledgement is not an evidence-bearing exchange.
         turn_state = ("有当页线索" if ground else "想象" if signals.stance == "推测"
                       else "不确定" if signals.stance == "不确定" else "待核对")
         item = {"问题意图": intent or "OTHER", "作答状态": turn_state}
@@ -827,7 +913,7 @@ def _answer_choices(
                                ("OFF_TOPIC", "REDIRECT"), ("INSUFFICIENT_EVIDENCE", "CLARIFY")):
         if category in replies:
             styles.append((strategy, replies[category]))
-    if "UNCERTAIN" in replies or "INSUFFICIENT_EVIDENCE" in replies:
+    if "INSUFFICIENT_EVIDENCE" in replies:
         styles.append(("GUIDE", "我们再看看这一页，找一找线索。"))
     prior = _question_key(prior_reply[:200]) if not answer_is_unsafe(prior_reply) else ""
     styles.sort(key=lambda item: bool(prior and prior.startswith(_question_key(item[1]))))
@@ -864,10 +950,20 @@ async def generate_answer_reply(model: ModelAdapter, *, page_text: str, question
     normalized_answer = _spoken_answer(answer, question, page)
     signals = _answer_signals(normalized_answer, page, question)
     clue = _answer_cue(normalized_answer, signals)
+    grounded = bool(clue and signals.supports_page_reply)
+    local = _local_short_reply(answer, question, grounded=grounded)
+    if local:
+        # An unsupported cue needs no model. If the page does contain this
+        # fragment, let the existing planner pick a vetted next question only.
+        if not local.may_plan_followup or signals.actions:
+            return local.text, ""
+        clue = None  # Neither the raw answer nor its local wording enters the planner.
     fallback = _rule_reply(question, clue, signals)
     variant = ({"AGE_4_5": 1, "AGE_5_6": 2}.get(age_band, 0) + page_number - 1 + len(used_followups)) % 3
     replies = {"INSUFFICIENT_EVIDENCE": ANSWER_REPLY_TEXT["INSUFFICIENT_EVIDENCE"][variant]}
-    if signals.stance == "不确定":
+    if local:
+        replies = {"PARTIAL": "我们继续看看这一页。"}
+    elif signals.stance == "不确定":
         replies = {"UNCERTAIN": fallback}
     elif clue and signals.supports_page_reply:
         for category in ("RELEVANT", "PARTIAL"):
@@ -954,7 +1050,7 @@ async def generate_answer_reply(model: ModelAdapter, *, page_text: str, question
     except (ValidationError, KeyError, IndexError):
         answer_logger.info("answer fallback error=INVALID_PLAN")
         return None
-    return reply + (followup if followup else ""), followup
+    return (local.text if local else reply) + followup, followup
 
 
 def visible_detail(text: str) -> str | None:
@@ -1070,11 +1166,12 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
         checked_answer = _spoken_answer(confirmed_answer, previous_question, page_text)
         signals = _answer_signals(checked_answer, page_text, previous_question)
         simpler = simpler or signals.stance == "不确定"
-        if signals.scoped or checked_answer != unicodedata.normalize("NFKC", confirmed_answer):
-            if signals.supports_page_reply:
-                answer_focus = _answer_cue(checked_answer, signals)
-        else:
-            answer_focus = matching_answer_excerpt(page_text, confirmed_answer)
+        ground = _answer_cue(checked_answer, signals) if signals.supports_page_reply else None
+        if not _local_short_reply(confirmed_answer, previous_question, grounded=bool(ground)):
+            if signals.scoped or checked_answer != unicodedata.normalize("NFKC", confirmed_answer):
+                answer_focus = ground
+            else:
+                answer_focus = matching_answer_excerpt(page_text, confirmed_answer)
     grounded_followup = f"读到“{answer_focus}”时，{followup}" if answer_focus else None
     visited_questions = _visit_questions(previous_question, seen_questions) if not child_mode else set()
     if grounded_followup and _question_repeats(grounded_followup, visited_questions):

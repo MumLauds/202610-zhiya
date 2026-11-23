@@ -502,8 +502,8 @@ def test_parent_answer_returns_an_immediate_local_reply_and_replays_it(started_s
 
 @pytest.mark.parametrize("text,category,expected,model_used", [
     ("小兔打开雨伞", "RELEVANT", "这页写着", True),
-    ("遮雨具", "RELEVANT", "小兔打开雨伞", True),
-    ("雨伞", "PARTIAL", "一些线索", True),
+    ("遮雨具", "PARTIAL", "你提到了雨伞", True),
+    ("雨伞", "PARTIAL", "你提到了雨伞", True),
     ("不知道", "UNCERTAIN", "一起找找", True),
     ("我喜欢火车", "OFF_TOPIC", "回到这一页", True),
     ("它会飞吗", "INSUFFICIENT_EVIDENCE", "家长一起看看", True),
@@ -796,7 +796,7 @@ def test_answer_execution_finalizes_consistently_at_boundaries(started_session, 
     guidance_model.reset_mock(side_effect=True)
     guidance_model.side_effect = delayed_reply
     url = f"/api/v1/reading-sessions/{sid}"
-    payload = dict(eventType="ANSWER", pageNumber=1, expectedRevision=2, clientEventId="boundary", inputText="雨伞")
+    payload = dict(eventType="ANSWER", pageNumber=1, expectedRevision=2, clientEventId="boundary", inputText="小兔打开雨伞")
     with ThreadPoolExecutor(max_workers=1) as pool:
         first = pool.submit(client.post, url + "/events", headers=headers, json=payload)
         try:
@@ -1178,9 +1178,9 @@ def test_guidance_on_next_page_does_not_use_previous_page_answer(started_session
     with closing(sqlite3.connect(path)) as db, db:
         db.execute("UPDATE story_pages SET body_text = '小兔打开雨伞。' WHERE version_id = 11 AND page_no = 2")
     assert guidance(client, headers, sid, "before-old-answer").status_code == 201
-    guidance_model.return_value = ModelGenerateResult(success=True, text='{"answerCategory":"INSUFFICIENT_EVIDENCE","followup":1}')
+    guidance_model.return_value = ModelGenerateResult(success=True, text='{"answerCategory":"RELEVANT","followup":1}')
     old_answer = client.post(url, headers=headers, json=dict(
-        eventType="ANSWER", pageNumber=1, expectedRevision=2, clientEventId="old-page-answer", inputText="雨伞",
+        eventType="ANSWER", pageNumber=1, expectedRevision=2, clientEventId="old-page-answer", inputText="小兔打开雨伞",
     ))
     assert old_answer.status_code == 201 and "followupQuestion" in old_answer.json()["data"]
     moved = client.post(url, headers=headers, json=dict(
@@ -1203,7 +1203,7 @@ def test_parent_answer_without_model_keeps_saved_rule_reply(started_session, gui
     assert guidance(client, headers, sid, "question-before-unconfigured").status_code == 201
     monkeypatch.setattr(client.app.state, "model_adapter", None)
     response = client.post(f"/api/v1/reading-sessions/{sid}/events", headers=headers, json={
-        "eventType": "ANSWER", "pageNumber": 1, "expectedRevision": 2, "clientEventId": "unconfigured", "inputText": "雨伞",
+        "eventType": "ANSWER", "pageNumber": 1, "expectedRevision": 2, "clientEventId": "unconfigured", "inputText": "小兔打开雨伞",
     })
     assert response.status_code == 201 and "小兔打开雨伞" in response.json()["data"]["replyText"]
 
