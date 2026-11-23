@@ -1,5 +1,6 @@
 """Offline synthetic semantic benchmark. Gold labels are evaluation-only, never extractor inputs."""
 
+import argparse
 import asyncio
 import json
 from collections import Counter, defaultdict
@@ -16,7 +17,9 @@ CATEGORIES = (
 )
 AGES = ("AGE_3_4", "AGE_4_5", "AGE_5_6")
 FIELDS = ("speech_act", "polarity", "referenced_evidence_ids", "referenced_focus_ids")
-FIXTURE = Path(__file__).with_name("semantic-cases-v1.json")
+FIXTURE_V1 = Path(__file__).with_name("semantic-cases-v1.json")
+FIXTURE = Path(__file__).with_name("semantic-cases-v2.json")
+ANNOTATION_STATUS = "PENDING_HUMAN_REVIEW"
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,7 @@ class SemanticCase:
     target_intent: Intent | None = None
     target_action: Action | None = None
     target_focus_id: str | None = None
+    phenomenon: str | None = None
 
     @property
     def known_focuses(self) -> dict[str, tuple[str, ...]]:
@@ -43,12 +47,24 @@ def _context(value: dict) -> DecisionContext:
     return DecisionContext.model_validate_json(json.dumps(value, ensure_ascii=False))
 
 
-def load_cases(path: Path = FIXTURE) -> tuple[SemanticCase, ...]:
+def _read_fixture(path: Path) -> dict:
     fixture = json.loads(path.read_text(encoding="utf-8"))
-    if fixture.keys() != {"version", "synthetic_only", "contexts", "cases"} or (
-        fixture["version"] != 1 or fixture["synthetic_only"] is not True
-    ):
+    version = fixture.get("version")
+    keys = {"version", "synthetic_only", "contexts", "cases"}
+    if version == 2:
+        keys |= {"annotation_status", "label_revisions"}
+    if version not in (1, 2) or fixture.keys() != keys or fixture["synthetic_only"] is not True:
         raise ValueError("expected the versioned synthetic semantic fixture")
+    if version == 2 and fixture["annotation_status"] != ANNOTATION_STATUS:
+        raise ValueError("calibration labels must not claim human review")
+    return fixture
+
+
+def load_cases(path: Path = FIXTURE) -> tuple[SemanticCase, ...]:
+    return _load_cases(_read_fixture(path))
+
+
+def _load_cases(fixture: dict) -> tuple[SemanticCase, ...]:
     contexts = {key: _context(value) for key, value in fixture["contexts"].items()}
     cases = []
     for item in fixture["cases"]:
@@ -63,6 +79,10 @@ def load_cases(path: Path = FIXTURE) -> tuple[SemanticCase, ...]:
         _with_extraction(ctx, expected, False)
         cases.append(SemanticCase(context=ctx, question=question, expected=expected, **case_data))
     _validate_cases(cases)
+    if fixture["version"] == 2:
+        slices = {(case.category, case.context.age_band) for case in cases}
+        if slices != {(category, age) for category in CATEGORIES for age in AGES}:
+            raise ValueError("the expanded fixture requires every category to cover every age band")
     return tuple(cases)
 
 
@@ -230,6 +250,7 @@ def _measure(cases: list[SemanticCase], outcomes: dict[str, _Outcome]) -> dict:
     return {
         "cases": len(cases), "scored_non_protected_cases": len(safe),
         "age_cases": dict(sorted(Counter(case.context.age_band for case in cases).items())),
+        "added_case_phenomena": dict(sorted(Counter(case.phenomenon for case in cases if case.phenomenon).items())),
         "different_meaning_collision": _pair_rates(safe, outcomes, same=False),
         "paraphrase_split": _pair_rates(safe, outcomes, same=True),
         "exact_accuracy": exact, "unknown": unknown,
@@ -239,6 +260,8 @@ def _measure(cases: list[SemanticCase], outcomes: dict[str, _Outcome]) -> dict:
             "extractor_interception": _rate(len(blocked), len(protected)),
             "local_handoff_without_dispatch": _rate(len(handoff), len(protected)),
             "incorrect_block_on_safe_case": _rate(sum(outcomes[case.id].unsafe for case in safe), len(safe)),
+            "missed_interception_case_ids": [case.id for case in protected if not outcomes[case.id].unsafe],
+            "safe_case_incorrectly_blocked_ids": [case.id for case in safe if outcomes[case.id].unsafe],
             "protected_mock_dispatches": sum(outcomes[case.id].dispatches for case in protected),
             "protected_full_answer_mock_dispatches": sum(outcomes[case.id].raw_answer_dispatches for case in protected),
             "protected_nondefault_semantics": sum(outcomes[case.id].signals != SemanticSignals() for case in protected),
@@ -246,12 +269,20 @@ def _measure(cases: list[SemanticCase], outcomes: dict[str, _Outcome]) -> dict:
     }
 
 
-async def evaluate() -> dict:
-    cases = load_cases()
+async def evaluate(path: Path = FIXTURE) -> dict:
+    fixture = _read_fixture(path)
+    cases = _load_cases(fixture)
     outcomes = {case.id: await _run_case(case) for case in cases}
+
+    def measure(*, category: str | None = None, age: str | None = None) -> dict:
+        return _measure([case for case in cases if (category is None or case.category == category)
+                         and (age is None or case.context.age_band == age)], outcomes)
+
     return {
         "scope": "independently prelabelled synthetic extraction and wire projection; not model/interaction quality",
-        "reference_labels": "PENDING_HUMAN_REVIEW",
+        "fixture_version": fixture["version"],
+        "reference_labels": ANNOTATION_STATUS,
+        "historical_label_revision_count": len(fixture.get("label_revisions", ())),
         "provider_calls": 0,
         "interpretation": {
             "pair_population": "same category, pair group and fixed story/question/context; protected cases excluded",
@@ -261,10 +292,16 @@ async def evaluate() -> dict:
             "references": "exact ID-set agreement; gold evidence capped at two, prioritizing the current question",
             "privacy": "actual local extractor and mock decision boundary; zero provider calls by design",
         },
-        "overall": _measure(list(cases), outcomes),
-        "by_category": {key: _measure([case for case in cases if case.category == key], outcomes) for key in CATEGORIES},
+        "overall": measure(),
+        "by_category": {key: measure(category=key) for key in CATEGORIES},
+        "by_age": {age: measure(age=age) for age in AGES},
+        "by_category_age": {key: {age: measure(category=key, age=age) for age in AGES} for key in CATEGORIES},
     }
 
 
 if __name__ == "__main__":
-    print(json.dumps(asyncio.run(evaluate()), ensure_ascii=False, indent=2))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--fixture-version", type=int, choices=(1, 2), default=2)
+    args = parser.parse_args()
+    path = FIXTURE_V1 if args.fixture_version == 1 else FIXTURE
+    print(json.dumps(asyncio.run(evaluate(path)), ensure_ascii=False, indent=2))

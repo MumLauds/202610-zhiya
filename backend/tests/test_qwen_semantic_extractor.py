@@ -27,7 +27,14 @@ def extract(answer, question="小兔做了什么？", *, page=PAGE, evidence=EVI
     ("它差点没有打开雨伞。", "ASSERTS", "UNKNOWN", ()),
     ("如果小兔打开雨伞。", "UNKNOWN", "UNKNOWN", ()),
     ("如果它没有雨伞，可能就会淋湿。", "IMAGINES", "UNKNOWN", ()),
-    ("我猜小兔可能打开了雨伞。", "IMAGINES", "UNKNOWN", ()),
+    ("我猜小兔可能打开了雨伞。", "UNSURE", "UNKNOWN", ()),
+    ("我觉得小熊有点害怕。", "UNSURE", "UNKNOWN", ()),
+    ("如果小兔打开雨伞……", "UNKNOWN", "UNKNOWN", ()),
+    ("如果小兔可能会打开雨伞……", "UNKNOWN", "UNKNOWN", ()),
+    ("如果小兔打开雨伞，可能会淋湿。", "IMAGINES", "UNKNOWN", ()),
+    ("我不知道小熊是什么心情。", "UNSURE", "UNKNOWN", ()),
+    ("小兔不是没有打开雨伞。", "ASSERTS", "UNKNOWN", ()),
+    ("小兔没有不打开雨伞。", "ASSERTS", "UNKNOWN", ()),
     ("小兔想用雨伞变成一艘小船。", "IMAGINES", "UNKNOWN", ()),
     ("小兔想把雨伞送给小熊。", "ASSERTS", "UNKNOWN", ()),
     ("小兔准备打开雨伞。", "ASSERTS", "UNKNOWN", ()),
@@ -39,6 +46,7 @@ def extract(answer, question="小兔做了什么？", *, page=PAGE, evidence=EVI
     ("嗯嗯，是这样。", "ACKNOWLEDGES", "UNKNOWN", ()),
     ("是的。", "ACKNOWLEDGES", "AFFIRMS", ()),
     ("为什么小兔要打开雨伞？", "ASKS", "UNKNOWN", ()),
+    ("如果小兔打开雨伞，会发生什么？", "ASKS", "UNKNOWN", ()),
     ("无法看懂的随意标记", "UNKNOWN", "UNKNOWN", ()),
 ])
 def test_speech_and_polarity_from_actual_local_parse(answer, act, polarity, ids):
@@ -76,6 +84,33 @@ def test_no_evidence_is_created_for_unknown_wrong_actor_or_other_page():
     wrong_actor = extract("小熊打开雨伞。")
     assert wrong_actor.signals.referenced_evidence_ids == ()
     assert wrong_actor.signals.referenced_focus_ids == ()
+
+
+@pytest.mark.parametrize("page,quote,answer", [
+    ("小熊说：“小兔打开雨伞。”", "小兔打开雨伞", "小兔打开雨伞。"),
+    ("小兔打开雨伞。", "小兔打开雨伞", "小熊说：“小兔打开雨伞。”"),
+    ("如果下雨，小兔打开雨伞。", "小兔打开雨伞", "小兔打开雨伞。"),
+    ("小兔说如果下雨，小熊打开雨伞。", "小熊打开雨伞", "小熊打开雨伞。"),
+    ("小兔打开雨伞？", "小兔打开雨伞", "小兔打开雨伞。"),
+    ("小兔打开雨伞！？", "小兔打开雨伞", "小兔打开雨伞。"),
+    ("小兔没有打开蓝雨伞。", "小兔没有打开蓝雨伞", "小兔打开蓝雨伞。"),
+])
+def test_quotation_and_conditional_context_cannot_supply_factual_support(page, quote, answer):
+    result = extract(answer, page=page, evidence=(Evidence(id="e1", quote=quote),), focuses={"f1": ("e1",)})
+    assert result.signals.referenced_evidence_ids == ()
+    assert not hasattr(result.signals, "answered_focus_ids")
+
+
+def test_repeated_object_stays_unassigned_without_a_distinguishing_action_or_actor():
+    quotes = ("小兔打开红雨伞", "小熊打开蓝雨伞")
+    evidence = tuple(Evidence(id=f"e{i}", quote=quote) for i, quote in enumerate(quotes, 1))
+    page = "。".join(quotes)
+    mapping = {"f1": ("e1",), "f2": ("e2",)}
+    ambiguous = extract("伞伞呀。", "图里有什么？", page=page, evidence=evidence, focuses=mapping)
+    assert ambiguous.signals.referenced_evidence_ids == ambiguous.signals.referenced_focus_ids == ()
+    named = extract("小熊打开蓝雨伞。", page=page, evidence=evidence, focuses=mapping)
+    assert named.signals.referenced_evidence_ids == ("e2",)
+    assert named.signals.referenced_focus_ids == ("f2",)
 
 
 @pytest.mark.parametrize("raw", [

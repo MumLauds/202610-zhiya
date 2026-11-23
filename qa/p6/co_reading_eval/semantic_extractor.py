@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from app.services.reading_agent import (
-    ACTOR_ALIASES, ACTOR_WORD, NEAR_MISS, OBJECT_ALIASES, OBJECT_WORD, AnswerAction, AnswerSignals,
+    ACTOR_ALIASES, ACTOR_WORD, DIRECT_SPEECH, NEAR_MISS, OBJECT_ALIASES, OBJECT_WORD, AnswerAction, AnswerSignals,
     _actions, _answer_cue, _answer_page, _answer_signals, _fact_phrase, _spoken_answer,
     answer_is_unsafe, page_clauses,
 )
@@ -31,11 +31,14 @@ _CONTRAST = re.compile(r"(?:不是|并非).{1,32}(?:而是|[,，]\s*是)[^,，]+
 _CORRECTION = re.compile(r"^不对[,，]|^(?:刚才说错了|我改一下)")
 _QUESTION_ACT = re.compile(r"^(?:为什么|为啥|怎么|哪里|是谁|什么是|是不是|会不会|能不能|可不可以)|(?:吗|么)[?？]?$")
 _EXPLICIT_UNSURE = re.compile(r"^(?:我)?(?:不明白|没听懂|忘了|不记得)")
-_IMAGINATIVE_START = re.compile(r"^(?:(?:我)?(?:猜|想象)|如果|假如|要是|也许|说不定)")
-_EMOTION_GUESS = re.compile(r"^我觉得.{0,20}(?:害怕|开心|着急|生气|难过|紧张)")
+_EPISTEMIC = re.compile(r"^(?:(?:我)?猜|我觉得|我想大概|也许|说不定|可能|好像)|(?:可能|也许|好像)(?:已经|刚才|会|是|打开)")
 _FABRICATION_MARKERS = re.compile(r"(?:想(?:用|把|让).{1,12}(?:变成|变出)|想.{0,12}魔法|在想象里)")
+_OPEN_IMAGINATION = re.compile(r"^(?:我)?想象")
 _PROSPECTIVE = re.compile(r"(?:准备|快要|将要|打算)(?:把|打开|撑开|拿起|走|跑|收起|递给)")
-_IF_OPENING = re.compile(r"^(?:如果|假如|要是)")
+_IF_MARKER = re.compile(r"如果|假如|要是")
+_IF_CONSEQUENCE = re.compile(r"[,;，；]\s*(?:(?:它|他|她|小兔|小熊|小狐狸)\s*)?(?:那么|就|可能(?:就)?会|会|也会|还会).{2,}")
+_DOUBLE_NEGATION = re.compile(r"(?:不是|并非|没有|并不)\s*(?:没有|不曾|未曾|没|不(?!过|得))")
+_REPORTED = re.compile(r"(?:说|讲|喊|问|告诉|听说)[,:，：]|(?:说|讲|喊|问)(?:小兔|小熊|小狐狸)")
 _NEGATION = re.compile(r"没有|并非|并不|不是|从来没|未曾|没能|没(?:把|去|做|看|拿|带|到)|不(?:把|去|做|肯|愿意)|别(?:把|打|撑|拿)")
 _PLAIN_STATEMENT = re.compile(r"^(?:(?:我|它|他|她|小兔|小熊|小狐狸)?(?:喜欢|想把|想给|想要)|(?:等)?(?:雨停|雨下完))")
 _RECIPIENT = re.compile(rf"(?:递给|交给|送给|给了?)({ACTOR_WORD.pattern})")
@@ -72,7 +75,7 @@ def _same_action(answer: AnswerAction, candidate: AnswerAction) -> bool:
 
 
 def _references(
-    raw: str, checked: str, signals: AnswerSignals, allowed: Sequence[Evidence],
+    raw: str, checked: str, signals: AnswerSignals, allowed: Sequence[Evidence], assertable_ids: set[str],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     def phrase(text: str) -> str:
         return _canonical(re.sub(r"^(?:因为|所以|由于|因此)", "", text))
@@ -86,11 +89,18 @@ def _references(
             corroborated.add(item.id)
 
     for action, status in zip(signals.actions, signals.evidence):
-        options = {item.id for item in allowed if any(_same_action(action, candidate) for candidate in _actions(item.quote))}
+        candidates = {
+            item.id: [candidate for candidate in _actions(item.quote) if _same_action(action, candidate)]
+            for item in allowed
+        }
+        options = {evidence_id for evidence_id, matches in candidates.items() if matches}
         if len(options) == 1:
             mentioned.update(options)
             if status == "有依据" and not (action.hypothetical or action.near_miss or signals.unverified_detail):
-                corroborated.update(options)
+                evidence_id, = options
+                if any(candidate.negated == action.negated and not (candidate.hypothetical or candidate.near_miss)
+                       for candidate in candidates[evidence_id]):
+                    corroborated.add(evidence_id)
 
     recipient = _RECIPIENT.fullmatch(checked.strip(" ,。.!?呀啊啦呢哦"))
     if recipient:
@@ -121,8 +131,11 @@ def _references(
     cue = _answer_cue(checked, signals) if signals.scoped and signals.supports_page_reply else None
     corroborated.update(item.id for item in allowed if item.quote == cue)
     mentioned.update(corroborated)
-    if (signals.stance in ("推测", "不确定") or _EXPLICIT_UNSURE.search(raw) or _PROSPECTIVE.search(raw)
-            or _QUESTION_ACT.search(raw) or raw.endswith(("?", "？"))):
+    corroborated.intersection_update(assertable_ids)
+    if (signals.stance in ("推测", "不确定") or _EXPLICIT_UNSURE.search(raw)
+            or _EPISTEMIC.search(raw) or _OPEN_IMAGINATION.search(raw) or _FABRICATION_MARKERS.search(raw)
+            or _IF_MARKER.match(raw) or _DOUBLE_NEGATION.search(raw) or _PROSPECTIVE.search(raw)
+            or _REPORTED.search(raw) or _QUESTION_ACT.search(raw) or raw.endswith(("?", "？"))):
         corroborated.clear()
     return (tuple(item.id for item in allowed if item.id in corroborated)[:_MAX_REFS],
             tuple(item.id for item in allowed if item.id in mentioned)[:_MAX_REFS])
@@ -132,18 +145,24 @@ def _speech_and_polarity(raw: str, checked: str, signals: AnswerSignals, refs: t
     text = raw.strip(" ,。.!?！？，")
     if signals.stance == "不确定" or _EXPLICIT_UNSURE.search(text):
         return "UNSURE", "UNKNOWN"
+    if _QUESTION_ACT.search(text) or raw.endswith(("?", "？")):
+        return "ASKS", "UNKNOWN"
+    if _DOUBLE_NEGATION.search(text):
+        return "ASSERTS", "UNKNOWN"
     if _CONTRAST.search(text):
         return "CORRECTS", "MIXED"
     if _CORRECTION.search(text) and text not in _EXPLICIT_NEGATIVE:
         return "CORRECTS", "UNKNOWN"
     if _ACKNOWLEDGEMENT.fullmatch(text) or text in _EXPLICIT_POSITIVE:
         return "ACKNOWLEDGES", "AFFIRMS" if text in _EXPLICIT_POSITIVE else "UNKNOWN"
-    if _QUESTION_ACT.search(text) or raw.endswith(("?", "？")):
-        return "ASKS", "UNKNOWN"
-    if _IF_OPENING.match(text) and not re.search(r",|，|就|那么|可能会", text):
-        return "UNKNOWN", "UNKNOWN"
-    if _IMAGINATIVE_START.search(text) or _EMOTION_GUESS.search(text) or _FABRICATION_MARKERS.search(text):
+    if _IF_MARKER.match(text):
+        return ("IMAGINES", "UNKNOWN") if _IF_CONSEQUENCE.search(text) else ("UNKNOWN", "UNKNOWN")
+    if _OPEN_IMAGINATION.search(text) or _FABRICATION_MARKERS.search(text):
         return "IMAGINES", "UNKNOWN"
+    if _EPISTEMIC.search(text):
+        return "UNSURE", "UNKNOWN"
+    if _REPORTED.search(text):
+        return "ASSERTS", "UNKNOWN"
 
     if _PROSPECTIVE.search(text):
         return "ASSERTS", "UNKNOWN"
@@ -173,8 +192,18 @@ def extract_semantic_signals(
     if not raw or len(raw) > _MAX_ANSWER or not any(c.isalnum() for c in raw):
         return ExtractionResult(SemanticSignals())
 
-    page = _answer_page(page_text)
+    raw = DIRECT_SPEECH.sub("。", raw).strip()
+    if not any(c.isalnum() for c in raw):
+        return ExtractionResult(SemanticSignals())
+    page = DIRECT_SPEECH.sub("。", _answer_page(page_text))
     clauses = set(page_clauses(page))
+    # Keep sentence scope for a conditional leading clause; a comma is not a fact boundary.
+    asserted_clauses = {
+        clause for sentence in re.findall(r"[^。！？.!?\n]+[。！？.!?]*", page)
+        if not (re.search(r"[?？]", sentence) or _IF_MARKER.search(sentence) or _EPISTEMIC.search(sentence.strip())
+                or _REPORTED.search(sentence) or _DOUBLE_NEGATION.search(sentence))
+        for clause in page_clauses(sentence)
+    }
     allowed = tuple(item for item in evidence if item.quote in clauses and not _unsafe(item.quote))
     if len({item.id for item in allowed}) != len(allowed):
         allowed = ()
@@ -183,7 +212,8 @@ def extract_semantic_signals(
     checked = re.sub(r"跑跑(?=了|呀|啊|[,.!?]|$)", "跑", checked)
     checked = re.sub(r"(?<=给)熊熊(?=啦|呀|啊|[,.!?]|$)", "小熊", checked)
     signals = _answer_signals(checked, page, normalized_question)
-    refs, mentioned = _references(raw, checked, signals, allowed)
+    assertable_ids = {item.id for item in allowed if item.quote in asserted_clauses}
+    refs, mentioned = _references(raw, checked, signals, allowed, assertable_ids)
     speech, polarity = _speech_and_polarity(raw, checked, signals, refs)
 
     focus_map = known_focuses or {}
