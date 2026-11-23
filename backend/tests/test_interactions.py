@@ -570,6 +570,9 @@ def test_parent_answer_preserves_safe_action_signals(started_session, guidance_m
     ("小熊走到了山坡。小兔走到了海边。", "小兔走到了哪里？", "海边。", "小兔走到了海边", "小熊走到了山坡"),
     ("小兔穿着红色的外套，戴着蓝色的帽子。", "小兔戴什么颜色的帽子？", "蓝色的。", "蓝色的帽子", "红色的外套"),
     ("小兔穿着红色的外套，戴着蓝色的帽子。", "小兔戴什么颜色的帽子？", "红色的。", None, "红色的外套"),
+    ("小兔想戴蓝帽子，最后戴了红帽子。", "小兔戴什么颜色的帽子？", "蓝色的。", None, "想戴蓝帽子"),
+    ("小兔想戴蓝帽子，最后戴了红帽子。", "小兔戴什么颜色的帽子？", "红色的。", "红帽子", "想戴蓝帽子"),
+    ("小兔戴着一顶蓝色的帽子。", "小兔戴什么颜色的帽子？", "小兔戴着一顶蓝色的帽子。", "蓝色的帽子", "红帽子"),
 ])
 def test_parent_answer_receipt_only_affirms_the_current_question(
     started_session, guidance_model, page, question, text, expected_clue, unrelated_clue,
@@ -1315,6 +1318,37 @@ def test_parent_free_question_keeps_private_text_out_of_model_and_event(started_
     guidance_model.assert_awaited_once()
 
 
+def test_story_question_keeps_sensitive_page_and_knowledge_out_of_model(started_session, guidance_model):
+    client, headers, path, sid = started_session
+    public_clue = "小兔打开了雨伞。"
+    private_page = "story-private@example.invalid"
+    private_source = "source-private@example.invalid"
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET body_text=? WHERE version_id=11 AND page_no=1",
+                   (f"{public_clue}联系作者：{private_page}。小熊站在树下。",))
+        db.execute("""UPDATE knowledge_items SET task_types_json='["RETRIEVAL"]' WHERE id IN (81, 82)""")
+        db.execute("""UPDATE knowledge_items SET topics_json='["互助"]', source_title=? WHERE id=82""",
+                   (private_source,))
+    raw = reading_agent.retrieve_knowledge(reading_agent.KnowledgeQuery(
+        age_band="AGE_3_4", topics=["互助"], task_type="RETRIEVAL", query_text="小兔打开了什么？",
+    ))
+    assert {81, 82} <= {item.knowledge_item_id for item in raw.items}
+    guidance_model.return_value = ModelGenerateResult(success=True, text="1")
+    response = client.post(f"/api/v1/reading-sessions/{sid}/questions", headers=headers, json={
+        "pageNumber": 1, "expectedRevision": 1, "clientEventId": "ask-filtered-context",
+        "inputText": "小兔打开了什么？",
+    })
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["outputText"] == public_clue
+    assert data["sources"] == [{"knowledgeItemId": 81, "sourceTitle": "共读手册"}]
+    request = guidance_model.await_args.args[0]
+    assert public_clue in request.context_text
+    assert "小熊站在树下" in request.context_text
+    outbound = request.context_text + request.system_prompt + request.user_input
+    assert "story-private" not in outbound and "source-private" not in outbound
+
+
 @pytest.fixture
 def guidance_knowledge(env):
     _, _, path = env
@@ -1569,6 +1603,30 @@ def child_guidance_session(env):
         "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "start",
     }).status_code == 201
     return client, other_guardian, path, sid, headers
+
+
+def test_child_guidance_filters_current_prior_and_retrieved_context(child_guidance_session, guidance_model):
+    client, _, path, sid, headers = child_guidance_session
+    prior = "小兔打开雨伞。" + "雨。" * 288 + "私用联系：" + "CHILDCROSSCAP@example.invalid。"
+    assert prior.index("CHILDCROSSCAP") < 600 < prior.index("@")
+    current = "小熊在树下等雨停。联系作者：child-page@example.invalid。"
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET body_text=? WHERE version_id=11 AND page_no=1", (prior,))
+        db.execute("UPDATE story_pages SET body_text=? WHERE version_id=11 AND page_no=2", (current,))
+        db.execute("""UPDATE knowledge_items SET topics_json='["互助"]', source_title=? WHERE id=82""",
+                   ("child-source@example.invalid",))
+    route = f"/api/v1/reading-sessions/{sid}"
+    moved = client.post(route + "/events", headers=headers, json={
+        "eventType": "PAGE_CHANGED", "pageNumber": 2, "expectedRevision": 1, "clientEventId": "child-privacy-page",
+    })
+    assert moved.status_code == 201
+    guidance_model.return_value = ModelGenerateResult(success=True, text="1")
+    response = guidance(client, headers, sid, "child-privacy-guidance", page=2, revision=moved.json()["data"]["revision"])
+    assert response.status_code == 201
+    assert response.json()["data"]["status"] == "GENERATED"
+    request = guidance_model.await_args.args[0]
+    assert "小兔打开雨伞" in request.context_text and "小熊在树下等雨停" in request.context_text
+    assert all(marker not in request.context_text for marker in ("CHILDCROSSCAP", "child-page", "child-source"))
 
 
 @pytest.mark.parametrize("bodies", [

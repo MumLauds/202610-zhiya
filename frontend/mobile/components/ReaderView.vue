@@ -40,8 +40,6 @@ const questionReady = computed(() => {
 })
 const showAnswerDialog = ref(false)
 const asking = ref(false)
-const storyAnswer = computed(() => session.state.events.findLast(event =>
-  event.eventType === 'ASK' && event.pageNumber === currentPageNumber.value && event.outputText))
 const lastAnswerText = ref('')
 const answerDraft = ref('')
 const pageAudioSrc = ref('')
@@ -88,6 +86,7 @@ const currentVisitEvents = computed(() => {
   return events.slice(boundary + 1)
 })
 const currentPageEvents = computed(() => currentVisitEvents.value.filter(event => event.pageNumber === currentPageNumber.value))
+const storyAnswer = computed(() => currentPageEvents.value.findLast(event => event.eventType === 'ASK' && event.outputText))
 const savedAnswer = computed(() => isParentReading.value && !reviewing.value
   ? currentPageEvents.value.findLast(event => event.eventType === 'ANSWER')
   : null)

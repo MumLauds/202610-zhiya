@@ -142,6 +142,44 @@ describe('ReaderView session recovery and interaction', () => {
     expect(api.addEvent).not.toHaveBeenCalled()
   })
 
+  it('does not show or play an ASK reply from before a branch returned to the same page', async () => {
+    const oldAnswer = { interactionEventId: 23, revision: 3, eventType: 'ASK', pageNumber: 1,
+      outputText: '上次回答：小兔拿着黄伞。', strategyType: 'CONCRETE_RECALL' }
+    const newAnswer = { interactionEventId: 28, revision: 8, outputText: '本次回答：小兔走到树旁。',
+      status: 'GENERATED', strategyType: 'CONCRETE_RECALL' }
+    const api = await openReader({
+      snapshot: { ...questionedPageOne, mode: 'PARENT_CHILD', revision: 3 },
+      events: [savedQuestion(1, 2), oldAnswer],
+      readerBook: { ...book, branches: [{ branchId: 7, fromPageNumber: 2, nextPageNumber: 1,
+        choiceLabel: '回到第一页', reviewStatus: 'APPROVED' }] },
+      sessionApi: {
+        addEvent: vi.fn().mockResolvedValue({ data: { interactionEventId: 24, revision: 4 } }),
+        chooseBranch: vi.fn().mockResolvedValue({ data: { interactionEventId: 26, revision: 6,
+          branchId: 7, currentPage: 1, visitedPageNumbers: [1, 2, 1] } }),
+        submitGuidance: vi.fn(async (_, { expectedRevision }) => ({
+          data: { ...initialQuestion, interactionEventId: expectedRevision + 21, revision: expectedRevision + 1 },
+        })),
+        submitQuestion: vi.fn().mockResolvedValue({ data: newAnswer }),
+      },
+    })
+    expect(wrapper.text()).toContain(oldAnswer.outputText)
+    expect(wrapper.text()).toContain('播放芽芽的回答')
+
+    await clickButton('下一页 →')
+    await clickButton('回到第一页')
+    expect(wrapper.get('.page-scene').text()).toBe('第一页')
+    expect(wrapper.text()).not.toContain(oldAnswer.outputText)
+    expect(wrapper.text()).not.toContain('播放芽芽的回答')
+
+    await clickButton('提出本页问题')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue('小兔现在在哪里？')
+    await clickButton('确认提问')
+    expect(api.submitQuestion).toHaveBeenCalledOnce()
+    expect(wrapper.text()).toContain(newAnswer.outputText)
+    expect(wrapper.text()).toContain('播放芽芽的回答')
+  })
+
   it('directs an unknown create outcome to growth records without a retry button', async () => {
     const api = await openReader({
       snapshot: null,

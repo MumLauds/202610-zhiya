@@ -216,8 +216,8 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
                         "SELECT page_no, body_text FROM story_pages WHERE version_id = ? AND page_no IN (%s)"
                         % ",".join("?" * len(earlier)), (session["version_id"], *earlier),
                     ))
-                    # Parent privacy screening needs the tail to detect identifiers across the cap.
-                    earlier_limit = GUIDANCE_EARLIER_PAGE_CHARS + (ANSWER_PAGE_LOOKAHEAD if parent_guidance else 0)
+                    # Privacy screening needs the tail to detect identifiers across the cap.
+                    earlier_limit = GUIDANCE_EARLIER_PAGE_CHARS + ANSWER_PAGE_LOOKAHEAD
                     earlier_pages = [texts[number][:earlier_limit] for number in earlier if number in texts]
             token = str(uuid4())
             db.execute(

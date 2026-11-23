@@ -1914,7 +1914,9 @@ async function writeReading(operation) {
         ? '已生成本页共读问题'
         : feedback === 'SKIPPED'
           ? '已跳过本页提问'
-          : '已根据理解程度换一个引导问题')
+          : result.outputText?.trim()
+            ? '已根据理解程度换一个引导问题'
+            : '已记录理解反馈，保留当前问题')
     } else if (operation.kind === 'ask') {
       appendReadingInteraction(operation, result)
       setToast('已保存本页问答')

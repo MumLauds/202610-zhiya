@@ -192,12 +192,19 @@ NAMED_DETAIL_QUESTION = re.compile(
 )
 COLOR_MODIFIER = r"(?:浅|深)?[红黄蓝绿青紫白黑灰棕橙粉](?:色的?|的)?"
 COLOR_OBJECT_QUESTION = re.compile(
-    r"(?:颜色的([\u3400-\u9fff]{1,6})|的([\u3400-\u9fff]{1,6})是(?:什么|哪种)颜色)[？?]?$"
+    r"(?:([戴穿拿])[着了]?(?:什么|哪种)颜色的([\u3400-\u9fff]{1,6})"
+    r"|的([\u3400-\u9fff]{1,6}?)是?(?:什么|哪种)颜色)[？?]?$"
 )
+DIRECT_SPEECH = re.compile(r'“[^”]*(?:”|$)|‘[^’]*(?:’|$)|「[^」]*(?:」|$)|『[^』]*(?:』|$)|"[^"]*(?:"|$)')
+LOCATION_QUESTION = re.compile(r"哪里|哪儿|哪个地方")
+LOCATION_NEGATION = re.compile(r"(?:没(?:有)?|并不|不(?:曾|再)?)(?:[走跑来]到|到(?:达|了)?|去(?:了|往)?)")
+LATER_DETAIL = re.compile(r"后来|随后|最后")
 CONTINUATION = re.compile(
-    r"^(?:它|他|她|没(?:有)?|并不|不|还(?:是)?|也|又|再|后来|随后|最后|接着|终于|真的|确实|却|但(?:是)?)*"
-    r"(?:[走跑][到了去]|来到|到了|去[了往]|[戴穿拿][着了上起]|摔倒|跌倒|摔了一跤)"
+    r"^(?:它|他|她|没(?:有)?|并不|不|还(?:是)?|也|又|再|只|后来|随后|最后|接着|终于|真的|确实|却|但(?:是)?|而是)*"
+    r"(?:[走跑][到了去]|来到|到了|去[了往]|[戴穿拿](?:[着了上起]|的是)|摔倒|跌倒|摔了一跤)"
 )
+# A direct encounter may introduce an unfamiliar name that is not in ACTOR_WORD.
+POSSIBLE_OTHER_ACTOR = re.compile(r"(?:看着|看向|看见|遇见|遇到|望向|碰见|叫住|跟着)[\u3400-\u9fff]")
 NEAR_MISS = r"差一?点儿?|险些|几乎"
 ACTION_BREAK = re.compile(
     r"[，。！？；,.!?;]|而是|但是|可是|然后|接着|(?<!不)再|后来|随后|最后|才|因为|所以|"
@@ -407,7 +414,29 @@ class AnswerSignals:
                 and all(item == "有依据" for item in self.evidence))
 
 
-def _question_evidence(page: str, question: str) -> tuple[str, str, str]:
+@dataclass
+class ColorEvidence:
+    answer_pattern: re.Pattern
+    facts: list[tuple[str, str]]
+
+
+def _color_patterns(actor: str, item: str, verb: str) -> tuple[re.Pattern, re.Pattern, re.Pattern]:
+    names = "|".join(re.escape(name) for name in (actor, *(
+        name for name, canonical in ACTOR_ALIASES.items() if canonical == actor
+    )))
+    subject = rf"(?:{names}|它|他|她)"
+    adverb = r"(?:先|刚才|后来|随后|最后|接着|已经|也|又|还|却|而是|但是|终于|确实|真的)*"
+    noun = re.escape(item)
+    action = rf"{adverb}{subject}?{adverb}{verb or '[戴穿拿]'}(?:着|了|[上起]了?)?(?:的是)?"
+    quantity = r"(?:[一两这那][顶件条双把只个])?"
+    possession = rf"(?:{subject}的)?{noun}(?:的颜色)?是"
+    wear = re.compile(rf"{action}{quantity}({COLOR_MODIFIER})?{noun}了?")
+    property_color = re.compile(rf"{possession}({COLOR_MODIFIER})")
+    answer = re.compile(rf"(?:{action}{quantity}|{quantity}|{possession})({COLOR_MODIFIER})(?:{noun})?了?")
+    return wear, property_color, answer
+
+
+def _question_evidence(page: str, question: str) -> tuple[str, str, ColorEvidence | None]:
     def roles(text: str) -> set[str]:
         return {ACTOR_ALIASES.get(name, name) for name in ACTOR_WORD.findall(text)}
 
@@ -418,53 +447,69 @@ def _question_evidence(page: str, question: str) -> tuple[str, str, str]:
     if not asked and not named and re.match(r"^(?:角色|它|他|她)", prompt):
         asked = roles(anchor)
     if not named and (len(asked) != 1 or not DETAIL_QUESTION.search(prompt)):
-        return page, "", ""
+        return page, "", None
     actor = named[1] if named else next(iter(asked))
-    item = COLOR_OBJECT_QUESTION.search(prompt)
-    color_object = (item[1] or item[2]) if item else ""
+    color = None
+    if color_question := COLOR_OBJECT_QUESTION.search(prompt):
+        verb, worn_item, owned_item = color_question.groups()
+        wear, property_color, answer = _color_patterns(actor, worn_item or owned_item, verb)
+        color = ColorEvidence(answer, [])
+    asks_location = bool(LOCATION_QUESTION.search(prompt))
+    asks_later = asks_location and bool(LATER_DETAIL.search(prompt))
+    # A character's quoted claim does not establish a story fact.
+    page = DIRECT_SPEECH.sub("。", page)
     evidence = []
     for sentence in re.split(r"[。！？；.!?;：:\n“”‘’「」]", page):
-        continuing = has_item = False
-        for part in re.split(r"[，,、]", sentence):
+        continuing = has_item = speculative = ambiguous_pronoun = False
+        parts = re.split(r"[，,、]|(?=又[戴穿拿][着了上起])" if color else r"[，,、]", sentence)
+        for part in parts:
             clause = next(page_clauses(part), "")
             mentioned = roles(clause)
             initial = re.sub(r"^(?:后来|随后|最后|接着|只有)+", "", clause)
-            if (named and initial.startswith(actor) and not mentioned) or (not named and mentioned == asked):
+            explicit = ((named and initial.startswith(actor) and not mentioned) or (not named and mentioned == asked))
+            copula = property_color.fullmatch(clause) if color else None
+            continuation = CONTINUATION.match(clause)
+            carries = continuing and not mentioned and (
+                continuation or (has_item and copula)
+            ) and not (ambiguous_pronoun and continuation and re.search(r"[它他她]", continuation[0]))
+            if carries and speculative and not re.match(r"^(?:最后|后来|终于|却|但|而是)", clause):
+                continue
+            if not (explicit or carries):
+                continuing = has_item = speculative = ambiguous_pronoun = False
+                continue
+            speculative = bool(SPECULATION.search(clause))
+            # A short place name must come from a stated destination, not a
+            # negated/hypothetical trip or the earlier part of an explicit later question.
+            if not asks_location or (
+                not speculative and not LOCATION_NEGATION.search(clause)
+                and (not asks_later or LATER_DETAIL.search(clause))
+            ):
                 evidence.append(clause)
+            if explicit:
                 head = ACTOR_WORD.match(initial)
                 continuing = bool(named or (head and ACTOR_ALIASES.get(head[0], head[0]) == actor))
-                has_item = bool(continuing and color_object and re.search(
-                    r"(?:[戴穿拿]|的)[\u3400-\u9fff]{0,12}" + re.escape(color_object), initial[len(head[0]) if head else len(actor):],
-                ))
-            elif continuing and not mentioned and (CONTINUATION.match(clause) or (
-                has_item and clause.startswith(color_object + "是")
-            )):
-                evidence.append(clause)
-            else:
-                continuing = has_item = False
-    return "。".join(evidence), actor, color_object
+            ambiguous_pronoun = bool(POSSIBLE_OTHER_ACTOR.search(clause))
+            if color and not speculative and (worn := wear.fullmatch(clause)):
+                has_item = True
+                if worn[1]:
+                    color.facts.append((worn[1], clause))
+            elif color and copula and (has_item or (explicit and not verb)):
+                color.facts.append((copula[1], clause))
+    return "。".join(evidence), actor, color
 
 
-def _color_cue(page: str, answer: str, item: str, actor: str) -> str:
-    # Compare the color attached to the asked item, not common suffixes like "色的".
-    noun = re.escape(item)
+def _color_cue(answer: str, evidence: ColorEvidence) -> str:
+    # Accept a natural complete answer or a color fragment, but only with a unique supported color.
     answer = unicodedata.normalize("NFKC", answer).strip(" ，。！？,.!?呀啊呢啦")
-    names = "|".join(re.escape(name) for name in (actor, *(
-        name for name, canonical in ACTOR_ALIASES.items() if canonical == actor
-    )))
-    answer = re.sub(rf"^(?:(?:{names}|它|他|她)(?=[戴穿拿的]))?(?:[戴穿拿][着了]?|的)", "", answer)
-    color = re.fullmatch(rf"(?:{noun}(?:的颜色)?是)?({COLOR_MODIFIER})(?:{noun})?", answer.removesuffix("了"))
-    if not color:
+    def key(color: str) -> str:
+        return color.rstrip("色的")
+
+    match = evidence.answer_pattern.fullmatch(answer)
+    if not match or {key(color) for color, _ in evidence.facts} != {key(match[1])}:
         return ""
-    color_key = re.split(r"[色的]", color[1], maxsplit=1)[0]
-    detail = re.compile(rf"({COLOR_MODIFIER}){noun}|{noun}(?:的颜色)?是({COLOR_MODIFIER})")
-    for clause in page_clauses(page):
-        if re.search(r"不是|并非|没有|未曾|不曾|没[戴穿拿]|不[戴穿拿]", clause):
-            continue
-        for match in detail.finditer(clause):
-            if re.split(r"[色的]", match[1] or match[2], maxsplit=1)[0] == color_key:
-                return matching_answer_excerpt(clause, match[0]) or ""
-    return ""
+    color, clause = evidence.facts[0]
+    return (matching_answer_excerpt(clause, color) or clause[:EXCERPT_CHARS] +
+            ("…" if len(clause) > EXCERPT_CHARS else ""))
 
 
 def _answer_signals(answer: str, page: str, question: str) -> AnswerSignals:
@@ -482,11 +527,11 @@ def _answer_signals(answer: str, page: str, question: str) -> AnswerSignals:
         stance = "肯定"
 
     causal = _causal_evidence(answer, page, question)
-    evidence_page, actor, color_object = _question_evidence(page, question)
+    evidence_page, actor, color = _question_evidence(page, question)
     page_actions = [action for action in _actions(evidence_page, scoped_actor=actor) if not action.hypothetical]
     evidence, order_conflict = _action_evidence(actions, page_actions, bool(EXPLICIT_ORDER.search(answer)),
                                                 page=evidence_page)
-    color_cue = _color_cue(evidence_page, answer, color_object, actor) if color_object else None
+    color_cue = _color_cue(answer, color) if color else None
     unverified_detail = (not color_cue if color_cue is not None
                          else causal == "未表达" and _has_unverified_detail(answer, evidence_page))
     return AnswerSignals(stance, actions, evidence, order_conflict, causal, unverified_detail, evidence_page, color_cue, bool(actor))
@@ -780,14 +825,16 @@ async def answer_question(model_adapter: ModelAdapter, *, input_text: str, age_b
         return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)
     knowledge = retrieve_knowledge(KnowledgeQuery(age_band=age_band, topics=topics,
                                                   task_type="RETRIEVAL", query_text=input_text))
-    selected = select_knowledge_items(knowledge.items, 5)
+    selected = select_knowledge_items(_safe_answer_knowledge(knowledge.items), 5)
     fallback = "我们一起看看这一页的图和文字，找找线索吧。"
     if not selected and not page_image_url:
         return AgentResult(status="FALLBACK", strategyType="NO_KNOWLEDGE_FALLBACK", outputText=fallback)
 
     # Text answers stay within the approved page. A separate format allows bounded visual observations.
+    # Screen both prompt context and quoted candidates, not just the user's question.
+    page_text = _answer_page(page_text, limit=len(page_text))
     answers = [sentence.strip() for sentence in re.findall(r"[^。！？\n]+[。！？]?", page_text)
-               if 1 <= len(sentence.strip()) <= 100 and not SENSITIVE.search(sentence)]
+               if 1 <= len(sentence.strip()) <= 100 and not answer_is_unsafe(sentence)]
     request = build_prompt("STORY_ANSWER", age_band=age_band, page_text=page_text, items=selected,
                            user_input=input_text)
     request.system_prompt += (
@@ -865,12 +912,10 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
                     confirmed_answer: str = "", earlier_pages: Sequence[str] = (),
                     page_image_url: str | None = None, seen_questions: Sequence[str] = ()) -> AgentResult:
     """Return a displayable result or raise a dependency error for the event ledger."""
-    if previous_question and (SENSITIVE.search(unicodedata.normalize("NFKC", previous_question))
-                              if child_mode else answer_is_unsafe(previous_question)):
+    if previous_question and answer_is_unsafe(previous_question):
         return AgentResult(status="BLOCKED", strategyType="SAFETY_BLOCK", outputText=HANDOFF)
-    if not child_mode:
-        page_text = _answer_page(page_text)
-        earlier_pages = tuple(_answer_page(text, GUIDANCE_EARLIER_PAGE_CHARS) for text in earlier_pages)
+    page_text = _answer_page(page_text, limit=len(page_text) if child_mode else ANSWER_PAGE_CHARS)
+    earlier_pages = tuple(_answer_page(text, GUIDANCE_EARLIER_PAGE_CHARS) for text in earlier_pages)
     strategy = "CONCRETE_RECALL" if feedback == "NOT_UNDERSTOOD" else "CONTEXT_QUESTION"
     followup = ANSWER_FOLLOWUP_FORMS.get(feedback)
     answer_focus = None
@@ -887,7 +932,7 @@ async def run_agent(model_adapter: ModelAdapter, *, feedback: str, age_band: str
         grounded_followup = None
     knowledge = retrieve_knowledge(KnowledgeQuery(age_band=age_band, topics=topics,
                                                   task_type="GUIDANCE", query_text=page_text))
-    selected = select_knowledge_items(knowledge.items if child_mode else _safe_answer_knowledge(knowledge.items), 5)
+    selected = select_knowledge_items(_safe_answer_knowledge(knowledge.items), 5)
     if not selected and (child_mode or (not page_image_url and not any(page_clauses(page_text)))):
         if grounded_followup:
             return AgentResult(status="GENERATED", outputText=grounded_followup, strategyType=strategy)

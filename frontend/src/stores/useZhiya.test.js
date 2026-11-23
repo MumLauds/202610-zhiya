@@ -295,6 +295,16 @@ describe('authoritative reading progress', () => {
       feedback: 'UNDERSTOOD',
       outputText: '你能指一指小兔吗？',
     })
+    expect(state.toast.message).toBe('已根据理解程度换一个引导问题')
+  })
+
+  it.each(['UNDERSTOOD', 'NOT_UNDERSTOOD'])('does not claim there is a new prompt after blank %s feedback', async (feedback) => {
+    reading.requestReadingGuidance.mockResolvedValueOnce({ interactionEventId: 2, revision: 2,
+      status: 'FALLBACK', strategyType: 'NO_KNOWLEDGE_FALLBACK', outputText: '  ' })
+    expect(await actions.requestGuidance(feedback)).toBe(true)
+    expect(state.currentSession.revision).toBe(2)
+    expect(state.currentEvents.at(-1)).toMatchObject({ eventType: 'FEEDBACK', feedback, outputText: '  ' })
+    expect(state.toast.message).toBe('已记录理解反馈，保留当前问题')
   })
 
   it('submits a trimmed ANSWER through API-015 and preserves the immediate reply', async () => {
