@@ -200,3 +200,54 @@ def test_fact_recognition_agrees_in_rule_and_model_choices(page, answer, questio
             success=True, text='{"answerCategory":"RELEVANT","followup":0}',
         )
         assert reply(model, page=page, answer=answer, question=question) is None
+
+
+@pytest.mark.parametrize("page,question,answer,supported,quote", [
+    ("小熊走到了山坡。小兔走到了海边。", "小兔去了哪里？", "山坡", False, None),
+    ("小熊走到了山坡。小兔走到了海边。", "小兔去了哪里？", "小熊走到了山坡", False, None),
+    ("小熊走到了山坡。芽芽走到了海边。", "芽芽去了哪里？", "山坡", False, None),
+    ("小熊走到了山坡。芽芽走到了海边。", "芽芽去了哪里？", "海边", True, "芽芽走到了海边"),
+    ("小熊戴着红帽子。芽芽戴着蓝帽子。", "芽芽戴什么颜色的帽子？", "红帽子", False, None),
+    ("小熊戴着红帽子。芽芽戴着蓝帽子。", "芽芽戴什么颜色的帽子？", "蓝帽子", True, "芽芽戴着蓝帽子"),
+    ("小熊走到了山坡。小兔走到了海边。", "读到“小熊走到了山坡”时，小兔去了哪里？", "山坡", False, None),
+    ("小熊走到了山坡。小兔走到了海边。", "读到“小兔走到了海边”时，角色在哪里？", "海边", True, "小兔走到了海边"),
+    ("小熊走到了山坡。小兔走到了海边。", "小兔去了哪里？", "海边", True, "小兔走到了海边"),
+    ("小熊走到了海边。小兔走到了海边。", "小兔去了哪里？", "海边", True, "小兔走到了海边"),
+    ("小熊戴着红帽子。小兔戴着蓝帽子。", "小兔戴什么颜色的帽子？", "红帽子", False, None),
+    ("小熊戴着红帽子。小兔戴着蓝帽子。", "小兔戴什么颜色的帽子？", "蓝帽子", True, "小兔戴着蓝帽子"),
+    (
+        "因为蓝帽子被雨淋湿，小熊才走到松树下。",
+        "小熊为什么走到松树下？", "帽子被雨淋湿了。", True, "蓝帽子被雨淋湿",
+    ),
+    (
+        "因为蓝帽子被雨淋湿，小熊才走到松树下。红帽子还在桌上。",
+        "小熊为什么走到松树下？", "帽子被雨淋湿了。", False, None,
+    ),
+    ("小兔差一点摔倒，但站稳了。", "小兔怎么了？", "小兔摔倒了", False, None),
+    ("小兔差一点摔倒，但站稳了。后来小熊摔倒了。", "小兔怎么了？", "小兔摔倒了", False, None),
+    ("小兔差一点摔倒，但站稳了。后来小熊摔倒了。", "小兔怎么了？", "摔倒了", False, None),
+    ("小兔差点就摔倒，但站稳了。", "小兔怎么了？", "小兔摔倒了", False, None),
+    ("小兔摔倒了。", "小兔怎么了？", "小兔差一点摔倒了", False, None),
+    ("小兔差一点摔倒，但站稳了。", "小兔怎么了？", "小兔差点摔倒了", True, "小兔差一点摔倒"),
+    (
+        "小兔差一点摔倒，但站稳了。后来小兔摔倒了。",
+        "小兔怎么了？", "小兔摔倒了", True, "小兔摔倒了",
+    ),
+    (
+        "小兔差一点摔倒，但站稳了。小兔后来摔倒了。",
+        "小兔怎么了？", "小兔摔倒了", True, "小兔后来摔倒了",
+    ),
+])
+def test_grounded_answer_fragments_and_near_miss(page, question, answer, supported, quote):
+    fallback = reading_agent.reply_to_child_answer(page, answer, question)
+    assert ("这一页也写到" in fallback) == supported
+    model = AsyncMock()
+    model.generate.return_value = ModelGenerateResult(success=True, text='{"candidateId":1}')
+    result = reply(model, page=page, answer=answer, question=question)
+    assert result is not None
+    context = answer_context(model.generate.await_args.args[0])
+    assert ("RELEVANT" in context["可选类别"]) == supported
+    if quote:
+        assert quote in fallback
+        assert quote in result[0]
+        assert quote in context["作答对应的当页原文线索"]

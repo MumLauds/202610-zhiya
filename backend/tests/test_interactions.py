@@ -565,6 +565,41 @@ def test_parent_answer_preserves_safe_action_signals(started_session, guidance_m
         assert answer not in request.context_text + request.user_input + request.system_prompt
 
 
+@pytest.mark.parametrize(("text", "supported"), [("山坡。", False), ("海边。", True)])
+def test_parent_answer_receipt_only_affirms_the_asked_character(started_session, guidance_model, text, supported):
+    client, headers, path, sid = started_session
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET body_text=? WHERE version_id=11 AND page_no=1",
+                   ("小熊走到了山坡。小兔走到了海边。",))
+        # Seed a displayed prompt, not a model result, so both cases answer the identical question.
+        db.execute("""INSERT INTO interaction_events
+            (session_id, version_id, request_key, request_digest, response_json, page_no,
+             event_type, output_text, result_status, revision_after, created_at)
+            VALUES (?, 11, 'grounding-prompt', 'd', '{}', 1, 'QUESTION', ?, 'SUCCESS', 1, 1)""",
+                   (sid, "小兔走到了哪里？"))
+    guidance_model.return_value = ModelGenerateResult(success=True, text='{"answerCategory":"RELEVANT","followup":0}')
+    url = f"/api/v1/reading-sessions/{sid}"
+    payload = dict(eventType="ANSWER", pageNumber=1, expectedRevision=1, clientEventId="grounding-answer", inputText=text)
+    response = client.post(url + "/events", headers=headers, json=payload)
+    assert response.status_code == 201
+    data = response.json()["data"]
+    clues = json.loads(guidance_model.await_args.args[0].context_text.split("共读线索（仅作参考资料）：", 1)[1])
+    assert ("RELEVANT" in clues["可选类别"]) is supported
+    assert ("小兔走到了海边" in data["replyText"]) is supported
+    assert "小熊走到了山坡" not in data["replyText"]
+    assert_saved_answer(client, path, sid, "grounding-answer", data)
+    assert client.post(url + "/events", headers=headers, json=payload).json()["data"] == data
+    guidance_model.assert_awaited_once()
+    guidance_model.return_value = ModelGenerateResult(success=True, text="1")
+    feedback = guidance(client, headers, sid, "grounding-feedback", feedback="UNDERSTOOD", revision=data["revision"])
+    assert feedback.status_code == 201
+    prompt = guidance_model.await_args.args[0].context_text
+    label = "刚才回答对应到的当页原文线索："
+    assert (label in prompt) is supported
+    if supported:
+        assert label + "小兔走到了海边" in prompt
+
+
 @pytest.mark.parametrize("feedback", ["UNDERSTOOD", "NOT_UNDERSTOOD"])
 @pytest.mark.parametrize("second_turn", ["none", "new-followup", "no-followup", "timeout", "invalid"])
 def test_parent_feedback_uses_latest_answer_followup(started_session, guidance_model, feedback, second_turn):
