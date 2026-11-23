@@ -1339,6 +1339,92 @@ it('restores the follow-up from a saved answer on a fresh reader view', () => {
   expect(wrapper.get('.reader-side').text()).not.toContain(questionEvent.outputText)
 })
 
+it('keeps the real question after a saved answer without a follow-up and labels the next round correctly', async () => {
+  const firstFollowup = '小兔脚边是什么？'
+  const followupQuestion = '草地上还有什么？'
+  const earlierAnswer = {
+    interactionEventId: 11, eventType: 'ANSWER', pageNumber: 1, inputText: '在树旁。',
+    replyText: '你找到小兔了。' + firstFollowup, followupQuestion: firstFollowup,
+  }
+  const latestFollowup = {
+    interactionEventId: 12, eventType: 'ANSWER', pageNumber: 1, inputText: '有草地。',
+    replyText: '我们再看看。' + followupQuestion, followupQuestion,
+  }
+  const noFollowup = {
+    interactionEventId: 13, eventType: 'ANSWER', pageNumber: 1, inputText: '有一棵树。',
+    replyText: '谢谢你分享。我们一起看看画面。',
+  }
+  const newerQuestion = {
+    interactionEventId: 14, eventType: 'FEEDBACK', pageNumber: 1, feedback: 'UNDERSTOOD',
+    outputText: '树旁边有什么？', strategyType: 'CONTEXT_QUESTION',
+  }
+  const priorEvents = [questionEvent, earlierAnswer, latestFollowup]
+  const terminalEvents = [...priorEvents, noFollowup]
+  const submitAnswer = vi.fn().mockImplementation(async () => {
+    await wrapper.setProps({ events: terminalEvents })
+    return true
+  })
+  render({ events: priorEvents, submitAnswer })
+  await wrapper.get('.reader-answer textarea').setValue(noFollowup.inputText)
+  await wrapper.get('.reader-answer').trigger('submit')
+  await flushPromises()
+
+  function expectRetainedQuestion() {
+    const card = wrapper.get('.question-card')
+    expect(card.text()).not.toContain(questionEvent.outputText)
+    expect(card.text()).not.toContain(firstFollowup)
+    expect(card.text().split(followupQuestion)).toHaveLength(2)
+    expect(card.text().indexOf(followupQuestion)).toBeLessThan(card.text().indexOf(noFollowup.inputText))
+    expect(card.get('.question-saved').text()).toBe('孩子的回答：' + noFollowup.inputText)
+    expect(card.get('.question-reply').text()).toBe('芽芽：' + noFollowup.replyText)
+  }
+
+  expectRetainedQuestion()
+  wrapper.unmount()
+  render({ events: terminalEvents })
+  expectRetainedQuestion()
+  await wrapper.setProps({ events: [...terminalEvents, newerQuestion] })
+  const card = wrapper.get('.question-card')
+  expect(card.text()).toContain(newerQuestion.outputText)
+  expect(card.text()).not.toContain(followupQuestion)
+  expect(card.get('.question-saved').text()).toBe('上一轮回答：' + noFollowup.inputText)
+})
+
+it.each(['IN_PROGRESS', 'FINISHED'])('separates answers on repeated visits when viewing %s history', async (status) => {
+  const firstQuestion = '第一次：小兔在哪儿？'
+  const firstFollowup = '第一次：小兔在做什么？'
+  const secondQuestion = '第二次：小兔身边有什么？'
+  const terminalReply = '第二次：我们再看看图。'
+  render({
+    session: { ...initialSession, visitedPageNumbers: [1, 3, 1], status, revision: 8 },
+    events: [
+      { interactionEventId: 1, eventType: 'STARTED', pageNumber: 1 },
+      { ...questionEvent, interactionEventId: 2, outputText: firstQuestion },
+      { interactionEventId: 3, eventType: 'ANSWER', pageNumber: 1, inputText: '它在草地上。',
+        replyText: '第一次：你看到草地了。' + firstFollowup, followupQuestion: firstFollowup },
+      { interactionEventId: 4, eventType: 'ANSWER', pageNumber: 1, inputText: '它在走路。', replyText: '第一次：再看看。' },
+      { interactionEventId: 5, eventType: 'BRANCH_CHOSEN', pageNumber: 1 },
+      { interactionEventId: 6, eventType: 'BRANCH_CHOSEN', pageNumber: 3 },
+      { ...questionEvent, interactionEventId: 7, outputText: secondQuestion },
+      { interactionEventId: 8, eventType: 'ANSWER', pageNumber: 1, inputText: '它身边有花朵。', replyText: terminalReply },
+    ],
+  })
+  const card = wrapper.get('.question-card')
+  expect(displayedPageNumber()).toBe(1)
+  expect(card.text()).toContain(secondQuestion)
+  expect(card.text()).toContain(terminalReply)
+  expect(card.text()).not.toContain(firstFollowup)
+
+  await button('上一页').trigger('click')
+  expect(displayedPageNumber()).toBe(3)
+  await button('上一页').trigger('click')
+  expect(displayedPageNumber()).toBe(1)
+  expect(card.text()).toContain(firstFollowup)
+  expect(card.get('.question-saved').text()).toBe('孩子的回答：它在走路。')
+  expect(card.text()).not.toContain(secondQuestion)
+  expect(card.text()).not.toContain(terminalReply)
+})
+
 it('requests current-visit guidance after a branch returns to the same page', () => {
   const requestGuidance = vi.fn().mockResolvedValue(true)
   render({

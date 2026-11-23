@@ -141,15 +141,31 @@ def current_parent_question(
     if arrival_id is None:
         arrival_id = current_page_arrival_id(db, session)
     question = current_question(db, session, after_id=arrival_id)
-    latest_answer = db.execute(
-        """SELECT id, event_type, input_text, output_text FROM interaction_events
-           WHERE session_id = ? AND version_id = ? AND page_no = ?
-           AND event_type = 'ANSWER' AND result_status = 'SUCCESS' AND id > ? ORDER BY id DESC LIMIT 1""",
+    # An answer without a follow-up does not replace an already-emitted question.
+    followups = db.execute(
+        """SELECT id, event_type, output_text FROM interaction_events
+           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ?
+           AND event_type = 'ANSWER' AND result_status = 'SUCCESS' AND output_text IS NOT NULL
+           ORDER BY id DESC""",
+        (session["id"], session["version_id"], session["current_page_no"], question["id"] if question else arrival_id),
+    )
+    return next((followup for followup in followups if followup["output_text"].strip()), question)
+
+
+def parent_visit_questions(db, session, arrival_id: int) -> tuple[str, ...]:
+    # The full local exclusion list is not included in the model prompt.
+    questions = db.execute(
+        """SELECT output_text FROM interaction_events
+           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ? AND output_text IS NOT NULL
+             AND ((event_type = 'ANSWER' AND result_status = 'SUCCESS')
+                  OR ((event_type = 'QUESTION' OR (event_type = 'FEEDBACK' AND feedback IN ('UNDERSTOOD', 'NOT_UNDERSTOOD')))
+                      AND result_status IN ('SUCCESS', 'FALLBACK')
+                      AND COALESCE(strategy_type, json_extract(response_json, '$.data.strategyType'), '')
+                          NOT IN ('SKIP', 'SAFETY_BLOCK')))
+           GROUP BY output_text ORDER BY MAX(id)""",
         (session["id"], session["version_id"], session["current_page_no"], arrival_id),
-    ).fetchone()
-    if latest_answer and latest_answer["output_text"] and (question is None or latest_answer["id"] > question["id"]):
-        return latest_answer
-    return question
+    )
+    return tuple(row["output_text"].strip() for row in questions if row["output_text"].strip())
 
 
 def child_answer_options(db: sqlite3.Connection, session: sqlite3.Row) -> list[str]:
@@ -832,6 +848,18 @@ def answer_context(db, session, answer: str) -> dict:
            GROUP BY TRIM(output_text) ORDER BY MAX(id) DESC LIMIT ?""",
         (session["id"], session["version_id"], session["current_page_no"], arrival_id, MAX_ANSWER_FOLLOWUPS),
     ).fetchall()
+    prior = db.execute(
+        """SELECT json_extract(response_json, '$.data.replyText') AS reply,
+                  output_text AS appended_question
+           FROM interaction_events
+           WHERE session_id = ? AND version_id = ? AND page_no = ? AND id > ?
+             AND event_type = 'ANSWER' AND result_status = 'SUCCESS'
+           ORDER BY id DESC LIMIT 1""",
+        (session["id"], session["version_id"], session["current_page_no"], arrival_id),
+    ).fetchone()
+    prior_reply = prior["reply"] if prior and isinstance(prior["reply"], str) else ""
+    if prior_reply and prior["appended_question"]:
+        prior_reply = prior_reply.removesuffix(prior["appended_question"])
     visited = json.loads(session["visited_pages_json"])
     earlier = [number for number in visited[:-1] if number != session["current_page_no"]][-3:]
     texts = {}
@@ -846,6 +874,7 @@ def answer_context(db, session, answer: str) -> dict:
         age_band=page["age_band"] if page else "", topics=json.loads(page["topics_json"]) if page else [],
         earlier_pages=[texts[number][:600] for number in earlier if number in texts],
         used_followups=[item["question"] for item in followups],
+        seen_questions=parent_visit_questions(db, session, arrival_id), prior_reply=prior_reply[:160],
     )
 
 

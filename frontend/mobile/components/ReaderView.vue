@@ -8,6 +8,7 @@ import VoiceAnswerDialog from './VoiceAnswerDialog.vue'
 import { useAudioController } from '../composables/useAudioController'
 import { useReadingSession } from '../composables/useReadingSession'
 import { approvedBranchesAt } from '../../src/data/readingBranches'
+import { latestReadingQuestion } from '../../src/data/readingQuestions'
 
 const props = defineProps({
   book: { type: Object, required: true },
@@ -86,19 +87,21 @@ const currentVisitEvents = computed(() => {
   const boundary = events.findLastIndex((event) => ['STARTED', 'PAGE_CHANGED', 'BRANCH_CHOSEN'].includes(event.eventType))
   return events.slice(boundary + 1)
 })
+const currentPageEvents = computed(() => currentVisitEvents.value.filter(event => event.pageNumber === currentPageNumber.value))
 const savedAnswer = computed(() => isParentReading.value && !reviewing.value
-  ? currentVisitEvents.value.findLast((event) => event.eventType === 'ANSWER' && event.pageNumber === currentPageNumber.value)
+  ? currentPageEvents.value.findLast(event => event.eventType === 'ANSWER')
   : null)
-const answerFollowup = computed(() => {
-  const answer = savedAnswer.value
-  const prompt = interactionResult.value
-  if (answer?.followupQuestion && (!prompt || answer.interactionEventId > prompt.interactionEventId)) {
-    return answer.followupQuestion
-  }
-  return ''
+const displayedQuestion = computed(() => {
+  const settled = interactionResult.value
+  if (!isParentReading.value || reviewing.value) return settled
+  const guidance = !settled || isVisibleGuidance(settled) ? settled
+    : currentPageEvents.value.findLast(event => isPageGuidance(event) && isVisibleGuidance(event))
+  // Blank settled feedback is not a new question. Without an older prompt, it still prevents automatic resubmission.
+  return latestReadingQuestion(currentPageEvents.value, guidance) ?? settled
 })
-const displayedQuestion = computed(() => answerFollowup.value
-  ? { outputText: answerFollowup.value } : interactionResult.value)
+const previousAnswer = computed(() => questionReady.value
+  && displayedQuestion.value?.interactionEventId >= savedAnswer.value?.interactionEventId)
+const answerFollowup = computed(() => displayedQuestion.value?.eventType === 'ANSWER' && previousAnswer.value)
 const savedReply = computed(() => {
   const reply = savedAnswer.value?.replyText
   const question = savedAnswer.value?.followupQuestion
@@ -250,12 +253,20 @@ function resetInteractionForPage() {
   highlightIndex.value = -1
 }
 
+function isPageGuidance(event) {
+  return event.eventType === 'QUESTION' ||
+    (event.eventType === 'FEEDBACK' && ['UNDERSTOOD', 'NOT_UNDERSTOOD', 'SKIPPED'].includes(event.feedback))
+}
+
+function isVisibleGuidance(event) {
+  return Boolean(event?.outputText?.trim()) || event?.status === 'BLOCKED'
+    || ['SKIP', 'SAFETY_BLOCK'].includes(event?.strategyType) || event?.feedback === 'SKIPPED'
+}
+
 function restorePageQuestion() {
   if (reviewing.value || session.state.session?.status !== 'IN_PROGRESS') return
-  interactionResult.value = currentVisitEvents.value.findLast((event) =>
-    event.pageNumber === currentPageNumber.value && (event.strategyType || event.outputText?.trim() || event.feedback === 'SKIPPED') &&
-    (event.eventType === 'QUESTION' ||
-      (event.eventType === 'FEEDBACK' && ['UNDERSTOOD', 'NOT_UNDERSTOOD', 'SKIPPED'].includes(event.feedback)))) ?? null
+  interactionResult.value = currentPageEvents.value.findLast((event) =>
+    isPageGuidance(event) && (event.strategyType || event.outputText?.trim() || event.feedback === 'SKIPPED')) ?? null
 }
 
 async function syncReading() {
@@ -618,7 +629,7 @@ function exitReading() {
         <p v-if="reviewing" class="inline-notice">正在回看已读页，回到当前进度后可继续互动。</p>
         <InteractionCard v-else
           :result="displayedQuestion"
-          :followup="Boolean(answerFollowup)"
+          :followup="answerFollowup"
           :revision="revision"
           :pending="pending || (isParentReading && session.state.syncRequired)"
           :demo="mode === 'demo'"
@@ -638,7 +649,7 @@ function exitReading() {
           @play-answer="playAnswerAudio()"
         >
           <p v-if="confirmedAnswerText" class="answer-confirmation">
-            <strong>{{ isChildMode ? '已提交回答：' : answerFollowup ? '上一轮回答：' : '家长确认文本：' }}</strong>{{ confirmedAnswerText }}
+            <strong>{{ isChildMode ? '已提交回答：' : previousAnswer ? '上一轮回答：' : '家长确认文本：' }}</strong>{{ confirmedAnswerText }}
           </p>
           <div v-if="isParentReading" role="status">
             <p v-if="savedReply" class="answer-confirmation guardian-answer-reply">

@@ -7,6 +7,7 @@ import { synthesize, transcribe } from '../api/voice'
 import { describeApiError } from '../api/client'
 import { readingProfileKey, recordPlanActivity } from '../data/readingPlan'
 import { canContinueStory } from '../data/readingProgress'
+import { latestReadingQuestion } from '../data/readingQuestions'
 
 const props = defineProps({
   book: { type: Object, default: null },
@@ -113,11 +114,33 @@ const guidanceLoading = computed(() => pendingGuidanceKey.value === pageGuidance
 const rereading = computed(() => pageIndex.value !== progressIndex.value)
 const pageEvents = computed(() => {
   const events = props.events || []
-  const arrival = props.session?.mode !== 'CHILD_SOLO' && !reviewingHistory.value && !rereading.value
-    ? events.findLast(event => ['STARTED', 'PAGE_CHANGED', 'BRANCH_CHOSEN'].includes(event.eventType))
-    : null
-  return events.filter(event => event.pageNumber === currentPage.value?.pageNumber
-    && (!arrival || event.interactionEventId >= arrival.interactionEventId))
+  const page = currentPage.value?.pageNumber
+  const matchingPage = events.filter(event => event.pageNumber === page)
+  if (props.session?.mode === 'CHILD_SOLO') return matchingPage
+  const isArrival = event => ['STARTED', 'PAGE_CHANGED', 'BRANCH_CHOSEN'].includes(event.eventType)
+  if (!reviewingHistory.value && !rereading.value) {
+    const arrival = events.findLast(isArrival)
+    return arrival ? matchingPage.filter(event => event.interactionEventId >= arrival.interactionEventId) : matchingPage
+  }
+  if (props.session?.mode !== 'PARENT_CHILD' || props.session.preview) return matchingPage
+
+  const visits = props.session.visitedPageNumbers || []
+  const carried = props.session.carriedPrefixPageCount ?? 0
+  const arrivals = events.filter(isArrival)
+  // Carried pages have no events in this session. Branch arrivals store the page they left.
+  if (arrivals[0]?.eventType === 'STARTED' && visitedPages.value.length === visits.length
+      && arrivals.length === visits.length - carried
+      && arrivals.every((event, i) => Number.isSafeInteger(event.interactionEventId)
+        && event.pageNumber === visits[carried + i - (event.eventType === 'BRANCH_CHOSEN' ? 1 : 0)])) {
+    const index = pageIndex.value - carried
+    if (index < 0) return []
+    const arrival = arrivals[index]?.interactionEventId
+    const departure = arrivals[index + 1]?.interactionEventId
+    return matchingPage.filter(event => event.interactionEventId >= arrival
+      && (departure === undefined || event.interactionEventId < departure))
+  }
+  // A partial snapshot cannot tell which repeat an interaction belonged to.
+  return visits.indexOf(page) === visits.lastIndexOf(page) ? matchingPage : []
 })
 const storyAnswer = computed(() => pageEvents.value.findLast(event => event.eventType === 'ASK' && event.outputText))
 const latestGuidanceEvent = computed(() => pageEvents.value.findLast(event => ['QUESTION', 'FEEDBACK'].includes(event.eventType)))
@@ -131,18 +154,14 @@ const guidanceQuestion = computed(() => pageEvents.value.findLast((event) => (
 const questionSkipped = computed(() => latestGuidanceEvent.value?.feedback === 'SKIPPED')
 const questionBlocked = computed(() => latestGuidanceEvent.value?.strategyType === 'SAFETY_BLOCK')
 const savedAnswer = computed(() => pageEvents.value.findLast(event => event.eventType === 'ANSWER'))
-const currentQuestion = computed(() => {
-  const answer = savedAnswer.value
-  const guidance = guidanceQuestion.value
-  if (props.authenticated && !props.session?.preview && props.session?.mode !== 'CHILD_SOLO' && answer?.followupQuestion
-      && (!guidance || answer.interactionEventId > guidance.interactionEventId)) {
-    return { interactionEventId: answer.interactionEventId, eventType: 'ANSWER', outputText: answer.followupQuestion }
-  }
-  return guidance
-})
+const showParentFollowup = computed(() => props.authenticated && !props.session?.preview && props.session?.mode !== 'CHILD_SOLO')
+const currentQuestion = computed(() => showParentFollowup.value
+  ? latestReadingQuestion(pageEvents.value, guidanceQuestion.value) : guidanceQuestion.value)
+const previousAnswer = computed(() => showParentFollowup.value && !questionSkipped.value && !questionBlocked.value
+  && currentQuestion.value?.interactionEventId >= savedAnswer.value?.interactionEventId)
 const answerFollowup = computed(() => {
   const question = currentQuestion.value
-  return question?.eventType === 'ANSWER' && !questionSkipped.value && !questionBlocked.value ? question.outputText : ''
+  return question?.eventType === 'ANSWER' && previousAnswer.value ? question.outputText : ''
 })
 const answerReply = computed(() => {
   const { replyText, followupQuestion } = savedAnswer.value || {}
@@ -860,7 +879,7 @@ onBeforeUnmount(() => { clearPendingAnswer(); clearPreparedAudio(); stopNarratio
           <p v-else-if="guidanceLoading">正在根据这一页生成问题…</p>
           <p v-else-if="!answerFollowup">看看这一页，你发现了什么？</p>
           <p v-if="guidanceError" class="question-error" role="alert">{{ guidanceError }}</p>
-          <p v-if="answerText" class="question-saved"><strong>{{ answerFollowup ? '上一轮回答：' : '孩子的回答：' }}</strong>{{ answerText }}</p>
+          <p v-if="answerText" class="question-saved"><strong>{{ previousAnswer ? '上一轮回答：' : '孩子的回答：' }}</strong>{{ answerText }}</p>
           <p v-else-if="savedAnswer" class="question-saved" role="status">本页回答已保存。</p>
           <div role="status">
             <p v-if="answerPending" class="question-reply">芽芽正在想怎么回应…</p>

@@ -695,6 +695,73 @@ describe('guardian answer follow-ups', () => {
     expect(api.addEvent).not.toHaveBeenCalled()
   })
 
+  it('keeps the real question after a saved fallback without a follow-up and labels the next round correctly', async () => {
+    const secondFollowup = '你在哪里看到了这一把伞？'
+    const secondAnswer = { interactionEventId: 24, revision: 4, eventType: 'ANSWER', pageNumber: 1, inputText: '红色。',
+      replyText: '你看清了颜色。' + secondFollowup, followupQuestion: secondFollowup }
+    const fallbackReceipt = { interactionEventId: 25, revision: 5, replyText: '谢谢你分享。我们一起看看画面。' }
+    const noFollowup = { ...fallbackReceipt, eventType: 'ANSWER', pageNumber: 1, inputText: '蓝色。' }
+    const blankFeedback = { interactionEventId: 26, revision: 6, status: 'FALLBACK',
+      strategyType: 'CONTEXT_QUESTION', outputText: '  ' }
+    const nextPromptReceipt = { ...initialQuestion, interactionEventId: 27, revision: 7, outputText: '树旁边有什么？' }
+    const priorEvents = [question, answer, secondAnswer]
+    await openReader({ snapshot: { ...parent, revision: 4 }, events: priorEvents,
+      sessionApi: { addEvent: vi.fn().mockResolvedValue({ data: fallbackReceipt }) } })
+    await clickButton('孩子回答')
+    await clickButton('改用文字输入')
+    await wrapper.get('textarea').setValue(noFollowup.inputText)
+    await clickButton('确认回答')
+
+    function expectRetainedQuestion() {
+      const card = wrapper.get('section[aria-labelledby="interaction-title"]')
+      expect(card.text()).not.toContain(question.outputText)
+      expect(card.text()).not.toContain(followupQuestion)
+      expect(card.findAll('.agent-text, .answer-confirmation').map(item => item.text())).toEqual([
+        secondFollowup, '家长确认文本：' + noFollowup.inputText, '芽芽：' + fallbackReceipt.replyText,
+      ])
+    }
+
+    expectRetainedQuestion()
+    wrapper.unmount()
+    const api = await openReader({ snapshot: { ...parent, revision: 5 }, events: [...priorEvents, noFollowup],
+      sessionApi: { submitGuidance: vi.fn().mockResolvedValue({ data: blankFeedback }) } })
+    expectRetainedQuestion()
+    expect(api.submitGuidance).not.toHaveBeenCalled()
+    await clickButton('已听懂')
+    expect(api.submitGuidance).toHaveBeenCalledTimes(1)
+    expectRetainedQuestion()
+
+    wrapper.unmount()
+    await openReader({ snapshot: { ...parent, revision: 6 }, events: [...priorEvents, noFollowup, {
+      ...blankFeedback, status: undefined, eventType: 'FEEDBACK', pageNumber: 1, feedback: 'UNDERSTOOD',
+    }], sessionApi: { submitGuidance: vi.fn().mockResolvedValue({ data: nextPromptReceipt }) } })
+    expectRetainedQuestion()
+    await clickButton('已听懂')
+    const card = wrapper.get('section[aria-labelledby="interaction-title"]')
+    expect(card.get('.agent-text').text()).toBe(nextPromptReceipt.outputText)
+    expect(card.text()).not.toContain(followupQuestion)
+    expect(card.text()).not.toContain(secondFollowup)
+    expect(card.get('.answer-confirmation').text()).toBe('上一轮回答：' + noFollowup.inputText)
+  })
+
+  it('keeps a blank settled initial receipt without generating another prompt', async () => {
+    const api = await openReader({ snapshot: parent, events: [{
+      ...question, strategyType: 'CONTEXT_QUESTION', outputText: '',
+    }] })
+    expect(wrapper.text()).toContain('本次没有生成可展示的文字。')
+    expect(api.submitGuidance).not.toHaveBeenCalled()
+  })
+
+  it('keeps the earlier ordinary question after a blank feedback result', async () => {
+    const api = await openReader({ snapshot: parent, events: [question],
+      sessionApi: { submitGuidance: vi.fn().mockResolvedValue({ data: {
+        interactionEventId: 23, revision: 3, status: 'FALLBACK', strategyType: 'CONTEXT_QUESTION', outputText: '',
+      } }) } })
+    await clickButton('已听懂')
+    expect(wrapper.get('.agent-text').text()).toBe(question.outputText)
+    expect(api.submitGuidance).toHaveBeenCalledTimes(1)
+  })
+
   it('reconciles a saved answer after 503 without re-submitting the draft or repeating its follow-up', async () => {
     const fallback = { interactionEventId: 23, pageNumber: 1, eventType: 'ANSWER', inputText: '雨伞',
       replyText: '我们一起看看画面。' }

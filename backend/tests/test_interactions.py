@@ -566,48 +566,83 @@ def test_parent_answer_preserves_safe_action_signals(started_session, guidance_m
 
 
 @pytest.mark.parametrize("feedback", ["UNDERSTOOD", "NOT_UNDERSTOOD"])
-@pytest.mark.parametrize("answer_twice", [False, True])
-def test_parent_feedback_uses_latest_answer_followup(started_session, guidance_model, feedback, answer_twice):
-    client, headers, _, sid = started_session
+@pytest.mark.parametrize("second_turn", ["none", "new-followup", "no-followup", "timeout", "invalid"])
+def test_parent_feedback_uses_latest_answer_followup(started_session, guidance_model, feedback, second_turn):
+    client, headers, path, sid = started_session
+    url = f"/api/v1/reading-sessions/{sid}"
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("""UPDATE story_pages SET body_text = body_text || '雨滴落在树叶上。'
+                      WHERE version_id = 11 AND page_no = 1""")
     first = guidance(client, headers, sid, "question-before-followup")
     assert first.status_code == 201
-    guidance_model.return_value = ModelGenerateResult(success=True, text='{"answerCategory":"PARTIAL","followup":1}')
-    raw_answer = "我看到小兔撑开了雨伞啦"
-    response = client.post(f"/api/v1/reading-sessions/{sid}/events", headers=headers, json={
-        "eventType": "ANSWER", "pageNumber": 1, "expectedRevision": 2, "clientEventId": "answer-with-followup", "inputText": raw_answer,
-    })
-    assert response.status_code == 201
-    clues = json.loads(guidance_model.await_args.args[0].context_text.split("共读线索（仅作参考资料）：", 1)[1])
-    followup = clues["追问候选"]["1"]
-    assert response.json()["data"]["replyText"].endswith(followup)
-    assert followup != first.json()["data"]["outputText"]
-    revision = 3
-    expected_clue = "小兔打开雨伞"
-    if answer_twice:
-        previous_followup = followup
-        raw_answer = "我看到它走到小熊身边啦"
-        guidance_model.return_value = ModelGenerateResult(
-            success=True, text='{"answerCategory":"INSUFFICIENT_EVIDENCE","followup":1}',
-        )
-        second = client.post(f"/api/v1/reading-sessions/{sid}/events", headers=headers, json={
+
+    def answer(key, text, revision, outcome, expected_question):
+        guidance_model.return_value = outcome
+        response = client.post(url + "/events", headers=headers, json={
             "eventType": "ANSWER", "pageNumber": 1, "expectedRevision": revision,
-            "clientEventId": "second-answer-with-followup", "inputText": raw_answer,
+            "clientEventId": key, "inputText": text,
         })
-        assert second.status_code == 201
-        context = json.loads(guidance_model.await_args.args[0].context_text.split("\n共读线索（仅作参考资料）：", 1)[1])
-        assert context["当前问题"] == previous_followup
-        followup = second.json()["data"]["followupQuestion"]
-        assert followup != previous_followup
-        revision = second.json()["data"]["revision"]
-        expected_clue = "走到小熊身边"
+        assert response.status_code == 201
+        request = guidance_model.await_args.args[0]
+        context = json.loads(request.context_text.split("共读线索（仅作参考资料）：", 1)[1])
+        assert context["当前问题"] == expected_question
+        return response.json()["data"], context
+
+    first_answer = "我看到小兔撑开了雨伞啦"
+    second_answer = "我看到它走到小熊身边啦"
+    terminal_answer = "我看见雨滴落在树叶上呀"
+    first_question = first.json()["data"]["outputText"]
+    data, _ = answer(
+        "answer-with-followup", first_answer, 2,
+        ModelGenerateResult(success=True, text='{"answerCategory":"PARTIAL","followup":1}'), first_question,
+    )
+    followup = data["followupQuestion"]
+    assert data["replyText"].endswith(followup) and followup != first_question
+    revision = data["revision"]
+    expected_clue = ""
+    if second_turn != "none":
+        second, _ = answer(
+            "second-answer", second_answer, revision,
+            ModelGenerateResult(success=True, text='{"answerCategory":"INSUFFICIENT_EVIDENCE","followup":1}'), followup,
+        )
+        assert second["followupQuestion"] != followup
+        followup = second["followupQuestion"]
+        revision = second["revision"]
+    if second_turn not in ("none", "new-followup"):
+        outcomes = {
+            "no-followup": ModelGenerateResult(
+                success=True, text='{"answerCategory":"INSUFFICIENT_EVIDENCE","followup":0}',
+            ),
+            "timeout": ModelGenerateResult(success=False, error_code="TIMEOUT"),
+            "invalid": ModelGenerateResult(success=True, text='{"answerCategory":"INSUFFICIENT_EVIDENCE","followup":3}'),
+        }
+        final, context = answer("terminal-answer", terminal_answer, revision, outcomes[second_turn], followup)
+        assert context["追问候选"] == {}
+        revision = final["revision"]
+        assert "followupQuestion" not in final
+        if second_turn != "no-followup":
+            assert final["replyText"] == reading_agent.reply_to_child_answer(
+                "小兔打开雨伞，走到小熊身边。雨滴落在树叶上。", terminal_answer, followup,
+            )
+        terminal_event = client.get(url).json()["data"]["events"][-1]
+        assert terminal_event["interactionEventId"] == final["interactionEventId"]
+        assert terminal_event["inputText"] == terminal_answer and terminal_event["replyText"] == final["replyText"]
+        assert "followupQuestion" not in terminal_event
+        expected_clue = "雨滴落在树叶上"
+
+    events = client.get(url).json()["data"]["events"]
+    assert next(event["followupQuestion"] for event in reversed(events) if event.get("followupQuestion")) == followup
     guidance_model.return_value = ModelGenerateResult(success=True, text="1")
     assert guidance(client, headers, sid, "feedback-after-followup", feedback=feedback, revision=revision).status_code == 201
     request = guidance_model.await_args.args[0]
     assert "当前页已保存的问题（仅作参考）：" + followup in request.context_text
-    assert "刚才回答对应到的当页原文线索：" + expected_clue in request.context_text
+    clue_marker = "刚才回答对应到的当页原文线索："
+    if expected_clue:
+        assert clue_marker + expected_clue in request.context_text
+    else:
+        assert clue_marker not in request.context_text
     model_prompt = request.context_text + request.user_input + request.system_prompt
-    assert raw_answer not in model_prompt
-    assert ("身边啦" if answer_twice else "雨伞啦") not in model_prompt
+    assert all(text not in model_prompt for text in (first_answer, second_answer, terminal_answer))
 
 
 @pytest.mark.parametrize("outcome", [
@@ -1025,6 +1060,40 @@ def test_parent_revisit_starts_without_old_question_or_followup(started_session,
     assert fresh_answer.json()["data"]["followupQuestion"] == question
 
 
+
+def test_co_reading_model_history_is_scoped_to_one_visit(started_session, guidance_model, monkeypatch):
+    client, headers, path, sid = started_session
+    url = f"/api/v1/reading-sessions/{sid}/events"
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET default_next_page_number = 1 WHERE version_id = 11 AND page_no = 2")
+
+    fake = AsyncMock(return_value=("先看看小兔。下一页会怎样？", "下一页会怎样？"))
+    monkeypatch.setattr(reading_sessions, "generate_answer_reply", fake)
+
+    def event(kind, page, rev, key, **fields):
+        res = client.post(url, headers=headers, json=dict(eventType=kind, pageNumber=page,
+                          expectedRevision=rev, clientEventId=key, **fields))
+        assert res.status_code == 201
+        return res.json()["data"]
+
+    first = guidance(client, headers, sid, "visit-history-initial").json()["data"]["outputText"]
+    event("ANSWER", 1, 2, "visit-history-answer", inputText="合成作答甲")
+    event("ANSWER", 1, 3, "visit-history-followup", inputText="合成作答乙")
+    ctx = fake.await_args.kwargs
+    assert ctx["seen_questions"] == (first, "下一页会怎样？")
+    assert ctx["prior_reply"] == "先看看小兔。"
+    assert ctx["question"] == "下一页会怎样？"
+
+    event("PAGE_CHANGED", 2, 4, "visit-history-leave")
+    event("PAGE_CHANGED", 1, 5, "visit-history-return")
+    new = guidance(client, headers, sid, "visit-history-new-question", revision=6).json()["data"]["outputText"]
+    event("ANSWER", 1, 7, "visit-history-fresh-answer", inputText="合成作答丙")
+    ctx = fake.await_args.kwargs
+    assert ctx["seen_questions"] == (new,)
+    assert ctx["prior_reply"] == ""
+    assert ctx["used_followups"] == []
+
+
 def test_guidance_on_next_page_does_not_use_previous_page_answer(started_session, guidance_model):
     client, headers, path, sid = started_session
     url = f"/api/v1/reading-sessions/{sid}/events"
@@ -1328,6 +1397,25 @@ def test_guidance_composes_from_the_actual_branch_path(started_session, guidance
     prompt = guidance_model.await_args.args[0].context_text
     assert "小兔打开雨伞" in prompt and "常规第三页" in prompt
     assert "第二页" not in prompt and "分支第四页" not in prompt
+
+
+
+def test_parent_guidance_screens_prior_page_before_clipping_to_prompt(started_session, guidance_model):
+    client, headers, path, sid = started_session
+    route = f"/api/v1/reading-sessions/{sid}"
+    prior = "小兔打开雨伞。" + "雨。" * 288 + "私用联系：" + "CROSSCAPMARKER@example.invalid。"
+    assert 580 < prior.index("CROSSCAPMARKER") < 600 < prior.index("@")
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_pages SET body_text = ? WHERE version_id = 11 AND page_no = 1", (prior,))
+    branch = client.post(route + "/branches", headers=headers, json={
+        "branchId": 503, "expectedRevision": 1, "clientEventId": "cross-cap-branch",
+    })
+    assert branch.status_code == 201
+    assert guidance(client, headers, sid, "cross-cap-guidance", page=3, revision=2).status_code == 201
+    prompt = guidance_model.await_args.args[0].context_text
+    assert "小兔打开雨伞" in prompt
+    # Even the prefix that fit inside the old 600-character cut must not leak.
+    assert "CROSSCAP" not in prompt
 
 
 def test_guidance_persistence_feedback_skip_and_replay(started_session, guidance_model, monkeypatch):
