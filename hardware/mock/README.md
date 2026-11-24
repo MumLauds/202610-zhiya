@@ -9,7 +9,7 @@
 | `build_fixtures.py` | 从 4 个种子文件 + H03 `assets-manifest.json` 生成 5 个 fixtures |
 | `server.py` | `127.0.0.1:8765` 的内存 Mock HTTP 服务 |
 | `fixtures/` | 20 本原创绘本、104 页、40 个 H03 封面引用；全部 `demoOnly=true`，源状态 `PUBLISHED` |
-| `../tests/mock/test_mock.py` | 临时目录 + 回环 HTTP 的离线测试（35 项） |
+| `../tests/mock/test_mock.py` | 临时目录 + 回环 HTTP 的离线测试（36 项） |
 | `../docs/mock-contract.md` | 完整字段、接口、状态机、错误码和 H06 交接 |
 
 ## 运行

@@ -223,6 +223,7 @@ class MockState:
             self.error_by_id = {item["scenarioId"]: item for item in self.error_scenarios["scenarios"]}
             initial = copy.deepcopy(self.fixtures["demo"]["session"])
             self.next_session_id = max(initial["readingSessionId"] + 1, 2)
+            self.create_idempotency: dict[str, dict[str, Any]] = {}
             self.sessions: dict[int, SessionState] = {}
             self.sessions[initial["readingSessionId"]] = SessionState(
                 reading_session_id=initial["readingSessionId"],
@@ -278,16 +279,31 @@ class MockState:
                 "report": copy.deepcopy(session.report),
             }
 
-    def create_session(self, version_id: int) -> dict[str, Any]:
-        """Create a session and return its immutable response snapshot."""
+    def create_session(self, profile_id: int, version_id: int, client_request_id: str | None = None,
+                       digest: str | None = None) -> tuple[dict[str, Any], int]:
+        """Create a session, replaying a saved API-011 request when keyed."""
         with self.lock:
+            if client_request_id is not None:
+                previous = self.create_idempotency.get(client_request_id)
+                if previous is not None:
+                    if previous["digest"] != digest:
+                        raise ApiError(409, "IDEMPOTENCY_CONFLICT", "请求标识已用于其他操作")
+                    return copy.deepcopy(previous["data"]), 200
+            if profile_id != DEMO_PROFILE_ID:
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "演示档案不可用")
             if version_id not in self.details_by_version:
                 raise ApiError(404, "RESOURCE_NOT_FOUND", "绘本不可用")
             session_id = self.next_session_id
             self.next_session_id += 1
             session = SessionState(reading_session_id=session_id, story_version_id=version_id)
             self.sessions[session_id] = session
-            return session.session_object()
+            data = session.session_object()
+            if client_request_id is not None:
+                self.create_idempotency[client_request_id] = {
+                    "digest": digest,
+                    "data": copy.deepcopy(data),
+                }
+            return data, 201
 
     def session_for_update(self, session_id: int) -> SessionState:
         """Return a live session for a write transaction.
@@ -595,21 +611,28 @@ class MockRequestHandler(BaseHTTPRequestHandler):
 
     def _create_session(self) -> None:
         body = self._read_body()
-        allowed = {"childProfileId", "storyVersionId", "mode"}
+        allowed = {"childProfileId", "storyVersionId", "mode", "clientRequestId"}
         if set(body) - allowed:
             raise ApiError(422, "VALIDATION_ERROR", "包含未知字段")
         profile_id = body.get("childProfileId")
         if not isinstance(profile_id, int) or isinstance(profile_id, bool):
             raise ApiError(422, "VALIDATION_ERROR", "childProfileId 必须是整数")
-        if profile_id != DEMO_PROFILE_ID:
-            raise ApiError(404, "RESOURCE_NOT_FOUND", "演示档案不可用")
         version_id = body.get("storyVersionId")
         if not isinstance(version_id, int) or isinstance(version_id, bool) or version_id < 1:
             raise ApiError(422, "VALIDATION_ERROR", "storyVersionId 不合法")
         if body.get("mode") != "PARENT_CHILD":
             raise ApiError(422, "VALIDATION_ERROR", "Mock 首版只支持 PARENT_CHILD")
-        session_payload = self.server.state.create_session(version_id)
-        self._send_json(201, success_payload(session_payload, self.request_id))
+        client_request_id = None
+        if "clientRequestId" in body:
+            value = body["clientRequestId"]
+            if not isinstance(value, str) or not 1 <= len(value) <= 64:
+                raise ApiError(422, "VALIDATION_ERROR", "clientRequestId 必须为 1～64 字符")
+            client_request_id = value
+        digest = request_digest("create_session", body) if client_request_id is not None else None
+        session_payload, status = self.server.state.create_session(
+            profile_id, version_id, client_request_id, digest
+        )
+        self._send_json(status, success_payload(session_payload, self.request_id))
 
     def _list_sessions(self) -> None:
         page = self._query_int("page", 1, 1, 9007199254740991)

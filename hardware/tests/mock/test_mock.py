@@ -372,6 +372,37 @@ class MockTestCase(unittest.TestCase):
         self.assertGreaterEqual(len(listed.data["items"]), 2)
         self.assertNotIn("total", listed.data)
 
+    def test_create_session_client_request_id_is_idempotent(self) -> None:
+        body = {
+            "childProfileId": 1, "storyVersionId": 2, "mode": "PARENT_CHILD",
+            "clientRequestId": "create-same",
+        }
+        first = self.request("POST", "/api/v1/reading-sessions", body)
+        self.assertEqual(201, first.status)
+        replay = self.request("POST", "/api/v1/reading-sessions", body)
+        self.assertEqual(200, replay.status)
+        self.assertEqual(first.data["readingSessionId"], replay.data["readingSessionId"])
+        conflict = self.request("POST", "/api/v1/reading-sessions", {
+            "childProfileId": 1, "storyVersionId": 3, "mode": "PARENT_CHILD",
+            "clientRequestId": "create-same",
+        })
+        self.assertEqual(409, conflict.status)
+        self.assertEqual("IDEMPOTENCY_CONFLICT", conflict.error["code"])
+        corrected = self.request("POST", "/api/v1/reading-sessions", {
+            "childProfileId": 1, "storyVersionId": 3, "mode": "PARENT_CHILD",
+            "clientRequestId": "create-fixed",
+        })
+        self.assertEqual(201, corrected.status)
+        self.assertNotEqual(first.data["readingSessionId"], corrected.data["readingSessionId"])
+        listed = self.request("GET", "/api/v1/reading-sessions")
+        self.assertEqual(3, len(listed.data["items"]))
+        empty = self.request("POST", "/api/v1/reading-sessions", {
+            "childProfileId": 1, "storyVersionId": 2, "mode": "PARENT_CHILD",
+            "clientRequestId": "",
+        })
+        self.assertEqual(422, empty.status)
+        self.assertEqual("VALIDATION_ERROR", empty.error["code"])
+
     def test_session_list_orders_newest_first_before_pagination(self) -> None:
         second = self.request("POST", "/api/v1/reading-sessions", {
             "childProfileId": 1, "storyVersionId": 2, "mode": "PARENT_CHILD",

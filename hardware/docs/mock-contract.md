@@ -327,7 +327,7 @@ python hardware/mock/server.py --port 8765
 | GET | `/api/v1/storybooks` | 20 本轻量书架元数据，支持 `ageBand/topic/page/pageSize` | API-008 的 DEMO 投影 |
 | GET | `/api/v1/story-versions/{version_id}` | 版本详情和分页 | API-009 的 DEMO 投影 |
 | GET | `/api/v1/reading-sessions` | 列出内存会话 | API-012 的 DEMO 投影 |
-| POST | `/api/v1/reading-sessions` | 创建初始会话 | API-011 的 DEMO 投影 |
+| POST | `/api/v1/reading-sessions` | 创建初始会话，可选 `clientRequestId` 幂等 | API-011 的 DEMO 投影 |
 | GET | `/api/v1/reading-sessions/{id}` | `session/events/report` | API-013 的 DEMO 投影 |
 | POST | `/api/v1/reading-sessions/{id}/events` | STARTED/PAGE_CHANGED | API-015 的 DEMO 投影 |
 | POST | `/api/v1/reading-sessions/{id}/completions` | USER_FINISH | API-019 的 DEMO 投影 |
@@ -341,6 +341,8 @@ python hardware/mock/server.py --port 8765
 `scope=mine` 会返回 403 `FORBIDDEN`，因为 H05 没有实现家长历史书架；这不是正式权限实现。
 
 `GET /api/v1/reading-sessions` 在分页前按 `readingSessionId` 倒序，等价于正式 API-012 的“最新创建优先”；`pageSize=1` 的第一页是最新会话。列表只返回 `items/page/pageSize`，不返回测试辅助 `total`。
+
+`POST /api/v1/reading-sessions` 支持可选 `clientRequestId`（1～64 字符）。同键同体首次返回 201，成功重放返回 200 和原会话；同键改体返回 409 `IDEMPOTENCY_CONFLICT`；修正请求必须换新键。空串或显式 `null` 返回 422。该映射由 `MockState.create_idempotency` 在同一把 `RLock` 内检查/写入，`/mock/reset` 时清空。
 
 `GET /api/v1/storybooks` 只返回 `storybooks.json` 的轻量元数据，**不包含 `pages` / `branches`**；`load_fixtures()` 会在启动时拒绝被误塞入 `pages/branches` 的书架 fixture。H06 进入详情页时必须再请求 `GET /api/v1/story-versions/{id}`。Mock 的会话、书籍、计数、语音和错误场景读取都通过 `MockState` 的锁内快照方法取副本，避免与 `/mock/reset` 或并发写入互相撕裂。
 
@@ -704,7 +706,7 @@ python -m unittest discover -s hardware/tests/mock -v
 实际结果：
 
 ```text
-Ran 35 tests in 5.215s
+Ran 36 tests in 6.754s
 OK
 ```
 
@@ -718,6 +720,7 @@ OK
 - `STARTED`、前进、错误返回旧页、跳过页、最后一页、结束态；
 - 畸形 fixture 把 `defaultNextPageNumber` 指回旧页时仍拒绝 `PAGE_CHANGED`；
 - 成功首次 201 / 重放 200；8 并发相同请求为 1×201 + 7×200，只写一次；
+- API-011 创建会话 `clientRequestId`：同键同体 201→200 且会话不重复，同键改体 409 `IDEMPOTENCY_CONFLICT`，新键创建新会话；空串 422；
 - 翻页 409 后原键重放原错误、同键改体 `IDEMPOTENCY_CONFLICT`、新键修正成功；
 - 问答首次 201、重放 200、递增 revision；旧 revision 冲突；
 - 列表分页前最新会话优先；
@@ -737,7 +740,7 @@ OK
 - fixtures 由真实种子生成：20 本 `PUBLISHED` 原创、104 页、40 个资源引用；1 本 `DRAFT` 联调绘本排除。
 - `storyVersionId` 按 `storybook_id` 查找，不按数组下标或 ID 等值假设。
 - 所有原创版本 `demoOnly=true`、`coverRef=null`、`imageRef=null`、`localPageAsset=null`；H03 本地封面只出现在 `localCover`。
-- Mock 服务的阅读会话、成功/失败幂等、结束态、错误注入、分页规则和并发快照通过 35 项离线测试。
+- Mock 服务的阅读会话、成功/失败幂等、结束态、错误注入、分页规则和并发快照通过 36 项离线测试。
 - `GET /api/v1/storybooks` 只返回轻量元数据，不携带 `pages` / `branches` / `total`；详情由 API-009 投影单独读取。
 - `PAGE_CHANGED` 只接受当前页 `defaultNextPageNumber` 且未访问的目标；错误的后向翻页、已访问页和畸形回环均返回 409，不增加 revision。
 - 测试不依赖 Pillow、FastAPI、数据库、云端模型或 ESP32 板卡。
@@ -777,6 +780,7 @@ OK
 5. 语音覆盖 7 主状态；`ERROR_TTS` 的“重试”复用已保存的 `interactionEventId` 回 `SYNTHESIZING`，“只看文字”回 `IDLE`；`audioUrl=null` 时不调用真实播放。
 6. 断网时保留当前页；恢复后先读取会话，不假设自动补写成功。
 7. 401/403/404/422 不显示受控内容；503 读到可重试、写不自动重放；504 先读取会话，不自动创建新事件或新问题。
+8. 创建会话可带 `clientRequestId`；结果未确认时用同键同体重试，必须返回原会话而不是新建第二个会话。
 
 实板验收（H06）：
 
