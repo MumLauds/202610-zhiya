@@ -704,7 +704,7 @@ python -m unittest discover -s hardware/tests/mock -v
 实际结果：
 
 ```text
-Ran 35 tests in 5.933s
+Ran 35 tests in 5.215s
 OK
 ```
 
@@ -742,6 +742,7 @@ OK
 - `PAGE_CHANGED` 只接受当前页 `defaultNextPageNumber` 且未访问的目标；错误的后向翻页、已访问页和畸形回环均返回 409，不增加 revision。
 - 测试不依赖 Pillow、FastAPI、数据库、云端模型或 ESP32 板卡。
 - 源文本使用 `sha256-utf8-lf-v1`；工作树 CRLF 与 Git LF 原始字节归一后得到相同摘要，干净检出可直接运行 `--check`。
+- 2026-11-25 已在独立 detached clean worktree 运行 `python hardware/mock/build_fixtures.py --check`，输出“H05 fixtures 一致”，退出码 0。
 - H03 40 个封面 JPEG 与 manifest 的 SHA-256/大小一致；原图和种子未被构建或测试改写。
 
 ### 11.2 未验证 / 待 H06
