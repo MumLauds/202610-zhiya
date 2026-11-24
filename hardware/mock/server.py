@@ -119,6 +119,15 @@ def success_payload(data: Any, request: str | None = None) -> dict[str, Any]:
     return {"data": data, "requestId": request or request_id()}
 
 
+def public_event(event: dict[str, Any]) -> dict[str, Any]:
+    """Project an internal event onto the API-013 public shape."""
+    return {
+        "interactionEventId": event["interactionEventId"],
+        "eventType": event["eventType"],
+        "pageNumber": event["pageNumber"],
+    }
+
+
 def load_fixtures(fixtures_dir: Path) -> dict[str, Any]:
     fixtures_dir = fixtures_dir.resolve()
     paths = {name: fixtures_dir / name for name in FIXTURE_NAMES}
@@ -135,6 +144,8 @@ def load_fixtures(fixtures_dir: Path) -> dict[str, Any]:
 
     if not isinstance(books.get("items"), list) or len(books["items"]) != 20:
         raise MockFixtureError("storybooks.json 必须包含 20 本原创绘本")
+    if any("pages" in item or "branches" in item for item in books["items"]):
+        raise MockFixtureError("storybooks.json 只允许轻量书架元数据，不得包含 pages/branches")
     if not isinstance(details.get("items"), list) or len(details["items"]) != 20:
         raise MockFixtureError("story-details.json 必须包含 20 本详情")
     if not isinstance(voice.get("scenarios"), list):
@@ -214,12 +225,88 @@ class MockState:
                 raise ApiError(404, "RESOURCE_NOT_FOUND", "绘本不可用")
             return copy.deepcopy(detail)
 
-    def get_session(self, session_id: int) -> SessionState:
+    def books_snapshot(self) -> list[dict[str, Any]]:
+        """Return a deep copy of the lightweight shelf records."""
+        with self.lock:
+            return copy.deepcopy(self.books)
+
+    def meta_snapshot(self) -> dict[str, int]:
+        """Return all counters from one locked state generation."""
+        with self.lock:
+            return {
+                "bookCount": len(self.books),
+                "detailCount": len(self.details),
+                "pageCount": sum(len(item["pages"]) for item in self.details),
+                "voiceScenarioCount": len(self.voice["scenarios"]),
+                "errorScenarioCount": len(self.error_scenarios["scenarios"]),
+            }
+
+    def sessions_snapshot(self) -> list[dict[str, Any]]:
+        """Return one locked snapshot of every session object."""
+        with self.lock:
+            return [
+                item.session_object()
+                for item in sorted(self.sessions.values(), key=lambda session: session.reading_session_id)
+            ]
+
+    def session_snapshot(self, session_id: int) -> dict[str, Any]:
+        """Return session + public events + report from one locked generation."""
+        with self.lock:
+            session = self.session_for_update(session_id)
+            return {
+                "session": session.session_object(),
+                "events": [public_event(event) for event in session.events],
+                "report": copy.deepcopy(session.report),
+            }
+
+    def create_session(self, version_id: int) -> dict[str, Any]:
+        """Create a session and return its immutable response snapshot."""
+        with self.lock:
+            if version_id not in self.details_by_version:
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "绘本不可用")
+            session_id = self.next_session_id
+            self.next_session_id += 1
+            session = SessionState(reading_session_id=session_id, story_version_id=version_id)
+            self.sessions[session_id] = session
+            return session.session_object()
+
+    def session_for_update(self, session_id: int) -> SessionState:
+        """Return a live session for a write transaction.
+
+        Callers must hold ``self.lock`` for the whole read-validate-mutate
+        sequence. The method re-enters the RLock so accidental nesting is safe,
+        but it never hands a live session to a read-only HTTP response.
+        """
         with self.lock:
             session = self.sessions.get(session_id)
             if session is None:
                 raise ApiError(404, "RESOURCE_NOT_FOUND", "会话不可用")
             return session
+
+    def has_session(self, session_id: int) -> bool:
+        with self.lock:
+            return session_id in self.sessions
+
+    def error_scenario(self, scenario_id: str) -> dict[str, Any] | None:
+        with self.lock:
+            scenario = self.error_by_id.get(scenario_id)
+            return copy.deepcopy(scenario) if scenario is not None else None
+
+    def errors_snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            return copy.deepcopy(self.error_scenarios)
+
+    def voice_snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            return copy.deepcopy(self.voice)
+
+    def voice_scenario(self, scenario_id: str) -> dict[str, Any] | None:
+        with self.lock:
+            scenario = next(
+                (item for item in self.voice["scenarios"] if item["scenarioId"] == scenario_id),
+                None,
+            )
+            return copy.deepcopy(scenario) if scenario is not None else None
 
 
 class MockHTTPServer(ThreadingHTTPServer):
@@ -318,7 +405,7 @@ class MockRequestHandler(BaseHTTPRequestHandler):
             elif method == "POST" and path == "/mock/reset":
                 self._reset()
             elif method == "GET" and path == "/mock/errors":
-                self._send_json(200, success_payload(self.server.state.error_scenarios, self.request_id))
+                self._send_json(200, success_payload(self.server.state.errors_snapshot(), self.request_id))
             else:
                 if method == "POST":
                     self._drain_body()
@@ -333,7 +420,7 @@ class MockRequestHandler(BaseHTTPRequestHandler):
         scenario_id = self.headers.get("X-Mock-Error") or self.query.get("mockError")
         if not scenario_id:
             return None
-        scenario = self.server.state.error_by_id.get(scenario_id)
+        scenario = self.server.state.error_scenario(scenario_id)
         if scenario is None:
             raise ApiError(422, "VALIDATION_ERROR", f"未知 Mock 错误场景: {scenario_id}")
         if not any(fnmatch.fnmatch(path, pattern) for pattern in scenario.get("appliesTo", [])):
@@ -377,21 +464,12 @@ class MockRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _meta(self) -> None:
-        with self.server.state.lock:
-            books_count = len(self.server.state.books)
-            detail_count = len(self.server.state.details)
-            page_count = sum(len(item["pages"]) for item in self.server.state.details)
-            voice_count = len(self.server.state.voice["scenarios"])
-            error_count = len(self.server.state.error_scenarios["scenarios"])
+        counts = self.server.state.meta_snapshot()
         self._send_json(200, success_payload({
             "mode": "DEMO",
             "mock": True,
             "notice": DEMO_NOTICE,
-            "bookCount": books_count,
-            "detailCount": detail_count,
-            "pageCount": page_count,
-            "voiceScenarioCount": voice_count,
-            "errorScenarioCount": error_count,
+            **counts,
         }, self.request_id))
 
     def _health(self) -> None:
@@ -405,8 +483,7 @@ class MockRequestHandler(BaseHTTPRequestHandler):
     def _storybooks(self, scenario: dict[str, Any] | None) -> None:
         if self.query.get("scope") == "mine":
             raise ApiError(403, "FORBIDDEN", "Mock 未实现家长历史书架")
-        with self.server.state.lock:
-            items = copy.deepcopy(self.server.state.books)
+        items = self.server.state.books_snapshot()
         age_band = self.query.get("ageBand")
         topic = self.query.get("topic")
         if age_band:
@@ -465,21 +542,13 @@ class MockRequestHandler(BaseHTTPRequestHandler):
             raise ApiError(422, "VALIDATION_ERROR", "storyVersionId 不合法")
         if body.get("mode") != "PARENT_CHILD":
             raise ApiError(422, "VALIDATION_ERROR", "Mock 首版只支持 PARENT_CHILD")
-        with self.server.state.lock:
-            if version_id not in self.server.state.details_by_version:
-                raise ApiError(404, "RESOURCE_NOT_FOUND", "绘本不可用")
-            session_id = self.server.state.next_session_id
-            self.server.state.next_session_id += 1
-            session = SessionState(reading_session_id=session_id, story_version_id=version_id)
-            self.server.state.sessions[session_id] = session
-        self._send_json(201, success_payload(session.session_object(), self.request_id))
+        session_payload = self.server.state.create_session(version_id)
+        self._send_json(201, success_payload(session_payload, self.request_id))
 
     def _list_sessions(self) -> None:
         page = self._query_int("page", 1, 1, 9007199254740991)
         page_size = self._query_int("pageSize", 20, 1, 50)
-        with self.server.state.lock:
-            sessions = [item.session_object() for item in
-                        sorted(self.server.state.sessions.values(), key=lambda item: item.reading_session_id)]
+        sessions = self.server.state.sessions_snapshot()
         offset = (page - 1) * page_size
         self._send_json(200, success_payload({
             "items": sessions[offset:offset + page_size],
@@ -489,23 +558,10 @@ class MockRequestHandler(BaseHTTPRequestHandler):
         }, self.request_id))
 
     def _get_session(self, session_id: int) -> None:
-        with self.server.state.lock:
-            session = self.server.state.get_session(session_id)
-            session_payload = session.session_object()
-            events_payload = [self._public_event(event) for event in session.events]
-            report_payload = copy.deepcopy(session.report)
-        self._send_json(200, success_payload({
-            "session": session_payload,
-            "events": events_payload,
-            "report": report_payload,
-        }, self.request_id))
-
-    def _public_event(self, event: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "interactionEventId": event["interactionEventId"],
-            "eventType": event["eventType"],
-            "pageNumber": event["pageNumber"],
-        }
+        self._send_json(200, success_payload(
+            self.server.state.session_snapshot(session_id),
+            self.request_id,
+        ))
 
     def _event(self, session_id: int) -> None:
         body = self._read_body()
@@ -522,7 +578,7 @@ class MockRequestHandler(BaseHTTPRequestHandler):
         replay_response: tuple[int, dict[str, Any]] | None = None
         response: Any = None
         with self.server.state.lock:
-            session = self.server.state.get_session(session_id)
+            session = self.server.state.session_for_update(session_id)
             digest = request_digest("events", body)
             replay = self._replay(session, client_event_id, digest)
             if replay is not None:
@@ -546,6 +602,11 @@ class MockRequestHandler(BaseHTTPRequestHandler):
                     next_page = current_page.get("defaultNextPageNumber")
                     # Keep Mock API-015 semantics aligned with the real backend:
                     # only the current page's official next page is accepted.
+                    # The DEMO seeds are linear; additionally reject a visited
+                    # page so a malformed loop cannot turn H06 local re-display
+                    # into a server-accepted PAGE_CHANGED event.
+                    if page_number in session.visited_pages:
+                        raise ApiError(409, "SESSION_CONFLICT", "目标页已访问，旧页仅支持本地回看")
                     if next_page != page_number:
                         raise ApiError(409, "SESSION_CONFLICT", "目标页不可达")
                     session.current_page = page_number
@@ -585,7 +646,7 @@ class MockRequestHandler(BaseHTTPRequestHandler):
         replay_response: tuple[int, dict[str, Any]] | None = None
         response: Any = None
         with self.server.state.lock:
-            session = self.server.state.get_session(session_id)
+            session = self.server.state.session_for_update(session_id)
             digest = request_digest("completion", body)
             replay = self._replay(session, client_event_id, digest)
             if replay is not None:
@@ -631,7 +692,7 @@ class MockRequestHandler(BaseHTTPRequestHandler):
         replay_response: tuple[int, dict[str, Any]] | None = None
         response: Any = None
         with self.server.state.lock:
-            session = self.server.state.get_session(session_id)
+            session = self.server.state.session_for_update(session_id)
             digest = request_digest("question", body)
             replay = self._replay(session, client_event_id, digest)
             if replay is not None:
@@ -700,20 +761,13 @@ class MockRequestHandler(BaseHTTPRequestHandler):
         return previous
 
     def _voice_scenarios(self) -> None:
-        with self.server.state.lock:
-            data = copy.deepcopy(self.server.state.voice)
-        self._send_json(200, success_payload(data, self.request_id))
+        self._send_json(200, success_payload(self.server.state.voice_snapshot(), self.request_id))
 
     def _voice_scenario(self, scenario_id: str) -> None:
-        with self.server.state.lock:
-            scenario = next(
-                (item for item in self.server.state.voice["scenarios"] if item["scenarioId"] == scenario_id),
-                None,
-            )
-            if scenario is None:
-                raise ApiError(404, "RESOURCE_NOT_FOUND", "语音场景不存在")
-            data = copy.deepcopy(scenario)
-        self._send_json(200, success_payload(data, self.request_id))
+        scenario = self.server.state.voice_scenario(scenario_id)
+        if scenario is None:
+            raise ApiError(404, "RESOURCE_NOT_FOUND", "语音场景不存在")
+        self._send_json(200, success_payload(scenario, self.request_id))
 
     def _voice_simulate(self) -> None:
         body = self._read_body()
@@ -721,16 +775,12 @@ class MockRequestHandler(BaseHTTPRequestHandler):
         if not isinstance(scenario_id, str):
             raise ApiError(422, "VALIDATION_ERROR", "scenarioId 必须是字符串")
         session_id = body.get("sessionId")
-        with self.server.state.lock:
-            scenario = next(
-                (item for item in self.server.state.voice["scenarios"] if item["scenarioId"] == scenario_id),
-                None,
-            )
-            if scenario is None:
-                raise ApiError(404, "RESOURCE_NOT_FOUND", "语音场景不存在")
-            if session_id is not None and session_id not in self.server.state.sessions:
-                raise ApiError(404, "RESOURCE_NOT_FOUND", "会话不可用")
-            data = copy.deepcopy(scenario)
+        scenario = self.server.state.voice_scenario(scenario_id)
+        if scenario is None:
+            raise ApiError(404, "RESOURCE_NOT_FOUND", "语音场景不存在")
+        if session_id is not None and not self.server.state.has_session(session_id):
+            raise ApiError(404, "RESOURCE_NOT_FOUND", "会话不可用")
+        data = scenario
         data["sessionId"] = session_id
         data["mockPlayback"] = True
         data["audioUrl"] = None

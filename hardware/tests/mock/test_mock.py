@@ -207,13 +207,61 @@ class MockTestCase(unittest.TestCase):
         response = self.request("GET", "/api/v1/storybooks")
         self.assertEqual(200, response.status)
         self.assertEqual(20, len(response.data["items"]))
-        self.assertTrue(all("pages" not in item for item in response.data["items"]))
-        self.assertTrue(all("branches" not in item for item in response.data["items"]))
-        self.assertTrue(all("localCover" in item for item in response.data["items"]))
+        fixture = self.fixture("storybooks.json")["items"]
+        expected_keys = set(fixture[0])
+        for item in response.data["items"]:
+            self.assertEqual(expected_keys, set(item))
+            self.assertNotIn("pages", item)
+            self.assertNotIn("branches", item)
+            self.assertNotIn("summary", item)
+            self.assertTrue(item["demoOnly"])
         detail = self.request("GET", "/api/v1/story-versions/2")
         self.assertEqual(200, detail.status)
         self.assertIn("pages", detail.data)
         self.assertIn("branches", detail.data)
+
+    def test_storybook_fixture_is_lightweight_before_http(self) -> None:
+        fixture = self.fixture("storybooks.json")["items"]
+        for item in fixture:
+            self.assertNotIn("pages", item)
+            self.assertNotIn("branches", item)
+            self.assertNotIn("summary", item)
+            self.assertNotIn("text", item)
+
+    def test_page_changed_rejects_visited_page_even_if_default_next_loops(self) -> None:
+        # A malformed/legacy fixture must not turn H06 local re-display into
+        # an accepted server event, even if defaultNextPageNumber points back.
+        with self.httpd.state.lock:
+            detail = self.httpd.state.details_by_version[2]
+            detail["pages"][1]["defaultNextPageNumber"] = 1
+        started = self.request("POST", "/api/v1/reading-sessions/1/events", {
+            "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "loop-start",
+        })
+        self.assertEqual(201, started.status)
+        page_two = self.request("POST", "/api/v1/reading-sessions/1/events", {
+            "eventType": "PAGE_CHANGED", "pageNumber": 2, "expectedRevision": 1, "clientEventId": "loop-page-2",
+        })
+        self.assertEqual(201, page_two.status)
+        back = self.request("POST", "/api/v1/reading-sessions/1/events", {
+            "eventType": "PAGE_CHANGED", "pageNumber": 1, "expectedRevision": 2, "clientEventId": "loop-back-1",
+        })
+        self.assertEqual(409, back.status)
+        self.assertEqual("SESSION_CONFLICT", back.error["code"])
+        current = self.request("GET", "/api/v1/reading-sessions/1")
+        self.assertEqual(2, current.data["session"]["revision"])
+        self.assertEqual(2, current.data["session"]["currentPage"])
+        self.assertEqual([1, 2], current.data["session"]["visitedPageNumbers"])
+
+    def test_storybook_list_is_rejected_if_fixture_contains_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            fixtures_dir = Path(temp) / "fixtures"
+            build_fixtures.build(REPO_ROOT, fixtures_dir)
+            books_path = fixtures_dir / "storybooks.json"
+            books = json.loads(books_path.read_text(encoding="utf-8"))
+            books["items"][0]["pages"] = [{"pageNumber": 1}]
+            books_path.write_text(json.dumps(books, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaises(mock_server.MockFixtureError):
+                mock_server.load_fixtures(fixtures_dir)
 
     def test_reading_session_forward_rejects_backward_and_skip(self) -> None:
         started = self.request("POST", "/api/v1/reading-sessions/1/events", {
@@ -458,6 +506,84 @@ class MockTestCase(unittest.TestCase):
                 if result.data.get("total") == 20:
                     self.assertEqual(20, len(result.data["items"]))
         self.assertEqual(20, self.request("GET", "/api/v1/storybooks").data["total"])
+
+    def test_concurrent_snapshots_stay_coherent_during_reset(self) -> None:
+        self.request("POST", "/api/v1/reading-sessions/1/events", {
+            "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "snapshot-start",
+        })
+
+        def worker(index: int) -> HttpResult:
+            mode = index % 6
+            if mode == 0:
+                return self.request("POST", "/mock/reset", {})
+            if mode == 1:
+                return self.request("GET", "/api/v1/reading-sessions/1")
+            if mode == 2:
+                return self.request("GET", "/api/v1/reading-sessions")
+            if mode == 3:
+                return self.request("GET", "/mock/meta")
+            if mode == 4:
+                return self.request("GET", "/mock/voice/scenarios")
+            return self.request("GET", "/mock/errors")
+
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            results = list(executor.map(worker, range(60)))
+        for result in results:
+            self.assertEqual(200, result.status)
+            self.assertIsInstance(result.data, dict)
+            session = result.data.get("session")
+            if session:
+                self.assertIn(session["status"], {"CREATED", "IN_PROGRESS", "FINISHED"})
+                self.assertGreaterEqual(session["revision"], 0)
+                self.assertEqual(
+                    len(session["visitedPageNumbers"]),
+                    len(set(session["visitedPageNumbers"])),
+                )
+                if session["status"] == "CREATED":
+                    self.assertEqual(0, session["revision"])
+                    self.assertEqual([], session["visitedPageNumbers"])
+                else:
+                    self.assertIn(session["currentPage"], session["visitedPageNumbers"])
+                    self.assertGreaterEqual(session["revision"], len(session["visitedPageNumbers"]))
+            items = result.data.get("items")
+            if items and isinstance(items[0], dict) and "readingSessionId" in items[0]:
+                for item in items:
+                    self.assertEqual(set(["readingSessionId", "storyVersionId", "currentPage",
+                                          "visitedPageNumbers", "mode", "status", "revision",
+                                          "expiresAt", "demoOnly"]), set(item))
+            if "bookCount" in result.data:
+                self.assertEqual(20, result.data["bookCount"])
+                self.assertEqual(104, result.data["pageCount"])
+            if "states" in result.data:
+                self.assertEqual(7, len(result.data["states"]))
+                self.assertEqual(8, len(result.data["scenarios"]))
+            elif "scenarios" in result.data and "errorScenarioCount" not in result.data:
+                self.assertEqual(13, len(result.data["scenarios"]))
+        final = self.request("GET", "/api/v1/reading-sessions/1")
+        self.assertEqual(200, final.status)
+        self.assertIn(final.data["session"]["status"], {"CREATED", "IN_PROGRESS"})
+
+    def test_concurrent_create_sessions_return_coherent_snapshots(self) -> None:
+        def create(_: int) -> HttpResult:
+            return self.request("POST", "/api/v1/reading-sessions", {
+                "childProfileId": 1, "storyVersionId": 2, "mode": "PARENT_CHILD",
+            })
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(create, range(16)))
+        ids = set()
+        for result in results:
+            self.assertEqual(201, result.status)
+            self.assertEqual("CREATED", result.data["status"])
+            self.assertEqual(2, result.data["storyVersionId"])
+            self.assertEqual(1, result.data["currentPage"])
+            self.assertEqual(0, result.data["revision"])
+            self.assertEqual([], result.data["visitedPageNumbers"])
+            ids.add(result.data["readingSessionId"])
+        self.assertEqual(16, len(ids))
+        listed = self.request("GET", "/api/v1/reading-sessions?pageSize=50")
+        self.assertEqual(200, listed.status)
+        self.assertGreaterEqual(len(listed.data["items"]), 17)
 
 
 if __name__ == "__main__":

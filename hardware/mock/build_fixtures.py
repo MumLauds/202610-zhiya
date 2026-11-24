@@ -255,6 +255,10 @@ def build_payloads(repo_root: Path = REPO_ROOT) -> dict[str, dict[str, Any]]:
     require(selected_pages == EXPECTED_PAGES, f"原创正文必须为 {EXPECTED_PAGES} 页，实际 {selected_pages}")
     require(1 not in {record["storybookId"] for record in records}, "不得把旧版联调绘本纳入 DEMO")
     require(all(record["status"] == "DRAFT" for record in records), "必须保留种子中的 DRAFT 状态")
+    require(
+        all("pages" not in record and "branches" not in record for record in records),
+        "storybooks.json 必须保持轻量元数据，不得包含 pages/branches",
+    )
 
     source_files = []
     for name in SEED_FILES:

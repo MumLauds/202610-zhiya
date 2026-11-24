@@ -327,7 +327,7 @@ python hardware/mock/server.py --port 8765
 
 `scope=mine` 会返回 403 `FORBIDDEN`，因为 H05 没有实现家长历史书架；这不是正式权限实现。
 
-`GET /api/v1/storybooks` 只返回 `storybooks.json` 的轻量元数据，**不包含 `pages` / `branches`**；H06 进入详情页时必须再请求 `GET /api/v1/story-versions/{id}`。Mock 的会话、书籍和计数读取都通过 `RLock` 取快照，避免与 `/mock/reset` 或并发写入互相撕裂。
+`GET /api/v1/storybooks` 只返回 `storybooks.json` 的轻量元数据，**不包含 `pages` / `branches`**；`load_fixtures()` 会在启动时拒绝被误塞入 `pages/branches` 的书架 fixture。H06 进入详情页时必须再请求 `GET /api/v1/story-versions/{id}`。Mock 的会话、书籍、计数、语音和错误场景读取都通过 `MockState` 的锁内快照方法取副本，避免与 `/mock/reset` 或并发写入互相撕裂。
 
 ### 4.4 示例
 
@@ -419,16 +419,16 @@ status=CREATED, currentPage=1, visitedPageNumbers=[], revision=0
 | 请求 | 允许条件 | 成功效果 |
 | --- | --- | --- |
 | `STARTED` | `CREATED`、`pageNumber=1`、`expectedRevision=0` | `IN_PROGRESS`、currentPage=1、visited 增加 1、revision +1 |
-| `PAGE_CHANGED` | `IN_PROGRESS`，目标等于当前页的 `defaultNextPageNumber` | currentPage=目标、visited 追加、revision +1 |
+| `PAGE_CHANGED` | `IN_PROGRESS`，目标等于当前页的 `defaultNextPageNumber`，且目标不在 `visitedPageNumbers` | currentPage=目标、visited 追加、revision +1 |
 | `USER_FINISH` | `IN_PROGRESS`，`expectedRevision` 匹配 | `FINISHED`、revision +1、生成 `report` |
 
 - `expectedRevision` 不匹配：409 `SESSION_CONFLICT`。
 - `FINISHED` 后新键翻页/提问：409 `SESSION_CONFLICT`。
-- 目标页不存在、非当前页后继、或试图回到已访问旧页：409 `SESSION_CONFLICT`。
+- 目标页不存在、非当前页后继、已访问旧页，或畸形 fixture 把 `defaultNextPageNumber` 指回旧页：409 `SESSION_CONFLICT`。
 - 页码小于 1、字段类型错误：422 `VALIDATION_ERROR`。
 - 会话不存在：404 `RESOURCE_NOT_FOUND`。
 
-`PAGE_CHANGED` 必须与正式 API-015 一致，只接受当前页的 `defaultNextPageNumber`。H04 的“返回上一页”是 H06 阅读器的本地回看行为：本地改显示页即可，**不能伪装成已被服务端接受的翻页事件**；如果要重新进入正式同步，应由 H06 按自身业务决定后续动作，不能复用旧页的 `PAGE_CHANGED`。
+`PAGE_CHANGED` 必须与正式 API-015 一致，只接受当前页的 `defaultNextPageNumber`。DEMO 种子是线性分页，因此 Mock 额外拒绝任何已访问页：即使某个畸形/旧版 fixture 把 `defaultNextPageNumber` 指回旧页，也不能把 H06 的本地回看伪装成服务端接受的翻页事件。H04 的“返回上一页”是 H06 阅读器的本地回看行为：本地改显示页即可，**不能发送旧页的 `PAGE_CHANGED`**；如果要重新进入正式同步，应由 H06 按自身业务决定后续动作，不能复用旧页的 `PAGE_CHANGED`。
 
 ### 5.3 幂等与重放
 
@@ -472,18 +472,21 @@ Mock 没有真实角色投影；`report` 是演示对象，H06 不得在儿童�
 
 ### 5.6 并发与快照
 
-`MockState` 用一把 `threading.RLock` 保护共享可变状态：
+`MockState` 用一把 `threading.RLock` 保护所有共享可变状态；HTTP handler 不再直接读取 live 的 `books/details/voice/errors/sessions` 字段，而是调用统一的快照或事务方法：
 
-- `reset()` 在锁内整体替换 books、details、voice、error scenarios 和 sessions；
-- `POST /events`、`POST /completions`、`POST /questions` 在锁内校验 revision、幂等键并更新会话；
-- `GET /reading-sessions/{id}` 在锁内复制 session、events、report 后再发送；
-- `GET /reading-sessions`、`GET /api/v1/storybooks`、`/mock/meta`、语音场景接口在锁内取快照/计数；
-- `create_session` 在锁内检查版本并分配 ID。
+- `reset()` 在锁内整体替换 books、details、voice、error scenarios 和 sessions，因此读请求只能看到替换前或替换后的完整一代状态；
+- `books_snapshot()`、`meta_snapshot()`、`sessions_snapshot()`、`session_snapshot()`、`voice_snapshot()`、`voice_scenario()`、`errors_snapshot()`、`error_scenario()` 在锁内复制响应数据，释放锁后再写 HTTP；
+- `session_snapshot()` 在同一个锁区间内取 session、公开 events 和 report，避免 `revision/currentPage/visitedPageNumbers` 来自不同写入代；
+- `create_session()` 在锁内检查版本、分配 ID、插入 session，并返回已构造的 session 对象副本；不会把 live `SessionState` 泄漏给响应层；
+- `POST /events`、`POST /completions`、`POST /questions` 用 `session_for_update()` 在同一锁区间内完成幂等键检查、revision 校验和状态写入；`PAGE_CHANGED` 的 visited 检查也在同一事务内完成；
+- `GET /reading-sessions/{id}`、`GET /reading-sessions`、`GET /api/v1/storybooks`、`/mock/meta`、`/mock/voice/*`、`/mock/errors` 全部使用快照。
 
 HTTP 响应在释放锁后写出，避免慢客户端长期占用状态锁。并发回归测试覆盖：
 
 - 8 个相同 `STARTED` 请求同时到达：只递增一次 revision，其余按幂等重放；
-- 读取会话、列表、书架与 `/mock/reset` 交错执行：不出现 500、空会话或半更新响应。
+- 16 个并发创建会话：ID 唯一，响应均为 `CREATED/revision=0/visited=[]`；
+- 读取会话、列表、书架、meta、语音、错误场景与 `/mock/reset` 交错执行：不出现 500、空会话或半更新响应；
+- 每次 session 快照满足 `currentPage` 在 `visitedPageNumbers` 内、`CREATED` 的 revision 为 0 等基本一致性约束。
 
 ## 6. 语音状态模拟
 
@@ -624,7 +627,7 @@ touch event -> UI intent -> controller/state machine -> data provider (async) ->
 ### 10.1 生成和一致性
 
 ```powershell
-Set-Location D:\zhiya-h05
+Set-Location D:\zhiya-hardware-workspace\worktrees\zhiya-h05
 python hardware/mock/build_fixtures.py
 python hardware/mock/build_fixtures.py --check
 ```
@@ -671,7 +674,7 @@ python -m unittest discover -s hardware/tests/mock -v
 实际结果：
 
 ```text
-Ran 25 tests in 3.585s
+Ran 30 tests in 4.879s
 OK
 ```
 
@@ -680,15 +683,16 @@ OK
 - 20 本原创绘本、104 页、40 个 H03 引用；
 - 书号、`storybookId`、`storyVersionId`、`sourcePath` 映射；
 - 页码 1 开始、末页 null、`imageRef=null`；
-- 书架/详情一致；书架列表不包含 `pages` / `branches`；
+- 书架/详情一致；书架列表不包含 `pages` / `branches`；书架 fixture 误塞入 `pages` 时启动失败；
 - H03 40 个资源存在、SHA/大小/JPEG；
 - `STARTED`、前进、错误返回旧页、跳过页、最后一页、结束态；
+- 畸形 fixture 把 `defaultNextPageNumber` 指回旧页时仍拒绝 `PAGE_CHANGED`；
 - 幂等重放、同键不同请求冲突、重复 STARTED；
 - 问答模板不递增 revision、错误页码；
 - 语音 7 主状态、8 场景、错误恢复、无真实音频；
 - 401/403/404/409/422/429/503/504、空书架、缺封面；
 - 重复生成确定性、`--check`、源文件未修改、`/mock/reset`；
-- 并发相同 `STARTED` 幂等、读取/列表/重置交错一致性。
+- 并发相同 `STARTED` 幂等、16 个并发创建会话、读取/列表/书架/meta/语音/错误/重置交错快照一致性。
 
 ### 10.4 只读边界
 
@@ -701,9 +705,9 @@ OK
 - fixtures 由真实种子生成：20 本、104 页、40 个资源引用。
 - `storyVersionId` 按 `storybook_id` 查找，不按数组下标或 ID 等值假设。
 - 所有原创版本保留 `DRAFT`；`coverRef/imageRef=null`；H03 本地封面只出现在 `localCover`。
-- Mock 服务的阅读会话、幂等、冲突、结束态、错误注入和并发快照通过 25 项离线测试。
+- Mock 服务的阅读会话、幂等、冲突、结束态、错误注入、分页规则和并发快照通过 30 项离线测试。
 - `GET /api/v1/storybooks` 只返回轻量元数据，不携带 `pages` / `branches`；详情由 API-009 投影单独读取。
-- `PAGE_CHANGED` 只接受当前页 `defaultNextPageNumber`，错误的后向翻页返回 409，不增加 revision。
+- `PAGE_CHANGED` 只接受当前页 `defaultNextPageNumber` 且未访问的目标；错误的后向翻页、已访问页和畸形回环均返回 409，不增加 revision。
 - 测试不依赖 Pillow、FastAPI、数据库、云端模型或 ESP32 板卡。
 - 原图和种子在构建/测试后 SHA-256 未变化；H03 40 个资源与 manifest 一致。
 
