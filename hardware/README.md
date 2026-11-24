@@ -1,6 +1,6 @@
 # 知芽硬件端
 
-知芽的独立可选扩展。H01 建立最小 ESP-IDF 工程。固件启动后通过 USB 串口报告 ESP-IDF 版本、芯片型号、Flash 实际容量、PSRAM 初始化状态和容量，并记录异常复位及启动自检结果。
+知芽的独立可选扩展。固件启动后保留 H01 的串口自检，随后进入 H02 的彩屏与触控测试界面，显示颜色、按钮计数和实时触摸坐标。
 
 目标板为 Waveshare **ESP32-S3-Touch-LCD-4.3C，SKU 33799，无外壳版**。官方仓库确认模块为 ESP32-S3-WROOM-1-N16R8，配备 16 MiB Flash 和 8 MiB Octal PSRAM，板载 800×480 RGB 屏幕及 GT911。见[产品资料](https://docs.waveshare.com/ESP32-S3-Touch-LCD-4.3C)和[微雪 ESP-IDF 指南](https://docs.waveshare.com/ESP32-S3-Touch-LCD-4.3C/ESP-IDF)。
 
@@ -26,8 +26,10 @@
 | `firmware/main/` | 启动日志和 N16R8 容量自检 |
 | `firmware/sdkconfig.defaults` | N16R8、USB Serial/JTAG 和自定义分区的构建基线 |
 | `firmware/partitions.csv` | NVS、PHY 数据和 4 MiB 工厂应用分区 |
-| `firmware/components/` | 项目自有组件目录，H01 留空 |
+| `firmware/components/board_4_3c/` | 4.3C RGB LCD、IO 扩展器、GT911 和 LVGL 板级接口 |
+| `firmware/dependencies.lock` | ESP-IDF Component Manager 解析的 LVGL 9.2.0 及校验摘要 |
 | `docs/bringup.md` | Windows 11 安装、构建、烧录、串口验收与排查 |
+| `docs/board-pin-map.md` | 引脚、时序、驱动来源、内存预算及实板状态 |
 
 从仓库根目录进入已激活 v5.5.5 的 PowerShell，首次构建执行：
 
@@ -48,6 +50,8 @@ ESP-IDF 分区表位于 `0x8000`。NVS 从 `0x9000` 开始，占 24 KiB，供后
 
 - H00 已提交[硬件设计变更申请](docs/h00-hardware-change-request.md)和[接口决策登记](docs/h00-interface-decisions.md)供团队评审，涵盖选型风险、验收条件和后端依赖。
 
-- H01 已在 Windows 上使用 ESP-IDF v5.5.5 验证 `idf.py set-target esp32s3` 和 `idf.py build`，生成应用、引导程序和分区表。上板验收由硬件负责人记录。此阶段的设备行为限于串口诊断。
-- H02 先验证 H01 上板及厂商 LCD、触摸、LVGL 示例。按实际板卡修订对照[微雪原理图资源](https://docs.waveshare.com/ESP32-S3-Touch-LCD-4.3C/Resources-And-Documents)，核对 IO 扩展器及触摸复位、背光、RGB 时序，再实测触摸方向和 PSRAM 余量。微雪示例与托管 BSP 的 IO 扩展器存在 CH422G/CH32V003 命名差异，需结合原理图与实板确认。
+- H01 已在 Windows 上使用 ESP-IDF v5.5.5 验证 `idf.py set-target esp32s3` 和 `idf.py build`，生成应用、引导程序和分区表。已通过实板烧录、USB 串口启动及 Flash/PSRAM 自检。此阶段的设备行为限于串口诊断。
+- H02 采用官方示例的板级配置与 LVGL 9.2.0，已在 Windows 11 / ESP-IDF v5.5.5 上构建。板级接口及初始化顺序见[引脚表](docs/board-pin-map.md)，实板 LCD、背光、GT911 与基础 LVGL 交互通过。修复版已通过触摸、独立 RST 和断电重启复测，板卡型号已核对。PCB 修订号、长期稳定性及真实故障恢复待验证。见 [H01/H02 实板验收报告](docs/reports/h01-h02-bringup-report-20261124.md)。
 - [SRS v0.3](../docs/requirements/软件需求规格说明书.md) 记录 4.3C 彩色触摸方案，保留 HW-01～HW-05 的可选扩展级别，修订依据见 [DCL-025](../docs/standards/design-change-log.md)。SRS 修订及后续设备认证、授权和受控媒体访问待团队评审。现有接口以[接口契约 v0.4](../docs/design/api-contract.md)和[对应 JSON](../docs/design/api-contract-v0.4.json)为基准。
+
+H02 的“知芽”标题使用 Noto Sans SC 600 的两个字形，36 px / 4 bpp，已用 `lv_font_conv 1.5.3` 转为固件内置数据。构建只编译生成的 C 文件。字形来源为 [Google Fonts Noto Sans SC](https://fonts.google.com/noto/specimen/Noto+Sans+SC)，许可证为 [SIL OFL 1.1](firmware/main/OFL-NotoSansSC.txt)。
