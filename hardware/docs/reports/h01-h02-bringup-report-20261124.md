@@ -4,7 +4,7 @@
 - 项目：知芽——幼儿绘本学习智能体
 - 硬件负责人：黄锦培
 - 测试日期：2026 年 11 月 24 日
-- 版本：v1.0
+- 版本：v1.1
 
 ## 1. 调试目标
 
@@ -14,7 +14,7 @@
 
 | 项目 | 配置 |
 | --- | --- |
-| 开发板 | Waveshare ESP32-S3-Touch-LCD-4.3C，SKU 33799，无外壳版（选型记录）；实物 PCB 丝印待补录 |
+| 开发板 | Waveshare ESP32-S3-Touch-LCD-4.3C，SKU 33799，无外壳版（选型记录）；实物型号已核对，PCB 修订号未确认 |
 | 芯片 | ESP32-S3，revision v0.2，双核，运行频率 160 MHz |
 | Flash / PSRAM | 16 MiB / 8 MiB Octal PSRAM |
 | 显示与触摸 | 800×480 RGB565 LCD，GT911 电容触摸 |
@@ -61,7 +61,7 @@ I (16518) zhiya_boot: H01 heartbeat: Flash=OK, PSRAM=OK
 
 以上为实际日志节选。完整已提供的心跳记录从 518ms 至 16518ms，每隔 2000ms 输出一次。Flash 容量与 PSRAM 初始化结果符合 N16R8 配置，H01 启动自检及本次约 16 秒的心跳观测通过。
 
-## 4. H02 显示与触摸适配
+## 4. H02 显示与触摸适配（修复前）
 
 ### 4.1 板级驱动与固件构建
 
@@ -133,22 +133,97 @@ W (564) i2c.master: Please check pull-up resistances whether be connected proper
 
 GT911 探测及现有人工触摸测试正常，当前不进行额外焊接或盲目调整 I2C 参数。记录提示，若后续出现通信失败、异常抬手或触摸失灵，再按原理图和驱动日志排查。
 
+## 5. H02 修复版实板回归（2026-11-24）
 
-## 5. 验收结论与待补测试
+本节记录 feat/hw-bsp-4-3c 上的测试提交 `2f5c98f14a7f5d88b6ed5a30b15bb55ba9998af9`。第 4 节及图 1 保留修复前固件的结果。
 
-H01 编译、实板烧录校验、COM5 USB Serial/JTAG、芯片识别和 Flash/PSRAM 自检为 **PASS**。2 秒心跳由本地诊断版本验证。H02 编译、实板烧录校验、800×480 RGB565 显示、背光、五色色块、中文标题、GT911、LVGL、四角触摸、20 次点击计数、长按抬手、多指后恢复、连续滑动及初始化堆快照为 **PASS**。此前主机故障注入回归见 [H02 定向复查](../h02-review.md)。本次提交只涉及文档和验收照片。
+| 项目 | 修复版记录 |
+| --- | --- |
+| 环境 | ESP-IDF v5.5.5，LVGL 9.2.0，COM5 USB Serial/JTAG |
+| 构建 | 1203/1203，退出码 0 |
+| 应用镜像 | 修复前 462,944 B，修复后 462,976 B，4 MiB 应用分区剩余 3,731,328 B（约 89%） |
+| 构建目录 | `D:\zhiya-hardware-workspace\temp\h02-20261124-233659-2553\build` |
+| 构建日志 | `D:\zhiya-hardware-workspace\logs\h02-migration-build-20261124-233659-2553.log.build` |
+| 烧录 | Bootloader、应用和分区表均完成写入及 Hash 校验 |
 
-| 待验收项 | 操作和验收标准 | 状态 |
+### 5.1 主机回归
+
+在 `hardware/firmware` 执行：
+
+```powershell
+python ..\tests\board\test_touch.py --cc "D:\programmming\Dev-Cpp\MinGW64\bin\gcc.exe"
+```
+
+13 项均通过，最后一行为套件汇总。该测试使用 LVGL 9.2.0 和模拟 I²C。
+
+```text
+PASS idle/no-new-data does not read or acknowledge coordinates
+PASS press/hold/move/no-new-data/release produces one click
+PASS idle status timeout/no-new-data recovery preserves first click
+PASS status-read failure cancels until acknowledged release
+PASS coordinate-read failure cancels until acknowledged release
+PASS idle report ACK failure still requires release across a status timeout
+PASS coordinate ACK failure cancels until acknowledged release
+PASS release ACK failure does not synthesize a click
+PASS multi-point/invalid count/palm/key reports cancel
+PASS out-of-bounds coordinates cancel
+PASS contact-ID discontinuity/proximity report cancel
+PASS inclusive screen edge maps without overflow
+PASS flush failure latches/logs once and returns the LVGL buffer
+PASS LVGL 9.2.0 event regression (mocked I2C, host execution)
+```
+
+### 5.2 启动和初始化内存
+
+```text
+I (550) esp_psram: SPI SRAM memory test OK
+I (559) app_init: Compile time: Nov 24 2026 23:38:00
+I (559) app_init: ELF file SHA256: 97c88875d...
+I (564) zhiya_boot: Flash: 16777216 bytes (physical)
+I (564) zhiya_boot: PSRAM initialized: 8388608 bytes
+I (564) zhiya_boot: H01 startup checks passed
+I (564) zhiya_boot: Starting H02 display and touch
+I (864) board_4_3c_panel: GT911 detected at 0x5D; native landscape
+I (994) board_4_3c: H02 initialized: 800x480 RGB565, backlight on, LVGL 9.2.0
+I (994) board_4_3c: PSRAM heap bytes: free=7616752 min=7616752 largest=7602176
+I (994) board_4_3c: internal heap bytes: free=240763 min=208732 largest=163840
+I (994) board_4_3c: internal DMA heap bytes: free=232975 min=200944 largest=163840
+I (994) main_task: Returned from app_main()
+```
+
+三类堆的初始化快照与修复前一致。启动仍出现 I²C 上拉检查警告，本轮操作未观察到触摸异常。以上为烧录后启动日志节选。独立 RST 和冷启动记录来自现场观察。
+
+### 5.3 人工实板复测
+
+| 项目 | 现场结果 | 状态 |
 | --- | --- | --- |
-| PCB 修订 | 断开供电后读取并拍摄背面丝印，记录型号与修订并对照板级引脚表 | NOT_TESTED |
-| 独立 RST 和冷启动 | 分别短按 RST、断开所有供电后重新上电。各保存完整串口日志。H01 自检和 H02 初始化通过，背光、界面正常，计数归零且再次点击有效 | NOT_TESTED |
-| 触摸细项与动态画面 | 记录四角和中心实测坐标。点击色块不计数。双指接触后先松一指再全松，整个异常接触不计数，随后单点点击计一次。滑动时录像核对边界、偏移和动态撕裂 | NOT_TESTED |
-| 连续操作后的堆 | 在相同操作负载前后多轮采集 PSRAM、Internal、Internal DMA 的 free、min、largest。确认 free 和 largest 无持续下降、日志无分配失败。若当前固件仅在启动时输出，另行使用诊断构建采样并记录版本 | NOT_TESTED |
-| I²C 与刷新异常恢复 | 若出现读取错误、抬手丢失或 RGB 刷新异常，保存首条错误和复现动作。检查完全释放后触摸是否恢复、后续重绘是否覆盖旧画面、独立 RST 和冷启动后是否恢复 | NOT_TESTED |
+| 板卡型号 | 背面丝印为 ESP32-S3-Touch-LCD-4.3C、800×480 Pixels，厂商 Waveshare，模组 ESP32-S3-WROOM-1。具体 PCB 修订号未确认 | PASS（型号） |
+| 坐标与点击 | 四角和中心响应正常。连续点击按钮 20 次计数正确，点击非按钮区域不计数。未记录具体坐标值 | PASS |
+| 长按与多指 | 按住按钮 5 秒再松开计数正常。双指接触后先松一指、再全松均未误计数，随后单指点击恢复 | PASS |
+| 空闲与滑动 | 静置 30 秒后首击正常。连续滑动约 1 分钟，未见明显卡死、花屏或触摸失灵 | PASS |
+| 独立 RST | 界面自动恢复，计数归零，随后 3 次点击正常 | PASS |
+| 冷启动 | 完全断电 5 秒后重新上电，界面自动恢复，计数归零，随后 3 次点击正常 | PASS |
 
-丢失释放报告且无新数据时，GT911 有可能维持 PRESSED。等待释放时若丢失零点报告，下一次触摸也可能暂时被屏蔽。RGB 刷新错误可能保留旧像素，单扫描帧缓冲的撕裂和长期堆稳定性仍需实板确认。
+![H02 开发板背面及硬件接口实物图](images/h02-board-back.jpg)
 
-## 6. 构建产物与后续建议
+*H02 开发板背面及硬件接口实物图*
+
+正常空闲后的首击由实板验证，空闲 I²C 超时恢复后的首击由主机故障注入验证。真实 I²C 故障恢复尚待实板验证。
+
+## 6. 验收结论与后续待测项
+
+H01 的启动自检和 H02 修复版的基础板级验收通过。H02 的显示、触摸、RST 和断电重启已完成实板复测。以下项目留待集成阶段验证。
+
+| 项目 | 后续记录或验证 | 状态 |
+| --- | --- | --- |
+| PCB 修订号 | 取得明确的实物修订标识。厂商 V1.1 原理图是设计参考 | NOT_TESTED |
+| 连续操作后的堆与长期稳定性 | 在相同负载下多轮采集三类堆的 free、min、largest，记录持续运行、分配失败和异常复位 | NOT_TESTED |
+| 真实 I²C 和刷新故障恢复 | 记录 GT911 超时或释放报告丢失、RGB 刷新失败以及后续触摸和重绘能否恢复 | NOT_TESTED |
+| 复杂画面撕裂 | 在集成界面高刷新负载下观察并录像 | NOT_TESTED |
+
+GT911 丢失释放报告且无新数据时可能保持 PRESSED，等待释放期间丢失零点报告也可能暂时屏蔽下一次触摸。RGB 刷新失败可能保留旧画面。上述风险仍保留在 [H02 定向复查](../h02-review.md)。
+
+## 7. 构建产物
 
 下列 SHA-256 在归档时从本地构建产物计算，用于识别文件。烧录工具报告的写入 Hash 校验是独立证据。构建日志位于本地硬件工作区的 logs 目录。串口证据见上文的现场摘录。
 
@@ -156,8 +231,7 @@ H01 编译、实板烧录校验、COM5 USB Serial/JTAG、芯片识别和 Flash/P
 | --- | ---: | --- | --- |
 | H01 基线 | 172336 | 8fa352154744173eb401fd02400071bfa3ec68029a85960faa167e61cbec981f | h01-migration-build-20261124-220950-2354.log.build |
 | H01 心跳诊断 | 172464 | 7dc028689a93078ddc40d32a8f624302988f1e4133b56df3205ab80774856458 | h01-migration-build-20261124-224138-7043.log.build |
-| H02 | 462944 | 9d30db0c0c78c39b011574a5c720922cba3954feef59dfb409073a08ea440dd9 | h02-migration-build-20261124-224647-9084.log.build |
-
-补齐实板证据后，再独立评审 H03 素材与 H05 Mock 基线。H06 可用一本本地绘本验证 JPEG 解码、显示和翻页，测量解码耗时和堆峰值。现有分区表定义 4 MiB 应用区及 NVS、PHY 分区，独立资源区需要另行评审。录音、播放、联网、设备授权和正式接口各自实施及验收。
+| H02 修复前 | 462944 | 9d30db0c0c78c39b011574a5c720922cba3954feef59dfb409073a08ea440dd9 | h02-migration-build-20261124-224647-9084.log.build |
+| H02 修复版 | 462976 | 8b720a4963643809039708277ea0eb5392b52d7380ce779b381c0d164e1f6b4c | h02-migration-build-20261124-233659-2553.log.build |
 
 相关记录见 [H00/H01 PR #34](https://github.com/MumLauds/202610-zhiya/pull/34)、[H02 PR #39](https://github.com/MumLauds/202610-zhiya/pull/39)、[上板指南](../bringup.md)及[板级引脚表](../board-pin-map.md)。

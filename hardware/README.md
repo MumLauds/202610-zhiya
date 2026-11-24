@@ -51,7 +51,7 @@ ESP-IDF 分区表位于 `0x8000`。NVS 从 `0x9000` 开始，占 24 KiB，供后
 - H00 已提交[硬件设计变更申请](docs/h00-hardware-change-request.md)和[接口决策登记](docs/h00-interface-decisions.md)供团队评审，涵盖选型风险、验收条件和后端依赖。
 
 - H01 已在 Windows 上使用 ESP-IDF v5.5.5 验证 `idf.py set-target esp32s3` 和 `idf.py build`，生成应用、引导程序和分区表。已通过实板烧录、USB 串口启动及 Flash/PSRAM 自检。此阶段的设备行为限于串口诊断。
-- H02 采用官方示例的板级配置与 LVGL 9.2.0，已在 Windows 11 / ESP-IDF v5.5.5 上构建。板级接口及初始化顺序见[引脚表](docs/board-pin-map.md)，实板 LCD、背光、GT911 与基础 LVGL 交互通过。PCB 修订、独立复位和长期稳定性待补测。见 [H01/H02 实板验收报告](docs/reports/h01-h02-bringup-report-20261124.md)。
+- H02 采用官方示例的板级配置与 LVGL 9.2.0，已在 Windows 11 / ESP-IDF v5.5.5 上构建。板级接口及初始化顺序见[引脚表](docs/board-pin-map.md)，实板 LCD、背光、GT911 与基础 LVGL 交互通过。修复版已通过触摸、独立 RST 和断电重启复测，板卡型号已核对。PCB 修订号、长期稳定性及真实故障恢复待验证。见 [H01/H02 实板验收报告](docs/reports/h01-h02-bringup-report-20261124.md)。
 - [SRS v0.3](../docs/requirements/软件需求规格说明书.md) 记录 4.3C 彩色触摸方案，保留 HW-01～HW-05 的可选扩展级别，修订依据见 [DCL-025](../docs/standards/design-change-log.md)。SRS 修订及后续设备认证、授权和受控媒体访问待团队评审。现有接口以[接口契约 v0.4](../docs/design/api-contract.md)和[对应 JSON](../docs/design/api-contract-v0.4.json)为基准。
 
 H02 的“知芽”标题使用 Noto Sans SC 600 的两个字形，36 px / 4 bpp，已用 `lv_font_conv 1.5.3` 转为固件内置数据。构建只编译生成的 C 文件。字形来源为 [Google Fonts Noto Sans SC](https://fonts.google.com/noto/specimen/Noto+Sans+SC)，许可证为 [SIL OFL 1.1](firmware/main/OFL-NotoSansSC.txt)。

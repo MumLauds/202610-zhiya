@@ -1,6 +1,6 @@
 # 4.3C 板级引脚与驱动
 
-目标为 **Waveshare ESP32-S3-Touch-LCD-4.3C，SKU 33799，无外壳版**，ESP32-S3-WROOM-1-N16R8，800×480 RGB565，GT911。依据为厂商 **V1.1 原理图**第 1 页及同一提交的示例。板背丝印、PCB 修订和实物芯片标记由硬件负责人核对。基本 LCD、背光与 GT911 已通过[实板测试](reports/h01-h02-bringup-report-20261124.md)，实物丝印核对为 **NOT_TESTED**。
+目标为 **Waveshare ESP32-S3-Touch-LCD-4.3C，SKU 33799，无外壳版**，ESP32-S3-WROOM-1-N16R8，800×480 RGB565，GT911。依据为厂商 **V1.1 原理图**第 1 页及同一提交的示例。实物背面已核对 Waveshare、ESP32-S3-Touch-LCD-4.3C、800×480 Pixels 和 ESP32-S3-WROOM-1，板卡型号为 **PASS**。PCB 具体修订号未确认。基本 LCD、背光与 GT911 已通过[实板测试](reports/h01-h02-bringup-report-20261124.md)。
 
 | 信号 | ESP32-S3 或板端映射 | H02 用法 |
 | --- | --- | --- |
