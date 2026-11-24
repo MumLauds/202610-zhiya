@@ -41,7 +41,8 @@ static void flush_display(lv_display_t *display, const lv_area_t *area, uint8_t 
 static void read_touch(lv_indev_t *indev, lv_indev_data_t *data)
 {
     board_4_3c_touch_t next = touch;
-    const esp_err_t err = board_4_3c_panel_poll_touch(&next);
+    bool status_read_failed;
+    const esp_err_t err = board_4_3c_panel_poll_touch(&next, &status_read_failed);
     if (err == ESP_ERR_NOT_FINISHED) {
         next = touch;
     } else if (err != ESP_OK) {
@@ -53,7 +54,10 @@ static void read_touch(lv_indev_t *indev, lv_indev_data_t *data)
             /* Cancel instead of turning a failed sample into a button click. */
             lv_indev_reset(indev, NULL);
         }
-        touch_wait_release = true;
+        /* An idle status-read failure provides no evidence of a contact. */
+        if (touch.pressed || !status_read_failed) {
+            touch_wait_release = true;
+        }
         next = touch;
         next.pressed = false;
     } else if (touch_wait_release) {

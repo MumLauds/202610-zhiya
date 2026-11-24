@@ -140,6 +140,8 @@ int main(void)
     lv_init();
     lv_display_t *display = lv_display_create(800, 480);
     assert(display);
+    /* Pointer events do not need theme animations, which this harness does not tick. */
+    lv_display_set_theme(display, NULL);
     lv_obj_t *screen = lv_display_get_screen_active(display);
     lv_obj_remove_style_all(screen);
     button = lv_button_create(screen);
@@ -173,6 +175,18 @@ int main(void)
     assert(clicks == 1);
     puts("PASS press/hold/move/no-new-data/release produces one click");
 
+    fresh();
+    status_error = ESP_ERR_TIMEOUT;
+    sample(0x00, 0, 0, 0);
+    assert(warnings == 1 && acknowledged == 0 && coordinate_reads == 0);
+    status_error = ESP_OK;
+    sample(0x00, 0, 0, 0);
+    assert(!touch.pressed && clicks == 0);
+    press();
+    sample(0x80, 0, 0, 0);
+    assert(!touch.pressed && clicks == 1);
+    puts("PASS idle status timeout/no-new-data recovery preserves first click");
+
     fresh(); press(); status_error = ESP_ERR_TIMEOUT;
     sample(0x00, 0, 0, 0);
     assert(acknowledged == 1);
@@ -184,6 +198,17 @@ int main(void)
     assert(acknowledged == 2);
     canceled();
     puts("PASS coordinate-read failure cancels until acknowledged release");
+
+    fresh();
+    acknowledge_error = ESP_ERR_TIMEOUT;
+    sample(0x81, 350, 250, 0);
+    assert(touch_wait_release && !touch.pressed);
+    acknowledge_error = ESP_OK;
+    status_error = ESP_ERR_TIMEOUT;
+    sample(0x00, 0, 0, 0);
+    assert(touch_wait_release);
+    canceled();
+    puts("PASS idle report ACK failure still requires release across a status timeout");
 
     fresh(); press(); acknowledge_error = ESP_ERR_TIMEOUT;
     sample(0x81, 350, 250, 0);

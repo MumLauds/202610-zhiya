@@ -181,11 +181,13 @@ esp_err_t board_4_3c_panel_draw(const lv_area_t *area, const uint8_t *pixels)
     return esp_lcd_panel_draw_bitmap(panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, pixels);
 }
 
-esp_err_t board_4_3c_panel_poll_touch(board_4_3c_touch_t *point)
+esp_err_t board_4_3c_panel_poll_touch(board_4_3c_touch_t *point,
+                                         bool *status_read_failed)
 {
     uint8_t status;
     const esp_err_t status_err = touch_read(GT911_STATUS_REG, &status, 1);
-    if (status_err != ESP_OK) {
+    *status_read_failed = status_err != ESP_OK;
+    if (*status_read_failed) {
         return status_err;
     }
     if (!(status & GT911_DATA_READY)) {
