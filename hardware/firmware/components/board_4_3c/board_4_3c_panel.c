@@ -1,4 +1,5 @@
 #include "board_4_3c_panel.h"
+#include "board_4_3c_io.h"
 
 #include <string.h>
 
@@ -8,6 +9,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_rgb.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 /* LCD timing, pins and IO protocol from Waveshare's 4.3C examples.
  * Reference and schematic: hardware/docs/board-pin-map.md.
@@ -20,6 +22,7 @@
 #define EXPANDER_OUT_REG 0x03
 #define TOUCH_RESET_BIT (1U << 1)
 #define BACKLIGHT_BIT (1U << 2)
+#define AUDIO_AMP_BIT (1U << 3)
 
 #define GT911_ADDR 0x5D
 #define GT911_ALT_ADDR 0x14
@@ -37,7 +40,9 @@ static i2c_master_dev_handle_t gt911;
 static esp_lcd_panel_handle_t panel;
 static bool expander_ready;
 static bool touch_gpio_configured;
+static SemaphoreHandle_t expander_lock;
 static uint8_t outputs;
+static uint8_t directions;
 static uint8_t touch_track_id;
 
 static esp_err_t add_i2c_device(uint8_t address, i2c_master_dev_handle_t *device)
@@ -56,13 +61,41 @@ static esp_err_t expander_write(uint8_t reg, uint8_t value)
     return i2c_master_transmit(expander, data, sizeof(data), I2C_TIMEOUT_MS);
 }
 
-static esp_err_t set_outputs(uint8_t value)
+static esp_err_t update_expander(uint8_t reg, uint8_t *cache, uint8_t mask, uint8_t value)
 {
-    const esp_err_t err = expander_write(EXPANDER_OUT_REG, value);
+    const uint8_t next = (*cache & ~mask) | (value & mask);
+    const esp_err_t err = expander_write(reg, next);
     if (err == ESP_OK) {
-        outputs = value;
+        *cache = next;
     }
     return err;
+}
+
+static esp_err_t set_output(uint8_t mask, bool enabled, bool configure)
+{
+    if (!expander_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (xSemaphoreTake(expander_lock, pdMS_TO_TICKS(40)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    esp_err_t err = enabled && !(directions & mask) ? ESP_ERR_INVALID_STATE :
+                    update_expander(EXPANDER_OUT_REG, &outputs, mask, enabled ? mask : 0);
+    if (err == ESP_OK && configure && !(directions & mask)) {
+        err = update_expander(EXPANDER_DIR_REG, &directions, mask, mask);
+    }
+    xSemaphoreGive(expander_lock);
+    return err;
+}
+
+i2c_master_bus_handle_t board_4_3c_borrow_i2c(void)
+{
+    return expander_ready ? bus : NULL;
+}
+
+esp_err_t board_4_3c_set_audio_amp(bool enabled)
+{
+    return set_output(AUDIO_AMP_BIT, enabled, !enabled);
 }
 
 static esp_err_t touch_read(uint16_t reg, uint8_t *data, size_t length)
@@ -86,7 +119,7 @@ static esp_err_t init_touch(void)
                         TAG, "GT911 INT output");
     touch_gpio_configured = true;
     vTaskDelay(pdMS_TO_TICKS(100));
-    ESP_RETURN_ON_ERROR(set_outputs(TOUCH_RESET_BIT), TAG, "GT911 reset release");
+    ESP_RETURN_ON_ERROR(set_output(TOUCH_RESET_BIT, true, false), TAG, "GT911 reset release");
     vTaskDelay(pdMS_TO_TICKS(200));
     ESP_RETURN_ON_ERROR(gpio_set_direction(TOUCH_INT_GPIO, GPIO_MODE_INPUT),
                         TAG, "GT911 INT input");
@@ -125,8 +158,12 @@ esp_err_t board_4_3c_panel_init(void)
     ESP_RETURN_ON_ERROR(add_i2c_device(EXPANDER_ADDR, &expander), TAG, "I/O expander device");
 
     /* Load both low before enabling the two board outputs. Other bits stay inputs. */
-    ESP_RETURN_ON_ERROR(set_outputs(0), TAG, "I/O expander output latch");
-    ESP_RETURN_ON_ERROR(expander_write(EXPANDER_DIR_REG, TOUCH_RESET_BIT | BACKLIGHT_BIT),
+    expander_lock = xSemaphoreCreateMutex();
+    ESP_RETURN_ON_FALSE(expander_lock, ESP_ERR_NO_MEM, TAG, "I/O expander lock");
+    ESP_RETURN_ON_ERROR(update_expander(EXPANDER_OUT_REG, &outputs, UINT8_MAX, 0),
+                        TAG, "I/O expander output latch");
+    ESP_RETURN_ON_ERROR(update_expander(EXPANDER_DIR_REG, &directions, UINT8_MAX,
+                                        TOUCH_RESET_BIT | BACKLIGHT_BIT),
                         TAG, "I/O expander output directions");
     expander_ready = true;
     ESP_RETURN_ON_ERROR(init_touch(), TAG, "GT911 init");
@@ -169,10 +206,7 @@ esp_err_t board_4_3c_panel_init(void)
 
 esp_err_t board_4_3c_panel_backlight(bool enabled)
 {
-    if (!expander_ready) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    return set_outputs(enabled ? outputs | BACKLIGHT_BIT : outputs & ~BACKLIGHT_BIT);
+    return set_output(BACKLIGHT_BIT, enabled, false);
 }
 
 esp_err_t board_4_3c_panel_draw(const lv_area_t *area, const uint8_t *pixels)
@@ -230,6 +264,10 @@ void board_4_3c_panel_release(void)
     if (expander_ready) {
         ESP_ERROR_CHECK_WITHOUT_ABORT(board_4_3c_panel_backlight(false));
         expander_ready = false;
+    }
+    if (expander_lock) {
+        vSemaphoreDelete(expander_lock);
+        expander_lock = NULL;
     }
     if (panel) {
         ESP_ERROR_CHECK_WITHOUT_ABORT(esp_lcd_panel_del(panel));

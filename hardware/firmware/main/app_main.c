@@ -11,6 +11,12 @@
 #include "esp_psram.h"
 #include "esp_system.h"
 #include "h02_test_ui.h"
+#include "sdkconfig.h"
+
+#if CONFIG_ZHIYA_H07_AUDIO_DIAGNOSTIC
+#include "board_audio.h"
+#include "h07_audio_ui.h"
+#endif
 
 #define EXPECTED_FLASH_BYTES (16U * 1024U * 1024U)
 #define EXPECTED_PSRAM_BYTES (8U * 1024U * 1024U)
@@ -93,9 +99,23 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "Starting H02 display and touch");
+#if CONFIG_ZHIYA_H07_AUDIO_DIAGNOSTIC
+    const esp_err_t err = board_4_3c_init(h07_audio_ui_create);
+#else
     const esp_err_t err = board_4_3c_init(h02_test_ui_create);
+#endif
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "H02 board initialization failed: %s. Check the bring-up guide.",
                  esp_err_to_name(err));
+        return;
     }
+#if CONFIG_ZHIYA_H07_AUDIO_DIAGNOSTIC
+    if (board_4_3c_lock(portMAX_DELAY)) {
+        const esp_err_t audio_err = board_audio_init();
+        board_4_3c_unlock();
+        if (audio_err != ESP_OK) {
+            ESP_LOGE(TAG, "H07 task initialization failed: %s", esp_err_to_name(audio_err));
+        }
+    }
+#endif
 }
