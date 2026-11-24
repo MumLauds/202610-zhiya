@@ -14,10 +14,13 @@ from starlette.exceptions import HTTPException
 
 from app.api.v1.health import router as health_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.admin import router as admin_router
 from app.api.v1.profiles import router as profiles_router
 from app.api.v1.storybooks import router as storybooks_router
+from app.api.v1.story_generations import router as story_generations_router
 from app.api.v1.voice import router as voice_router
 from app.api.v1.reading_sessions import router as reading_sessions_router
+from app.api.v1.guidance import router as guidance_router
 from app.adapters.model import ModelAdapter
 from app.config import Settings
 from app.errors import ServiceError
@@ -46,6 +49,7 @@ def create_app(settings: Settings | None = None, speech_settings: SpeechSettings
         # Single-worker first release: settle leftover PENDING reports before serving requests.
         recover_pending_reports()
         async with ModelGateway(config) as gateway, VoiceGateway(speech_config) as voice_gateway:
+            app.state.model_settings = config
             app.state.model_gateway = gateway
             app.state.model_adapter = ModelAdapter(gateway)
             app.state.voice_gateway = voice_gateway
@@ -113,10 +117,13 @@ def create_app(settings: Settings | None = None, speech_settings: SpeechSettings
 
     app.include_router(health_router)
     app.include_router(auth_router)
+    app.include_router(admin_router)
     app.include_router(profiles_router)
     app.include_router(storybooks_router)
+    app.include_router(story_generations_router)
     app.include_router(voice_router)
     app.include_router(reading_sessions_router)
+    app.include_router(guidance_router)
 
     return app
 

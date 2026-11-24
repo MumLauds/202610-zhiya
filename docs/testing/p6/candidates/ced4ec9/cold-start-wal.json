@@ -1,0 +1,22 @@
+{
+  "candidate": "ced4ec935df8b855c8dd1669089467c9906cef27",
+  "scope": "isolated SQLite, real Chrome, cold verification cache, zero provider credentials",
+  "results": [
+    {
+      "startHttp": 201,
+      "secondsAfterReload": 0.8,
+      "journalMode": "wal",
+      "sessionStatus": "IN_PROGRESS",
+      "revision": 2,
+      "startRows": 1
+    },
+    {
+      "startHttp": 201,
+      "secondsAfterReload": 0.9,
+      "journalMode": "wal",
+      "sessionStatus": "IN_PROGRESS",
+      "revision": 2,
+      "startRows": 1
+    }
+  ]
+}

@@ -5,6 +5,23 @@
   "note": "所有示例为格式数据，不是真实模型输出、凭证或测试结果。",
   "common": {
     "authentication": "会话 Cookie zhiya_session 使用 Secure、HttpOnly 和 SameSite=Lax。受保护的写请求须在 X-CSRF-Token 中提交可读 Cookie zhiya_csrf 的值。进入儿童模式时，在同一事务内吊销当前设备的家长 auth_sessions、签发 child_grants 及版本范围并绑定会话。恢复家长权限时重新验证账号密码，撤销儿童授权并签发全新家长凭证。",
+    "adminWrites": {
+      "appliesTo": ["API-027", "API-028", "API-030", "API-031"],
+      "header": "可选 Idempotency-Key，1～64 个可见 ASCII 字符；同一管理员的结果未确认时沿用同键和原请求。",
+      "replay": "原子保存成功回执。相同方法、路径和请求体使用原键返回 200 和原数据；同键不同请求返回 409 IDEMPOTENCY_CONFLICT。"
+    },
+    "adminStoryVersionList": {
+      "method": "GET",
+      "path": "/api/v1/admin/story-versions",
+      "description": "仅内容管理员可分页读取 LIBRARY 各状态版本。page 从1开始，pageSize 为1至50。每项包含 storybookId、storyVersionId、versionNumber、title、status、topics、licenseNote、正文页及全部分支的标签、目标和审核状态。发布资格由 API-028 在服务端复核。",
+      "responseExample": {"data": {"items": [], "page": 1, "pageSize": 20}, "requestId": "req-demo"}
+    },
+    "currentSessionIdentity": {
+      "method": "GET",
+      "path": "/api/v1/auth/sessions/current",
+      "description": "使用当前设备的会话 Cookie 查询身份。家长和管理员返回 accountId、role；儿童凭证只返回 role=CHILD 以恢复交接页（含已到时但尚可解锁的凭证）。无有效身份返回401。响应禁止缓存。",
+      "responseExample": {"data": {"accountId": 1, "role": "ADMIN"}, "requestId": "req-demo"}
+    },
     "ownership": "私有资源每次执行归属校验；非本人统一404。",
     "pagination": {
       "defaultPageSize": 20,
@@ -87,13 +104,14 @@
         "READY",
         "FAILED"
       ],
-      "completion": "首次结束阅读在同一事务保存会话终态、事实记录、PENDING小结和供同键重放的原响应。事务外按既有文本模型调用超时生成；仅当小结仍为PENDING时，成功置READY，确定失败置FAILED并保留事实摘要。",
-      "contentValidation": "AI-06/NFR-09要求不伪造儿童表现、不提供能力诊断。DCL-026当前实现由服务端已读页记录生成事实摘要，模型仅选择固定的温和建议编号；自由文本、非法结构、额外字段、未知编号或超长内容均视为失败并保留事实摘要。READY只展示服务端事实与固定建议，activities仍为空；不代表FR-10/AC-09活动功能完成。不改变公共响应字段、状态及重放规则，不追溯改写历史READY。",
-      "startupRecovery": "首版单工作进程启动或重启时，在应用就绪前将遗留的PENDING小结条件更新为FAILED，保留事实摘要并将activities置为空数组。恢复不调用模型，保留会话终态、事实记录及原结束响应。",
+      "completion": "首次结束阅读同事务保存终态、事实、PENDING小结和原响应。提交后调用百炼文本模型补充小结。成功置READY；失败且已有本地作答摘要则保留本地内容置READY，其余置FAILED。",
+      "contentValidation": "百炼文本模型仅参考实际已读正文、已展示的小提问和本地作答线索，作答原文留在服务端。模型可选择既有建议编号和可选storyMoment，后者必须逐字匹配已读正文并通过安全检查，否则丢弃该可选引文。保留原事实、最新本地作答摘要与回看活动。生成文本不评价儿童能力或虚构表现。续写切换结束源会话时沿用本地规则。",
+      "startupRecovery": "单工作进程启动时，遗留PENDING小结若已有本地作答活动则恢复READY，其余标记FAILED。恢复保留摘要和原响应，无模型调用。",
       "read": "API-013读取当前小结。READY返回已生成内容；PENDING或FAILED返回事实摘要及空活动数组。FALLBACK仅用于模型/互动结果，不是ReadingReport.status。",
       "repeat": "同键重放原结束响应，可能仍含PENDING；新键重复结束只返回既有终态及当前小结，不再次调用模型。本阶段不提供失败小结重新生成入口。"
     },
     "versionAccess": {
+      "draftPreview": "API-024 允许已认证家长预览本人 PENDING_REVIEW 原创草稿的内页。旧草稿预览时只固定当前页，API-026 批准时核对整本并沿用已预览的图片。已分配的插画暂不可读时，该页预览和整本批准返回可重试的 503，其他可用页仍可预览。API-025 成功重放仍须核验目标版本的归属和状态，已撤回时返回 404 RESOURCE_NOT_FOUND。",
       "current": "默认书架及推荐仅选择有权访问的当前PUBLISHED或APPROVED_PRIVATE版本。每个storybookId至多一个当前生效版本，不限制本人可复读的已审核私有历史版本数。",
       "privateHistory": "RETIRED退出当前默认列表；只有storybooks.source_type=ORIGINAL、owner_guardian_id等于当前家长账号且story_versions.reviewed_by_id和reviewed_at均非空的本人私有历史版本，才允许从scope=mine读取并创建新会话。",
       "libraryHistory": "LIBRARY的RETIRED版本不允许新建会话；仍有权访问的既有有效会话可以继续读取。",
@@ -1088,7 +1106,7 @@
     {
       "method": "DELETE",
       "path": "/api/v1/auth/sessions/current",
-      "permission": "家长或当前受限儿童",
+      "permission": "家长、当前受限儿童或内容管理员",
       "ownerRole": "业务后端",
       "requestContentType": null,
       "queryExample": null,
@@ -1246,7 +1264,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "默认返回有权访问的当前PUBLISHED/APPROVED_PRIVATE版本。scope=mine仅限已认证家长，另包含本人已审核私有RETIRED历史版本；各项以storyVersionId区分，遵守common.versionAccess，不返回WITHDRAWN内容。",
+      "constraints": "默认返回有权访问的当前PUBLISHED/APPROVED_PRIVATE版本。scope=mine仅限已认证家长，另包含本人已审核私有RETIRED历史版本；各项以storyVersionId区分，遵守common.versionAccess，不返回WITHDRAWN内容。没有专用封面的原创版本使用第一张可用内页的受控资源键作为coverRef，无可用图片时为null。仅家长的续写版本对象包含sourceStoryVersionId和continuation。版本对象的ageMin与ageMax为整数且包含两端；标准范围的ageBand为对应枚举，其他范围为null。团队原创馆藏的author为固定的展示笔名，无已知署名时为null。",
       "interfaceId": "API-008",
       "uniqueKey": "GET /api/v1/storybooks",
       "additionalExamples": [
@@ -1328,7 +1346,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "儿童不接收未审核草稿或管理字段。正文和媒体均遵守common.versionAccess；本人已审核私有RETIRED版本可从历史入口复读，LIBRARY退休版本仅限既有有效会话；WITHDRAWN立即拒绝。",
+      "constraints": "仅家长的续写版本对象包含sourceStoryVersionId和continuation。儿童只接收已授权的阅读内容。正文和媒体均遵守common.versionAccess；本人已审核私有RETIRED版本可从历史入口复读，LIBRARY退休版本仅限既有有效会话；WITHDRAWN立即拒绝。没有专用封面的原创版本使用第一张可用内页作为coverRef。版本对象的ageMin与ageMax为整数且包含两端；标准范围的ageBand为对应枚举，其他范围为null。团队原创馆藏的author为固定的展示笔名，无已知署名时为null。",
       "interfaceId": "API-009",
       "uniqueKey": "GET /api/v1/story-versions/{version_id}"
     },
@@ -1389,7 +1407,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "普通创建仅PARENT_CHILD/CREATED；storyVersionId固定到按common.versionAccess可新建会话的版本。本人已审核私有RETIRED版本可复读；LIBRARY退休版本和任何WITHDRAWN版本均禁止新建。儿童模式在STARTED前由mode-settings原子签发授权及绑定。有限续写按flows.continuationSwitch原子切换，属于本期FR-17 P1，验收TC-FR17-04/05；普通主链无需续写即可完成，范围及审批状态见common.deliveryScope。",
+      "constraints": "普通创建须省略sourceReadingSessionId和expectedRevision，初始为PARENT_CHILD/CREATED。可用非空clientRequestId核对未确认的创建，同一家长同键同参数重放原会话，参数冲突返回409，原会话不可访问返回404。切换须同时提供这三个非空字段，缺项或显式null返回422 VALIDATION_ERROR。storyVersionId固定到按common.versionAccess可新建会话的版本。本人已审核私有RETIRED版本可复读；LIBRARY退休版本和任何WITHDRAWN版本均禁止新建。儿童模式在STARTED前由mode-settings原子签发授权及绑定。有限续写按flows.continuationSwitch原子切换，属于本期FR-17 P1，验收TC-FR17-04/05；普通主链无需续写即可完成，范围及审批状态见common.deliveryScope。",
       "interfaceId": "API-011",
       "uniqueKey": "POST /api/v1/reading-sessions",
       "additionalExamples": [
@@ -1495,6 +1513,8 @@
           "session": {
             "readingSessionId": 401,
             "storyVersionId": 301,
+            "childProfileId": 101,
+            "sourceType": "ORIGINAL",
             "currentPage": 1,
             "visitedPageNumbers": [],
             "mode": "PARENT_CHILD",
@@ -1508,10 +1528,17 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
+      "constraints": "儿童仅接收绑定会话的当前进度和当前页事件，report 为 null。已保存完整响应的 API-017 引导事件还返回 outputText、strategyType 和事件写入后的 revision，实际反馈事件另含 feedback，供刷新后恢复。儿童在 IN_PROGRESS 时另收到 data.answerOptions 字符串数组，供 API-015 作答。该数组取自当前页最近一道可展示的问题，包括首次 QUESTION 和理解反馈 FEEDBACK 中保存的追问。跳过、拦截及空正文不算作问题。API-017 的儿童问题及回退均可用固定短答作答，最终响应 data.answerOptions 保存实际选项。旧提问未带此字段时使用固定短答“是”“不是”“不知道”。当前页尚无可展示提问时沿用已审核的分支选项文案。默认阅读详情仅向家长返回 data.session.childProfileId 和 data.session.sourceType（ORIGINAL 或 LIBRARY），用于确认续写来源和切换档案。本人家长可读取会话的全部事件及当前小结，包括启动恢复后的小结。ANSWER 事件的 inputText、已有 replyText 和有追问时的 followupQuestion 仅向本人家长返回。阅读详情响应使用 private, no-store。内容读取遵守 common.versionAccess，小结状态见 common.reportLifecycle。",
       "interfaceId": "API-013",
       "uniqueKey": "GET /api/v1/reading-sessions/{session_id}",
       "additionalExamples": [
+        {
+          "name": "家长核对本人阅读记录是否仍存在",
+          "query": { "view": "deletion-status" },
+          "status": 200,
+          "data": { "exists": true },
+          "note": "按 API-014 归属查询，包含绘本已撤回的本人记录。已删除或不属于当前家长时返回 false，仅返回布尔值。响应禁止缓存。有效儿童凭证返回 403，未认证返回 401。省略 view 或使用 reading 时返回默认会话详情。"
+        },
         {
           "name": "小结处理中",
           "status": 200,
@@ -1620,7 +1647,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "类型STARTED/PAGE_CHANGED/ANSWER/FEEDBACK；SKIPPED是feedback取值，不是eventType。QUESTION、ASK、BRANCH_CHOSEN由对应服务写入；同键先重放，新键检查revision。",
+      "constraints": "类型STARTED/PAGE_CHANGED/ANSWER/FEEDBACK；SKIPPED是feedback取值，不是eventType。儿童 ANSWER 的 inputText 去除两端空白后须精确匹配服务端按 API-013 data.answerOptions 计算的当前选项，否则返回 422 VALIDATION_ERROR 并保持进度。家长共读先保存答案及规则回应。有有效问题时，文本模型在事务外根据受控正文线索及本地提取的动作顺序、否定范围、因果依据等信号选择回应。仅引用当页支持的事实，作答原文留在服务端。同一会话的同一版本、同一页每次到达最多保存两条不同的主动追问；翻页或分支重访重新计数。追问编号 0、规则降级和同键重放不增加计数。模型生成总时限 5 秒，执行记录处理窗口 25 秒。处理期间同键返回409 REQUEST_IN_PROGRESS；超时、模型失败或页面修订已推进时沿用规则回应。新追问与新的会话修订号一起保存，最终回执返回新修订号；无新追问时不额外推进。旧修订号的理解反馈返回409 SESSION_CONFLICT。成功和完成后同键重放返回已保存的 data.replyText 及可选 data.followupQuestion；replyText 仍包含追问后缀，支持旧客户端。QUESTION、ASK、BRANCH_CHOSEN由对应服务写入；同键先重放，新键检查revision。",
       "interfaceId": "API-015",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/events"
     },
@@ -1650,7 +1677,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "共读用确认文本；儿童只接收受限短问题。处理前后核验revision与到时状态。 执行前后遵循common.requestExecution；相同键并发最多一次应用层模型调用尝试。",
+      "constraints": "亲子共读提交家长已确认的1至200字符文本。儿童凭证仅可提交“这一页发生了什么？”或“故事里有谁？”。配有支持视觉的百炼模型时，亲子共读可依据当前授权配图中的可见细节回答。模型仅支持文本或配图不可用时沿用已核验的正文句子。处理前后核验revision与到时状态。命中敏感输入检查时返回家长接管提示，不调用模型、不记录提问原文。执行前后遵循common.requestExecution；相同键并发最多一次应用层模型调用尝试。API-013读回ASK结果，API-023以interactionEventId合成当前修订号的可播放回答。",
       "interfaceId": "API-016",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/questions"
     },
@@ -1680,7 +1707,7 @@
         "requestId": "req-initial"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "STARTED成功或翻页/分支/续写切换进入当前页后，前端在需要情境提问且无可恢复问题时发送INITIAL；不由GET或STARTED响应隐式调用模型。首次不要求既往问题或反馈。服务端构造年龄及页面上下文，一次返回一个问题。UNDERSTOOD/NOT_UNDERSTOOD针对当前页最后一个已保存问题，缺失时409 PROMPT_REQUIRED；SKIPPED只写事件，不调用Agent/模型，outputText为空、strategyType=SKIP、status=FALLBACK。执行前按common.requestExecution占位；翻页后晚到结果不得保存或播放。",
+      "constraints": "STARTED成功或翻页/分支/续写切换进入当前页后，前端在需要情境提问且无可恢复问题时发送INITIAL；不由GET或STARTED响应隐式调用模型。首次不要求既往问题或反馈。百炼模型参考年龄、当前正文、最近三个实际已读的前文页面及当前问题。支持视觉的模型还可参考当前授权插画缩图，按可见角色、颜色、数量、动作或位置提问。家长共读时，缺少检索知识但当前页有可用正文，仍可基于绘本正文生成，来源列表为空。联系前文的两个引文分别核验来源。UNDERSTOOD/NOT_UNDERSTOOD 针对当前页最后展示的首题或追问。家长共读只选本次 STARTED、PAGE_CHANGED 或 BRANCH_CHOSEN 到达后实际提出的最新 QUESTION、理解反馈 FEEDBACK 或 API-015 附带的追问；没有新追问的 ANSWER 不替换当前问题，缺失问题时返回 409 PROMPT_REQUIRED。生成追问的 ANSWER 内作答对应上一题。家长提交反馈时，只能使用本次到达当前页、且在当前问题之后保存的最新回答，在服务端忽略回答中「我觉得」等常用表达，用完整分句匹配故事细节，再从命中的位置截取当前页短引文供模型参考并保留受控追问作为回退。回答原文不发送给模型。SKIPPED不要求已有问题，直接保存反馈并递增revision，outputText为空、strategyType=SKIP、status=FALLBACK。CHILD_SOLO的可作答问题与超时、无知识回退均带已核验的answerOptions。模型TIMEOUT可保存TIMEOUT_FALLBACK。其他API_ERROR返回503 DEPENDENCY_UNAVAILABLE并记录FAILED，原键重放该错误，未写事件或递增revision。执行前按common.requestExecution占位。翻页或跳过先提交后，迟到的问题不得保存或播放。",
       "interfaceId": "API-017",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/guidance",
       "additionalExamples": [
@@ -1700,6 +1727,25 @@
             "strategyType": "CONCRETE_RECALL",
             "status": "FALLBACK",
             "sources": []
+          }
+        },
+        {
+          "name": "儿童模式缺少适用知识时的首题",
+          "request": {
+            "pageNumber": 1,
+            "feedback": "INITIAL",
+            "expectedRevision": 1,
+            "clientEventId": "child-initial"
+          },
+          "status": 201,
+          "data": {
+            "interactionEventId": 805,
+            "revision": 2,
+            "outputText": "你喜欢这一页吗？",
+            "strategyType": "NO_KNOWLEDGE_FALLBACK",
+            "status": "FALLBACK",
+            "sources": [],
+            "answerOptions": ["是", "不是", "不知道"]
           }
         },
         {
@@ -1757,7 +1803,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "分支属于当前故事和当前节点且已审核；原子提交进度及事件。重复相同请求200；标识复用且内容不同409。",
+      "constraints": "分支属于当前故事和当前节点且已审核；原子提交进度及事件。重复相同请求时，复核该正文版本的API-009读取权限，通过后返回200；正文不可读返回404。标识复用且内容不同409。",
       "interfaceId": "API-018",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/branches"
     },
@@ -1797,7 +1843,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "首次正常结束同事务保存终态、事实记录及 PENDING 小结，提交成功后派发模型任务。生成、恢复及重复结束见 common.reportLifecycle。儿童阅读已开始且内容可读时，到期按授权截止时刻写 FINISHED/TIME_LIMIT。未开始即到期写 INTERRUPTED/GRANT_REVOKED，未终结时发现内容撤回写 INTERRUPTED/CONTENT_WITHDRAWN，中断不生成小结。TIME_LIMIT 与续写切换的 CONTINUED 均由服务端设置。",
+      "constraints": "首次正常结束同事务保存终态、事实记录及小结。先保存 PENDING 和本地摘要，提交成功后派发模型任务。生成、恢复及重复结束见 common.reportLifecycle。儿童阅读已开始且内容可读时，到期按授权截止时刻写 FINISHED/TIME_LIMIT。未开始即到期写 INTERRUPTED/GRANT_REVOKED，未终结时发现内容撤回写 INTERRUPTED/CONTENT_WITHDRAWN，中断不生成小结。TIME_LIMIT 与续写切换的 CONTINUED 均由服务端设置。",
       "interfaceId": "API-019",
       "uniqueKey": "POST /api/v1/reading-sessions/{session_id}/completions",
       "examplePrecondition": "本例承接API-011创建的会话401（CREATED、revision=0、路径[]）。通过API-015提交STARTED后为IN_PROGRESS、currentPage=1、visitedPageNumbers=[1]、revision=1；此时立即主动结束，没有发生其他互动或翻页。"
@@ -1902,17 +1948,19 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "只读取有权访问的已核验答案；固定故事朗读使用readingSessionId、pageNumber、revision替代interactionEventId；两种输入互斥。",
+      "constraints": "只读取有权访问的已核验答案。页面朗读使用readingSessionId、pageNumber、revision，可选布尔preload；与interactionEventId互斥。preload和已保存的ASK音频限本次到达当前页，允许同页其他交互递增修订号，翻页或失权后拒绝。",
       "interfaceId": "API-023",
       "uniqueKey": "POST /api/v1/voice/syntheses"
     },
     {
       "method": "GET",
       "path": "/api/v1/media/{resource_key}",
-      "permission": "有效会话且拥有资源访问权",
+      "permission": "有效会话且拥有资源访问权；内容管理员可核对资料库草稿、待审核和已发布版本的内页图",
       "ownerRole": "业务后端与语音接入",
       "requestContentType": null,
-      "queryExample": null,
+      "queryExample": {
+        "variant": "thumbnail"
+      },
       "requestExample": null,
       "successStatus": 200,
       "responseExample": {
@@ -1920,7 +1968,7 @@
         "contentType": "按资源实际类型"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "资源二进制响应不使用JSON包；逐次校验有效会话、资源所属版本、common.versionAccess及短期授权，不长期公开私有地址。WITHDRAWN正文与媒体立即阻断，不能凭历史会话或旧资源地址访问。",
+      "constraints": "资源二进制响应不使用JSON包。逐次校验有效会话、资源所属版本、common.versionAccess及短期授权，不长期公开私有地址。WITHDRAWN正文与媒体立即阻断，不能凭历史会话或旧资源地址访问。图片可选variant=thumbnail（480像素）或reading（1280像素），按最长边缩小，不放大。仅在转码后更小时返回WebP，否则返回原图。省略参数、动图或转码失败时返回原图。响应沿用private, no-store。音频按保存时的会话和页面访问权逐次核验。",
       "interfaceId": "API-024",
       "uniqueKey": "GET /api/v1/media/{resource_key}"
     },
@@ -2012,7 +2060,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "4～6个页面节点；branching=true时1～2决策节点，每节点至少两选项；branching=false时无决策节点且branches为空；所有路径4～6页且无环；响应含checkResults。续写另带sourceReadingSessionId，固定前文。 续写请求同时提交expectedRevision，年龄由源会话档案确定而无需传ageBand；服务端短事务固定源版本、当前路径和revision，已读前缀按阅读顺序映射为新版本1..k页且保留文字与配图，resumePageNumber=k+1。整本仍为4～6个节点，不能满足范围时422 CONTINUATION_LIMIT。返回不可由客户端改写的continuation对象，家长同时预览继续点。生成及批准不结束旧会话。调用前按STORY_GENERATION范围占位。有限续写属于本期FR-17 P1验收范围；经API-026审核后由API-011原子切换，覆盖TC-FR17-04/05，审批状态见common.deliveryScope。普通原创及阅读主链路无需触发续写。",
+      "constraints": "4～6个页面节点；branching=true时1～2决策节点，每节点至少两选项；branching=false时无决策节点且branches为空；所有路径4～6页且无环；响应含checkResults。新草稿coverRef取第一张可用的内页资源键，无可用图片时为null。续写另带sourceReadingSessionId，固定前文，按新增页数选择适龄授权插画。自定义媒体目录中缺少或暂不可读的可选模板插画按页返回imageRef=null。可选布尔字段generateIllustrations为true时启用FR-19可选扩展，文本模型在原请求中为每个新增页另给单场景画面描述。生图使用独立画面描述、主题、场景及故事模型明确声明的当页出场角色及共享外观。角色标签供文本模型确定角色关系，家人需要具体化到当页亲属。服务端固定图片并在AI页返回imageSource=AI_GENERATED，经API-024预览，API-026审核沿用同一张图。false或省略沿用模板及原幂等摘要。生图预算45秒，整次请求占位115秒；未配置或生成失败返回可重试503，不创建草稿，已开始的原请求只重放其结果。续写请求同时提交expectedRevision，年龄由源会话档案确定而无需传ageBand；服务端短事务固定源版本、当前路径和revision，已读前缀按阅读顺序映射为新版本1..k页且保留文字与配图，resumePageNumber=k+1。整本仍为4～6个节点，不能满足范围时422 CONTINUATION_LIMIT。返回不可由客户端改写的continuation对象，家长同时预览继续点。生成及批准不结束旧会话。调用前按STORY_GENERATION范围占位。有限续写属于本期FR-17 P1验收范围；经API-026审核后由API-011原子切换，覆盖TC-FR17-04/05，审批状态见common.deliveryScope。普通原创及阅读主链路无需触发续写。",
       "interfaceId": "API-025",
       "uniqueKey": "POST /api/v1/story-generations",
       "additionalExamples": [
@@ -2122,7 +2170,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "再次核验所有检查和版本；不以客户端布尔值代替后端安全检查；成功后私有可读，不能自动公开。 续写草稿的continuation随页面、全部分支和插画一起审核冻结；批准不结束源会话，也不自动创建新会话。新版生效与旧当前版本转RETIRED在同一事务完成；保留旧版审核人和审核时间，本人已审核私有旧版仍按common.versionAccess复读；不得将WITHDRAWN恢复为可读。",
+      "constraints": "再次核验所有检查和版本；不以客户端布尔值代替后端安全检查；成功后私有可读，不能自动公开。 续写源路径每一步须为源版本的默认后继或已审核分支。快照修订号超前或路径与该修订号的实际进度不符时返回422 VALIDATION_ERROR。源会话已推进时依据阅读事件核验旧路径，合法旧快照仍可批准并从头阅读。续写草稿的continuation随页面、全部分支和插画一起审核冻结；批准不结束源会话，也不自动创建新会话。新版生效与旧当前版本转RETIRED在同一事务完成；保留旧版审核人和审核时间，本人已审核私有旧版仍按common.versionAccess复读；不得将WITHDRAWN恢复为可读。",
       "interfaceId": "API-026",
       "uniqueKey": "POST /api/v1/story-versions/{version_id}/approvals",
       "additionalExamples": [
@@ -2198,7 +2246,7 @@
         "requestId": "req-demo"
       },
       "errors": "见 common.errors；只应用与本端点有关的错误类别",
-      "constraints": "内容只创建草稿；正式内容为完整页面集合。",
+      "constraints": "内容只创建草稿；正式内容为完整页面集合。可选 storybookId 仅指向资料库绘本，传入时原子分配下一版本号；省略时建立新绘本。imageRef 为受控素材目录相对路径，缺少可读取内页图的草稿不能发布。",
       "interfaceId": "API-027",
       "uniqueKey": "POST /api/v1/admin/storybooks"
     },
@@ -2484,9 +2532,10 @@
     "continuationSwitch": [
       "本期FR-17 P1验收流程，覆盖TC-FR17-04/05；范围及审批状态见common.deliveryScope。",
       "API-025固定源会话revision=12及路径[1,2]，生成版本302和继续点3",
-      "API-026批准version=2，源会话仍IN_PROGRESS/revision=12",
+      "API-026核对同一绘本、继承页正文与冻结配图，批准version=2，源会话仍IN_PROGRESS/revision=12",
       "API-011提交sourceReadingSessionId和switch-001，在同一事务关闭旧会话并启动会话402第3页",
-      "源快照过期409且旧会话不变；数据库提交失败503且全部回滚；提交后丢响应以同键重放既有会话402，不创建第二个后继"
+      "新请求遇到过期源快照返回409 CONTINUATION_STALE，源会话已切换返回409 CONTINUATION_ALREADY_SWITCHED。提交失败503并回滚，丢响应时按原键重放既有会话402",
+      "后继的完整路径用于导航，小结与成长页数从startPageNumber起计算。删除源记录后保留startPageNumber和carriedPrefixPageCount。删除源快照时关联的DRAFT、PENDING_REVIEW续写转为CHECK_FAILED，后续审批返回409 SESSION_CONFLICT。已批准版本保留冻结配图"
     ]
   },
   "version": "v0.4",

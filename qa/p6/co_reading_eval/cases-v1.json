@@ -1,0 +1,359 @@
+{
+  "version": "co-reading-oral-v1",
+  "dataOrigin": "SYNTHETIC_ONLY",
+  "smokeCaseIds": [
+    "CR-01-34", "CR-02-45", "CR-03-56", "CR-04-34", "CR-05-45", "CR-06-56",
+    "CR-07-34", "CR-08-45", "CR-09-56", "CR-10-34", "CR-11-45", "CR-12-56"
+  ],
+  "feedbackSmokeCaseIds": ["CR-05-45", "CR-06-56", "CR-07-34"],
+  "storiesByAgeBand": {
+    "AGE_3_4": {
+      "title": "雨中的伞",
+      "earlierPages": [],
+      "pageText": "小兔打开黄雨伞。小熊从树旁走来。小兔把伞递给小熊。"
+    },
+    "AGE_4_5": {
+      "title": "松树下避雨",
+      "earlierPages": [
+        "小熊戴着蓝帽子去找小兔。"
+      ],
+      "pageText": "下雨了。因为蓝帽子被雨淋湿，小熊才走到松树下。小兔先打开黄雨伞，再把伞递给小熊。小熊没有跑回家。"
+    },
+    "AGE_5_6": {
+      "title": "湿漉漉的小桥",
+      "earlierPages": [
+        "小狐狸提着小篮子，和小兔一起走到桥头。"
+      ],
+      "pageText": "因为桥面湿滑，小狐狸放慢脚步。小狐狸先把蓝伞递给小兔，再扶着栏杆过了桥。走到对岸，它才把篮子放下。小兔没有上桥。"
+    }
+  },
+  "cases": [
+    {
+      "caseId": "CR-01-34",
+      "category": "STANDARD",
+      "label": "标准表述",
+      "ageBand": "AGE_3_4",
+      "question": "小兔把伞递给谁了？",
+      "inputText": "小兔把伞递给小熊。",
+      "expected": "肯定小熊是接伞的角色；可指向递伞的画面。"
+    },
+    {
+      "caseId": "CR-01-45",
+      "category": "STANDARD",
+      "label": "标准表述",
+      "ageBand": "AGE_4_5",
+      "question": "小熊为什么走到松树下？",
+      "inputText": "因为蓝帽子被雨淋湿，小熊才走到松树下。",
+      "expected": "肯定帽子淋湿与到树下之间的正文因果。"
+    },
+    {
+      "caseId": "CR-01-56",
+      "category": "STANDARD",
+      "label": "标准表述",
+      "ageBand": "AGE_5_6",
+      "question": "小狐狸为什么放慢脚步？",
+      "inputText": "因为桥面湿滑，小狐狸放慢脚步。",
+      "expected": "肯定桥面湿滑与减速的因果；不假定小狐狸差点摔倒。"
+    },
+    {
+      "caseId": "CR-02-34",
+      "category": "PARAPHRASE",
+      "label": "同义改述",
+      "ageBand": "AGE_3_4",
+      "question": "小兔把伞递给谁了？",
+      "inputText": "给熊熊啦。",
+      "expected": "理解熊熊指小熊，不要求复述原句。"
+    },
+    {
+      "caseId": "CR-02-45",
+      "category": "PARAPHRASE",
+      "label": "同义改述",
+      "ageBand": "AGE_4_5",
+      "question": "小熊为什么走到松树下？",
+      "inputText": "雨把它的帽子打湿了，它就去树底下。",
+      "expected": "认可淋湿和避雨的合理改述，不要求重复颜色。"
+    },
+    {
+      "caseId": "CR-02-56",
+      "category": "PARAPHRASE",
+      "label": "同义改述",
+      "ageBand": "AGE_5_6",
+      "question": "小狐狸为什么放慢脚步？",
+      "inputText": "桥上有水，有点滑，所以它才慢慢走。",
+      "expected": "认可湿滑所以放慢；不扩写水深、雨势等细节。"
+    },
+    {
+      "caseId": "CR-03-34",
+      "category": "BRIEF",
+      "label": "简短片语",
+      "ageBand": "AGE_3_4",
+      "question": "小兔把伞递给谁了？",
+      "inputText": "小熊。",
+      "expected": "短答案已足够，回应简洁，不因缺谓语判错。"
+    },
+    {
+      "caseId": "CR-03-45",
+      "category": "BRIEF",
+      "label": "简短片语",
+      "ageBand": "AGE_4_5",
+      "question": "小熊为什么走到松树下？",
+      "inputText": "帽子湿了。",
+      "expected": "识别到关键原因，可自然补一个观察线索。"
+    },
+    {
+      "caseId": "CR-03-56",
+      "category": "BRIEF",
+      "label": "简短片语",
+      "ageBand": "AGE_5_6",
+      "question": "小狐狸为什么放慢脚步？",
+      "inputText": "太滑。",
+      "expected": "结合问题读懂是桥滑，可引导指出正文线索。"
+    },
+    {
+      "caseId": "CR-04-34",
+      "category": "COLLOQUIAL",
+      "label": "自然口语",
+      "ageBand": "AGE_3_4",
+      "question": "小兔把伞递给谁了？",
+      "inputText": "嗯，那个小熊呀。",
+      "expected": "忽略语气词，肯定实际所指。"
+    },
+    {
+      "caseId": "CR-04-45",
+      "category": "COLLOQUIAL",
+      "label": "自然口语",
+      "ageBand": "AGE_4_5",
+      "question": "小熊为什么走到松树下？",
+      "inputText": "它吧，帽帽给雨淋湿了嘛。",
+      "expected": "识别主旨帽子湿，不因口语或重复字误判。"
+    },
+    {
+      "caseId": "CR-04-56",
+      "category": "COLLOQUIAL",
+      "label": "自然口语",
+      "ageBand": "AGE_5_6",
+      "question": "小狐狸为什么放慢脚步？",
+      "inputText": "就是嘛，桥滑滑的，它才走这么慢。",
+      "expected": "识别因果，不把程度词变成新的故事事实。"
+    },
+    {
+      "caseId": "CR-05-34",
+      "category": "INCOMPLETE",
+      "label": "信息不完整",
+      "ageBand": "AGE_3_4",
+      "question": "小兔拿着什么？",
+      "inputText": "有个黄黄的。",
+      "expected": "肯定观察到黄色；可请孩子再看是什么，不把颜色当完整物品答案。"
+    },
+    {
+      "caseId": "CR-05-45",
+      "category": "INCOMPLETE",
+      "label": "信息不完整",
+      "ageBand": "AGE_4_5",
+      "question": "小兔是怎么帮助小熊的？",
+      "inputText": "它把伞打开了。",
+      "expected": "认可开伞这一动作；可用递伞线索引导补充。"
+    },
+    {
+      "caseId": "CR-05-56",
+      "category": "INCOMPLETE",
+      "label": "信息不完整",
+      "ageBand": "AGE_5_6",
+      "question": "小狐狸是怎么安全过桥的？",
+      "inputText": "它走得慢。",
+      "expected": "认可减速；可以再引导观察扶栏杆，不把没说的动作算作孩子已答。"
+    },
+    {
+      "caseId": "CR-06-34",
+      "category": "UNCERTAIN",
+      "label": "不确定或不知道",
+      "ageBand": "AGE_3_4",
+      "question": "小兔把伞递给谁了？",
+      "inputText": "我不知道。",
+      "expected": "温和鼓励，给一个能看图验证的短提示。"
+    },
+    {
+      "caseId": "CR-06-45",
+      "category": "UNCERTAIN",
+      "label": "不确定或不知道",
+      "ageBand": "AGE_4_5",
+      "question": "小熊为什么走到松树下？",
+      "inputText": "不太记得，可能是下雨？",
+      "expected": "认可雨是线索，保留不确定语气并引到被淋湿的帽子。"
+    },
+    {
+      "caseId": "CR-06-56",
+      "category": "UNCERTAIN",
+      "label": "不确定或不知道",
+      "ageBand": "AGE_5_6",
+      "question": "小狐狸为什么放慢脚步？",
+      "inputText": "我没想好，也许桥上很滑？",
+      "expected": "肯定线索并邀请孩子检查证据，不把试探当作断言。"
+    },
+    {
+      "caseId": "CR-07-34",
+      "category": "PLAUSIBLE_IMAGINATION",
+      "label": "有依据的合理想象",
+      "ageBand": "AGE_3_4",
+      "question": "小熊接到伞后，可能会做什么？",
+      "inputText": "它可能会说谢谢。",
+      "expected": "可以认可这是一个想法；不得说小熊已经道谢。"
+    },
+    {
+      "caseId": "CR-07-45",
+      "category": "PLAUSIBLE_IMAGINATION",
+      "label": "有依据的合理想象",
+      "ageBand": "AGE_4_5",
+      "question": "小熊接下来可能去哪里？",
+      "inputText": "也许会和小兔一起走，伞能挡雨。",
+      "expected": "区分预测和已发生事实，可请孩子从伞找线索。"
+    },
+    {
+      "caseId": "CR-07-56",
+      "category": "PLAUSIBLE_IMAGINATION",
+      "label": "有依据的合理想象",
+      "ageBand": "AGE_5_6",
+      "question": "小兔接下来可能怎么过桥？",
+      "inputText": "它可能会先看看栏杆，也慢慢走。",
+      "expected": "承认推测与湿滑桥面有关；不得说小兔已上桥。"
+    },
+    {
+      "caseId": "CR-08-34",
+      "category": "OFF_TOPIC",
+      "label": "偏题",
+      "ageBand": "AGE_3_4",
+      "question": "小兔把伞递给谁了？",
+      "inputText": "我喜欢小火车。",
+      "expected": "轻柔接话并回到画面，不引出开放聊天。"
+    },
+    {
+      "caseId": "CR-08-45",
+      "category": "OFF_TOPIC",
+      "label": "偏题",
+      "ageBand": "AGE_4_5",
+      "question": "小熊为什么走到松树下？",
+      "inputText": "积木城堡要堆三层。",
+      "expected": "不把积木带入故事事实，换一个简单的当页观察角度。"
+    },
+    {
+      "caseId": "CR-08-56",
+      "category": "OFF_TOPIC",
+      "label": "偏题",
+      "ageBand": "AGE_5_6",
+      "question": "小狐狸为什么放慢脚步？",
+      "inputText": "我的玩具船能转弯。",
+      "expected": "不将玩具船写进情节，也不追问孩子私事。"
+    },
+    {
+      "caseId": "CR-09-34",
+      "category": "INCORRECT_FACT",
+      "label": "与正文冲突",
+      "ageBand": "AGE_3_4",
+      "question": "小兔把伞递给谁了？",
+      "inputText": "伞给小狐狸了。",
+      "expected": "不认同小狐狸接伞；可以引导找受伞的角色。"
+    },
+    {
+      "caseId": "CR-09-45",
+      "category": "INCORRECT_FACT",
+      "label": "与正文冲突",
+      "ageBand": "AGE_4_5",
+      "question": "小熊从树下跑回家了吗？",
+      "inputText": "它已经跑回家啦。",
+      "expected": "不把跑回家当事实；尊重原文否定。"
+    },
+    {
+      "caseId": "CR-09-56",
+      "category": "INCORRECT_FACT",
+      "label": "与正文冲突",
+      "ageBand": "AGE_5_6",
+      "question": "这一页谁过桥了？",
+      "inputText": "小兔也过桥了。",
+      "expected": "不能赞同小兔过桥；可引导区分两只动物。"
+    },
+    {
+      "caseId": "CR-10-34",
+      "category": "COMPLEX_CAUSE",
+      "label": "复合因果",
+      "ageBand": "AGE_3_4",
+      "question": "小兔为什么递伞？",
+      "inputText": "下雨啦，它怕小熊淋湿才给伞。",
+      "expected": "区分当页实际动作和推想的动机；不要把未交代的动机说成事实。"
+    },
+    {
+      "caseId": "CR-10-45",
+      "category": "COMPLEX_CAUSE",
+      "label": "复合因果",
+      "ageBand": "AGE_4_5",
+      "question": "小熊怎么到了松树下？",
+      "inputText": "帽子被淋湿才过去，不是因为它急着回家。",
+      "expected": "保留真正因果，不认可急着回家的动机；区分否定的作用范围。"
+    },
+    {
+      "caseId": "CR-10-56",
+      "category": "COMPLEX_CAUSE",
+      "label": "复合因果",
+      "ageBand": "AGE_5_6",
+      "question": "小狐狸为什么放慢脚步？",
+      "inputText": "它为了放下篮子才走得慢，不是怕桥滑。",
+      "expected": "不认可错误因果；区分桥滑导致减速和过桥后放篮子两件事。"
+    },
+    {
+      "caseId": "CR-11-34",
+      "category": "ACTION_ORDER",
+      "label": "多动作顺序",
+      "ageBand": "AGE_3_4",
+      "question": "小兔先做什么，后来呢？",
+      "inputText": "先打伞，然后给小熊。",
+      "expected": "肯定先开伞再递给小熊，不凭空增加动作。"
+    },
+    {
+      "caseId": "CR-11-45",
+      "category": "ACTION_ORDER",
+      "label": "多动作顺序",
+      "ageBand": "AGE_4_5",
+      "question": "小兔是怎么给小熊伞的？",
+      "inputText": "先给了小熊，再把伞打开。",
+      "expected": "不肯定颠倒的顺序；可给出前后线索让孩子重看。"
+    },
+    {
+      "caseId": "CR-11-56",
+      "category": "ACTION_ORDER",
+      "label": "多动作顺序",
+      "ageBand": "AGE_5_6",
+      "question": "小狐狸过桥前后做了什么？",
+      "inputText": "先把伞给小兔，扶栏杆过去，放好篮子后又跑回桥头。",
+      "expected": "认可可核对的动作顺序，不认可正文没写的返回桥头。"
+    },
+    {
+      "caseId": "CR-12-34",
+      "category": "REPETITION",
+      "label": "重复作答或追问",
+      "ageBand": "AGE_3_4",
+      "question": "小兔把伞递给谁了？",
+      "inputText": "小熊。",
+      "expected": "同次访问三次确认不重复追问；已换题时不用旧题答案替代新题。",
+      "submissions": 3
+    },
+    {
+      "caseId": "CR-12-45",
+      "category": "REPETITION",
+      "label": "重复作答或追问",
+      "ageBand": "AGE_4_5",
+      "question": "小熊为什么走到松树下？",
+      "inputText": "帽子被雨淋湿了。",
+      "expected": "不同请求键是三次真实作答，但最多两条不同主动追问；第三次不跳回旧题。",
+      "submissions": 3
+    },
+    {
+      "caseId": "CR-12-56",
+      "category": "REPETITION",
+      "label": "重复作答或追问",
+      "ageBand": "AGE_5_6",
+      "question": "小狐狸为什么放慢脚步？",
+      "inputText": "因为桥面很滑。",
+      "expected": "跟随当前问题；追问预算耗尽仍有回应，不复用已经问过的主动追问。",
+      "submissions": 3
+    }
+  ]
+}

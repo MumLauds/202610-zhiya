@@ -1,0 +1,101 @@
+{
+  "version": "co-reading-visit-v2",
+  "dataOrigin": "SYNTHETIC_ONLY",
+  "ageBands": ["AGE_3_4", "AGE_4_5", "AGE_5_6"],
+  "story": {
+    "title": "等雨停的小狐狸",
+    "pages": {
+      "1": "天空下雨了。小狐狸和小熊走到树林旁。",
+      "2": "因为下雨，小狐狸打开黄雨伞。小熊走到小狐狸身边。小狐狸把伞递给小熊。",
+      "3": "雨停了。小熊在树洞里找到一片银色叶子。"
+    },
+    "startVisit": [1, 2],
+    "revisitPath": [1, 2, 3, 2]
+  },
+  "scenarios": [
+    {
+      "id": "V2-THREE-TURNS",
+      "category": "MULTI_TURN",
+      "mockOnly": false,
+      "steps": [
+        {"question": "小狐狸打开了什么？", "answer": "伞伞呀。"},
+        {"question": "小狐狸为什么打开黄雨伞？", "answer": "外头下雨呢！"},
+        {"question": "小狐狸把雨伞递给了谁？", "answer": "小熊。"}
+      ],
+      "expect": "答过的伞、开伞原因不再被换词重问；不能提前提到银色叶子。示例问题是评审锚点，不要求低龄使用因果追问。Mock 从当前年龄实际候选选择两道不同追问并提交对应合成回答，最后一次不再追问；不人为注入未提供的追问选项。真实模型允许早停；保留实际问题作评审，不能补抽。刷新前后最后实际提出的问题一致。"
+    },
+    {
+      "id": "V2-SEMANTIC-REPEAT",
+      "category": "SEMANTIC_DUPLICATE",
+      "mockOnly": false,
+      "steps": [{"question": "画面里有什么？", "answer": "黄雨伞。"}],
+      "disallowedFollowups": ["你看到了什么？", "你发现了什么？", "画面里有什么？"],
+      "expect": "三种观察泛问算同一件事；围绕递伞对象或开伞原因的有据问题不应被误算为泛问。未理解时可以用更具体线索降低难度，不原样重问。"
+    },
+    {
+      "id": "V2-ALREADY-ANSWERED",
+      "category": "ALREADY_ANSWERED",
+      "mockOnly": false,
+      "steps": [
+        {"question": "小狐狸为什么打开黄雨伞？", "answer": "下雨呀，它还把伞给小熊了。"}
+      ],
+      "expect": "不能重问已答的开伞原因。评审追问是否只是重复孩子主动给出的递伞信息；若可用线索不足，允许自然结束。"
+    },
+    {
+      "id": "V2-CLOSE",
+      "category": "NATURAL_CLOSE",
+      "mockOnly": false,
+      "steps": [{"question": "小狐狸把雨伞递给了谁？", "answer": "嗯，我们继续看吧！"}],
+      "expect": "简短结束、不储存新追问、不把‘嗯’当成正确答案、不自动翻页；API-013 保留实际问题和回应。"
+    },
+    {
+      "id": "V2-CLOSE-OPPOSED",
+      "category": "NATURAL_CLOSE",
+      "mockOnly": true,
+      "steps": [{"question": "小狐狸把雨伞递给了谁？", "answer": "不要继续读，我还想看看这幅图。"}],
+      "expect": "不能因命中‘继续读’而推断想翻页；不施压，不自动翻页。"
+    },
+    {
+      "id": "V2-IMAGINATION",
+      "category": "IMAGINATIVE_CONTINUATION",
+      "mockOnly": false,
+      "steps": [{"question": "如果你是小狐狸，你会怎么做？", "answer": "我想让雨伞变成小船。"}],
+      "expect": "可以接住想象，但不能把‘伞变成船’说成绘本事实。"
+    },
+    {
+      "id": "V2-CAUSAL-ERROR",
+      "category": "CAUSAL_ERROR",
+      "mockOnly": false,
+      "steps": [{"question": "小狐狸为什么打开黄雨伞？", "answer": "小熊把伞弄湿了，所以才下雨。"}],
+      "expect": "不确认错置的因果；温和回到下雨和撑伞的当页线索。"
+    },
+    {
+      "id": "V2-TIMEOUT",
+      "category": "TIMEOUT",
+      "mockOnly": true,
+      "steps": [{"question": "小狐狸把雨伞递给了谁？", "answer": "给熊熊啦。", "adapter": "TIMEOUT"}],
+      "expect": "已保存的规则回应和回答可恢复；没有新追问；同键重放不再呼叫适配器。"
+    },
+    {
+      "id": "V2-INVALID-JSON",
+      "category": "INVALID_JSON",
+      "mockOnly": true,
+      "steps": [{"question": "小狐狸为什么打开黄雨伞？", "answer": "因为下雨。", "adapter": "INVALID_JSON"}],
+      "expect": "不渲染供应商文本；保留规则回应和当前实际问题，不新增追问。"
+    },
+    {
+      "id": "V2-PRIVATE-ANSWER",
+      "category": "PRIVACY",
+      "mockOnly": true,
+      "steps": [{"question": "小狐狸打开了什么？", "answer": "我的邮箱是 synthetic-child@example.invalid。"}],
+      "expect": "本地家长接管，无供应商派发；之后的安全作答请求也不含私密标记。"
+    },
+    {
+      "id": "V2-ISOLATION",
+      "category": "VISIT_ISOLATION",
+      "mockOnly": true,
+      "steps": [{"question": "小狐狸把雨伞递给了谁？", "answer": "小熊。"}],
+      "expect": "旧回复与答题线索只留在旧访问；按 revisitPath 返回第 2 页后清空访次历史并重新计数；另一会话也看不到旧上下文。"
+    }
+  ]
+}

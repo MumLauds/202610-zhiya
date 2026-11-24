@@ -11,6 +11,7 @@
 | 绘本 `Storybook` | `storybookId` | 一本绘本跨版本的稳定标识。 |
 | 绘本版本 `StoryVersion` | `storyVersionId` | 具体图文版本的标识。阅读会话、页面、分支和授权以该版本为准。 |
 | 阅读会话 `ReadingSession` | `readingSessionId` | 一次阅读的标识，绑定阅读档案和绘本版本。 |
+| 续写源快照 | `continuation` | 家长审核的源会话、源版本、修订号、已读路径与继续点。源路径中的每一步须为默认后继或已审核分支。 |
 | 阅读小结 `ReadingReport` | `readingSessionId` | 由关联会话定位，每个会话至多一份。 |
 | 知识版本 `KnowledgeItem` | `knowledgeItemId` | 一条具体知识版本的标识。`itemKey` 关联同一知识条目的各版本。 |
 | 互动引用依据 `EventEvidence` | `interactionEventId` 与 `knowledgeItemId` | 记录互动实际使用的知识版本，历史引用保留该版本标识。 |

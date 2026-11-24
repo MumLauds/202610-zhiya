@@ -74,6 +74,32 @@ def _seed_derived_data(path: Path, profile_id: int, session_id: int, grant_id: i
                 (knowledge_version_id, session_id))
 
 
+def test_deletion_status_checks_ownership_even_if_the_book_was_withdrawn(env):
+    owner, other, path = env
+    headers = {"X-CSRF-Token": owner.cookies["zhiya_csrf"]}
+    profile = owner.post("/api/v1/child-profiles", headers=headers,
+                         json={"ageBand": "AGE_3_4", "preferredMinutes": 10}).json()["data"]
+    sessions = "/api/v1/reading-sessions"
+    session_id = owner.post(sessions, headers=headers, json={
+        "childProfileId": profile["childProfileId"], "storyVersionId": 11, "mode": "PARENT_CHILD",
+    }).json()["data"]["readingSessionId"]
+    resource = f"{sessions}/{session_id}"
+    query = {"view": "deletion-status"}
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE story_versions SET status = 'WITHDRAWN' WHERE id = 11")
+    assert owner.get(sessions).json()["data"]["items"] == []
+    assert owner.get(resource).status_code == 404
+    status = owner.get(resource, params=query)
+    assert status.status_code == 200
+    assert status.headers["Cache-Control"] == "no-store"
+    assert status.json()["data"] == {"exists": True}
+    assert other.get(resource, params=query).json()["data"] == {"exists": False}
+    with TestClient(app, base_url="https://testserver") as anonymous:
+        assert anonymous.get(resource, params=query).status_code == 401
+    assert owner.delete(resource, headers=headers).status_code == 204
+    assert owner.get(resource, params=query).json()["data"] == {"exists": False}
+
+
 def test_delete_reading_session_cleans_rows_grants_media_and_enforces_auth(env, monkeypatch, tmp_path):
     first, second, path = env
     headers = {"X-CSRF-Token": first.cookies["zhiya_csrf"]}
@@ -216,7 +242,7 @@ def test_concurrent_deletes_and_non_guardian_forbidden(env):
 
 
 @pytest.mark.parametrize("delete_target, stale_result, stale_exc", [
-    ("session", ModelGenerateResult(success=True, text=json.dumps({"suggestionId": "TALK_ABOUT_STORY"})), None),
+    ("session", ModelGenerateResult(success=True, text=json.dumps({"suggestionId": "DRAW_PICTURE"})), None),
     ("profile", None, RuntimeError("stale boom")),
 ])
 def test_stale_report_task_does_not_overwrite_reused_session_id(env, monkeypatch, delete_target, stale_result, stale_exc):
@@ -296,10 +322,12 @@ def test_stale_report_task_does_not_overwrite_reused_session_id(env, monkeypatch
         assert f2.result(timeout=10).status_code == 200
 
     final_view = second.get(f"/api/v1/reading-sessions/{sid2}").json()["data"]["report"]
+    activity, = final_view.pop("activities")
+    assert activity["name"] == "一起演一演"
+    assert activity["materials"] == ["本次共读的绘本"] and "第 1 页" in activity["steps"][0]
     assert final_view == {
         "readingSessionId": sid2,
         "summary": "本次共读阅读了第 1 页。可以和孩子再看一页已读内容，由孩子自愿选择是否聊一聊。",
-        "activities": [],
         "status": "READY",
     }
 

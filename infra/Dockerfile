@@ -13,6 +13,7 @@ COPY backend/app /app/backend/app
 COPY backend/smoke_model.py backend/smoke_voice.py /app/backend/
 COPY database/*.py database/schema.sql /app/database/
 COPY data/seed/*.json /app/data/seed/
+COPY knowledge-base_v2.5/图片/ /app/knowledge-base_v2.5/图片/
 USER 10001:10001
 EXPOSE 8000
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--no-access-log"]

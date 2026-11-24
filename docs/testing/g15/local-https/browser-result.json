@@ -1,0 +1,97 @@
+{
+  "atUtc": "2026-11-19T11:39:45+00:00",
+  "origin": "https://127.0.0.1:18443",
+  "browser": "Chrome 154.0.8037.98",
+  "playwright": "1.65.2",
+  "profileId": 1,
+  "sessionId": 1,
+  "readerHash": "#reader/1",
+  "readerRefresh": {
+    "readingSessionId": 1,
+    "storyVersionId": 11,
+    "currentPage": 1,
+    "visitedPageNumbers": [
+      1
+    ],
+    "mode": "PARENT_CHILD",
+    "status": "IN_PROGRESS",
+    "revision": 1,
+    "expiresAt": null
+  },
+  "voice": {
+    "transcriptionHttp": 200,
+    "recognized": "小船停在哪里",
+    "confirmedInDialog": "纸船为什么停在绿叶旁？"
+  },
+  "beforeRestart": {
+    "loginHttp": 201,
+    "secureSessionCookie": true,
+    "httpOnlySessionCookie": true,
+    "frontendAsset": "/assets/index-BUdLFhNp.js",
+    "frontendSha256": "ac37e25e3671317b9b84ed64054a4e12de1e772ab2ec88d1e03ff5c7b1055e34",
+    "history": "阅读记录 #1 · 浏览 1 页 · 已完成",
+    "detail": {
+      "session": {
+        "readingSessionId": 1,
+        "storyVersionId": 11,
+        "currentPage": 1,
+        "visitedPageNumbers": [
+          1
+        ],
+        "mode": "PARENT_CHILD",
+        "status": "FINISHED",
+        "revision": 2,
+        "expiresAt": null
+      },
+      "events": [
+        {
+          "interactionEventId": 1,
+          "eventType": "STARTED",
+          "pageNumber": 1
+        }
+      ],
+      "report": {
+        "readingSessionId": 1,
+        "summary": "本次共读阅读了第 1 页。",
+        "activities": [],
+        "status": "READY"
+      }
+    }
+  },
+  "afterRestart": {
+    "loginHttp": 201,
+    "secureSessionCookie": true,
+    "httpOnlySessionCookie": true,
+    "frontendAsset": "/assets/index-BUdLFhNp.js",
+    "frontendSha256": "ac37e25e3671317b9b84ed64054a4e12de1e772ab2ec88d1e03ff5c7b1055e34",
+    "history": "阅读记录 #1 · 浏览 1 页 · 已完成",
+    "detail": {
+      "session": {
+        "readingSessionId": 1,
+        "storyVersionId": 11,
+        "currentPage": 1,
+        "visitedPageNumbers": [
+          1
+        ],
+        "mode": "PARENT_CHILD",
+        "status": "FINISHED",
+        "revision": 2,
+        "expiresAt": null
+      },
+      "events": [
+        {
+          "interactionEventId": 1,
+          "eventType": "STARTED",
+          "pageNumber": 1
+        }
+      ],
+      "report": {
+        "readingSessionId": 1,
+        "summary": "本次共读阅读了第 1 页。",
+        "activities": [],
+        "status": "READY"
+      }
+    },
+    "freshLogin": true
+  }
+}

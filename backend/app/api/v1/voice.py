@@ -3,17 +3,24 @@
 import asyncio
 import json
 import re
+import sqlite3
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 from pydantic import ValidationError
+from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 from starlette.exceptions import HTTPException
 
+from app.api.v1.auth import authorized_db
+from app.api.v1.storybooks import owned_generation_version, readable_story_version
 from app.audio_conversion import MAX_UPLOAD_BYTES, normalize_recording
 from app.errors import ServiceError
 from app.schemas.voice import PageVoiceRequest, SynthesisRequest
+from app.services.story_media import (
+    ImageVariant, MediaDependencyError, delivery_image, freeze_approval_page_media, parse_asset_key, read_pinned_asset_bytes,
+)
 from app.services.voice_access import VoicePrincipal, read_voice_source, recheck_source
 
 router = APIRouter(prefix="/api/v1")
@@ -126,7 +133,7 @@ async def synthesize(request: Request):
         raise invalid() from None
     snapshot = read_voice_source(principal, session_id=fields.reading_session_id,
                                  page_number=fields.page_number, revision=fields.revision,
-                                 event_id=fields.interaction_event_id)
+                                 event_id=fields.interaction_event_id, visit_scoped=fields.preload)
     config = request.app.state.speech_settings
     if not config.tts_configured:
         raise ServiceError("TTS_NOT_CONFIGURED", "语音合成尚未配置", 503)
@@ -140,19 +147,80 @@ async def synthesize(request: Request):
         await refresh(request, principal, snapshot, write=True)
         return store.put(principal, snapshot, voice_id, speech_rate, config.tts_model, audio)
 
-    with store.claim(snapshot.session_id):
-        found = store.find(principal, snapshot, voice_id, speech_rate, config.tts_model)
-        if found is not None:
-            await refresh(request, principal, snapshot, write=True)
-        key, media = found if found is not None else await operation_until_disconnect(request, generate())
+    found = store.find(principal, snapshot, voice_id, speech_rate, config.tts_model)
+    if found is not None:
+        await refresh(request, principal, snapshot, write=True)
+        key, media = found
+    else:
+        with store.claim(snapshot.session_id):
+            key, media = await operation_until_disconnect(request, generate())
     return {"data": {"audioUrl": f"/api/v1/media/{key}",
                      "expiresAt": datetime.fromtimestamp(media.expires_at, timezone.utc).isoformat().replace("+00:00", "Z")},
             "requestId": request.state.request_id}
 
 
+def _unavailable_read() -> ServiceError:
+    exc = ServiceError("DEPENDENCY_UNAVAILABLE", "服务暂不可用", 503)
+    exc.retryable = True
+    return exc
+
+
+def _read_story_image(request: Request, version_id: int, page_no: int | None, variant: ImageVariant | None) -> Response:
+    try:
+        for cache_write in (False, True):
+            with authorized_db(request, cache_write=cache_write, allow_admin=True) as (db, principal, failure):
+                if failure is not None:
+                    return failure
+                if principal.role == "ADMIN":
+                    version = db.execute(
+                        """SELECT v.* FROM story_versions v JOIN storybooks b ON b.id=v.storybook_id
+                           WHERE v.id=? AND b.source_type='LIBRARY' AND ? IS NOT NULL
+                             AND v.status IN ('DRAFT','PENDING_REVIEW','PUBLISHED')""",
+                        (version_id, page_no),
+                    ).fetchone()
+                    preview = version is not None and version["status"] != "PUBLISHED"
+                else:
+                    version = readable_story_version(db, principal, version_id)
+                    preview = version is None and page_no is not None and principal.role == "GUARDIAN"
+                    if preview:
+                        version = owned_generation_version(db, principal.guardian_id, version_id)
+                if not version:
+                    raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
+                if preview and json.loads(version["approved_page_media_json"] or "{}").get(str(page_no)) is None:
+                    if db.execute("SELECT 1 FROM story_pages WHERE version_id = ? AND page_no = ?",
+                                  (version_id, page_no)).fetchone() is None:
+                        raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
+                    if not cache_write:
+                        continue
+                    version = dict(version)
+                    version["approved_page_media_json"] = freeze_approval_page_media(db, version, preview_page_no=page_no)
+                asset = read_pinned_asset_bytes(db, version, page_no)
+                if asset is None:
+                    raise ServiceError("RESOURCE_NOT_FOUND", "请求的资源不存在", 404)
+                break
+        data, media_type = asset
+        try:
+            data, media_type = delivery_image(data, media_type, variant)
+        except (OSError, ValueError):
+            # Encoding failures do not prevent the already verified original from loading.
+            pass
+        return Response(data, media_type=media_type, headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        })
+    except (sqlite3.Error, MediaDependencyError):
+        raise _unavailable_read() from None
+
+
 @router.get("/media/{resource_key}", response_class=Response,
-            responses={200: {"content": {"audio/wav": {"schema": {"type": "string", "format": "binary"}}}}})
-async def media(request: Request, resource_key: str):
+            responses={200: {"content": {"audio/wav": {"schema": {"type": "string", "format": "binary"}},
+                                         "image/png": {"schema": {"type": "string", "format": "binary"}},
+                                         "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+                                         "image/webp": {"schema": {"type": "string", "format": "binary"}}}}})
+async def media(request: Request, resource_key: str, variant: ImageVariant | None = None):
+    asset_target = parse_asset_key(resource_key)
+    if asset_target is not None:
+        return await run_in_threadpool(_read_story_image, request, *asset_target, variant)
     try:
         principal = await authenticate(request, write=False)
         store = request.app.state.voice_media

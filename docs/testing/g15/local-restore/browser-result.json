@@ -1,0 +1,105 @@
+{
+  "verifiedAtUtc": "2026-11-19T12:52:08+00:00",
+  "origin": "https://127.0.0.1:18443",
+  "browser": "Chrome 154.0.8037.98",
+  "playwright": "1.65.2",
+  "sessionId": 1,
+  "profileId": 1,
+  "readerHash": "#reader/1",
+  "source": {
+    "login": {
+      "loginHttp": 201,
+      "secureSessionCookie": true,
+      "httpOnlySessionCookie": true,
+      "frontendAsset": "/assets/index-BUdLFhNp.js",
+      "frontendSha256": "ac37e25e3671317b9b84ed64054a4e12de1e772ab2ec88d1e03ff5c7b1055e34"
+    },
+    "historyCard": "阅读记录 #1 · 浏览 1 页 · 已完成",
+    "detail": {
+      "session": {
+        "readingSessionId": 1,
+        "storyVersionId": 11,
+        "currentPage": 1,
+        "visitedPageNumbers": [
+          1
+        ],
+        "mode": "PARENT_CHILD",
+        "status": "FINISHED",
+        "revision": 2,
+        "expiresAt": null
+      },
+      "events": [
+        {
+          "interactionEventId": 1,
+          "eventType": "STARTED",
+          "pageNumber": 1
+        }
+      ],
+      "report": {
+        "readingSessionId": 1,
+        "summary": "本次共读阅读了第 1 页。",
+        "activities": [],
+        "status": "READY"
+      }
+    },
+    "pageImage": {
+      "path": "/api/v1/media/asset-11-page-1",
+      "http": 200,
+      "mime": "image/png",
+      "naturalWidth": 128,
+      "naturalHeight": 80,
+      "bytes": 30868,
+      "pngSha256": "abecc2668b8b0f9d544f44990c6d95948a102f1140e1f8bc9e1a875c2f3bf2bc",
+      "rgbaSha256": "b2b5e749575b1fe44325218ac508ac7c466eafa3761ad15b34a89efb38562409"
+    }
+  },
+  "restored": {
+    "newBrowser": true,
+    "anonymousMediaHttp": 401,
+    "login": {
+      "loginHttp": 201,
+      "secureSessionCookie": true,
+      "httpOnlySessionCookie": true,
+      "frontendAsset": "/assets/index-BUdLFhNp.js",
+      "frontendSha256": "ac37e25e3671317b9b84ed64054a4e12de1e772ab2ec88d1e03ff5c7b1055e34"
+    },
+    "historyCard": "阅读记录 #1 · 浏览 1 页 · 已完成",
+    "detail": {
+      "session": {
+        "readingSessionId": 1,
+        "storyVersionId": 11,
+        "currentPage": 1,
+        "visitedPageNumbers": [
+          1
+        ],
+        "mode": "PARENT_CHILD",
+        "status": "FINISHED",
+        "revision": 2,
+        "expiresAt": null
+      },
+      "events": [
+        {
+          "interactionEventId": 1,
+          "eventType": "STARTED",
+          "pageNumber": 1
+        }
+      ],
+      "report": {
+        "readingSessionId": 1,
+        "summary": "本次共读阅读了第 1 页。",
+        "activities": [],
+        "status": "READY"
+      }
+    },
+    "pageImage": {
+      "path": "/api/v1/media/asset-11-page-1",
+      "http": 200,
+      "mime": "image/png",
+      "naturalWidth": 128,
+      "naturalHeight": 80,
+      "bytes": 30868,
+      "pngSha256": "abecc2668b8b0f9d544f44990c6d95948a102f1140e1f8bc9e1a875c2f3bf2bc",
+      "rgbaSha256": "b2b5e749575b1fe44325218ac508ac7c466eafa3761ad15b34a89efb38562409"
+    }
+  }
+}

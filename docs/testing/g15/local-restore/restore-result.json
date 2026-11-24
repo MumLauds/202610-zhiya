@@ -1,0 +1,168 @@
+{
+  "atUtc": "2026-11-19T12:53:27+00:00",
+  "applicationCommit": "e5f32cd9d645c75e03814af55ba5aa531442c8a6",
+  "origin": "https://127.0.0.1:18443",
+  "images": {
+    "web": "sha256:395a083a33eda10662c6e42c8ca814ce3a4b8bd68d977e6ff869080375b0b940",
+    "backend": "sha256:7e52987d8476043ac3e7270326b8579910173c444712d1daa0d8cd131e0b1bfc"
+  },
+  "previousTestVolume": {
+    "sourceVolume": "g15-local-e5f32cd-20261119-verified_sqlite-data",
+    "backupVolume": "g15-rst-20261119-1-a-backup",
+    "restoredVolume": "g15-rst-20261119-1-a-restored-data",
+    "originalFileSha256": {
+      ".zhiya.sqlite3.media_pins/versions/11.json": "0f313b357bcbf2ec4a11b885eccc0345abb43c218d8328cc2d400c29cfdb7a4f",
+      ".zhiya.sqlite3.media_pins.bindings/11.sha256": "0c29280a59cf56798c5e7f5f78277dccc6cf716de3306f0aeb01b00994c35f0a",
+      "zhiya.sqlite3": "d5408a1973497ccb9542e2dbc137c5195b92d7ffa2ca311960574fde9f86f19a"
+    },
+    "backupFileSha256": {
+      ".zhiya.sqlite3.media_pins/versions/11.json": "0f313b357bcbf2ec4a11b885eccc0345abb43c218d8328cc2d400c29cfdb7a4f",
+      ".zhiya.sqlite3.media_pins.bindings/11.sha256": "0c29280a59cf56798c5e7f5f78277dccc6cf716de3306f0aeb01b00994c35f0a",
+      "zhiya.sqlite3": "202716c54a9a3d21fec7015fd0a58445c17920cf3f7c9ae76c00a90c7911a89b"
+    },
+    "manifestSha256": "ca0d678a6e4b3f835eb929198a9777e5b461e07a61b8abfcbe2dc3799507fcbc",
+    "restoredBeforeStartupFileSha256": {
+      ".zhiya.sqlite3.media_pins/versions/11.json": "0f313b357bcbf2ec4a11b885eccc0345abb43c218d8328cc2d400c29cfdb7a4f",
+      ".zhiya.sqlite3.media_pins.bindings/11.sha256": "0c29280a59cf56798c5e7f5f78277dccc6cf716de3306f0aeb01b00994c35f0a",
+      "zhiya.sqlite3": "202716c54a9a3d21fec7015fd0a58445c17920cf3f7c9ae76c00a90c7911a89b"
+    },
+    "restoredReading": {
+      "session": {
+        "sessionId": 1,
+        "profileId": 1,
+        "versionId": 11,
+        "status": "FINISHED",
+        "endReason": "USER_FINISH",
+        "revision": 2,
+        "pages": [
+          1
+        ],
+        "endedAt": 1795088215445,
+        "reportStatus": "READY",
+        "summary": "本次共读阅读了第 1 页。",
+        "reportUpdatedAt": 1795088215552,
+        "events": [
+          {
+            "id": 1,
+            "eventType": "STARTED",
+            "revision": 1
+          }
+        ]
+      },
+      "counts": {
+        "reading_sessions": 1,
+        "interaction_events": 1,
+        "request_executions": 2,
+        "reading_reports": 1
+      },
+      "integrityCheck": "ok",
+      "foreignKeyViolations": 0
+    },
+    "runningService": {
+      "health": "ok",
+      "backendDataVolume": "g15-rst-20261119-1-a-restored-data",
+      "backendImage": "sha256:7e52987d8476043ac3e7270326b8579910173c444712d1daa0d8cd131e0b1bfc",
+      "webImage": "sha256:395a083a33eda10662c6e42c8ca814ce3a4b8bd68d977e6ff869080375b0b940",
+      "loopbackOnly": true,
+      "businessNetworkInternal": true
+    },
+    "runningServiceSessionMatches": true,
+    "sourceRecheckedUnchanged": true,
+    "matchesPreviousDeployment": true
+  },
+  "independentFamily": {
+    "sourceVolume": "g15-rst-20261119-1-b-source-data",
+    "backupVolume": "g15-rst-20261119-1-b-backup",
+    "restoredVolume": "g15-rst-20261119-1-b-restored-data",
+    "originalFileSha256": {
+      ".zhiya.sqlite3.media_pins/blobs/abecc2668b8b0f9d544f44990c6d95948a102f1140e1f8bc9e1a875c2f3bf2bc.png": "abecc2668b8b0f9d544f44990c6d95948a102f1140e1f8bc9e1a875c2f3bf2bc",
+      ".zhiya.sqlite3.media_pins/versions/11.json": "91ea22b799081885f0ec45aed14bf4660235f8125e43777ca242ed6431ebc1aa",
+      ".zhiya.sqlite3.media_pins.bindings/11.sha256": "3502e1bd7ab261d3a966f97229b8620bbb2a17d9b07f40530e946245bc429d8d",
+      "fixture-source/g15-restore-paper-boat.png": "abecc2668b8b0f9d544f44990c6d95948a102f1140e1f8bc9e1a875c2f3bf2bc",
+      "zhiya.sqlite3": "2c5260fa4163bfbe0a820b0a9efbf1613628a454af9802b4318ea18abf87b025"
+    },
+    "backupFileSha256": {
+      ".zhiya.sqlite3.media_pins/blobs/abecc2668b8b0f9d544f44990c6d95948a102f1140e1f8bc9e1a875c2f3bf2bc.png": "abecc2668b8b0f9d544f44990c6d95948a102f1140e1f8bc9e1a875c2f3bf2bc",
+      ".zhiya.sqlite3.media_pins/versions/11.json": "91ea22b799081885f0ec45aed14bf4660235f8125e43777ca242ed6431ebc1aa",
+      ".zhiya.sqlite3.media_pins.bindings/11.sha256": "3502e1bd7ab261d3a966f97229b8620bbb2a17d9b07f40530e946245bc429d8d",
+      "zhiya.sqlite3": "54faa2702b737db9d763a9037eaaed098fe1d243389fad0b11b8e998e2053f7b"
+    },
+    "manifestSha256": "141f55ffcd1183e81cd2afea235f193ed8f4449d3fa4f1b0d332cce2b4b0cd84",
+    "restoredBeforeStartupFileSha256": {
+      ".zhiya.sqlite3.media_pins/blobs/abecc2668b8b0f9d544f44990c6d95948a102f1140e1f8bc9e1a875c2f3bf2bc.png": "abecc2668b8b0f9d544f44990c6d95948a102f1140e1f8bc9e1a875c2f3bf2bc",
+      ".zhiya.sqlite3.media_pins/versions/11.json": "91ea22b799081885f0ec45aed14bf4660235f8125e43777ca242ed6431ebc1aa",
+      ".zhiya.sqlite3.media_pins.bindings/11.sha256": "3502e1bd7ab261d3a966f97229b8620bbb2a17d9b07f40530e946245bc429d8d",
+      "zhiya.sqlite3": "54faa2702b737db9d763a9037eaaed098fe1d243389fad0b11b8e998e2053f7b"
+    },
+    "restoredReading": {
+      "session": {
+        "sessionId": 1,
+        "profileId": 1,
+        "versionId": 11,
+        "status": "FINISHED",
+        "endReason": "USER_FINISH",
+        "revision": 2,
+        "pages": [
+          1
+        ],
+        "endedAt": 1795092191218,
+        "reportStatus": "READY",
+        "summary": "本次共读阅读了第 1 页。",
+        "reportUpdatedAt": 1795092191664,
+        "events": [
+          {
+            "id": 1,
+            "eventType": "STARTED",
+            "revision": 1
+          }
+        ]
+      },
+      "counts": {
+        "reading_sessions": 1,
+        "interaction_events": 1,
+        "request_executions": 2,
+        "reading_reports": 1
+      },
+      "integrityCheck": "ok",
+      "foreignKeyViolations": 0
+    },
+    "runningService": {
+      "health": "ok",
+      "backendDataVolume": "g15-rst-20261119-1-b-restored-data",
+      "backendImage": "sha256:7e52987d8476043ac3e7270326b8579910173c444712d1daa0d8cd131e0b1bfc",
+      "webImage": "sha256:395a083a33eda10662c6e42c8ca814ce3a4b8bd68d977e6ff869080375b0b940",
+      "loopbackOnly": true,
+      "businessNetworkInternal": true
+    },
+    "runningServiceSessionMatches": true,
+    "sourceService": {
+      "health": "ok",
+      "backendDataVolume": "g15-rst-20261119-1-b-source-data",
+      "backendImage": "sha256:7e52987d8476043ac3e7270326b8579910173c444712d1daa0d8cd131e0b1bfc",
+      "webImage": "sha256:395a083a33eda10662c6e42c8ca814ce3a4b8bd68d977e6ff869080375b0b940",
+      "loopbackOnly": true,
+      "businessNetworkInternal": true
+    },
+    "restoredSourceLookup": {
+      "fixtureSourceExists": false,
+      "imageAvailableInMediaRoot": false
+    },
+    "illustration": {
+      "asset": "asset-11-page-1",
+      "width": 128,
+      "height": 80,
+      "bytes": 30868,
+      "sha256": "abecc2668b8b0f9d544f44990c6d95948a102f1140e1f8bc9e1a875c2f3bf2bc",
+      "rgbaSha256": "b2b5e749575b1fe44325218ac508ac7c466eafa3761ad15b34a89efb38562409"
+    },
+    "sourceSupplierCalls": [
+      {
+        "call": "report",
+        "visitedPages": [
+          1
+        ]
+      }
+    ],
+    "restoredSupplierCalls": []
+  }
+}

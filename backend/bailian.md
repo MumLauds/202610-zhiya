@@ -1,6 +1,6 @@
-# G08 DeepSeek 文本与百炼语音接入
+# G08 百炼文本、语音和插画接入
 
-日期：2026-11-11；负责角色：林鑫 / 后端2；执行：Codex。依据用户最新选型，文本改用 DeepSeek 官方服务，语音识别与合成保留百炼；原文本选型由变更记录第 010 项更新。密钥不入库，修改尚未提交；模拟测试不等于真实服务联调或团队正式验收。
+文本使用百炼千问，语音识别、合成与插画使用百炼对应接口。
 
 | 缩写 | 中文名称（英文全称） |
 | --- | --- |
@@ -18,9 +18,9 @@
 
 ## 配置与本地联调
 
-从 backend/.env.example 首次复制到 backend/.env，已有文件不要覆盖。在本地把 DeepSeek 官方密钥填入 `MODEL_API_KEY`，把百炼北京地域密钥填入 `DASHSCOPE_API_KEY`。两个字段独立，文本密钥缺失时不再回退到百炼密钥。不要把密钥贴入聊天、任务表或 Git。已有系统环境优先于 .env。各项默认值见示例文件：文本 deepseek-flash，识别 qwen3-asr-flash，合成 qwen-audio-3.1-tts-flash / wenhuaiqing_v3.1；合成地址默认留空，须填百炼北京业务空间的完整 SpeechSynthesizer 地址。采用普通单次请求，文本固定 thinking.type=disabled；文本、语音总预算各自默认 20 秒（语音含合成下载）。
+从 backend/.env.example 首次复制到 backend/.env，已有文件不要覆盖。在本地把有文本模型权限的百炼密钥填入 `MODEL_API_KEY`，把百炼北京地域密钥填入 `DASHSCOPE_API_KEY`。两个字段独立，文本密钥缺失时不回退到语音密钥。不要把密钥贴入聊天、任务表或 Git。已有系统环境优先于 .env。各项默认值见示例文件：文本 qwen3.6-plus，识别 qwen3-asr-flash，合成 qwen-audio-3.1-tts-flash / wenhuaiqing_v3.1；合成地址默认留空，须填百炼北京业务空间的完整 SpeechSynthesizer 地址。文本默认发送 enable_thinking=false，兼容端点可显式设置 MODEL_SEND_THINKING=false 省略该字段；文本、语音总预算各自默认 20 秒（语音含合成下载）。
 
-已有百炼文本配置需同步迁移：MODEL_API_URL 改为 `https://api.deepseek.com/chat/completions`，MODEL_NAME 改为 `deepseek-flash`；MODEL_API_KEY 若以前填写过百炼密钥，须由本人换成 DeepSeek 官方密钥。本次声线与模型语速扩展还需迁移 TTS_API_URL、TTS_MODEL、TTS_VOICE，密钥保持原值，详见[声线与语速交接](../docs/design/speech-preferences-handoff.md)。直接在终端导出 DEEPSEEK_API_KEY 不会被当前工程读取，应使用上述 MODEL_API_KEY 字段。当前文本参数固定适配 DeepSeek，不能仅改地址就宣称兼容其他供应商。
+从 DeepSeek 迁移时，同时更新 MODEL_API_URL、MODEL_NAME 和 MODEL_API_KEY。只配置文本密钥时，文本调用保持停用，避免把旧密钥送到新端点。显式保留 DeepSeek 官方地址时继续使用它的思考参数，未指定模型时使用 deepseek-flash。百炼北京业务空间的 OpenAI 兼容地址以 /compatible-mode/v1/chat/completions 结尾，公共端点见示例。使用已有百炼密钥前请确认文本模型权限。插画默认 qwen-image-3.0-pro，已显式配置 IMAGE_MODEL 的环境也需要同步改值。
 
 三个服务 URL 均原样校验，不自动删除首尾空白；包含空白或控制字符时报配置错误。显式空字符串表示未配置，纯空白字符串属于无效配置。
 
@@ -58,13 +58,13 @@ ASR 返回内部 Transcription（text、reliable），非空转写仅表明供�
 
 | 内部操作 | 第三方固定字段（保留原拼写） | 本项目处理 |
 | --- | --- | --- |
-| generate | messages、max_tokens、thinking.type | DeepSeek 非思考文本，返回完整字符串；不发送 enable_thinking |
+| generate | messages、max_tokens、enable_thinking | 百炼非思考文本，返回完整字符串；小结请求 JSON 对象 |
 | transcribe | input_audio.data、asr_options | 内存编码音频；只提取转写，不伪造置信度 |
 | synthesize | input.text、voice、format、sample_rate、rate | Qwen-Audio 使用 WAV / 24000 Hz，SLOW/NORMAL/FAST 映射 0.9/1.0/1.2，生成后受限下载字节；不透传签名链接 |
 
 当前只支持 qwen-audio-3.1-tts-flash，声线只保留温怀清、叶知晴、龙牛牛、龙闪闪、龙杰力豆、龙泡泡；完整列表、标识和前后端边界见[交接说明](../docs/design/speech-preferences-handoff.md)。原全量目录及旧模型兼容已移除，语言与场景元数据不透传供应商；模型直接合成不同语速，不改变音频帧或播放器倍速。六种声线已另行生成同文 SLOW=0.9 样本，用户已接受本次听感，见[六声线证据](../docs/testing/g08-live-delivery-checks.md)；其他文本及语速未据此验收。历史真实结果见[声线语速验证](../docs/testing/speech-preferences-checks.md)。
 
-TTS 下载仅允许北京地域指定 OSS 主机，HTTP 链接升级为 HTTPS；拒绝其他主机、凭证、片段、非标准端口和重定向。下载请求不携带 API 密钥；不记录签名 URL、音频、转写或正文。换地域须单独核对下载域名，不能放开任意 URL。JSON 响应限 1 MiB，音频限 10 MiB，拒绝压缩响应；这些是内部资源限制，不代表已经冻结对外上传契约。
+TTS 请求使用百炼 SSE。后端逐条读取事件和音频分块，收到完整的成功结束事件后主动关闭流，校验 WAV 后提供播放地址。桌面和移动端共用该流程。供应商仅返回完整文件链接时，后端按原规则下载。TTS 下载仅允许北京地域指定 OSS 主机，HTTP 链接升级为 HTTPS；拒绝其他主机、凭证、片段、非标准端口和重定向。下载请求不携带 API 密钥；不记录签名 URL、音频、转写或正文。换地域须单独核对下载域名，不能放开任意 URL。普通 JSON 响应限 1 MiB，包含 Base64 和事件元数据的 SSE 响应限 21 MiB，解码后音频限 10 MiB，拒绝压缩响应；这些是内部资源限制，不代表已经冻结对外上传契约。
 
 百炼真实合成可能返回带占位长度的 24 kHz 单声道、16 位 PCM WAV。适配层只识别本次实测的固定占位头，在完整下载、帧对齐后回填实际长度，再进行 WAV 校验；不修改音频帧，不修复未知损坏格式，也不对用户上传执行该处理。合成输出维持 24 kHz；公开识别路由及 smoke_voice.py asr 现在会先规范化为 16 kHz 单声道 16 位 PCM；支持 WebM、Ogg、MP4、MP3 和 WAV，超过 4 MiB 或 120 秒整段拒绝。内部 VoiceGateway 仍只接收规范音频。离线 convert 命令不读取 .env、不请求供应商，详见接口交接。
 
@@ -72,8 +72,8 @@ TTS 下载仅允许北京地域指定 OSS 主机，HTTP 链接升级为 HTTPS；
 
 ## 依据与验证
 
-依据 FR-08、FR-12、NFR-03/05/06、AC-07/10、接口 API-022～024。采用已有 HTTPX 与标准库，不新增 SDK。官方依据：[DeepSeek 文本协议及思考开关](https://api-docs.deepseek.com/api/create-chat-completion/)、[DeepSeek 模型与接入地址](https://api-docs.deepseek.com/)、[百炼 ASR](https://help.aliyun.com/en/model-studio/qwen-asr-api-reference)、[百炼 Qwen-Audio TTS](https://help.aliyun.com/zh/model-studio/qwen-audio-tts-http-api)。读取日期 2026-11-11。
+依据 FR-08、FR-12、NFR-03/05/06、AC-07/10、接口 API-022～024。采用已有 HTTPX 与标准库，不新增 SDK。官方依据：[百炼文本协议及思考开关](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)、[百炼千问图像](https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference)、[百炼 ASR](https://help.aliyun.com/en/model-studio/qwen-asr-api-reference)、[百炼 Qwen-Audio TTS](https://help.aliyun.com/zh/model-studio/qwen-audio-tts-http-api)。读取日期 2026-11-11。
 
-离线验证：仓库根目录执行 `.\.venv\Scripts\python.exe -m pytest backend/tests -q`。具体结果与需求追踪见[文本与语音验证记录](../docs/testing/bailian-checks.md)。2026-11-11 用户自行填写凭证后，文本、合成与识别的真实短句调用通过，见[真实联调记录](../docs/testing/live-provider-checks.md)。模型适龄效果、人工听感及浏览器端到端流程仍待验收，不能据此标记完整 AC-07 已通过。
+离线验证：仓库根目录执行 `.\.venv\Scripts\python.exe -m pytest backend/tests -q`。具体结果与需求追踪见[文本与语音验证记录](../docs/testing/bailian-checks.md)。2026-11-11 的真实短句覆盖 DeepSeek 文本、百炼合成与识别，见[历史联调记录](../docs/testing/live-provider-checks.md)。切换百炼文本后，使用目标环境重新验收共读小提问和小结。模型适龄效果、人工听感及浏览器端到端流程仍待验收，不能据此标记完整 AC-07 已通过。
 
 最新容器也已验证三项真实调用及 Windows 健康接口访问，镜像包含上述两个联调命令，见[容器操作说明](../infra/README.md)和[容器验收及 G08 交接边界](../docs/testing/docker-checks.md)。

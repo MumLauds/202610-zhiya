@@ -37,6 +37,7 @@ class VoiceSnapshot:
     revision: int
     text: str
     event_id: int | None = None
+    session_created_at: int | None = None
 
 
 def _deny():
@@ -45,7 +46,7 @@ def _deny():
 
 def read_voice_source(principal: VoicePrincipal, *, session_id: int | None = None,
                       page_number: int | None = None, revision: int | None = None,
-                      event_id: int | None = None) -> VoiceSnapshot:
+                      event_id: int | None = None, visit_scoped: bool = False) -> VoiceSnapshot:
     try:
         with closing(sqlite3.connect(f"{database_path().as_uri()}?mode=ro", uri=True, timeout=1)) as db:
             db.row_factory = sqlite3.Row
@@ -90,14 +91,25 @@ def read_voice_source(principal: VoicePrincipal, *, session_id: int | None = Non
                 if (event["version_id"] != row["version_id"] or event["event_type"] not in ("ASK", "QUESTION", "ANSWER", "FEEDBACK")
                         or event["result_status"] not in ("SUCCESS", "FALLBACK") or not event["output_text"]):
                     raise _deny()
-            if page_number != row["current_page_no"] or revision != row["revision"]:
+                visit_scoped = event["event_type"] == "ASK"
+            if visit_scoped:
+                visit_revision = db.execute(
+                    """SELECT coalesce(max(revision_after), 0) FROM interaction_events WHERE session_id = ?
+                       AND event_type IN ('STARTED', 'PAGE_CHANGED', 'BRANCH_CHOSEN')""", (session_id,),
+                ).fetchone()[0]
+                revision_matches = revision is None or visit_revision <= revision <= row["revision"]
+            else:
+                revision_matches = revision == row["revision"]
+            if page_number != row["current_page_no"] or not revision_matches:
                 raise ServiceError("SESSION_CONFLICT", "阅读进度已变化，请刷新后重试", 409)
             page = db.execute("SELECT body_text FROM story_pages WHERE version_id=? AND page_no=?",
                               (row["version_id"], page_number)).fetchone()
             if page is None:
                 raise _deny()
-            return VoiceSnapshot(session_id, row["version_id"], page_number, revision,
-                                 event["output_text"] if event is not None else page["body_text"], event_id)
+            return VoiceSnapshot(session_id, row["version_id"], page_number,
+                                 visit_revision if visit_scoped else revision,
+                                 event["output_text"] if event is not None else page["body_text"], event_id,
+                                 row["created_at"] if visit_scoped else None)
     except sqlite3.Error:
         raise ServiceError("DEPENDENCY_UNAVAILABLE", "业务数据暂不可用", 503) from None
 
@@ -105,6 +117,6 @@ def read_voice_source(principal: VoicePrincipal, *, session_id: int | None = Non
 def recheck_source(principal: VoicePrincipal, snapshot: VoiceSnapshot) -> None:
     current = read_voice_source(principal, session_id=snapshot.session_id,
                                page_number=snapshot.page_number, revision=snapshot.revision,
-                               event_id=snapshot.event_id)
+                               event_id=snapshot.event_id, visit_scoped=snapshot.session_created_at is not None)
     if current != snapshot:
         raise ServiceError("SESSION_CONFLICT", "朗读内容已变化，请刷新后重试", 409)

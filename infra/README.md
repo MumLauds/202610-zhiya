@@ -1,5 +1,7 @@
 # G08 后端部署初稿
 
+G15 的两轮本机预演按顺序执行。[HTTPS 部署与重启读回](../docs/testing/g15/local-https/README.md)生成本次镜像、卷和会话基线，[备份恢复与内页图校验](../docs/testing/g15/local-restore/README.md)使用该基线恢复到新卷。
+
 | 缩写 | 中文名称（英文全称） |
 | --- | --- |
 | API | 应用程序编程接口（Application Programming Interface） |
@@ -36,12 +38,26 @@ docker compose -f infra/compose.yaml up -d
 curl http://127.0.0.1:8000/api/v1/health
 ```
 
-初始化是显式的一次性操作，启动服务不会自动建库或导入数据。空模型环境变量允许启动；数据库未初始化时健康接口返回 503，初始化后预期返回 200。仅在需要开发用草稿种子时手动执行：
+初始化是显式的一次性操作，启动服务不会自动建库或导入数据。空模型环境变量允许启动；数据库未初始化时健康接口返回 503，初始化后预期返回 200。要导入课程书架，手动执行：
 
 ```sh
 docker compose -f infra/compose.yaml run --rm backend python database/import_seed.py
 docker compose -f infra/compose.yaml run --rm backend python database/init_db.py --check
 ```
+
+空库首次导入会发布 20 本课程原创，固定封面和内页。旧库重复导入保留原有审核状态；草稿可以继续补内页图片。升级旧种子库时，请在草稿发布或替换原素材前，用原数据卷再次运行上面的导入命令。升级会识别旧草稿，保留其封面；已经发布的旧版本沿用原清单，包括当时缺图的页。
+
+审核前可以补录或更正绘本来源 `source_ref`。库内绘本改为项目自研来源后，补建命令会固定封面映射中可用的图片。改为其他来源后，封面使用占位图。已发布的版本继续校验发布时记录的来源。
+
+当前分支尚无 API-028 发布入口。用 SQL 准备联调数据时，请保留审核时的原素材，提交发布状态后立即运行下述补建命令，完成后再换图。跳过补建时，服务会在首次读取该版本时固定内页。此后即使替换同名文件，已绑定的图片与占位也会保持原样。
+
+已有自建绘本库可以单独固定现存版本。先挂载该库原有的图片目录和封面映射，再运行 `docker compose -f infra/compose.yaml run --rm backend python database/import_seed.py --pin-existing-media`。此命令保留业务数据。
+
+备份和恢复 SQLite 文件时，一起保存同目录的 `.<db_name>.media_pins/`（图片和版本清单）与 `.<db_name>.media_pins.bindings/`（各版本的清单摘要）。数据卷需支持同目录硬链接，并允许服务账号读写。已有绑定的清单或图片丢失时，受影响的接口返回可重试的 503。恢复对应快照后，可重试原请求。
+
+API-011 创建阅读会话前会检查已绑定的封面和第一页图片。如果其中一张暂时不可读，接口返回可重试的 503，数据库不会新增会话。封面或首页原本就使用占位时可以正常开读。
+
+受控封面和内页接受 `.png`、`.jpg`、`.jpeg`、`.webp` 路径。API-024 按完整解码得到的格式返回 `Content-Type`。例如，后缀为 `.png` 的有效 JPEG 会以 `image/jpeg` 返回。
 
 种子不是生产内容，不自动导入生产数据库。SQLite 文件保存在 Compose 命名卷 `sqlite-data`，容器使用 UID/GID 10001。首次创建卷时由镜像目录继承写权限；外部已有卷需自行核对权限。单 worker 运行，关闭 Uvicorn access log；应用自己的请求元数据日志仍保留。
 
@@ -57,7 +73,9 @@ docker compose -f infra/compose.yaml down
 
 ## 配置与边界
 
-文本已选择 DeepSeek 官方服务（deepseek-flash），`MODEL_API_KEY` 仅用于文本；语音保留百炼北京地域，`DASHSCOPE_API_KEY` 仅用于语音。两者默认空、互不回退，通过运行环境注入，密钥不得提交仓库或写进镜像。对应密钥为空时不调用该供应商；文本与语音字段见 backend/.env.example。Windows 本机及最新容器均已通过真实短句联调，见[本机记录](../docs/testing/live-provider-checks.md)和[容器记录](../docs/testing/docker-checks.md)。构建上下文采用 Dockerfile 专用忽略文件，仅放行后端源码、联调命令、锁定依赖、数据库脚本及种子 JSON，排除环境文件、密钥、虚拟环境和 Git。
+文本默认使用百炼 qwen3.6-plus。部署时同时配置 `MODEL_API_URL`、`MODEL_API_KEY` 和目标模型，使用百炼时保留 `MODEL_SEND_THINKING=true` 以关闭供应商的思考模式。语音与可选的 AI 插画使用百炼北京地域，凭证为 `DASHSCOPE_API_KEY`。文本和语音凭证单独注入，密钥不得提交仓库或写进镜像。缺少文本端点或凭证时停用文本调用。部署字段见 [环境变量示例](../backend/.env.example)。历史短句覆盖 DeepSeek 文本和百炼语音，切换文本后须使用目标配置复测。[本机记录](../docs/testing/live-provider-checks.md) · [容器记录](../docs/testing/docker-checks.md)
+
+构建上下文采用 Dockerfile 专用忽略文件，仅放行后端源码、联调命令、锁定依赖、数据库脚本、种子 JSON 及 `knowledge-base_v2.5/图片` 内的图片素材（API-024 读取种子封面所需，随镜像打包到 `/app/knowledge-base_v2.5/图片`；可用 `ZHIYA_MEDIA_ROOT` 改为外部只读目录，映射中的 `knowledge-base_v2.5/图片/` 前缀在两种配置下等价），排除环境文件、密钥、虚拟环境和 Git。
 
 合成当前使用 qwen-audio-3.1-tts-flash，需设置包含本人北京业务空间标识的 TTS_API_URL；未填时只禁用合成。默认声线 wenhuaiqing_v3.1。配置迁移、可选声线和 SLOW/NORMAL/FAST 合成参数见[交接说明](../docs/design/speech-preferences-handoff.md)。Compose 显式空 TTS_MODEL / TTS_VOICE 保持禁用，不用默认值补回。
 

@@ -81,6 +81,14 @@ class KnowledgeRetrieverTests(G09DatabaseMixin, unittest.TestCase):
         result = KnowledgeRetriever(self.db_path).retrieve(query)
         self.assertEqual([item.item_key for item in result.items], ["KN-SAFE-001"])
 
+    def test_topic_match_count_takes_priority_over_keywords(self):
+        query = KnowledgeQuery(
+            age_band="AGE_3_4", topics=["年龄发展", "动物"], task_type="GUIDANCE",
+            query_text="雨伞 小兔子",
+        )
+        result = KnowledgeRetriever(self.db_path, limit=1).retrieve(query)
+        self.assertEqual([item.item_key for item in result.items], ["KN-AGE-001"])
+
     def test_missing_database_returns_empty_result(self):
         query = KnowledgeQuery(
             age_band="AGE_3_4", topics=["动物"], task_type="GUIDANCE", query_text="",
@@ -282,3 +290,19 @@ class G09ContentServiceTests(G09DatabaseMixin, unittest.IsolatedAsyncioTestCase)
         self.assertEqual(len(draft.sources), 1)
         self.assertEqual(draft.sources[0].sourceTitle, "知芽｜知识库知识条目 v2.5")
         self.assertEqual(draft.sources[0].knowledgeItemId, 3)  # KN-STORY-001
+
+    async def test_nonpositive_max_items_skips_model_with_matching_knowledge(self):
+        adapter = FakeAdapter(ModelGenerateResult(success=True, text="回答。"))
+        service = self._service(adapter)
+        for limit in (0, -1):
+            with self.subTest(max_items=limit):
+                draft = await service.generate(
+                    "CONTEXT_QUESTION", age_band="AGE_3_4", page_text="当前页。",
+                    topics=["动物"], user_input="提个问题。", max_items=limit,
+                )
+                self.assertEqual(adapter.calls, [])
+                self.assertFalse(draft.has_knowledge)
+                self.assertEqual(draft.sources, [])
+                self.assertEqual(draft.text, "")
+                self.assertIsNone(draft.model_error_code)
+                self.assertNotIn("KN-", draft.request.context_text)

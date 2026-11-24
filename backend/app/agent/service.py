@@ -5,7 +5,6 @@ from pathlib import Path
 
 from app.schemas.agent import (
     AgentSource,
-    KnowledgeItem,
     KnowledgeQuery,
     KnowledgeRetrievalResult,
     ModelGenerateRequest,
@@ -13,7 +12,7 @@ from app.schemas.agent import (
 )
 
 from .generation import ContentGenerator
-from .prompts import ContentTask, build_prompt
+from .prompts import ContentTask, build_prompt, select_knowledge_items
 from .retrieval import KnowledgeRetriever
 
 TASK_TO_KNOWLEDGE_TYPE: dict[str, str] = {
@@ -21,15 +20,6 @@ TASK_TO_KNOWLEDGE_TYPE: dict[str, str] = {
     "CONTEXT_QUESTION": "GUIDANCE",
     "STORY_ANSWER": "RETRIEVAL",
 }
-
-
-def _selected_items(items: list[KnowledgeItem], max_items: int) -> list[KnowledgeItem]:
-    """The exact knowledge set that reaches both the prompt and the source list.
-
-    Keeping this in one place guarantees ``AgentSource`` entries never cite an
-    item that was truncated out of the model context.
-    """
-    return items[:max_items]
 
 
 @dataclass(frozen=True)
@@ -87,7 +77,7 @@ class G09ContentService:
             task,
             age_band=age_band,
             page_text=page_text,
-            items=_selected_items(retrieval.items, max_items),
+            items=retrieval.items,
             user_input=user_input,
             max_items=max_items,
         )
@@ -113,9 +103,8 @@ class G09ContentService:
             query_text=query_text,
             max_items=max_items,
         )
-        # No approved knowledge (empty / all DRAFT / missing DB): short-circuit
-        # before any model call. G10 constructs the final NO_KNOWLEDGE_FALLBACK.
-        if not retrieval.has_results:
+        selected = select_knowledge_items(retrieval.items, max_items)
+        if not selected:
             return ContentDraft(
                 task=task,
                 text="",
@@ -126,11 +115,9 @@ class G09ContentService:
             )
 
         result: ModelGenerateResult = await self._generator.generate(request)
-        # Sources must match exactly the items actually placed in the prompt
-        # context (same max_items truncation), so no truncated item is cited.
         sources = [
             AgentSource(knowledgeItemId=item.knowledge_item_id, sourceTitle=item.source_title)
-            for item in _selected_items(retrieval.items, max_items)
+            for item in selected
         ]
         return ContentDraft(
             task=task,

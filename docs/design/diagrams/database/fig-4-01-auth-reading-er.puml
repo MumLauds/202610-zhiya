@@ -46,6 +46,7 @@ entity request_executions {
  * id <<PK>>
  owner_account_id <<FK>>
  session_id <<FK>>
+ source_reading_session_id <<FK>>
  scope_type / scope_id
  client_request_id
 }
@@ -57,6 +58,7 @@ child_grants ||--|{ child_grant_books
 child_profiles ||--o{ reading_sessions
 child_grants |o--o{ reading_sessions
 accounts ||--o{ request_executions
-reading_sessions |o--o{ request_executions
+reading_sessions |o--o{ request_executions : 普通会话
+reading_sessions |o--o{ request_executions : 来源会话（删除级联）
 
 @enduml

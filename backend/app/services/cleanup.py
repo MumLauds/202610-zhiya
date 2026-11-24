@@ -11,10 +11,17 @@ def delete_session_rows(db, session_id: int) -> None:
     )
     db.execute("DELETE FROM interaction_events WHERE session_id = ?", (session_id,))
     db.execute("DELETE FROM reading_reports WHERE session_id = ?", (session_id,))
-    db.execute("DELETE FROM request_executions WHERE session_id = ?", (session_id,))
-    # Clear continuation lineage on derived versions so deleting the source session does not violate FKs.
     db.execute(
-        """UPDATE story_versions SET source_version_id = NULL, source_session_id = NULL,
+        """DELETE FROM request_executions
+           WHERE session_id = ? OR source_reading_session_id = ?
+              OR (scope_type = 'SESSION_CREATE' AND json_extract(response_body, '$.data.readingSessionId') = ?)""",
+        (session_id, session_id, session_id),
+    )
+    # Drafts need the source snapshot for approval. Reviewed versions already have frozen media.
+    db.execute(
+        """UPDATE story_versions
+           SET status = CASE WHEN status IN ('DRAFT', 'PENDING_REVIEW') THEN 'CHECK_FAILED' ELSE status END,
+           source_version_id = NULL, source_session_id = NULL,
            source_revision = NULL, source_page_no = NULL, resume_page_no = NULL,
            source_visited_pages_json = NULL WHERE source_session_id = ?""",
         (session_id,),

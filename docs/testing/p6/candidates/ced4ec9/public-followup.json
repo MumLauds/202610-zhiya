@@ -1,0 +1,33 @@
+{
+  "candidate": "ced4ec935df8b855c8dd1669089467c9906cef27",
+  "origin": "https://zhiya.47-238-246-210.sslip.io",
+  "time": "2026-11-20T17:23:46.728428+08:00",
+  "scope": "anonymous GET of two HTML entries, their entry modules, and health",
+  "deploymentReceipt": "81477f7e773e25c9846cc0c78d32ea4ddd318616 (previous deployment team's record)",
+  "entries": [
+    {
+      "entry": "index.html",
+      "http": 200,
+      "moduleHttp": 200,
+      "local": "/assets/index-gXaQhKjB.js",
+      "localSha256": "bbad9b5f93d19e256c551f6e8c9fa9c2b73932f7a9ec806a0ab4ec88e03fd1e8",
+      "public": "/assets/index-Dxu7T5ku.js",
+      "publicSha256": "f03c02e1412b0088de578657b94fd462c0dae52458848b7612131e5bcc7fc2d9",
+      "sameModuleBytes": false
+    },
+    {
+      "entry": "mobile.html",
+      "http": 200,
+      "moduleHttp": 200,
+      "local": "/assets/mobile-DF4pdHKH.js",
+      "localSha256": "69462dcd39f558600db426df3c48cadafee93c86d408aa6bb1483909b82ea413",
+      "public": "/assets/mobile-2D30w5ga.js",
+      "publicSha256": "e1371b9e273219ec47a206ac2fabba33bb564410340baf86a409ba1e80346b06",
+      "sameModuleBytes": false
+    }
+  ],
+  "healthHttp": 200,
+  "healthData": {
+    "status": "ok"
+  }
+}
