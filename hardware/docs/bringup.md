@@ -40,6 +40,8 @@ idf.py -p $boardPort flash monitor
 
 ## H01 启动自检
 
+2026-11-24 实板烧录、COM5 启动、Flash 16 MiB 与 PSRAM 8 MiB 自检为 **PASS**。独立 RST 和断电重启为 **NOT_TESTED**。见 [H01/H02 实板验收报告](reports/h01-h02-bringup-report-20261124.md)。
+
 复位后保存完整串口输出，并记录板卡丝印或修订、固件提交号及 ESP-IDF 版本。H01 的预期日志内容如下，时间戳和芯片修订以实物为准：
 
 ```text
@@ -56,7 +58,7 @@ H01 startup checks passed
 
 ## H02 实板验收
 
-**当前状态：NOT_TESTED。** 确认无外壳版 SKU 33799 并记录 PCB 丝印，按[板级引脚表](board-pin-map.md)核对板卡修订。对已设置目标芯片的固件目录，在 ESP-IDF PowerShell 执行：
+**2026-11-24 实板结果：**基本显示、GT911 和基础交互、初始化堆快照为 **PASS**。独立复位、冷启动、PCB 丝印、细分触摸边界和连续操作后内存为 **NOT_TESTED**。见[实板验收报告](reports/h01-h02-bringup-report-20261124.md)。 确认无外壳版 SKU 33799 并记录 PCB 丝印，按[板级引脚表](board-pin-map.md)核对板卡修订。对已设置目标芯片的固件目录，在 ESP-IDF PowerShell 执行：
 
 ```powershell
 idf.py build
