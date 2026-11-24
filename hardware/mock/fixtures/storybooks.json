@@ -30,7 +30,7 @@
         }
       },
       "pageCount": 6,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 2,
       "storybookId": 2,
       "title": "小狐狸的雨伞",
@@ -70,7 +70,7 @@
         }
       },
       "pageCount": 6,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 3,
       "storybookId": 3,
       "title": "青蛙的音乐会",
@@ -110,7 +110,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 4,
       "storybookId": 4,
       "title": "晚安小熊",
@@ -150,7 +150,7 @@
         }
       },
       "pageCount": 6,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 5,
       "storybookId": 5,
       "title": "蜗牛的旅行",
@@ -190,7 +190,7 @@
         }
       },
       "pageCount": 6,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 6,
       "storybookId": 6,
       "title": "胡萝卜的种子",
@@ -230,7 +230,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 7,
       "storybookId": 7,
       "title": "猫咪和蝴蝶",
@@ -270,7 +270,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 8,
       "storybookId": 8,
       "title": "月亮的小被子",
@@ -310,7 +310,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 9,
       "storybookId": 9,
       "title": "小熊的面包店",
@@ -350,7 +350,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 10,
       "storybookId": 10,
       "title": "小鸭子学游泳",
@@ -390,7 +390,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 11,
       "storybookId": 11,
       "title": "云朵棉花糖",
@@ -429,7 +429,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 12,
       "storybookId": 12,
       "title": "蚂蚁搬家",
@@ -469,7 +469,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 13,
       "storybookId": 13,
       "title": "小刺猬的礼物",
@@ -509,7 +509,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 14,
       "storybookId": 14,
       "title": "会唱歌的树",
@@ -549,7 +549,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 15,
       "storybookId": 15,
       "title": "萤火虫找朋友",
@@ -589,7 +589,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 16,
       "storybookId": 16,
       "title": "小松鼠的冬天",
@@ -629,7 +629,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 17,
       "storybookId": 17,
       "title": "种子去旅行",
@@ -669,7 +669,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 18,
       "storybookId": 18,
       "title": "钟表小镇的一天",
@@ -709,7 +709,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 19,
       "storybookId": 19,
       "title": "小鲸鱼的大海",
@@ -749,7 +749,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 20,
       "storybookId": 20,
       "title": "彩虹桥那边",
@@ -789,7 +789,7 @@
         }
       },
       "pageCount": 5,
-      "status": "DRAFT",
+      "status": "PUBLISHED",
       "storyVersionId": 21,
       "storybookId": 21,
       "title": "图书馆的小老鼠",
@@ -802,28 +802,29 @@
     }
   ],
   "kind": "zhiya-hardware-demo-storybooks",
-  "notice": "本地 DEMO 数据：仅供知芽课程项目硬件端和 Mock 自动化测试使用，不代表绘本已获得正式发布授权。DRAFT 状态按种子原样保留，coverRef/imageRef 不得当作 API-024 的受控媒体 resource key。",
+  "notice": "本地 DEMO 数据：仅供知芽课程项目硬件端和 Mock 自动化测试使用，不代表绘本已获得正式在线发布或传播授权；源种子中 20 本原创绘本为 PUBLISHED，1 本《逃家小兔》联调草稿为 DRAFT 且不纳入本 DEMO。coverRef/imageRef 必须保持 null，不得当作 API-024 的受控媒体 resource key；H03 内页资源尚未由独立任务交付，localPageAsset 保持 null，禁止用封面冒充正文插画。",
   "schemaVersion": "1.0",
+  "sourceDigest": "sha256-utf8-lf-v1",
   "sourceFiles": [
     {
       "path": "data/seed/storybooks.json",
-      "sha256": "b46cdf36599584ba057614b0df9904c027997ccce73ede6909458a525a8b0eaa"
+      "sha256": "3d47970c2480168fc5f4bf43f914ac0ef90544fb49a4f9993236f963ed27e6e2"
     },
     {
       "path": "data/seed/story_versions.json",
-      "sha256": "4a26f86513c98d6537bbe085b52f470651e31a5a07fd45094cd27a24058b3ed5"
+      "sha256": "c14d753a2664f7c1fb4349a0e0cb42aa552a214241eb05e237edcd5bfca4226c"
     },
     {
       "path": "data/seed/story_pages.json",
-      "sha256": "afa1832374f641f684eea4852b306d141761f8e8f369011987f702c24914ce16"
+      "sha256": "ee298aa5815e8978afa66a5ed846be97ff8c54ae9ae77ebbb0d7b14b108d15f4"
     },
     {
       "path": "data/seed/cover_mapping.json",
-      "sha256": "b9d1faad5d7901d0e2ca48bdb503961c7179203a46d6fecf4322632ebb4cfee0"
+      "sha256": "487b526a58073b1707855e490d1692b0135486314d7278b9aa09c6752d357b75"
     },
     {
       "path": "hardware/assets/generated/assets-manifest.json",
-      "sha256": "426141aab04a66210e7b6096b0babc47c8cbd1a39a3fd40577692bd186dc33a5"
+      "sha256": "78fa7eba036b06b825c5f5ef722c0ef65423c71ec257ddef670c5da1c4e6b9c5"
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "demoOnly": true,
   "kind": "zhiya-hardware-demo-session",
-  "notice": "本地 DEMO 数据：仅供知芽课程项目硬件端和 Mock 自动化测试使用，不代表绘本已获得正式发布授权。DRAFT 状态按种子原样保留，coverRef/imageRef 不得当作 API-024 的受控媒体 resource key。",
+  "notice": "本地 DEMO 数据：仅供知芽课程项目硬件端和 Mock 自动化测试使用，不代表绘本已获得正式在线发布或传播授权；源种子中 20 本原创绘本为 PUBLISHED，1 本《逃家小兔》联调草稿为 DRAFT 且不纳入本 DEMO。coverRef/imageRef 必须保持 null，不得当作 API-024 的受控媒体 resource key；H03 内页资源尚未由独立任务交付，localPageAsset 保持 null，禁止用封面冒充正文插画。",
   "profile": {
     "ageBand": "AGE_3_4",
     "childProfileId": 1,

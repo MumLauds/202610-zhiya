@@ -113,12 +113,17 @@
       "message": "Mock 依赖暂不可用",
       "mode": "error",
       "retryable": true,
+      "retryableByMethod": {
+        "GET": true,
+        "POST": false
+      },
       "scenarioId": "DEPENDENCY_UNAVAILABLE",
       "status": 503
     },
     {
       "appliesTo": [
         "/api/v1/reading-sessions/*/events",
+        "/api/v1/reading-sessions/*/questions",
         "/api/v1/reading-sessions/*/completions"
       ],
       "code": "REQUEST_OUTCOME_UNKNOWN",

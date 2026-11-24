@@ -41,10 +41,13 @@ OUTPUT_FILES = (
 EXPECTED_BOOKS = 20
 EXPECTED_PAGES = 104
 EXPECTED_ASSETS = 40
+SOURCE_DIGEST = "sha256-utf8-lf-v1"
 NOTICE = (
     "本地 DEMO 数据：仅供知芽课程项目硬件端和 Mock 自动化测试使用，"
-    "不代表绘本已获得正式发布授权。DRAFT 状态按种子原样保留，"
-    "coverRef/imageRef 不得当作 API-024 的受控媒体 resource key。"
+    "不代表绘本已获得正式在线发布或传播授权；源种子中 20 本原创绘本为 PUBLISHED，"
+    "1 本《逃家小兔》联调草稿为 DRAFT 且不纳入本 DEMO。"
+    "coverRef/imageRef 必须保持 null，不得当作 API-024 的受控媒体 resource key；"
+    "H03 内页资源尚未由独立任务交付，localPageAsset 保持 null，禁止用封面冒充正文插画。"
 )
 
 
@@ -67,6 +70,23 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def sha256_text_file(path: Path) -> str:
+    """Hash UTF-8 text after normalizing CRLF/CR to LF.
+
+    Git stores the seed JSON with mixed EOL styles (some blobs LF, some CRLF),
+    while a Windows checkout may materialize all of them as CRLF. Hashing raw
+    bytes therefore changes between clean Git blobs and the working tree even
+    when the content is identical. The source digest is explicitly defined as
+    UTF-8 text with LF line endings; no whitespace or JSON content is dropped.
+    """
+    try:
+        text = path.read_bytes().decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise FixtureError(f"源文件不是无 BOM 的 UTF-8 文本: {path}: {exc}") from exc
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def relative_repo_path(repo_root: Path, path: Path) -> str:
@@ -242,6 +262,9 @@ def build_payloads(repo_root: Path = REPO_ROOT) -> dict[str, dict[str, Any]]:
                     "imageRef": None,
                     "defaultNextPageNumber": item.get("default_next_page_number"),
                     "imageStatus": "MISSING_INNER_ILLUSTRATION",
+                    # Reserved hook for the independent H03 page-asset task.
+                    # Do not populate a path/hash until that task ships audited files.
+                    "localPageAsset": None,
                 }
                 for item in sorted(version_pages, key=lambda item: item["page_no"])
             ],
@@ -254,7 +277,8 @@ def build_payloads(repo_root: Path = REPO_ROOT) -> dict[str, dict[str, Any]]:
     require(len(records) == EXPECTED_BOOKS, f"必须生成 {EXPECTED_BOOKS} 本原创绘本")
     require(selected_pages == EXPECTED_PAGES, f"原创正文必须为 {EXPECTED_PAGES} 页，实际 {selected_pages}")
     require(1 not in {record["storybookId"] for record in records}, "不得把旧版联调绘本纳入 DEMO")
-    require(all(record["status"] == "DRAFT" for record in records), "必须保留种子中的 DRAFT 状态")
+    require(all(record["status"] == "PUBLISHED" for record in records),
+            "H05 DEMO 必须只选择种子中 PUBLISHED 的 20 本原创绘本")
     require(
         all("pages" not in record and "branches" not in record for record in records),
         "storybooks.json 必须保持轻量元数据，不得包含 pages/branches",
@@ -263,10 +287,13 @@ def build_payloads(repo_root: Path = REPO_ROOT) -> dict[str, dict[str, Any]]:
     source_files = []
     for name in SEED_FILES:
         path = seed_dir / name
-        source_files.append({"path": relative_repo_path(repo_root, path), "sha256": sha256_file(path)})
+        source_files.append({
+            "path": relative_repo_path(repo_root, path),
+            "sha256": sha256_text_file(path),
+        })
     source_files.append({
         "path": relative_repo_path(repo_root, asset_manifest_path),
-        "sha256": sha256_file(asset_manifest_path),
+        "sha256": sha256_text_file(asset_manifest_path),
     })
 
     storybook_fixture = {
@@ -274,6 +301,7 @@ def build_payloads(repo_root: Path = REPO_ROOT) -> dict[str, dict[str, Any]]:
         "kind": "zhiya-hardware-demo-storybooks",
         "notice": NOTICE,
         "demoOnly": True,
+        "sourceDigest": SOURCE_DIGEST,
         "sourceFiles": source_files,
         "items": records,
     }
@@ -282,6 +310,7 @@ def build_payloads(repo_root: Path = REPO_ROOT) -> dict[str, dict[str, Any]]:
         "kind": "zhiya-hardware-demo-story-details",
         "notice": NOTICE,
         "demoOnly": True,
+        "sourceDigest": SOURCE_DIGEST,
         "sourceFiles": source_files,
         "items": details,
     }
@@ -451,7 +480,27 @@ def build_voice_scenarios() -> dict[str, Any]:
             "answerText": "因为下雨了，小狐狸撑起雨伞，想快点回家。",
             "answerSource": "MOCK_TEMPLATE",
             "tts": None,
-            "recoverTo": "IDLE",
+            "recoverTo": "SYNTHESIZING",
+            "recoveryActions": [
+                {
+                    "actionId": "RETRY_SYNTHESIS",
+                    "label": "重试",
+                    "targetState": "SYNTHESIZING",
+                    "requiresSavedInteractionEventId": True,
+                    "rerunQuestion": False,
+                    "rerunRecording": False,
+                    "recordsNewEvent": False,
+                },
+                {
+                    "actionId": "TEXT_ONLY",
+                    "label": "只看文字",
+                    "targetState": "IDLE",
+                    "requiresSavedInteractionEventId": True,
+                    "rerunQuestion": False,
+                    "rerunRecording": False,
+                    "recordsNewEvent": False,
+                },
+            ],
             "demoOnly": True,
         },
         {
@@ -576,12 +625,14 @@ def build_error_scenarios() -> dict[str, Any]:
         {
             "scenarioId": "DEPENDENCY_UNAVAILABLE", "status": 503, "code": "DEPENDENCY_UNAVAILABLE",
             "message": "Mock 依赖暂不可用", "retryable": True,
+            "retryableByMethod": {"GET": True, "POST": False},
             "appliesTo": ["/api/v1/*"], "mode": "error", "demoOnly": True,
         },
         {
             "scenarioId": "REQUEST_OUTCOME_UNKNOWN", "status": 504, "code": "REQUEST_OUTCOME_UNKNOWN",
             "message": "Mock 写入结果未知，请先读取会话", "retryable": False,
-            "appliesTo": ["/api/v1/reading-sessions/*/events", "/api/v1/reading-sessions/*/completions"],
+            "appliesTo": ["/api/v1/reading-sessions/*/events", "/api/v1/reading-sessions/*/questions",
+                          "/api/v1/reading-sessions/*/completions"],
             "mode": "error", "demoOnly": True,
         },
         {

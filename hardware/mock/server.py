@@ -144,6 +144,9 @@ def load_fixtures(fixtures_dir: Path) -> dict[str, Any]:
 
     if not isinstance(books.get("items"), list) or len(books["items"]) != 20:
         raise MockFixtureError("storybooks.json 必须包含 20 本原创绘本")
+    for item in books["items"]:
+        if item.get("status") != "PUBLISHED" or item.get("demoOnly") is not True:
+            raise MockFixtureError("storybooks.json 必须是 PUBLISHED 且 demoOnly=true 的 DEMO 投影")
     if any("pages" in item or "branches" in item for item in books["items"]):
         raise MockFixtureError("storybooks.json 只允许轻量书架元数据，不得包含 pages/branches")
     if not isinstance(details.get("items"), list) or len(details["items"]) != 20:
@@ -176,6 +179,18 @@ def load_fixtures(fixtures_dir: Path) -> dict[str, Any]:
     error_ids = {item.get("scenarioId") for item in errors["scenarios"]}
     if not {"AUTH_REQUIRED", "SESSION_CONFLICT", "REQUEST_OUTCOME_UNKNOWN", "NO_BOOKS"} <= error_ids:
         raise MockFixtureError("error-scenarios 缺少关键场景")
+    unknown = next(item for item in errors["scenarios"] if item["scenarioId"] == "REQUEST_OUTCOME_UNKNOWN")
+    if not any(pattern.endswith("/questions") for pattern in unknown.get("appliesTo", [])):
+        raise MockFixtureError("REQUEST_OUTCOME_UNKNOWN 必须覆盖 questions 路由")
+    dependency = next(item for item in errors["scenarios"] if item["scenarioId"] == "DEPENDENCY_UNAVAILABLE")
+    if dependency.get("retryableByMethod", {}).get("POST") is not False:
+        raise MockFixtureError("DEPENDENCY_UNAVAILABLE 的 POST retryable 必须为 false")
+    if dependency.get("retryableByMethod", {}).get("GET") is not True:
+        raise MockFixtureError("DEPENDENCY_UNAVAILABLE 的 GET retryable 必须为 true")
+    tts = next(item for item in voice["scenarios"] if item.get("scenarioId") == "tts_failed")
+    actions = {action.get("actionId") for action in tts.get("recoveryActions", [])}
+    if actions != {"RETRY_SYNTHESIS", "TEXT_ONLY"} or tts.get("recoverTo") != "SYNTHESIZING":
+        raise MockFixtureError("tts_failed 必须区分重试合成与只看文字")
 
     initial_session = session_fixture.get("session", {})
     if initial_session.get("storyVersionId") not in by_version:
@@ -242,11 +257,15 @@ class MockState:
             }
 
     def sessions_snapshot(self) -> list[dict[str, Any]]:
-        """Return one locked snapshot of every session object."""
+        """Return one locked snapshot ordered newest-first, before pagination."""
         with self.lock:
             return [
                 item.session_object()
-                for item in sorted(self.sessions.values(), key=lambda session: session.reading_session_id)
+                for item in sorted(
+                    self.sessions.values(),
+                    key=lambda session: session.reading_session_id,
+                    reverse=True,
+                )
             ]
 
     def session_snapshot(self, session_id: int) -> dict[str, Any]:
@@ -286,6 +305,17 @@ class MockState:
     def has_session(self, session_id: int) -> bool:
         with self.lock:
             return session_id in self.sessions
+
+    def has_ask_event(self, session_id: int, event_id: int) -> bool:
+        """Check a saved ASK event under the same lock as session reads."""
+        with self.lock:
+            session = self.sessions.get(session_id)
+            if session is None:
+                return False
+            return any(
+                event.get("interactionEventId") == event_id and event.get("eventType") == "ASK"
+                for event in session.events
+            )
 
     def error_scenario(self, scenario_id: str) -> dict[str, Any] | None:
         with self.lock:
@@ -428,21 +458,59 @@ class MockRequestHandler(BaseHTTPRequestHandler):
         return scenario
 
     def _send_error_from_scenario(self, scenario: dict[str, Any]) -> None:
+        retryable = scenario.get("retryable", False)
+        by_method = scenario.get("retryableByMethod") or {}
+        if self.command in by_method:
+            retryable = by_method[self.command]
         self._send_json(
             int(scenario["status"]),
             error_payload(
                 scenario["code"],
                 scenario["message"],
-                bool(scenario.get("retryable", False)),
+                bool(retryable),
                 self.request_id,
             ),
             {"Retry-After": str(scenario["retryAfter"])} if scenario.get("retryAfter") else None,
         )
 
+    def _remember_failure(self, session: SessionState, client_event_id: str, digest: str,
+                          kind: str, exc: ApiError) -> None:
+        """Persist a deterministic failed request for same-key replay."""
+        session.idempotency[client_event_id] = {
+            "digest": digest,
+            "kind": kind,
+            "outcome": "error",
+            "status": exc.status,
+            "error": {
+                "code": exc.code,
+                "message": exc.message,
+                "retryable": exc.retryable,
+                "retryAfter": exc.retry_after,
+            },
+        }
+
+    @staticmethod
+    def _remember_success(session: SessionState, client_event_id: str, digest: str, kind: str,
+                          first_status: int, data: dict[str, Any]) -> None:
+        """Save a successful response and the separate replay status."""
+        session.idempotency[client_event_id] = {
+            "digest": digest,
+            "kind": kind,
+            "outcome": "success",
+            "status": first_status,
+            "replayStatus": 200,
+            "data": data,
+        }
+
     def _replay_payload(self, replay: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        if replay.get("outcome") == "error":
+            error = replay["error"]
+            return int(replay["status"]), error_payload(
+                error["code"], error["message"], bool(error["retryable"]), self.request_id
+            )
         data = copy.deepcopy(replay["data"])
         data["requestId"] = self.request_id
-        return int(replay["status"]), data
+        return int(replay.get("replayStatus", replay["status"])), data
 
     def _send_api_error(self, exc: ApiError) -> None:
         self._send_json(
@@ -498,14 +566,12 @@ class MockRequestHandler(BaseHTTPRequestHandler):
             items = []
         page = self._query_int("page", 1, 1, 9007199254740991)
         page_size = self._query_int("pageSize", 20, 1, 50)
-        total = len(items)
         offset = (page - 1) * page_size
         sliced = items[offset:offset + page_size]
         self._send_json(200, success_payload({
             "items": sliced,
             "page": page,
             "pageSize": page_size,
-            "total": total,
         }, self.request_id))
 
     def _story_detail(self, version_id: int, scenario: dict[str, Any] | None) -> None:
@@ -554,7 +620,6 @@ class MockRequestHandler(BaseHTTPRequestHandler):
             "items": sessions[offset:offset + page_size],
             "page": page,
             "pageSize": page_size,
-            "total": len(sessions),
         }, self.request_id))
 
     def _get_session(self, session_id: int) -> None:
@@ -584,34 +649,40 @@ class MockRequestHandler(BaseHTTPRequestHandler):
             if replay is not None:
                 replay_response = self._replay_payload(replay)
             else:
-                if session.status == "FINISHED":
-                    raise ApiError(409, "SESSION_CONFLICT", "本次阅读已结束")
-                if expected_revision != session.revision:
-                    raise ApiError(409, "SESSION_CONFLICT", "会话修订号已变化，请先读取会话")
-                if event_type == "STARTED":
-                    if session.status != "CREATED" or page_number != 1 or expected_revision != 0:
-                        raise ApiError(409, "SESSION_CONFLICT", "当前状态不允许 STARTED")
-                    session.status = "IN_PROGRESS"
-                    session.current_page = 1
-                    session.visited_pages.append(1)
-                    session.revision += 1
-                else:
-                    if session.status != "IN_PROGRESS":
-                        raise ApiError(409, "SESSION_CONFLICT", "会话尚未开始")
-                    current_page = self._page(session.story_version_id, session.current_page)
-                    next_page = current_page.get("defaultNextPageNumber")
-                    # Keep Mock API-015 semantics aligned with the real backend:
-                    # only the current page's official next page is accepted.
-                    # The DEMO seeds are linear; additionally reject a visited
-                    # page so a malformed loop cannot turn H06 local re-display
-                    # into a server-accepted PAGE_CHANGED event.
-                    if page_number in session.visited_pages:
-                        raise ApiError(409, "SESSION_CONFLICT", "目标页已访问，旧页仅支持本地回看")
-                    if next_page != page_number:
-                        raise ApiError(409, "SESSION_CONFLICT", "目标页不可达")
-                    session.current_page = page_number
-                    session.visited_pages.append(page_number)
-                    session.revision += 1
+                try:
+                    if session.status == "FINISHED":
+                        raise ApiError(409, "SESSION_CONFLICT", "本次阅读已结束")
+                    if expected_revision != session.revision:
+                        raise ApiError(409, "SESSION_CONFLICT", "会话修订号已变化，请先读取会话")
+                    if event_type == "STARTED":
+                        if session.status != "CREATED" or page_number != 1 or expected_revision != 0:
+                            raise ApiError(409, "SESSION_CONFLICT", "当前状态不允许 STARTED")
+                        session.status = "IN_PROGRESS"
+                        session.current_page = 1
+                        session.visited_pages.append(1)
+                        session.revision += 1
+                    else:
+                        if session.status != "IN_PROGRESS":
+                            raise ApiError(409, "SESSION_CONFLICT", "会话尚未开始")
+                        current_page = self._page(session.story_version_id, session.current_page)
+                        next_page = current_page.get("defaultNextPageNumber")
+                        # Keep Mock API-015 semantics aligned with the real backend:
+                        # only the current page's official next page is accepted.
+                        # The DEMO seeds are linear; additionally reject a visited
+                        # page so a malformed loop cannot turn H06 local re-display
+                        # into a server-accepted PAGE_CHANGED event.
+                        if page_number in session.visited_pages:
+                            raise ApiError(409, "SESSION_CONFLICT", "目标页已访问，旧页仅支持本地回看")
+                        if next_page != page_number:
+                            raise ApiError(409, "SESSION_CONFLICT", "目标页不可达")
+                        session.current_page = page_number
+                        session.visited_pages.append(page_number)
+                        session.revision += 1
+                except ApiError as exc:
+                    # Deterministic failures keep the original clientEventId.
+                    # A corrected retry must use a new key, matching request_executions.
+                    self._remember_failure(session, client_event_id, digest, "events", exc)
+                    raise
                 event_id = session.next_event_id
                 session.next_event_id += 1
                 event = {
@@ -623,12 +694,7 @@ class MockRequestHandler(BaseHTTPRequestHandler):
                 }
                 session.events.append(event)
                 response = success_payload({"interactionEventId": event_id, "revision": session.revision}, self.request_id)
-                session.idempotency[client_event_id] = {
-                    "digest": digest,
-                    "kind": "events",
-                    "status": 201,
-                    "data": response,
-                }
+                self._remember_success(session, client_event_id, digest, "events", 201, response)
         if replay_response is not None:
             self._send_json(replay_response[0], replay_response[1], None)
         else:
@@ -652,27 +718,27 @@ class MockRequestHandler(BaseHTTPRequestHandler):
             if replay is not None:
                 replay_response = self._replay_payload(replay)
             else:
-                if session.status == "FINISHED":
-                    response = success_payload({"session": session.session_object(), "report": session.report}, self.request_id)
-                    session.idempotency[client_event_id] = {
-                        "digest": digest, "kind": "completion", "status": 200, "data": response,
-                    }
-                else:
-                    if session.status != "IN_PROGRESS" or expected_revision != session.revision:
-                        raise ApiError(409, "SESSION_CONFLICT", "阅读进度已更新，请刷新后再结束")
-                    session.status = "FINISHED"
-                    session.revision += 1
-                    session.report = {
-                        "readingSessionId": session.reading_session_id,
-                        "status": "READY",
-                        "summary": "本地 DEMO 模拟记录：用于验证结束页，不是正式阅读报告。",
-                        "activities": [],
-                        "demoOnly": True,
-                    }
-                    response = success_payload({"session": session.session_object(), "report": session.report}, self.request_id)
-                    session.idempotency[client_event_id] = {
-                        "digest": digest, "kind": "completion", "status": 200, "data": response,
-                    }
+                try:
+                    if session.status == "FINISHED":
+                        response = success_payload({"session": session.session_object(), "report": session.report}, self.request_id)
+                        self._remember_success(session, client_event_id, digest, "completion", 200, response)
+                    else:
+                        if session.status != "IN_PROGRESS" or expected_revision != session.revision:
+                            raise ApiError(409, "SESSION_CONFLICT", "阅读进度已更新，请刷新后再结束")
+                        session.status = "FINISHED"
+                        session.revision += 1
+                        session.report = {
+                            "readingSessionId": session.reading_session_id,
+                            "status": "READY",
+                            "summary": "本地 DEMO 模拟记录：用于验证结束页，不是正式阅读报告。",
+                            "activities": [],
+                            "demoOnly": True,
+                        }
+                        response = success_payload({"session": session.session_object(), "report": session.report}, self.request_id)
+                        self._remember_success(session, client_event_id, digest, "completion", 200, response)
+                except ApiError as exc:
+                    self._remember_failure(session, client_event_id, digest, "completion", exc)
+                    raise
         if replay_response is not None:
             self._send_json(replay_response[0], replay_response[1], None)
         else:
@@ -698,12 +764,17 @@ class MockRequestHandler(BaseHTTPRequestHandler):
             if replay is not None:
                 replay_response = self._replay_payload(replay)
             else:
-                if session.status != "IN_PROGRESS" or session.current_page != page_number:
-                    raise ApiError(409, "SESSION_CONFLICT", "会话页码或状态不允许提问")
-                if expected_revision != session.revision:
-                    raise ApiError(409, "SESSION_CONFLICT", "会话修订号已变化，请先读取会话")
+                try:
+                    if session.status != "IN_PROGRESS" or session.current_page != page_number:
+                        raise ApiError(409, "SESSION_CONFLICT", "会话页码或状态不允许提问")
+                    if expected_revision != session.revision:
+                        raise ApiError(409, "SESSION_CONFLICT", "会话修订号已变化，请先读取会话")
+                except ApiError as exc:
+                    self._remember_failure(session, client_event_id, digest, "question", exc)
+                    raise
                 event_id = session.next_event_id
                 session.next_event_id += 1
+                session.revision += 1
                 output_text = "这是本地 Mock 的固定回答，不是真实 AI 输出。"
                 event = {
                     "interactionEventId": event_id,
@@ -725,13 +796,11 @@ class MockRequestHandler(BaseHTTPRequestHandler):
                     "sources": [],
                     "demoOnly": True,
                 }, self.request_id)
-                session.idempotency[client_event_id] = {
-                    "digest": digest, "kind": "question", "status": 200, "data": response,
-                }
+                self._remember_success(session, client_event_id, digest, "question", 201, response)
         if replay_response is not None:
             self._send_json(replay_response[0], replay_response[1], None)
         else:
-            self._send_json(200, response)
+            self._send_json(201, response)
 
     def _page(self, version_id: int, page_number: int) -> dict[str, Any]:
         detail = self.server.state.version_detail(version_id)
@@ -775,13 +844,28 @@ class MockRequestHandler(BaseHTTPRequestHandler):
         if not isinstance(scenario_id, str):
             raise ApiError(422, "VALIDATION_ERROR", "scenarioId 必须是字符串")
         session_id = body.get("sessionId")
+        if session_id is not None and (not isinstance(session_id, int) or isinstance(session_id, bool) or session_id < 1):
+            raise ApiError(422, "VALIDATION_ERROR", "sessionId 必须是正整数")
+        interaction_event_id = body.get("interactionEventId")
+        if interaction_event_id is not None and (
+            not isinstance(interaction_event_id, int)
+            or isinstance(interaction_event_id, bool)
+            or interaction_event_id < 1
+        ):
+            raise ApiError(422, "VALIDATION_ERROR", "interactionEventId 必须是正整数")
         scenario = self.server.state.voice_scenario(scenario_id)
         if scenario is None:
             raise ApiError(404, "RESOURCE_NOT_FOUND", "语音场景不存在")
         if session_id is not None and not self.server.state.has_session(session_id):
             raise ApiError(404, "RESOURCE_NOT_FOUND", "会话不可用")
+        if scenario_id == "tts_failed":
+            if session_id is None or interaction_event_id is None:
+                raise ApiError(422, "VALIDATION_ERROR", "tts_failed 重试必须复用已保存的 interactionEventId")
+            if not self.server.state.has_ask_event(session_id, interaction_event_id):
+                raise ApiError(422, "VALIDATION_ERROR", "interactionEventId 不是该会话已保存的 ASK 事件")
         data = scenario
         data["sessionId"] = session_id
+        data["interactionEventId"] = interaction_event_id
         data["mockPlayback"] = True
         data["audioUrl"] = None
         self._send_json(200, success_payload(data, self.request_id))

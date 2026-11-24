@@ -9,9 +9,9 @@
 | 固件基线 | ESP-IDF v5.5.5；H02 正在实现 LCD、GT911 和 LVGL 底层适配 |
 | UI 依据 | `hardware/docs/ui-flow.md`（H04） |
 | 素材依据 | `hardware/docs/media-format.md`、`hardware/assets/generated/assets-manifest.json`（H03） |
-| 数据依据 | `data/seed/storybooks.json`、`story_versions.json`、`story_pages.json`、`cover_mapping.json` |
-| 接口依据 | `docs/design/api-contract.md`、`docs/design/api-contract-v0.4.json` |
-| 本文版本 | 2026-11-18，H05 初版 |
+| 数据依据 | `data/seed/storybooks.json`、`story_versions.json`、`story_pages.json`、`cover_mapping.json`（2026-11-24 基线） |
+| 接口依据 | `docs/design/api-contract.md`、`docs/design/api-contract-v0.4.json`、`backend/app/api/v1/reading_sessions.py` |
+| 本文版本 | 2026-11-25，H05 审查修复版 |
 | 适用范围 | 本地 DEMO、离线自动化测试、H06 UI 联调准备；不替代真实后端、设备认证、真机解码或上板验收 |
 
 本文描述的是**本地 Mock 层**，不是新增正式 API 契约。所有响应和 fixtures 都标记 `demoOnly=true`；不得把 Mock 的成功结果写成真实后端联调成功，也不得把 H03 本地封面路径写成 API-024 的受控媒体 `resource_key`。
@@ -39,7 +39,7 @@ H05 让 H06 在没有真实后端、没有云端 ASR/TTS/LLM、没有 ESP32 实�
 - 不实现 API-022 的真实 multipart ASR，不实现 API-023 的真实 TTS，不实现 API-024 的媒体读取。
 - 不模拟正式设备认证、家长 Cookie/CSRF、儿童档案服务端授权；H05 的 401/403 只是错误注入。
 - 不生成真实录音、真实音频、真实模型回答、真实阅读报告或模型评测结果。
-- 不把 `DRAFT` 绘本当成已发布内容，也不把封面当成 104 页正文插画。
+- 不把 `DRAFT` 联调绘本纳入设备书架；不把封面当成 104 页正文插画；不把 H05 的 `PUBLISHED` 标记当作在线发布授权。
 - 不验证 JPEG 在 ESP32-S3/LVGL 上的解码兼容性；该结论必须由 H06 实板确认。
 
 ## 2. 数据来源与转换规则
@@ -61,13 +61,14 @@ H05 让 H06 在没有真实后端、没有云端 ASR/TTS/LLM、没有 ESP32 实�
 ### 2.2 选取规则
 
 - 只选 `cover_mapping.json` 中的 20 条原创绘本，`book_no` 为 `B-002`～`B-021`。
-- 排除 `storybookId=1` 的旧版联调绘本《逃家小兔》（6 页）。
+- 最新种子包含 20 本 `PUBLISHED` 原创绘本和 1 本《逃家小兔》6 页 `DRAFT` 联调绘本；H05 排除该 DRAFT 绘本，不按数组下标或状态文字硬编码。
 - 通过 `story_versions.json` 的 `storybook_id` 查找**恰好一个**版本；不按数组下标，也不假设 `storybookId == storyVersionId`。
+- 选中版本必须为 `PUBLISHED`；构建器从种子读取真实状态并写入 fixtures，不强制原创绘本为 `DRAFT`。
 - 每条详情页必须从 1 开始连续编号，最后一页的 `default_next_page_number` 必须为 `null`。
 - 只使用种子已有的正文和页面数；不编造 104 页之外的分页正文或插画。
-- `status` 原样保留为 `DRAFT`；fixtures 的 `demoOnly` 和 `notice` 明确标识为本地演示。
+- `demoOnly=true` 和 `notice` 明确标识本地演示；`PUBLISHED` 仅表示种子状态，不代表在线发布授权、家长确认或 API-024 媒体访问权。
 - `coverRef` 和 `imageRef` 输出为 `null`。H03 的本地封面只放在 `localCover`，不让它看起来像服务端受控媒体键。
-- `story-details` 中每页的 `imageStatus` 为 `MISSING_INNER_ILLUSTRATION`，提示 H06 使用占位图，不用封面顶替正文插画。
+- `story-details` 中每页的 `imageStatus` 为 `MISSING_INNER_ILLUSTRATION`，`localPageAsset=null`；H06 使用占位图，不用封面顶替正文插画。
 
 ### 2.3 结果计数
 
@@ -79,17 +80,22 @@ H05 让 H06 在没有真实后端、没有云端 ASR/TTS/LLM、没有 ESP32 实�
 | 原创正文 | 104 页 |
 | 年龄分布 | 3～4 岁 7 本、4～5 岁 7 本、5～6 岁 6 本 |
 | 封面资源引用 | 40 个（20 本 × THUMBNAIL/DETAIL） |
-| 版本状态 | 20 个均为 `DRAFT` |
-| 原始页面总数 | 110 页（含旧版 6 页）；H05 不选旧版 |
-| fixtures 文件 | 5 个，共 92,967 B |
+| 版本状态 | 20 个均为 `PUBLISHED`（源种子真实状态，`demoOnly=true`） |
+| 联调草稿 | 1 本《逃家小兔》，`storybookId=1`、6 页、`DRAFT`，H05 不选 |
+| 原始页面总数 | 110 页（含联调草稿 6 页）；H05 只取 104 页 |
+| 内页资源 | 0 个；`imageRef=null`、`localPageAsset=null`，等待独立 H03 内页任务 |
+| fixtures 文件 | 5 个，共 98,154 B |
 
 H03 清单的 `assetBytes=806,090`、`sourceBytes=117,248,465`、`compressionRatio=0.006875` 只描述文件体积，不等于解码后的内存。H05 不重复做 H03 的图像审计。
 
 ### 2.4 确定性和源文件可追溯
 
-- JSON 使用 UTF-8、`sort_keys=True`、2 空格缩进和固定换行。
+- JSON 使用 UTF-8、`sort_keys=True`、2 空格缩进和固定 LF 换行。
 - 通过同目录临时文件 + `os.replace` 写出，避免半截文件。
-- `storybooks.json` 和 `story-details.json` 根节点的 `sourceFiles` 记录 5 个输入文件的仓库相对路径及 SHA-256。
+- `storybooks.json` 和 `story-details.json` 根节点的 `sourceFiles` 记录 5 个输入文件的仓库相对路径，`sourceDigest` 固定为 `sha256-utf8-lf-v1`。
+  - 规范：按无 BOM 的 UTF-8 解码文本，先将 `CRLF` 和单独的 `CR` 归一为 `LF`，再对规范化文本的 UTF-8 字节计算 SHA-256。
+  - 该规范只消除 Git/Windows 检出造成的换行差异，不删除空白、不重排 JSON、不忽略内容；其他文本变化仍会导致 `--check` 失败。
+  - H03 JPEG 等二进制资源仍按原始字节计算 SHA-256。
 - `python hardware/mock/build_fixtures.py --check` 只对比重新计算的内容，不写入。
 - 同一输入重复生成应得到相同业务内容；`requestId` 只在 HTTP 响应中随机生成，不进入 fixtures。
 
@@ -109,6 +115,7 @@ H03 清单的 `assetBytes=806,090`、`sourceBytes=117,248,465`、`compressionRat
   "kind": "zhiya-hardware-demo-storybooks",
   "notice": "本地 DEMO 数据……",
   "demoOnly": true,
+  "sourceDigest": "sha256-utf8-lf-v1",
   "sourceFiles": [
     {"path": "data/seed/storybooks.json", "sha256": "……"}
   ],
@@ -124,7 +131,7 @@ H03 清单的 `assetBytes=806,090`、`sourceBytes=117,248,465`、`compressionRat
   "storyVersionId": 2,
   "versionNumber": 1,
   "title": "小狐狸的雨伞",
-  "status": "DRAFT",
+  "status": "PUBLISHED",
   "ageMin": 3,
   "ageMax": 4,
   "ageBand": "AGE_3_4",
@@ -165,7 +172,7 @@ H03 清单的 `assetBytes=806,090`、`sourceBytes=117,248,465`、`compressionRat
 | `storybookId` | integer | 绘本逻辑 ID，不等于版本 ID |
 | `storyVersionId` | integer | 由 `storybook_id` 查询得到的版本 ID |
 | `versionNumber` | integer | 版本序号；不是会话 `revision` |
-| `status` | string | 本数据全部为 `DRAFT`，不能作为正式发布标识 |
+| `status` | string | 源种子中 20 本均为 `PUBLISHED`；仅表示数据状态，不是在线发布授权 |
 | `pageCount` / `totalPages` | integer | 本种子中两者相同；H06 仍应以 `pages` 实际数据为准 |
 | `coverRef` | null | 服务端受控封面引用；DEMO 中为空 |
 | `localCover` | object | H03 本地封面，仅用于 DEMO 书架和详情 |
@@ -183,14 +190,16 @@ H03 清单的 `assetBytes=806,090`、`sourceBytes=117,248,465`、`compressionRat
       "text": "下雨了。小狐狸站在门口，看着外面的雨。",
       "imageRef": null,
       "defaultNextPageNumber": 2,
-      "imageStatus": "MISSING_INNER_ILLUSTRATION"
+      "imageStatus": "MISSING_INNER_ILLUSTRATION",
+      "localPageAsset": null
     },
     {
       "pageNumber": 6,
       "text": "雨停了。小狐狸收起伞，笑了。",
       "imageRef": null,
       "defaultNextPageNumber": null,
-      "imageStatus": "MISSING_INNER_ILLUSTRATION"
+      "imageStatus": "MISSING_INNER_ILLUSTRATION",
+      "localPageAsset": null
     }
   ],
   "branches": [],
@@ -200,7 +209,8 @@ H03 清单的 `assetBytes=806,090`、`sourceBytes=117,248,465`、`compressionRat
 
 - 页码从 1 开始。
 - 末页 `defaultNextPageNumber=null`，不能把数组长度当作永远可连续翻页。
-- `imageRef=null` 表示本 DEMO 没有逐页插画；H06 显示占位，不得拿封面冒充正文插画。
+- `imageRef=null` 表示本 DEMO 没有服务端逐页插画引用；H06 显示占位，不得拿封面冒充正文插画。
+- `localPageAsset=null` 是为后续独立 H03 内页资源任务预留的本地接入位。该任务完成前不得填入路径、尺寸或 SHA-256；H05 不复制、不猜测 104 张内页 PNG。
 - `storyVersionId` 与 `storybookId` 是两个字段；H06 不得用后者替换前者。
 
 ### 3.3 `demo-session.json`：初始 DEMO 会话
@@ -250,8 +260,9 @@ H03 清单的 `assetBytes=806,090`、`sourceBytes=117,248,465`、`compressionRat
 | `asrText` / `answerText` | 固定测试文本；不是真实 ASR/模型结果 |
 | `reliable` + `reliableIsSimulated` | 仅用于演示；`success` 的 true 是模拟值，真实 API-022 当前固定 false |
 | `consumer` | `PARENT_CONFIRMED` 或 `CHILD`；儿童模式不得自动消费不可信结果 |
-| `tts` | `{status: "SIMULATED", audioUrl: null, playbackMode: "SIMULATED", durationMs}` |
-| `recoverTo` | 错误态建议恢复到 `IDLE` |
+| `tts` | `{status: "SIMULATED", audioUrl: null, playbackMode: "SIMULATED", durationMs}`；`tts_failed` 为 `null`，表示没有可播放音频 |
+| `recoverTo` | 错误态建议恢复目标；`tts_failed` 为 `SYNTHESIZING`，其余错误态为 `IDLE` |
+| `recoveryActions` | 仅 `tts_failed` 提供 `RETRY_SYNTHESIS` 与 `TEXT_ONLY` 两个操作目标 |
 | `demoOnly` | 固定 true |
 
 ### 3.5 `error-scenarios.json`：错误注入
@@ -272,6 +283,8 @@ H03 清单的 `assetBytes=806,090`、`sourceBytes=117,248,465`、`compressionRat
 ```
 
 `mode=payload` 的 `NO_BOOKS` 和 `COVER_MISSING` 返回 200 数据变形，不返回错误；`COVER_MISSING` 的 `action=stripLocalCover` 会把 `localCover` 置为 `null`。`VOICE_BUSY` 额外带 `retryAfter=1`。
+
+`DEPENDENCY_UNAVAILABLE` 的 `retryable` 不是固定值：Mock 按请求方法读取 `retryableByMethod`，GET 为 `true`，POST 为 `false`。这对应正式契约“读取可重试，API-015 写入在已知未提交时由用户决定是否重试”。`REQUEST_OUTCOME_UNKNOWN` 覆盖 `/events`、`/questions`、`/completions`；注入后不修改会话，H06 必须先 `GET` 会话再决定。
 
 ## 4. Mock HTTP 服务
 
@@ -327,6 +340,8 @@ python hardware/mock/server.py --port 8765
 
 `scope=mine` 会返回 403 `FORBIDDEN`，因为 H05 没有实现家长历史书架；这不是正式权限实现。
 
+`GET /api/v1/reading-sessions` 在分页前按 `readingSessionId` 倒序，等价于正式 API-012 的“最新创建优先”；`pageSize=1` 的第一页是最新会话。列表只返回 `items/page/pageSize`，不返回测试辅助 `total`。
+
 `GET /api/v1/storybooks` 只返回 `storybooks.json` 的轻量元数据，**不包含 `pages` / `branches`**；`load_fixtures()` 会在启动时拒绝被误塞入 `pages/branches` 的书架 fixture。H06 进入详情页时必须再请求 `GET /api/v1/story-versions/{id}`。Mock 的会话、书籍、计数、语音和错误场景读取都通过 `MockState` 的锁内快照方法取副本，避免与 `/mock/reset` 或并发写入互相撕裂。
 
 ### 4.4 示例
@@ -345,15 +360,14 @@ GET /api/v1/storybooks?ageBand=AGE_5_6
         "storybookId": 2,
         "storyVersionId": 2,
         "title": "小狐狸的雨伞",
-        "status": "DRAFT",
+        "status": "PUBLISHED",
         "coverRef": null,
         "localCover": {"thumbnail": {"assetRole": "THUMBNAIL", "devicePath": "/assets/covers/book-b002-thumb.jpg"}},
         "demoOnly": true
       }
     ],
     "page": 1,
-    "pageSize": 20,
-    "total": 6
+    "pageSize": 20
   },
   "requestId": "mock-..."
 }
@@ -373,6 +387,8 @@ Content-Type: application/json
 ```json
 {"data": {"interactionEventId": 1, "revision": 1}, "requestId": "mock-..."}
 ```
+
+首次成功 HTTP 状态为 `201`；原样重放同一键/同一请求体为 `200`，事件 ID 与 revision 不变。翻页 `409 SESSION_CONFLICT` 后，原样重放仍为 `409`；只改 `expectedRevision` 而沿用原键会得到 `409 IDEMPOTENCY_CONFLICT`，必须换新键提交。
 
 错误：
 
@@ -436,11 +452,16 @@ status=CREATED, currentPage=1, visitedPageNumbers=[], revision=0
 
 | 情况 | 结果 |
 | --- | --- |
-| 同键、同请求体 | 返回原状态码（事件首次 201；结束 200），不重复递增 revision |
-| 同键、不同请求体（包括修订号不同） | 409 `IDEMPOTENCY_CONFLICT` |
-| 不同键、错误 revision | 409 `SESSION_CONFLICT` |
+| 同键、同请求体，首次成功 | API-015/016 返回 201；API-019 返回 200 |
+| 同键、同请求体，成功重放 | 该操作返回 200，原 `interactionEventId`、revision 和 data 不重复写入 |
+| 同键、同请求体，确定性失败重放 | 返回首次失败的原 HTTP 状态、错误码和 `retryable`；不重新校验或推进页码 |
+| 同键、不同请求体（包括修订号不同） | 409 `IDEMPOTENCY_CONFLICT`，原失败记录不被覆盖 |
+| 不同键、错误 revision | 409 `SESSION_CONFLICT`，并保存该键的确定性失败 |
+| 修正后重试 | 必须使用**新** `clientEventId`；沿原键修改请求体会被拒绝 |
 | 新键在 `FINISHED` 后结束 | 200，返回既有终态和 `report`，不再改 revision |
-| 504 结果未知 | 客户端先 `GET` 会话，保留原键；不得自动创建新事件 |
+| 504 结果未知 | 客户端先 `GET` 会话；保留原键；不得自动创建新事件 |
+
+“确定性失败”包括会话状态/revision/页码不允许、目标页不可达等已能在服务端判定的业务失败。参数类型错误在进入会话幂等区间前返回 422，不保存键。成功记录的 `status` 保存首次 201，`replayStatus` 固定 200；失败记录保存原错误对象。
 
 ### 5.4 读取与恢复
 
@@ -464,8 +485,10 @@ Mock 没有真实角色投影；`report` 是演示对象，H06 不得在儿童�
 `POST /api/v1/reading-sessions/{id}/questions` 仅用于验证 UI 数据流：
 
 - 要求 `IN_PROGRESS`、`pageNumber` 等于当前页、`expectedRevision` 等于当前 revision；
+- 首次成功返回 **201**，成功重放返回 **200**，与 API-016 相同；
 - 返回固定 `outputText`、`status=GENERATED`、`strategyType=CONTEXT_QUESTION`、`sources=[]`、`demoOnly=true`；
-- 追加一条 `eventType=ASK` 的内存事件，但**不递增** session revision；
+- 追加一条 `eventType=ASK` 的内存事件并递增 session revision，返回新的 `interactionEventId` 与 revision；
+- 该 `interactionEventId` 可供 `/mock/voice/simulate` 的 `tts_failed` 复用；
 - 这不是 API-016/G10 的真实结果，不保存真实互动记录，也不调用模型。
 
 正式链路应为：API-022 识别（`reliable=false` 时儿童不自动进入问答；家长确认或后端可信策略）→ API-016/G10 生成并持久化互动事件 → 必要时 API-023 合成 → API-024 读取。H05 仅模拟 UI 状态，不把该链路写成已完成。
@@ -478,12 +501,15 @@ Mock 没有真实角色投影；`report` 是演示对象，H06 不得在儿童�
 - `books_snapshot()`、`meta_snapshot()`、`sessions_snapshot()`、`session_snapshot()`、`voice_snapshot()`、`voice_scenario()`、`errors_snapshot()`、`error_scenario()` 在锁内复制响应数据，释放锁后再写 HTTP；
 - `session_snapshot()` 在同一个锁区间内取 session、公开 events 和 report，避免 `revision/currentPage/visitedPageNumbers` 来自不同写入代；
 - `create_session()` 在锁内检查版本、分配 ID、插入 session，并返回已构造的 session 对象副本；不会把 live `SessionState` 泄漏给响应层；
-- `POST /events`、`POST /completions`、`POST /questions` 用 `session_for_update()` 在同一锁区间内完成幂等键检查、revision 校验和状态写入；`PAGE_CHANGED` 的 visited 检查也在同一事务内完成；
+- `sessions_snapshot()` 在锁内按 `readingSessionId` 倒序复制会话对象，再在锁外分页；第一页首条是最新创建的会话；
+- `POST /events`、`POST /completions`、`POST /questions` 用 `session_for_update()` 在同一锁区间内完成幂等键检查、revision 校验和状态写入；成功与确定性失败都在锁内写入幂等记录；`PAGE_CHANGED` 的 visited 检查也在同一事务内完成；
 - `GET /reading-sessions/{id}`、`GET /reading-sessions`、`GET /api/v1/storybooks`、`/mock/meta`、`/mock/voice/*`、`/mock/errors` 全部使用快照。
 
 HTTP 响应在释放锁后写出，避免慢客户端长期占用状态锁。并发回归测试覆盖：
 
-- 8 个相同 `STARTED` 请求同时到达：只递增一次 revision，其余按幂等重放；
+- 8 个相同 `STARTED` 请求同时到达：恰好 1 个 201、7 个 200，只产生 1 条事件并递增一次 revision；
+- 8 个并发相同请求只产生一次有效写入；并验证会话事件数与 revision 一致；
+- 创建两个新会话后，`pageSize=1` 的第一页返回最新会话，而不是初始会话；
 - 16 个并发创建会话：ID 唯一，响应均为 `CREATED/revision=0/visited=[]`；
 - 读取会话、列表、书架、meta、语音、错误场景与 `/mock/reset` 交错执行：不出现 500、空会话或半更新响应；
 - 每次 session 快照满足 `currentPage` 在 `visitedPageNumbers` 内、`CREATED` 的 revision 为 0 等基本一致性约束。
@@ -510,7 +536,8 @@ stateDiagram-v2
     RECORDING --> ERROR_TOO_SHORT: 空/过短
     ERROR_ASR --> IDLE: 重试/取消
     ERROR_TIMEOUT --> IDLE: 重试/取消
-    ERROR_TTS --> IDLE: 只看文字/重试
+    ERROR_TTS --> SYNTHESIZING: 重试合成\n复用已保存 interactionEventId
+    ERROR_TTS --> IDLE: 只看文字
     ERROR_NETWORK --> IDLE: 网络恢复/取消
     ERROR_TOO_SHORT --> IDLE: 重试/取消
 ```
@@ -533,6 +560,8 @@ stateDiagram-v2
 ### 6.3 模拟边界
 
 - 所有场景 `audioUrl=null`，`tts.playbackMode=SIMULATED`；不得当作 API-023 的真实音频。
+- `tts_failed` 的 `RETRY_SYNTHESIS` 只回到 `SYNTHESIZING`，复用已保存的 `interactionEventId`，不重新录音、不重新问答、不新增事件；`TEXT_ONLY` 才回 `IDLE`。
+- `/mock/voice/simulate` 对 `tts_failed` 要求同时传入 `sessionId` 与已存在的 ASK `interactionEventId`；缺失或不匹配返回 422。
 - `success` 的 `reliable=true` 只是 Mock 字段，`reliableIsSimulated=true`；真实 API-022 当前 `reliable` 固定为 false。
 - 不生成可播放音频，不创建真实互动事件，不写真实会话记录。
 - 动画建议只使用 H04 的低资源 spinner/呼吸圈；H05 不规定帧率、延迟或内存指标。
@@ -550,8 +579,8 @@ stateDiagram-v2
 | 409 | `SESSION_ENDED` | false | 结束页后的翻页 | 进入结束页，不继续普通阅读 |
 | 422 | `VALIDATION_ERROR` | false | 页码 0、字段缺失 | 修正输入；不自动重试 |
 | 429 | `VOICE_BUSY` | true（带 `Retry-After`） | `X-Mock-Error: VOICE_BUSY` | 等待后重试；不并发发语音 |
-| 503 | `DEPENDENCY_UNAVAILABLE` | true（读取场景） | `DEPENDENCY_UNAVAILABLE` | 读取可提示稍后重试；写入按真实契约 |
-| 504 | `REQUEST_OUTCOME_UNKNOWN` | false | `REQUEST_OUTCOME_UNKNOWN` | 先 GET 会话；不自动提交新事件 |
+| 503 | `DEPENDENCY_UNAVAILABLE` | GET=true / POST=false | `DEPENDENCY_UNAVAILABLE` | 读取可稍后重试；写入在已知未提交时由用户决定是否重试，不静默自动重放 |
+| 504 | `REQUEST_OUTCOME_UNKNOWN` | false | `/events`、`/questions`、`/completions` | 先 GET 会话；不自动提交新事件或新问题 |
 | 200 | `NO_BOOKS` | — | `?mockError=NO_BOOKS` | 空书架页 |
 | 200 | `COVER_MISSING` | — | `?mockCover=missing` | 使用本地占位，不伪造封面 |
 
@@ -562,10 +591,10 @@ stateDiagram-v2
 | 维度 | DEMO / Mock | ONLINE / 正式 |
 | --- | --- | --- |
 | 数据来源 | `hardware/mock/fixtures/*.json`、内存会话 | 业务后端、数据库、真实媒体 |
-| 绘本状态 | 20 本均 `DRAFT`，`demoOnly=true` | 仅服务端授权范围内的已发布/已批准内容 |
+| 绘本状态 | 20 本源种子为 `PUBLISHED`，`demoOnly=true`；联调 DRAFT 不纳入 | 仅服务端授权范围内的已发布/已批准内容 |
 | 身份 | 无真实认证；`childProfileId=1` | 家长登录、儿童档案、设备绑定/凭证 |
 | 封面 | H03 本地 JPEG + `localCover` | API-024 受控媒体 `resource_key` |
-| 内页插画 | `imageRef=null` + 占位 | 服务端真实 `imageRef`；无图仍占位 |
+| 内页插画 | `imageRef=null` + `localPageAsset=null` + 占位；等独立 H03 内页任务 | 服务端真实 `imageRef`；无图仍占位 |
 | 语音 | `/mock/voice/*` 状态时间线 | API-022/023/024 + 真实 ASR/TTS/媒体 |
 | 结束报告 | 固定 DEMO 文案 | API-019 + 服务端小结 |
 | 错误注入 | 请求头/查询参数 | 真实 401/403/404/409/422/503/504 |
@@ -599,9 +628,9 @@ DEMO 实现读取 fixtures 或调用 Mock HTTP；ONLINE 实现使用正式 API �
 | --- | --- | --- |
 | HW-UI-01 开机/网络 | `/api/v1/health`、`/mock/meta` | DEMO 标识；不把它当成正式 API-032 |
 | HW-UI-03 首页 | `storybooks.items[].localCover.detail` | 继续阅读卡只用 DETAIL；无图占位 |
-| HW-UI-04 书架 | `storybooks.items[].localCover.thumbnail`、`status` | 20 本 DRAFT 仅 DEMO；正式书架不得展示 DRAFT |
+| HW-UI-04 书架 | `storybooks.items[].localCover.thumbnail`、`status` | 20 本源种子状态为 `PUBLISHED`，仍仅 DEMO；不得据此宣称在线发布 |
 | HW-UI-05 详情 | `story-details`、`localCover.detail` | `storybookId` 与 `storyVersionId` 分开显示/传参 |
-| HW-UI-06 阅读 | `pages[].text/pageNumber/defaultNextPageNumber` | `imageRef=null` 用占位；不用封面当正文 |
+| HW-UI-06 阅读 | `pages[].text/pageNumber/defaultNextPageNumber/localPageAsset` | `imageRef=null`、`localPageAsset=null` 时用占位；不用封面当正文 |
 | HW-UI-07 语音 | `voice-scenarios.json` / `/mock/voice/*` | 只演示状态和文案；`audioUrl=null` |
 | HW-UI-08 结束 | `completions` 返回的 `session/report` | 儿童端不展示完整报告；`report` 为 DEMO |
 | HW-UI-09 异常 | `error-scenarios.json` | 至少覆盖 401/403/404/409/422/503/504、空书架、缺封面 |
@@ -612,6 +641,7 @@ DEMO 实现读取 fixtures 或调用 Mock HTTP；ONLINE 实现使用正式 API �
 - H03 `devicePath` 形如 `/assets/covers/book-b002-thumb.jpg` / `/assets/covers/book-b002-detail.jpg`。
 - H06 可将这些逻辑路径映射到 Flash 资源分区；具体分区由 H06 决定，H05 不修改 `firmware/partitions.csv`。
 - `THUMBNAIL` 只用于书架卡；`DETAIL` 用于详情/继续阅读；阅读页内页只用 `imageRef` 或占位。
+- `localPageAsset` 是后续 H03 内页资源的接入位。当前为 `null`；独立任务交付真实路径/哈希前，H05 不编造 104 页内页清单，也不把封面或 `knowledge-base_v2.5/图片/内页/**` 中的未审计文件直接写入。
 - 缺图、缺封面、解码失败统一显示占位；不得用封面冒充正文插画。
 
 ### 9.4 事件边界
@@ -674,23 +704,25 @@ python -m unittest discover -s hardware/tests/mock -v
 实际结果：
 
 ```text
-Ran 30 tests in 4.879s
+Ran 35 tests in 5.933s
 OK
 ```
 
 覆盖范围：
 
-- 20 本原创绘本、104 页、40 个 H03 引用；
-- 书号、`storybookId`、`storyVersionId`、`sourcePath` 映射；
-- 页码 1 开始、末页 null、`imageRef=null`；
-- 书架/详情一致；书架列表不包含 `pages` / `branches`；书架 fixture 误塞入 `pages` 时启动失败；
+- 20 本原创绘本、104 页、40 个 H03 引用；20 本源状态为 `PUBLISHED`、`demoOnly=true`；
+- 书号、`storybookId`、`storyVersionId`、`sourcePath` 映射；DRAFT 联调绘本排除；
+- 页码 1 开始、末页 null、`imageRef=null`、`localPageAsset=null`；
+- 书架/详情一致；书架列表不包含 `pages` / `branches` / `total`；书架 fixture 误塞入 `pages` 时启动失败；
 - H03 40 个资源存在、SHA/大小/JPEG；
 - `STARTED`、前进、错误返回旧页、跳过页、最后一页、结束态；
 - 畸形 fixture 把 `defaultNextPageNumber` 指回旧页时仍拒绝 `PAGE_CHANGED`；
-- 幂等重放、同键不同请求冲突、重复 STARTED；
-- 问答模板不递增 revision、错误页码；
-- 语音 7 主状态、8 场景、错误恢复、无真实音频；
-- 401/403/404/409/422/429/503/504、空书架、缺封面；
+- 成功首次 201 / 重放 200；8 并发相同请求为 1×201 + 7×200，只写一次；
+- 翻页 409 后原键重放原错误、同键改体 `IDEMPOTENCY_CONFLICT`、新键修正成功；
+- 问答首次 201、重放 200、递增 revision；旧 revision 冲突；
+- 列表分页前最新会话优先；
+- 语音 7 主状态、8 场景、TTS 重试复用 ASK 事件、无真实音频、无新问答/录音；
+- 401/403/404/409/422/429/503/504、空书架、缺封面；503 读写 retryable 差异；questions 504 后 GET 恢复；
 - 重复生成确定性、`--check`、源文件未修改、`/mock/reset`；
 - 并发相同 `STARTED` 幂等、16 个并发创建会话、读取/列表/书架/meta/语音/错误/重置交错快照一致性。
 
@@ -702,14 +734,15 @@ OK
 
 ### 11.1 已验证
 
-- fixtures 由真实种子生成：20 本、104 页、40 个资源引用。
+- fixtures 由真实种子生成：20 本 `PUBLISHED` 原创、104 页、40 个资源引用；1 本 `DRAFT` 联调绘本排除。
 - `storyVersionId` 按 `storybook_id` 查找，不按数组下标或 ID 等值假设。
-- 所有原创版本保留 `DRAFT`；`coverRef/imageRef=null`；H03 本地封面只出现在 `localCover`。
-- Mock 服务的阅读会话、幂等、冲突、结束态、错误注入、分页规则和并发快照通过 30 项离线测试。
-- `GET /api/v1/storybooks` 只返回轻量元数据，不携带 `pages` / `branches`；详情由 API-009 投影单独读取。
+- 所有原创版本 `demoOnly=true`、`coverRef=null`、`imageRef=null`、`localPageAsset=null`；H03 本地封面只出现在 `localCover`。
+- Mock 服务的阅读会话、成功/失败幂等、结束态、错误注入、分页规则和并发快照通过 35 项离线测试。
+- `GET /api/v1/storybooks` 只返回轻量元数据，不携带 `pages` / `branches` / `total`；详情由 API-009 投影单独读取。
 - `PAGE_CHANGED` 只接受当前页 `defaultNextPageNumber` 且未访问的目标；错误的后向翻页、已访问页和畸形回环均返回 409，不增加 revision。
 - 测试不依赖 Pillow、FastAPI、数据库、云端模型或 ESP32 板卡。
-- 原图和种子在构建/测试后 SHA-256 未变化；H03 40 个资源与 manifest 一致。
+- 源文本使用 `sha256-utf8-lf-v1`；工作树 CRLF 与 Git LF 原始字节归一后得到相同摘要，干净检出可直接运行 `--check`。
+- H03 40 个封面 JPEG 与 manifest 的 SHA-256/大小一致；原图和种子未被构建或测试改写。
 
 ### 11.2 未验证 / 待 H06
 
@@ -717,31 +750,32 @@ OK
 - LVGL 9.2.0 的图片缓存、PSRAM 使用、帧率和触摸延迟；本文不声称任何实测数字。
 - Flash 资源分区、H03 JPEG 烧录/挂载路径、真机启动后的资源可读性。
 - API-022 真实 ASR、API-023 真实 TTS、API-024 图片分派和设备认证；H05 没有实现这些。
-- API-016/G10 的真实问答持久化与 `interactionEventId` 语义；H05 只是模板。
+- API-016/G10 的真实模型问答、持久化与跨请求执行记录；H05 只验证固定回答、201/200、revision 和 ASK 事件复用。
 - 家长/儿童角色投影、家长锁安全强度、设备绑定 API；H05 的 401/403 是模拟。
-- 104 页正文插画：当前全部缺失；H05 只用 `imageRef=null`，不生成插画。
+- 104 页正文插画：当前全部缺失；`localPageAsset=null`，等待独立 H03 内页任务，H05 不编造清单/哈希/路径。
 
 ### 11.3 与正式契约的已知差异
 
-1. **问答**：Mock 的 `/questions` 返回固定模板，不调用 G10、不递增 revision；正式 API-016 结果和持久化仍待实现。
+1. **问答**：Mock 的 `/questions` 返回固定模板，不调用 G10、不写数据库；但它已对齐 API-016 的首次 201、重放 200、递增 revision 和 ASK `interactionEventId`。
 2. **语音**：Mock 的 `/mock/voice/*` 不是 API-022/023/024；`success` 的 `reliable=true` 是模拟，真实 API-022 固定 false。
 3. **角色投影**：Mock 无真实身份，不实现儿童 `report=null` 投影；H06 不能把 Mock 的 `report` 直接展示给儿童。
-4. **书籍列表字段**：Mock 额外返回 `total`，正式 API-008 只规定 `items/page/pageSize`；这是测试辅助字段。
-5. **状态**：Mock 的 20 本均为 `DRAFT`，正式书架只能展示服务端授权的已发布/已批准内容。
-6. **媒体**：`localCover.assetPath/devicePath` 不是 API-024 `resource_key`；正式媒体必须由 API-024 逐次校验权限。
+4. **书架列表投影**：H05 按设备书架要求只返回轻量元数据，不返回 `pages` / `branches` / `total`；当前正式 API-008 响应示例仍包含完整版本对象。H06 进入详情必须走 API-009，接正式后端时以服务端实际响应为准。
+5. **状态**：20 本源种子为 `PUBLISHED` 且全部 `demoOnly=true`；这只用于本地 DEMO，不代表在线授权、审核通过或家长可见。
+6. **媒体**：`localCover.assetPath/devicePath` 不是 API-024 `resource_key`；正式媒体必须由 API-024 逐次校验权限。`localPageAsset` 当前为 null，不接入未审计的 H03 内页。
 7. **健康检查**：Mock `/api/v1/health` 不是正式 API-032 实现，不能作为生产健康检查结论。
+8. **阅读能力子集**：Mock 只实现 STARTED/PAGE_CHANGED 事件和固定问答；未实现正式 API-015 的 ANSWER/FEEDBACK、API-017 guidance、API-018 branches、API-020 mode-settings 等。
 
 ## 12. H06 验收建议
 
 最小验收（DEMO，无实板也可做）：
 
-1. 启动 Mock，`GET /api/v1/storybooks` 返回 20 本、`DRAFT` 和 DEMO 标识。
+1. 启动 Mock，`GET /api/v1/storybooks` 返回 20 本、`PUBLISHED/demoOnly=true` 和 DEMO 标识。
 2. 书架只使用 `THUMBNAIL`；详情只使用 `DETAIL`；缺图显示占位。
 3. 开始阅读、前进、末页和结束使用 `revision`；返回旧页仅本地回看，不发送 `PAGE_CHANGED`，不把 `versionNumber` 当 `revision`。
-4. 同键重放不重复递增；错误 revision 显示冲突恢复提示；结束后不继续普通翻页。
-5. 语音覆盖 7 主状态；失败态可回 `IDLE`；`audioUrl=null` 时不调用真实播放。
+4. 同键同体重放不重复递增；同键改体返回 `IDEMPOTENCY_CONFLICT`；错误 revision 显示冲突恢复提示；结束后不继续普通翻页。
+5. 语音覆盖 7 主状态；`ERROR_TTS` 的“重试”复用已保存的 `interactionEventId` 回 `SYNTHESIZING`，“只看文字”回 `IDLE`；`audioUrl=null` 时不调用真实播放。
 6. 断网时保留当前页；恢复后先读取会话，不假设自动补写成功。
-7. 401/403/404/422 不显示受控内容；504 先读取会话，不自动创建新事件。
+7. 401/403/404/422 不显示受控内容；503 读到可重试、写不自动重放；504 先读取会话，不自动创建新事件或新问题。
 
 实板验收（H06）：
 

@@ -93,17 +93,24 @@ class MockTestCase(unittest.TestCase):
 
     # ---------------- data conversion ----------------
 
-    def test_fixture_counts_and_draft_flags(self) -> None:
+    def test_fixture_counts_and_published_flags(self) -> None:
         books = self.fixture("storybooks.json")["items"]
         details = self.fixture("story-details.json")["items"]
         self.assertEqual(20, len(books))
         self.assertEqual(20, len(details))
         self.assertEqual(104, sum(len(item["pages"]) for item in details))
         self.assertEqual({item["storybookId"] for item in books}, set(range(2, 22)))
-        self.assertTrue(all(item["status"] == "DRAFT" for item in books))
+        self.assertTrue(all(item["status"] == "PUBLISHED" for item in books))
+        self.assertTrue(all(item["demoOnly"] for item in books))
         self.assertTrue(all(item["coverRef"] is None for item in books))
         self.assertTrue(all(page["imageRef"] is None for item in details for page in item["pages"]))
+        self.assertTrue(all(page["localPageAsset"] is None for item in details for page in item["pages"]))
         self.assertEqual(20, len({item["storybookId"] for item in books}))
+        versions = json.loads((REPO_ROOT / "data" / "seed" / "story_versions.json").read_text(encoding="utf-8"))
+        drafts = [item for item in versions if item["status"] == "DRAFT"]
+        self.assertEqual(1, len(drafts))
+        self.assertEqual(1, drafts[0]["storybook_id"])
+        self.assertNotIn(1, {item["storybookId"] for item in books})
 
     def test_book_no_mapping_and_version_resolution(self) -> None:
         mapping = json.loads((REPO_ROOT / "data" / "seed" / "cover_mapping.json").read_text(encoding="utf-8"))
@@ -135,6 +142,9 @@ class MockTestCase(unittest.TestCase):
             for page in detail["pages"][:-1]:
                 self.assertEqual(page["pageNumber"] + 1, page["defaultNextPageNumber"])
                 self.assertTrue(page["text"].strip())
+            for page in detail["pages"]:
+                self.assertIsNone(page["localPageAsset"])
+                self.assertEqual("MISSING_INNER_ILLUSTRATION", page["imageStatus"])
 
     def test_books_and_details_are_consistent(self) -> None:
         books = {item["storybookId"]: item for item in self.fixture("storybooks.json")["items"]}
@@ -156,11 +166,26 @@ class MockTestCase(unittest.TestCase):
             self.assertEqual(asset["fileSize"], path.stat().st_size)
             self.assertEqual(asset["format"], "JPEG")
 
-    def test_source_files_have_not_changed(self) -> None:
+    def test_source_files_use_stable_lf_text_digest(self) -> None:
         fixture = self.fixture("storybooks.json")
+        self.assertEqual("sha256-utf8-lf-v1", fixture["sourceDigest"])
         self.assertEqual(5, len(fixture["sourceFiles"]))
         for entry in fixture["sourceFiles"]:
-            self.assertEqual(entry["sha256"], sha256_file(REPO_ROOT / entry["path"]))
+            self.assertEqual(entry["sha256"], build_fixtures.sha256_text_file(REPO_ROOT / entry["path"]))
+        self.assertEqual(
+            fixture["sourceFiles"],
+            self.fixture("story-details.json")["sourceFiles"],
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            lf_path = Path(temp) / "lf.json"
+            crlf_path = Path(temp) / "crlf.json"
+            text = '{"title":"知芽","line":1}\n{"line":2}\n'
+            lf_path.write_bytes(text.encode("utf-8"))
+            crlf_path.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+            self.assertEqual(
+                build_fixtures.sha256_text_file(lf_path),
+                build_fixtures.sha256_text_file(crlf_path),
+            )
 
     def test_rebuild_is_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as other:
@@ -207,6 +232,7 @@ class MockTestCase(unittest.TestCase):
         response = self.request("GET", "/api/v1/storybooks")
         self.assertEqual(200, response.status)
         self.assertEqual(20, len(response.data["items"]))
+        self.assertEqual({"items", "page", "pageSize"}, set(response.data))
         fixture = self.fixture("storybooks.json")["items"]
         expected_keys = set(fixture[0])
         for item in response.data["items"]:
@@ -299,7 +325,8 @@ class MockTestCase(unittest.TestCase):
         first = self.request("POST", "/api/v1/reading-sessions/1/events", body)
         self.assertEqual(201, first.status)
         replay = self.request("POST", "/api/v1/reading-sessions/1/events", body)
-        self.assertEqual(201, replay.status)
+        self.assertEqual(200, replay.status)
+        self.assertEqual(first.data["interactionEventId"], replay.data["interactionEventId"])
         current = self.request("GET", "/api/v1/reading-sessions/1")
         self.assertEqual(1, current.data["session"]["revision"])
         changed = self.request("POST", "/api/v1/reading-sessions/1/events", {
@@ -343,6 +370,23 @@ class MockTestCase(unittest.TestCase):
         listed = self.request("GET", "/api/v1/reading-sessions")
         self.assertEqual(200, listed.status)
         self.assertGreaterEqual(len(listed.data["items"]), 2)
+        self.assertNotIn("total", listed.data)
+
+    def test_session_list_orders_newest_first_before_pagination(self) -> None:
+        second = self.request("POST", "/api/v1/reading-sessions", {
+            "childProfileId": 1, "storyVersionId": 2, "mode": "PARENT_CHILD",
+        })
+        third = self.request("POST", "/api/v1/reading-sessions", {
+            "childProfileId": 1, "storyVersionId": 3, "mode": "PARENT_CHILD",
+        })
+        self.assertEqual(201, second.status)
+        self.assertEqual(201, third.status)
+        first_page = self.request("GET", "/api/v1/reading-sessions?page=1&pageSize=1")
+        self.assertEqual(third.data["readingSessionId"], first_page.data["items"][0]["readingSessionId"])
+        second_page = self.request("GET", "/api/v1/reading-sessions?page=2&pageSize=1")
+        self.assertEqual(second.data["readingSessionId"], second_page.data["items"][0]["readingSessionId"])
+        third_page = self.request("GET", "/api/v1/reading-sessions?page=3&pageSize=1")
+        self.assertEqual(1, third_page.data["items"][0]["readingSessionId"])
 
     def test_invalid_page_and_unknown_session(self) -> None:
         self.request("POST", "/api/v1/reading-sessions/1/events", {
@@ -380,21 +424,57 @@ class MockTestCase(unittest.TestCase):
         self.assertEqual(409, after.status)
         self.assertEqual("SESSION_CONFLICT", after.error["code"])
 
-    def test_question_does_not_change_revision_and_is_mock_marked(self) -> None:
+    def test_deterministic_failure_keeps_idempotency_key(self) -> None:
+        self.request("POST", "/api/v1/reading-sessions/1/events", {
+            "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "failure-start",
+        })
+        stale_body = {
+            "eventType": "PAGE_CHANGED", "pageNumber": 2, "expectedRevision": 0,
+            "clientEventId": "stale-page-key",
+        }
+        first = self.request("POST", "/api/v1/reading-sessions/1/events", stale_body)
+        self.assertEqual(409, first.status)
+        self.assertEqual("SESSION_CONFLICT", first.error["code"])
+        replay = self.request("POST", "/api/v1/reading-sessions/1/events", stale_body)
+        self.assertEqual(409, replay.status)
+        self.assertEqual("SESSION_CONFLICT", replay.error["code"])
+        corrected_same_key = self.request("POST", "/api/v1/reading-sessions/1/events", {
+            "eventType": "PAGE_CHANGED", "pageNumber": 2, "expectedRevision": 1,
+            "clientEventId": "stale-page-key",
+        })
+        self.assertEqual(409, corrected_same_key.status)
+        self.assertEqual("IDEMPOTENCY_CONFLICT", corrected_same_key.error["code"])
+        after = self.request("GET", "/api/v1/reading-sessions/1")
+        self.assertEqual(1, after.data["session"]["revision"])
+        self.assertEqual(1, after.data["session"]["currentPage"])
+        corrected_new_key = self.request("POST", "/api/v1/reading-sessions/1/events", {
+            "eventType": "PAGE_CHANGED", "pageNumber": 2, "expectedRevision": 1,
+            "clientEventId": "stale-page-key-corrected",
+        })
+        self.assertEqual(201, corrected_new_key.status)
+        self.assertEqual(2, corrected_new_key.data["revision"])
+
+    def test_question_uses_api016_status_and_revision(self) -> None:
         self.request("POST", "/api/v1/reading-sessions/1/events", {
             "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "question-start",
         })
-        answer = self.request("POST", "/api/v1/reading-sessions/1/questions", {
+        body = {
             "inputText": "小狐狸为什么带伞？", "pageNumber": 1, "expectedRevision": 1,
             "clientEventId": "question-1",
-        })
-        self.assertEqual(200, answer.status)
+        }
+        answer = self.request("POST", "/api/v1/reading-sessions/1/questions", body)
+        self.assertEqual(201, answer.status)
+        self.assertEqual(2, answer.data["revision"])
         self.assertEqual("GENERATED", answer.data["status"])
         self.assertIn("Mock", answer.data["outputText"])
+        replay = self.request("POST", "/api/v1/reading-sessions/1/questions", body)
+        self.assertEqual(200, replay.status)
+        self.assertEqual(answer.data["interactionEventId"], replay.data["interactionEventId"])
         current = self.request("GET", "/api/v1/reading-sessions/1")
-        self.assertEqual(1, current.data["session"]["revision"])
+        self.assertEqual(2, current.data["session"]["revision"])
+        self.assertEqual(2, len(current.data["events"]))
         wrong_page = self.request("POST", "/api/v1/reading-sessions/1/questions", {
-            "inputText": "问题", "pageNumber": 2, "expectedRevision": 1, "clientEventId": "question-2",
+            "inputText": "问题", "pageNumber": 2, "expectedRevision": 2, "clientEventId": "question-2",
         })
         self.assertEqual(409, wrong_page.status)
 
@@ -418,15 +498,64 @@ class MockTestCase(unittest.TestCase):
         for scenario in scenarios:
             self.assertIsNone(scenario.get("audioUrl"))
             if scenario["finalState"].startswith("ERROR_"):
-                self.assertEqual("IDLE", scenario["recoverTo"])
+                expected = "SYNTHESIZING" if scenario["scenarioId"] == "tts_failed" else "IDLE"
+                self.assertEqual(expected, scenario["recoverTo"])
                 self.assertTrue(any(state["state"].startswith("ERROR_") for state in scenario["states"]))
             if scenario.get("tts"):
                 self.assertIsNone(scenario["tts"]["audioUrl"])
                 self.assertEqual("SIMULATED", scenario["tts"]["playbackMode"])
+        tts_failed = next(item for item in scenarios if item["scenarioId"] == "tts_failed")
+        self.assertEqual(
+            {"RETRY_SYNTHESIS", "TEXT_ONLY"},
+            {action["actionId"] for action in tts_failed["recoveryActions"]},
+        )
+        by_action = {action["actionId"]: action for action in tts_failed["recoveryActions"]}
+        self.assertEqual("SYNTHESIZING", by_action["RETRY_SYNTHESIS"]["targetState"])
+        self.assertEqual("IDLE", by_action["TEXT_ONLY"]["targetState"])
+        for action in by_action.values():
+            self.assertTrue(action["requiresSavedInteractionEventId"])
+            self.assertFalse(action["rerunQuestion"])
+            self.assertFalse(action["rerunRecording"])
+            self.assertFalse(action["recordsNewEvent"])
         self.assertEqual(
             {"ERROR_ASR", "ERROR_TIMEOUT", "ERROR_TTS", "ERROR_NETWORK", "ERROR_TOO_SHORT"},
             set(self.fixture("voice-scenarios.json")["errorStates"]),
         )
+
+    def test_tts_retry_reuses_saved_event_without_new_question_or_recording(self) -> None:
+        self.request("POST", "/api/v1/reading-sessions/1/events", {
+            "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "tts-start",
+        })
+        answer = self.request("POST", "/api/v1/reading-sessions/1/questions", {
+            "inputText": "小狐狸为什么带伞？", "pageNumber": 1, "expectedRevision": 1,
+            "clientEventId": "tts-question",
+        })
+        self.assertEqual(201, answer.status)
+        event_id = answer.data["interactionEventId"]
+        before = self.request("GET", "/api/v1/reading-sessions/1")
+        self.assertEqual(2, before.data["session"]["revision"])
+        self.assertEqual(2, len(before.data["events"]))
+        missing = self.request("POST", "/mock/voice/simulate", {"scenarioId": "tts_failed", "sessionId": 1})
+        self.assertEqual(422, missing.status)
+        simulation = self.request("POST", "/mock/voice/simulate", {
+            "scenarioId": "tts_failed", "sessionId": 1, "interactionEventId": event_id,
+        })
+        self.assertEqual(200, simulation.status)
+        self.assertEqual("ERROR_TTS", simulation.data["finalState"])
+        self.assertEqual("SYNTHESIZING", simulation.data["recoverTo"])
+        self.assertEqual(event_id, simulation.data["interactionEventId"])
+        self.assertIsNone(simulation.data["audioUrl"])
+        self.assertTrue(simulation.data["mockPlayback"])
+        self.assertTrue(simulation.data["answerText"])
+        actions = {action["actionId"]: action for action in simulation.data["recoveryActions"]}
+        self.assertEqual("SYNTHESIZING", actions["RETRY_SYNTHESIS"]["targetState"])
+        self.assertEqual("IDLE", actions["TEXT_ONLY"]["targetState"])
+        self.assertFalse(actions["RETRY_SYNTHESIS"]["rerunQuestion"])
+        self.assertFalse(actions["RETRY_SYNTHESIS"]["rerunRecording"])
+        self.assertFalse(actions["RETRY_SYNTHESIS"]["recordsNewEvent"])
+        after = self.request("GET", "/api/v1/reading-sessions/1")
+        self.assertEqual(2, after.data["session"]["revision"])
+        self.assertEqual(2, len(after.data["events"]))
 
     def test_error_injection(self) -> None:
         auth = self.request("GET", "/api/v1/health", headers={"X-Mock-Error": "AUTH_REQUIRED"})
@@ -447,11 +576,51 @@ class MockTestCase(unittest.TestCase):
         unknown_id = self.request("GET", "/api/v1/health", headers={"X-Mock-Error": "NOT_A_SCENARIO"})
         self.assertEqual(422, unknown_id.status)
 
+    def test_dependency_503_retryable_differs_for_read_and_write(self) -> None:
+        read = self.request("GET", "/api/v1/storybooks", headers={"X-Mock-Error": "DEPENDENCY_UNAVAILABLE"})
+        self.assertEqual(503, read.status)
+        self.assertEqual("DEPENDENCY_UNAVAILABLE", read.error["code"])
+        self.assertTrue(read.error["retryable"])
+        write = self.request("POST", "/api/v1/reading-sessions/1/events", {
+            "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0,
+            "clientEventId": "write-503",
+        }, headers={"X-Mock-Error": "DEPENDENCY_UNAVAILABLE"})
+        self.assertEqual(503, write.status)
+        self.assertEqual("DEPENDENCY_UNAVAILABLE", write.error["code"])
+        self.assertFalse(write.error["retryable"])
+        after = self.request("GET", "/api/v1/reading-sessions/1")
+        self.assertEqual(0, after.data["session"]["revision"])
+        self.assertEqual([], after.data["session"]["visitedPageNumbers"])
+
+    def test_question_504_then_session_read_recovers(self) -> None:
+        self.request("POST", "/api/v1/reading-sessions/1/events", {
+            "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "504-start",
+        })
+        body = {
+            "inputText": "小狐狸为什么带伞？", "pageNumber": 1, "expectedRevision": 1,
+            "clientEventId": "504-question",
+        }
+        unknown = self.request(
+            "POST", "/api/v1/reading-sessions/1/questions", body,
+            headers={"X-Mock-Error": "REQUEST_OUTCOME_UNKNOWN"},
+        )
+        self.assertEqual(504, unknown.status)
+        self.assertEqual("REQUEST_OUTCOME_UNKNOWN", unknown.error["code"])
+        self.assertFalse(unknown.error["retryable"])
+        current = self.request("GET", "/api/v1/reading-sessions/1")
+        self.assertEqual(1, current.data["session"]["revision"])
+        self.assertEqual(1, len(current.data["events"]))
+        retry = self.request("POST", "/api/v1/reading-sessions/1/questions", {
+            **body, "clientEventId": "504-question-retry",
+        })
+        self.assertEqual(201, retry.status)
+        self.assertEqual(2, retry.data["revision"])
+
     def test_payload_injection_and_cover_missing(self) -> None:
         empty = self.request("GET", "/api/v1/storybooks?mockError=NO_BOOKS")
         self.assertEqual(200, empty.status)
         self.assertEqual([], empty.data["items"])
-        self.assertEqual(0, empty.data["total"])
+        self.assertNotIn("total", empty.data)
         missing = self.request("GET", "/api/v1/storybooks?mockCover=missing")
         self.assertIsNone(missing.data["items"][0]["localCover"])
         missing_detail = self.request("GET", "/api/v1/story-versions/2?mockCover=missing")
@@ -476,11 +645,14 @@ class MockTestCase(unittest.TestCase):
             results = list(executor.map(lambda _: self.request(
                 "POST", "/api/v1/reading-sessions/1/events", body
             ), range(8)))
-        self.assertEqual([201] * 8, [result.status for result in results])
+        statuses = [result.status for result in results]
+        self.assertEqual(1, statuses.count(201))
+        self.assertEqual(7, statuses.count(200))
         self.assertEqual({1}, {result.data["revision"] for result in results})
         current = self.request("GET", "/api/v1/reading-sessions/1")
         self.assertEqual(1, current.data["session"]["revision"])
         self.assertEqual([1], current.data["session"]["visitedPageNumbers"])
+        self.assertEqual(1, len(current.data["events"]))
 
     def test_concurrent_reads_lists_and_reset_are_consistent(self) -> None:
         def worker(index: int) -> HttpResult:
@@ -503,9 +675,9 @@ class MockTestCase(unittest.TestCase):
                 self.assertIn("revision", result.data["session"])
             if "items" in result.data:
                 self.assertIsInstance(result.data["items"], list)
-                if result.data.get("total") == 20:
+                if result.data["items"] and "storybookId" in result.data["items"][0]:
                     self.assertEqual(20, len(result.data["items"]))
-        self.assertEqual(20, self.request("GET", "/api/v1/storybooks").data["total"])
+        self.assertEqual(20, len(self.request("GET", "/api/v1/storybooks").data["items"]))
 
     def test_concurrent_snapshots_stay_coherent_during_reset(self) -> None:
         self.request("POST", "/api/v1/reading-sessions/1/events", {

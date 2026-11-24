@@ -261,7 +261,27 @@
       "demoOnly": true,
       "finalState": "ERROR_TTS",
       "outcome": "TTS_FAILED",
-      "recoverTo": "IDLE",
+      "recoverTo": "SYNTHESIZING",
+      "recoveryActions": [
+        {
+          "actionId": "RETRY_SYNTHESIS",
+          "label": "重试",
+          "recordsNewEvent": false,
+          "requiresSavedInteractionEventId": true,
+          "rerunQuestion": false,
+          "rerunRecording": false,
+          "targetState": "SYNTHESIZING"
+        },
+        {
+          "actionId": "TEXT_ONLY",
+          "label": "只看文字",
+          "recordsNewEvent": false,
+          "requiresSavedInteractionEventId": true,
+          "rerunQuestion": false,
+          "rerunRecording": false,
+          "targetState": "IDLE"
+        }
+      ],
       "reliable": false,
       "reliableIsSimulated": true,
       "scenarioId": "tts_failed",
