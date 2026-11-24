@@ -1,0 +1,38 @@
+services:
+  edge:
+    image: ${G15_WEB_IMAGE:?Set the locally built frontend image}
+    ports:
+      - "127.0.0.1:18443:8443"
+    volumes:
+      - ${G15_TEST_TLS:?Set the disposable TLS directory}:/test-tls:ro
+    networks:
+      web:
+      business:
+        aliases: [supplier]
+  backend:
+    image: ${G15_API_IMAGE:?Set the locally built backend image}
+    environment:
+      ZHIYA_DB_PATH: /var/lib/zhiya/zhiya.sqlite3
+      MODEL_API_URL: https://supplier:9443/report
+      ASR_API_URL: https://supplier:9443/asr
+      MODEL_API_KEY: fixture
+      DASHSCOPE_API_KEY: fixture
+      TTS_API_URL: ""
+      TTS_MODEL: ""
+    volumes:
+      - sqlite-data:/var/lib/zhiya
+      - ${G15_TEST_TLS}/cert.pem:${G15_CERTIFI:?Set certifi.where() from the backend image}:ro
+      - ./fixture.py:/test/fixture.py:ro
+    networks: [business]
+  provider:
+    image: ${G15_API_IMAGE}
+    command: [python, /test/provider.py]
+    volumes:
+      - ./provider.py:/test/provider.py:ro
+    networks: [business]
+networks:
+  web:
+  business:
+    internal: true
+volumes:
+  sqlite-data:

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import io
 import json
 import struct
@@ -10,7 +11,7 @@ from unittest.mock import patch
 import httpx
 
 from app.errors import ServiceError
-from app.config import Settings
+from app.config import DASHSCOPE_CHAT_URL, Settings
 from app.model_gateway import ModelGateway
 from app.speech_config import SpeechSettings
 from app.speech_options import get_speech_options
@@ -39,7 +40,80 @@ def tts(url=URL):
     return {"output": {"finish_reason": "stop", "audio": {"url": url}}}
 
 
+def stream_response(*events):
+    body = "".join("event: result\r\ndata: " + json.dumps(event) + "\r\n\r\n" for event in events)
+    return httpx.Response(200, text=body, headers={"content-type": "text/event-stream; charset=utf-8"})
+
+
 class VoiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_streamed_wav_completes_in_one_request(self):
+        audio = wav(24000)
+        def handler(request):
+            self.assertEqual(request.method, "POST")
+            self.assertEqual(request.headers["X-DashScope-SSE"], "enable")
+            events = [{"output": {"finish_reason": "null", "audio": {"data": base64.b64encode(part).decode()}}}
+                      for part in (audio[:71], audio[71:])]
+            return stream_response(*events, tts())
+        async with VoiceGateway(SETTINGS, transport=httpx.MockTransport(handler)) as gateway:
+            self.assertEqual(await gateway.synthesize(text="测试"), audio)
+
+    async def test_streamed_wav_stops_before_open_connection_reaches_eof(self):
+        audio = wav(24000)
+        events = [
+            {"output": {"finish_reason": None, "audio": {"data": base64.b64encode(part).decode()}}}
+            for part in (audio[:71], audio[71:])
+        ]
+        wire = stream_response(*events, tts()).content
+        cuts = (0, wire.index(b"\r\n\r\n") + 1, wire.index(b'"stop"') + 3, len(wire) - 1, len(wire))
+        tail_requested, closed = asyncio.Event(), asyncio.Event()
+
+        class OpenStream(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                for start, end in zip(cuts, cuts[1:]):
+                    yield wire[start:end]
+                tail_requested.set()
+                await asyncio.Future()
+
+            async def aclose(self):
+                closed.set()
+
+        def handler(request):
+            self.assertEqual(request.method, "POST")
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=OpenStream())
+
+        async with VoiceGateway(replace(SETTINGS, timeout_seconds=0.1), transport=httpx.MockTransport(handler)) as gateway:
+            self.assertEqual(await gateway.synthesize(text="测试"), audio)
+            self.assertTrue(closed.is_set())
+            self.assertFalse(tail_requested.is_set())
+
+    async def test_url_only_stream_uses_existing_download(self):
+        def handler(request):
+            if request.method == "POST":
+                return stream_response(tts())
+            self.assertNotIn("authorization", request.headers)
+            self.assertNotIn("X-DashScope-SSE", request.headers)
+            return httpx.Response(200, content=wav(24000))
+        async with VoiceGateway(SETTINGS, transport=httpx.MockTransport(handler)) as gateway:
+            self.assertEqual(await gateway.synthesize(text="测试"), wav(24000))
+
+    async def test_partial_or_invalid_stream_never_returns_audio(self):
+        encoded = base64.b64encode(wav(24000)).decode()
+        chunk = {"output": {"finish_reason": None, "audio": {"data": encoded}}}
+        bad = {"output": {"finish_reason": None, "audio": {"data": "!!"}}}
+        for events in ([chunk], [chunk, {"code": "Failed"}], [bad, tts()]):
+            def handler(request):
+                self.assertEqual(request.method, "POST")
+                return stream_response(*events)
+            with self.subTest(events=events), self.assertRaises(ServiceError) as caught:
+                async with VoiceGateway(SETTINGS, transport=httpx.MockTransport(handler)) as gateway:
+                    await gateway.synthesize(text="测试")
+            self.assertEqual(caught.exception.code, "TTS_INVALID_RESPONSE")
+
+        with patch("app.voice_gateway.MAX_DOWNLOAD_BYTES", 100), self.assertRaises(ServiceError) as caught:
+            async with VoiceGateway(SETTINGS, transport=httpx.MockTransport(lambda _: stream_response(chunk, tts()))) as gateway:
+                await gateway.synthesize(text="测试")
+        self.assertEqual(caught.exception.code, "TTS_INVALID_RESPONSE")
+
     async def test_every_selected_voice_works_with_all_rates_in_protocol(self):
         payloads = []
         def handler(request):
@@ -172,8 +246,11 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
                 await gateway.transcribe(audio=bytes(upload), media_type="audio/wav")
             self.assertEqual(caught.exception.code, "ASR_INVALID_INPUT")
 
-    async def test_mixed_providers_use_separate_credentials_and_protocols(self):
-        with patch.dict("os.environ", {"MODEL_API_KEY": "deepseek-only", "DASHSCOPE_API_KEY": "speech-only", "TTS_API_URL": TTS_URL}, clear=True):
+    async def test_text_and_voice_use_separate_credentials_and_protocols(self):
+        with patch.dict("os.environ", {
+            "MODEL_API_URL": DASHSCOPE_CHAT_URL, "MODEL_API_KEY": "text-only",
+            "DASHSCOPE_API_KEY": "speech-only", "TTS_API_URL": TTS_URL,
+        }, clear=True):
             model_settings, speech_settings = Settings.from_env(), SpeechSettings.from_env()
         calls = []
         def handler(request):
@@ -183,15 +260,15 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("authorization", request.headers)
                 return httpx.Response(200, content=wav(24000))
             payload = json.loads(request.content)
-            if request.url.host == "api.deepseek.com":
-                self.assertEqual(request.headers["authorization"], "Bearer deepseek-only")
-                self.assertEqual(payload["model"], "deepseek-flash")
-                self.assertEqual(payload["thinking"], {"type": "disabled"})
-                self.assertNotIn("enable_thinking", payload)
+            if payload["model"] == "qwen3.6-plus":
+                self.assertEqual(request.url.host, "dashscope.aliyuncs.com")
+                self.assertEqual(request.headers["authorization"], "Bearer text-only")
+                self.assertIs(payload["enable_thinking"], False)
+                self.assertNotIn("thinking", payload)
                 return httpx.Response(200, json=asr("模型回答"))
             self.assertIn(request.url.host, ("dashscope.aliyuncs.com", "ws-test.cn-beijing.maas.aliyuncs.com"))
             self.assertEqual(request.headers["authorization"], "Bearer speech-only")
-            self.assertNotIn("thinking", payload)
+            self.assertNotIn("enable_thinking", payload)
             if "messages" in payload:
                 self.assertEqual(payload["model"], "qwen3-asr-flash")
                 return httpx.Response(200, json=asr())

@@ -2,13 +2,11 @@
 
 import json
 import sqlite3
-from contextlib import closing
 
 from fastapi import Request
 from starlette.concurrency import run_in_threadpool
 
-from app.api.v1.auth import connect
-from app.api.v1.profiles import guardian
+from app.api.v1.auth import authorized_db
 from app.errors import ServiceError
 from app.services.voice_access import VoicePrincipal
 
@@ -21,11 +19,10 @@ class GuardianVoiceAuthenticator:
     @staticmethod
     def _authenticate(request: Request, *, write: bool) -> VoicePrincipal:
         try:
-            with closing(connect()) as db:
-                guardian_id, failure = guardian(db, request, write=write)
+            with authorized_db(request, csrf=write) as (_, principal, failure):
+                if failure is None:
+                    return VoicePrincipal(principal.guardian_id, principal.grant_id)
         except sqlite3.Error:
             raise ServiceError("DEPENDENCY_UNAVAILABLE", "业务数据暂不可用", 503) from None
-        if failure is not None:
-            error = json.loads(failure.body)["error"]
-            raise ServiceError(error["code"], error["message"], failure.status_code)
-        return VoicePrincipal(guardian_id)
+        error = json.loads(failure.body)["error"]
+        raise ServiceError(error["code"], error["message"], failure.status_code)

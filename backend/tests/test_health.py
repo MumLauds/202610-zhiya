@@ -41,10 +41,20 @@ def test_voice_routes_fail_closed_without_business_authentication():
     assert set(client.get("/openapi.json").json()["paths"]) == {
         "/api/v1/health", "/api/v1/voice/transcriptions", "/api/v1/voice/syntheses", "/api/v1/media/{resource_key}",
         "/api/v1/auth/registrations", "/api/v1/auth/sessions", "/api/v1/auth/sessions/current",
+        "/api/v1/auth/parent-unlocks",
         "/api/v1/child-profiles", "/api/v1/child-profiles/{profile_id}",
-        "/api/v1/storybooks", "/api/v1/story-versions/{version_id}",
+        "/api/v1/admin/story-versions", "/api/v1/storybooks", "/api/v1/story-versions/{version_id}",
+        "/api/v1/admin/storybooks", "/api/v1/admin/story-versions/{version_id}",
+        "/api/v1/admin/knowledge-items", "/api/v1/admin/knowledge-items/{knowledge_id}",
+        "/api/v1/story-versions/{version_id}/approvals", "/api/v1/recommendations",
+        "/api/v1/story-generations",
         "/api/v1/reading-sessions", "/api/v1/reading-sessions/{session_id}",
-        "/api/v1/reading-sessions/{session_id}/events", "/api/v1/reading-sessions/{session_id}/completions"}
+        "/api/v1/reading-sessions/{session_id}/mode-settings",
+        "/api/v1/reading-sessions/{session_id}/events",
+        "/api/v1/reading-sessions/{session_id}/branches",
+        "/api/v1/reading-sessions/{session_id}/completions",
+        "/api/v1/reading-sessions/{session_id}/guidance", "/api/v1/reading-sessions/{session_id}/questions"
+    }
     for method, path in (("POST", "/api/v1/voice/transcriptions"), ("POST", "/api/v1/voice/syntheses"),
                          ("GET", "/api/v1/media/audio-unknown")):
         response = client.request(method, path)

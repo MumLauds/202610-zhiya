@@ -1,0 +1,19 @@
+{
+  "testedCommit": "ced4ec935df8b855c8dd1669089467c9906cef27",
+  "runId": "20261120-165333-785904-e3cbd456",
+  "model": "deepseek-flash",
+  "planHash": "a31e3b62bdbbdc543de84f99d0f6fd619e02778267b4548ae4141be5dedbf2a5",
+  "resultFile": "results-20261120-165333-785904-e3cbd456.jsonl",
+  "resultsSha256Lf": "a655339e00da0a0b5ee600c2eecb939baf2dd8cdcf454e93dbb584ffb3a37033",
+  "rawWindowsSha256": "b2259a3e7216c80c1324ad7406ad2f2817bae27a00089c68002419ba5684214e",
+  "inputDbSha256": "c0e1a4f321d02421eae1422da7a94db7b1bc36f2bceb89f9144463a6ceddd03c",
+  "total": 48,
+  "usable": 48,
+  "baseline": 24,
+  "domain": 24,
+  "domainKnowledgeCounts": {
+    "3": 15,
+    "2": 9
+  },
+  "humanScoredRows": 0
+}

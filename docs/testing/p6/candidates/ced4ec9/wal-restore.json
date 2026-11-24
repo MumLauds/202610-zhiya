@@ -1,0 +1,19 @@
+{
+  "candidate": "ced4ec935df8b855c8dd1669089467c9906cef27",
+  "environment": "fresh local directories, offline full copy, synthetic course family",
+  "checkpoint": [
+    0,
+    0,
+    0
+  ],
+  "sourceUnchanged": true,
+  "restored": {
+    "journalMode": "wal",
+    "startEvents": 1,
+    "askEvents": 1,
+    "pagesSha256": [
+      "ae87a12508c6d28c1ceec913eb1f003b9ca808b4b2109ad1c87f2d3e6c6509cb",
+      "c3c2d4b846ee08961c0fbea0ea04e8b0cc6245a5b4f59755f3f5e8a104ec1c96"
+    ]
+  }
+}

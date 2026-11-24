@@ -1,0 +1,161 @@
+{
+  "applicationCommit": "e5f32cd9d645c75e03814af55ba5aa531442c8a6",
+  "verifiedAtUtc": "2026-11-19T15:05:51+00:00",
+  "project": "g15-pr58-check-20261119t144928",
+  "origin": "https://127.0.0.1:18443",
+  "browser": "Chrome 154.0.8037.98",
+  "playwright": "1.65.2",
+  "images": {
+    "backend": "sha256:ea0ae7607925d7bf1d5b271c461c9055c2977198513afd7d25539c58b35628ac",
+    "web": "sha256:43b66648eae9902e6583bcbd506bd78dd0ac7513b11abafde1ffc9e6c3e2aee3"
+  },
+  "offlineBuild": {
+    "packageLockSha256": "d3e7d3d49823489ce391dc0328f6ced2fe6729890d3c896d0369e5e8a73889e6",
+    "fileCount": 24,
+    "sha256sumsFileSha256": "c0324d4606d55e0049f78354f7332d5d7f512f3dd9c96a985913e13ab0997b74",
+    "matchesPreviousBuild": true,
+    "chromeEntryAssetSha256": "ac37e25e3671317b9b84ed64054a4e12de1e772ab2ec88d1e03ff5c7b1055e34"
+  },
+  "httpsRestart": {
+    "browserEvidence": {
+      "completedAtUtc": "2026-11-19T14:59:14.090512+00:00",
+      "databaseSnapshotAtUtc": "2026-11-19T14:59:19.754498+00:00",
+      "loginHttpDate": "Thu, 19 Nov 2026 14:58:56 GMT",
+      "spkiSha256": "E95tW5gnCzxZBvjAlX9DUayx26T3r5WANYA6QP7D12U=",
+      "certificateSha256": "8a9d87947aed60c040c46b7de3492f06a4bb3f35b1bfdd6abd88147d8d6167d6"
+    },
+    "transcriptionHttp": 200,
+    "freshLoginHttp": 201,
+    "guardianLoginsBeforeRestart": 1,
+    "guardianLoginsAfterReadback": 2,
+    "readingCounts": {
+      "reports": 1,
+      "events": 1,
+      "executions": 2,
+      "sessionsByStatus": {
+        "FINISHED": 1
+      }
+    },
+    "startedEvent": {
+      "id": 1,
+      "eventType": "STARTED",
+      "revision": 1,
+      "pageNumber": 1
+    },
+    "supplierCallsAfterReadback": [
+      {
+        "call": "asr",
+        "status": 200,
+        "frames": 29760,
+        "hz": 16000,
+        "channels": 1,
+        "bits": 16
+      },
+      {
+        "call": "report",
+        "status": 200,
+        "visitedPages": [
+          1
+        ]
+      }
+    ]
+  },
+  "restoredFirstVolume": {
+    "sourceVolume": "g15-pr58-check-20261119t144928_sqlite-data",
+    "backupVolume": "g15-pr58-check-20261119t144928-r-a-backup",
+    "restoredVolume": "g15-pr58-check-20261119t144928-r-a-restored-data",
+    "sourceRecheckedUnchanged": true,
+    "matchesBaseline": true,
+    "session": {
+      "sessionId": 1,
+      "profileId": 1,
+      "versionId": 11,
+      "status": "FINISHED",
+      "endReason": "USER_FINISH",
+      "revision": 2,
+      "pages": [
+        1
+      ],
+      "endedAt": 1795100296665,
+      "reportStatus": "READY",
+      "summary": "本次共读阅读了第 1 页。",
+      "reportUpdatedAt": 1795100296951,
+      "events": [
+        {
+          "id": 1,
+          "eventType": "STARTED",
+          "revision": 1,
+          "pageNumber": 1
+        }
+      ]
+    },
+    "backupDatabaseSha256": "742caca676e61306c3dc295aaa7a30368ab07c995da1f6d3a5a915d05e399cfc",
+    "manifestSha256": "e65a0f86406291a263a97c3231b27c73e023c3f77746f768b9d2e929416bb3db"
+  },
+  "restoredFamily": {
+    "sourceVolume": "g15-pr58-check-20261119t144928-r-b-source-data",
+    "backupVolume": "g15-pr58-check-20261119t144928-r-b-backup",
+    "restoredVolume": "g15-pr58-check-20261119t144928-r-b-restored-data",
+    "sourceRunningCounts": {
+      "reports": 1,
+      "events": 1,
+      "executions": 2,
+      "sessionsByStatus": {
+        "FINISHED": 1
+      }
+    },
+    "sourceStoppedCounts": {
+      "reading_sessions": 1,
+      "interaction_events": 1,
+      "request_executions": 2,
+      "reading_reports": 1
+    },
+    "restoredRunningCounts": {
+      "reports": 1,
+      "events": 1,
+      "executions": 2,
+      "sessionsByStatus": {
+        "FINISHED": 1
+      }
+    },
+    "restoredStoppedCounts": {
+      "reading_sessions": 1,
+      "interaction_events": 1,
+      "request_executions": 2,
+      "reading_reports": 1
+    },
+    "readback": {
+      "verifiedAtUtc": "2026-11-19T15:04:52+00:00",
+      "loginTimeSource": "loginHttpDate",
+      "loginHttpDate": "Thu, 19 Nov 2026 15:04:42 GMT",
+      "historyCard": "阅读记录 #1 · 浏览 1 页 · 已完成",
+      "sourceLoginsBeforeStop": 1,
+      "backupGuardianLogins": 1,
+      "restoredGuardianLogins": 2
+    },
+    "anonymousMediaHttp": 401,
+    "freshLoginHttp": 201,
+    "sourceSupplierCalls": [
+      {
+        "call": "report",
+        "status": 200,
+        "visitedPages": [
+          1
+        ]
+      }
+    ],
+    "restoredSupplierCalls": [],
+    "verifiedPageImage": {
+      "path": "/api/v1/media/asset-11-page-1",
+      "http": 200,
+      "mime": "image/png",
+      "naturalWidth": 128,
+      "naturalHeight": 80,
+      "bytes": 30868,
+      "pngSha256": "abecc2668b8b0f9d544f44990c6d95948a102f1140e1f8bc9e1a875c2f3bf2bc",
+      "rgbaSha256": "b2b5e749575b1fe44325218ac508ac7c466eafa3761ad15b34a89efb38562409"
+    },
+    "backupDatabaseSha256": "be79e0764443d8c8b0af3dc4f05eb4b670cdce02a4a2a01e3fef4badd142ff3a",
+    "manifestSha256": "9c742c1e6dddbb48d318d3b56ab57472d5167d5f592b10240fd8198f4e2d0caa"
+  }
+}

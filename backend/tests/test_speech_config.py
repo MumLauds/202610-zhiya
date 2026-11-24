@@ -7,6 +7,17 @@ from app.speech_config import SpeechSettings
 
 
 class EnvironmentSettingsTests(unittest.TestCase):
+    def test_illustrated_workshop_output_budget_is_configurable(self):
+        name = "MODEL_WORKSHOP_ILLUSTRATION_MAX_TOKENS"
+        with patch.dict("os.environ", {name: "1024", "MODEL_MAX_TOKENS": "2048"}, clear=True):
+            settings = Settings.from_env()
+            self.assertEqual(settings.model_workshop_illustration_max_tokens, 1024)
+            self.assertEqual(settings.model_max_tokens, 2048)
+        for invalid in ("1.5", "0", "4097"):
+            with self.subTest(invalid=invalid), patch.dict("os.environ", {name: invalid}, clear=True):
+                with self.assertRaisesRegex(ValueError, name):
+                    Settings.from_env()
+
     def test_tts_requires_workspace_endpoint_and_matching_model_voice(self):
         settings = SpeechSettings(api_key="key")
         self.assertTrue(settings.asr_configured)
@@ -29,8 +40,8 @@ class EnvironmentSettingsTests(unittest.TestCase):
     def test_defaults_and_separate_provider_keys(self):
         with patch.dict("os.environ", {}, clear=True):
             settings = Settings.from_env()
-            self.assertEqual(settings.model_api_url, "https://api.deepseek.com/chat/completions")
-            self.assertEqual(settings.model_name, "deepseek-flash")
+            self.assertEqual(settings.model_api_url, DASHSCOPE_CHAT_URL)
+            self.assertEqual(settings.model_name, "qwen3.6-plus")
             self.assertEqual(SpeechSettings.from_env().asr_api_url, DASHSCOPE_CHAT_URL)
             self.assertFalse(settings.model_configured)
             self.assertFalse(SpeechSettings.from_env().asr_configured)
@@ -42,7 +53,9 @@ class EnvironmentSettingsTests(unittest.TestCase):
                 self.assertFalse(Settings.from_env().model_configured)
                 self.assertEqual(Settings.from_env().model_api_key, "")
                 self.assertTrue(SpeechSettings.from_env().asr_configured)
-        with patch.dict("os.environ", {"MODEL_API_KEY": "deepseek-key"}, clear=True):
+        with patch.dict("os.environ", {
+            "MODEL_API_KEY": "text-only", "MODEL_API_URL": DASHSCOPE_CHAT_URL,
+        }, clear=True):
             self.assertTrue(Settings.from_env().model_configured)
             self.assertFalse(SpeechSettings.from_env().asr_configured)
             self.assertFalse(SpeechSettings.from_env().tts_configured)

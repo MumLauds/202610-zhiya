@@ -2,7 +2,7 @@
 # Isolated empty-key verification. No paid provider calls; requires Docker Compose.
 set -eu
 cd "$(dirname "$0")/.."
-unset MODEL_API_KEY DASHSCOPE_API_KEY MODEL_API_URL MODEL_NAME MODEL_TIMEOUT_SECONDS MODEL_MAX_TOKENS
+unset MODEL_API_KEY DASHSCOPE_API_KEY MODEL_API_URL MODEL_NAME MODEL_TIMEOUT_SECONDS MODEL_MAX_TOKENS MODEL_WORKSHOP_ILLUSTRATION_MAX_TOKENS MODEL_SEND_THINKING
 unset ASR_API_URL ASR_MODEL TTS_API_URL TTS_MODEL TTS_VOICE VOICE_TIMEOUT_SECONDS COMPOSE_FILE COMPOSE_PROFILES COMPOSE_ENV_FILES
 project="zhiya-check-$(date +%s)-$$"
 container="$project-backend"
@@ -89,7 +89,7 @@ assert os.getuid() == 10001
 assert not list(Path('/app').rglob('.env*'))
 s, v = Settings.from_env(), SpeechSettings.from_env()
 assert not s.model_configured and not v.asr_configured and not v.tts_configured
-assert s.model_name == 'deepseek-flash' and v.tts_model == 'qwen-audio-3.1-tts-flash'
+assert s.model_name == 'qwen3.6-plus' and v.tts_model == 'qwen-audio-3.1-tts-flash'
 options = subprocess.run(['python', 'backend/smoke_voice.py', 'options'], capture_output=True,
                          text=True, check=True, env={**os.environ, 'VOICE_TIMEOUT_SECONDS': 'invalid'})
 catalog = json.loads(options.stdout)['data']
@@ -134,6 +134,7 @@ docker exec "$container" python database/import_seed.py
 snapshot="import sqlite3, os; db=sqlite3.connect(os.environ['ZHIYA_DB_PATH']); print(db.execute('select count(*) from storybooks').fetchone()[0])"
 count=$(docker exec "$container" python -c "$snapshot")
 test "$count" -gt 0
+docker exec "$container" python -c "from app.services.story_media import SEED_COVER_SOURCE_REF as S, resolve_cover_asset as r; n = sum(r(i, 1, 'LIBRARY', S) is not None for i in range(1, 100)); assert n == 20, n"
 docker restart "$container"
 test "$(docker exec "$container" python -c "$snapshot")" = "$count"
 attempt=0

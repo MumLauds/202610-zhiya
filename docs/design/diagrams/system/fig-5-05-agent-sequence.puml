@@ -41,6 +41,11 @@ else 问答或生成引导（含INITIAL）
   ref over A
    图5-9：输入、检索、生成、输出校验
   end ref
+  break API-017模型配置、鉴权等明确失败
+   A --> S : 依赖不可用
+   S -> R : 复核会话与执行权，保存失败响应
+   S --> UI : 会话仍有效时返回503，可继续阅读
+  end
   A --> S : 已核验结果或安全回退
   S -> R : commit_event_and_response()\n复核授权、revision及执行权
   alt 提交成功
@@ -53,7 +58,8 @@ else 问答或生成引导（含INITIAL）
  end
 end
 note over S,R
-INITIAL不需要既往反馈；SKIPPED不调用Agent。
+INITIAL不需要既往反馈。首题生成期间可直接提交SKIPPED。
+跳过先保存时，迟到的提问因revision变化返回409。
 模型调用期间不持数据库写锁。
 end note
 

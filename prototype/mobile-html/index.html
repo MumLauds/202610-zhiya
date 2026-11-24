@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f8f3e8">
+  <title>知芽 · 亲子绘本共读</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="desktop-orb orb-one"></div>
+  <div class="desktop-orb orb-two"></div>
+
+  <div class="app-shell" id="appShell">
+    <header class="topbar" id="topbar">
+      <button class="brand-mark" data-nav="home" aria-label="返回首页">芽</button>
+      <button class="avatar" data-nav="profile" aria-label="个人中心">禾</button>
+    </header>
+
+    <main class="main-scroll" id="mainScroll">
+      <section class="view active" data-view="home" id="homeView">
+        <article class="hero-card">
+          <img class="hero-image" id="heroCover" alt="">
+          <div class="hero-shade"></div>
+          <div class="hero-content">
+            <span class="eyebrow" id="heroAge"></span>
+            <h1>和孩子一起<br>打开更大的世界</h1>
+            <p>在绘本中，遇见有趣的故事。</p>
+            <button class="primary-btn" id="heroRead">开始探索 →</button>
+          </div>
+          <button class="hero-chip" id="heroChip">
+            <img id="heroChipCover" alt="">
+            <span>
+              <strong id="heroChipTitle"></strong>
+              <small id="heroChipMeta"></small>
+            </span>
+          </button>
+        </article>
+
+        <article class="plan-card">
+          <div class="plan-head"><span>✦</span><strong>今日阅读计划</strong></div>
+          <div class="plan-body">
+            <div>
+              <span class="plan-number">15</span>
+              <span class="plan-unit">分钟</span>
+              <p>和芽芽一起读一个关于勇气的小故事。</p>
+            </div>
+            <button class="primary-btn compact" id="planRead">继续共读</button>
+          </div>
+        </article>
+
+        <div class="section-title">
+          <h2>为你精选</h2>
+          <button class="text-link" data-nav="library">查看全部 →</button>
+        </div>
+        <div class="book-row" id="homeBooks"></div>
+      </section>
+
+      <section class="view" data-view="library" id="libraryView">
+        <div class="page-title">
+          <h1>绘本馆</h1>
+          <p id="libraryCount">20 本原创绘本</p>
+        </div>
+        <label class="search-box">
+          <span>⌕</span>
+          <input id="searchInput" type="search" placeholder="搜索书名、主题或编号" autocomplete="off">
+        </label>
+        <div class="chip-row" id="ageFilters"></div>
+        <div class="chip-row subtle" id="themeFilters"></div>
+        <div class="library-grid" id="libraryGrid"></div>
+        <div class="empty-state" id="libraryEmpty" hidden>
+          <span class="empty-symbol">⌕</span>
+          <strong>没有找到匹配的绘本</strong>
+          <p>换一个年龄或关键词试试。</p>
+        </div>
+      </section>
+
+      <section class="view" data-view="detail" id="detailView">
+        <div class="sub-header">
+          <button class="round-back" data-nav="library" aria-label="返回绘本馆">←</button>
+          <span id="detailBookNo"></span>
+          <span class="sub-header-space"></span>
+        </div>
+        <img class="detail-cover" id="detailCover" alt="">
+        <div class="detail-title-row">
+          <div>
+            <h1 id="detailTitle"></h1>
+            <p id="detailMeta"></p>
+          </div>
+          <button class="pill-button" id="detailShelf">收藏</button>
+        </div>
+        <div class="tag-row" id="detailTags"></div>
+        <p class="detail-summary" id="detailSummary"></p>
+        <article class="why-card">
+          <span>✦</span>
+          <div>
+            <strong>为什么推荐给你</strong>
+            <p id="detailReason"></p>
+          </div>
+        </article>
+        <div class="detail-actions">
+          <button class="secondary-btn" id="detailShelfAction">加入书架</button>
+          <button class="primary-btn" id="detailRead">开始共读 →</button>
+        </div>
+      </section>
+
+      <section class="view reader-view" data-view="reader" id="readerView">
+        <div class="reader-head">
+          <button class="round-back" id="readerBack" aria-label="返回详情">←</button>
+          <strong id="readerTitle"></strong>
+          <span id="readerProgressText"></span>
+        </div>
+        <figure class="reader-figure">
+          <img id="readerImage" alt="">
+          <figcaption><b id="sceneIndex">第 1 幕</b><span id="sceneLabel"></span></figcaption>
+        </figure>
+        <div class="reader-toolbar">
+          <span id="pinyinHint">逐字拼音 · 已开启</span>
+          <button class="text-link" id="pinyinToggle">隐藏拼音</button>
+        </div>
+        <div class="ruby-grid" id="rubyGrid"></div>
+        <button class="question-card" id="readerQuestion">
+          <span class="spark">✦</span>
+          <span>
+            <small id="questionLabel"></small>
+            <strong id="questionText"></strong>
+          </span>
+          <span>→</span>
+        </button>
+        <div class="audio-card">
+          <button class="audio-play" id="playButton" aria-label="播放朗读">▶</button>
+          <div class="audio-copy">
+            <strong id="audioTitle">听知芽读这一页</strong>
+            <small>声音播放时，拼音会同步高亮</small>
+          </div>
+          <span id="audioTime">0:00</span>
+          <div class="audio-progress"><span id="audioProgressBar"></span></div>
+        </div>
+        <div class="reader-controls">
+          <button class="round-control" id="prevPage">←</button>
+          <button class="primary-btn" id="nextPage">下一页 →</button>
+          <button class="round-control" id="nextPageIcon">→</button>
+        </div>
+        <div class="reader-progress"><span id="readerProgressBar"></span></div>
+      </section>
+
+      <section class="view summary-view" data-view="summary" id="summaryView">
+        <div class="summary-hero">
+          <span>今天，我们一起读完了</span>
+          <h1 id="summaryTitle"></h1>
+        </div>
+        <div class="summary-stats">
+          <div><strong id="summaryMinutes">0</strong><span>分钟共读</span></div>
+          <div><strong id="summaryPages">0</strong><span>页一起读完</span></div>
+          <div><strong>2</strong><span>次亲子互动</span></div>
+        </div>
+        <article class="info-card">
+          <h3>知芽看到的小小闪光</h3>
+          <p>孩子已经能关注角色的行动，并尝试说出自己的发现。</p>
+        </article>
+        <div class="detail-actions">
+          <button class="secondary-btn" data-nav="home">回到首页</button>
+          <button class="primary-btn" id="readAgain">再读一次</button>
+        </div>
+      </section>
+
+      <section class="view" data-view="original" id="originalView">
+        <div class="page-title">
+          <h1>原创故事</h1>
+          <p>给孩子一个只属于你们的故事。</p>
+        </div>
+        <article class="form-card">
+          <label>适读年龄
+            <select id="originalAge">
+              <option>3–4 岁</option>
+              <option>4–5 岁</option>
+              <option>5–6 岁</option>
+            </select>
+          </label>
+          <label>故事主题
+            <select id="originalTheme">
+              <option>勇气</option>
+              <option>友谊</option>
+              <option>想象</option>
+              <option>情绪安抚</option>
+              <option>自然观察</option>
+            </select>
+          </label>
+          <label>主角
+            <input id="originalCharacter" value="小狐狸" maxlength="8">
+          </label>
+          <label>故事场景
+            <input id="originalScene" value="雨后森林" maxlength="10">
+          </label>
+          <button class="primary-btn full" id="generateDraft">生成故事草稿</button>
+        </article>
+        <article class="draft-card" id="draftCard" hidden>
+          <div class="draft-cover"><img src="assets/covers/b002.webp" alt=""><span>家长私有草稿</span></div>
+          <h2 id="draftTitle"></h2>
+          <p id="draftMeta"></p>
+          <div id="draftPages"></div>
+          <div class="draft-checks">
+            <span>✓ 年龄与措辞适合当前孩子</span>
+            <span>✓ 角色和场景前后一致</span>
+            <span>✓ 内容安全检查通过</span>
+          </div>
+          <button class="primary-btn full" id="saveDraft">家长确认保存</button>
+        </article>
+      </section>
+
+      <section class="view" data-view="growth" id="growthView">
+        <div class="page-title">
+          <h1>成长记录</h1>
+          <p>每一次共读，都在悄悄发芽。</p>
+        </div>
+        <article class="growth-hero">
+          <span>累计共读</span>
+          <strong id="growthMinutes">0 分钟</strong>
+          <small id="growthDays">已记录 0 个阅读日</small>
+        </article>
+        <div class="growth-stats">
+          <div><strong id="growthCount">0</strong><span>共读次数</span></div>
+          <div><strong id="growthBooks">0</strong><span>读过的书</span></div>
+          <div><strong>3–4 岁</strong><span>当前年龄</span></div>
+        </div>
+        <div class="section-title"><h2>最近读过</h2><span id="recordCount">0 条</span></div>
+        <div class="record-list" id="recordList"></div>
+        <div class="empty-state" id="growthEmpty">
+          <span class="empty-symbol">叶</span>
+          <strong>还没有阅读记录</strong>
+          <p>先和孩子共读一本绘本吧。</p>
+        </div>
+      </section>
+
+      <section class="view" data-view="profile" id="profileView">
+        <div class="page-title">
+          <h1>家长中心</h1>
+          <p>孩子档案、书架与阅读设置。</p>
+        </div>
+        <article class="child-card">
+          <div class="child-avatar">禾</div>
+          <div>
+            <strong>芽芽</strong>
+            <p>3–4 岁 · 喜欢动物和勇气</p>
+          </div>
+          <button class="pill-button" id="profileShelfButton">我的书架</button>
+        </article>
+        <article class="settings-card">
+          <button class="setting-row" id="settingShelf"><span>我的书架</span><b id="profileShelfCount">0 本 →</b></button>
+          <button class="setting-row" id="settingPinyin"><span>拼音显示</span><b id="profilePinyin">已开启</b></button>
+          <button class="setting-row" data-nav="growth"><span>阅读记录</span><b id="profileRecordCount">0 条 →</b></button>
+          <div class="setting-row"><span>每日阅读</span><b>15 分钟</b></div>
+        </article>
+        <article class="info-card pale">
+          <h3>知芽浏览器版</h3>
+          <p>无需微信开发者工具，打开 index.html 即可演示全部页面与交互。</p>
+        </article>
+      </section>
+
+      <section class="view" data-view="shelf" id="shelfView">
+        <div class="sub-header">
+          <button class="round-back" data-nav="profile" aria-label="返回家长中心">←</button>
+          <strong>我的书架</strong>
+          <button class="pill-button" id="shelfManageButton">管理</button>
+        </div>
+        <div class="chip-row" id="shelfFilters"></div>
+        <div class="manage-bar" id="manageBar" hidden>
+          <div><strong id="selectedCount">已选 0 本</strong><span>可批量分类或移出</span></div>
+          <div class="manage-actions">
+            <button id="selectAllShelf">全选</button>
+            <button id="assignShelfCategory">设置分类</button>
+            <button class="danger" id="removeShelfBooks">移出书架</button>
+          </div>
+        </div>
+        <div class="shelf-list" id="shelfList"></div>
+        <div class="empty-state" id="shelfEmpty" hidden>
+          <span class="empty-symbol">书</span>
+          <strong id="shelfEmptyTitle">书架还是空的</strong>
+          <p id="shelfEmptyCopy">在绘本详情页点击“加入书架”。</p>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" id="bottomNav" aria-label="主导航">
+      <button data-nav="home" class="active">
+        <svg viewBox="0 0 24 24"><path d="M3 11.2 12 4l9 7.2v8.3a.5.5 0 0 1-.5.5H15v-6H9v6H3.5a.5.5 0 0 1-.5-.5z"/></svg>
+        <span>首页</span>
+      </button>
+      <button data-nav="library">
+        <svg viewBox="0 0 24 24"><path d="M4 4h5v16H4zm7 0h4v16h-4zm6 1h3v15h-3z"/></svg>
+        <span>绘本馆</span>
+      </button>
+      <button data-nav="original">
+        <svg viewBox="0 0 24 24"><path d="M5 4h10l4 4v12H5zM15 4v5h5M8 13h8M8 17h6"/></svg>
+        <span>原创故事</span>
+      </button>
+      <button data-nav="growth">
+        <svg viewBox="0 0 24 24"><path d="M5 19V9m7 10V4m7 15v-7"/></svg>
+        <span>成长</span>
+      </button>
+      <button data-nav="profile">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M4.8 20c.7-4 3.1-6 7.2-6s6.5 2 7.2 6z"/></svg>
+        <span>我的</span>
+      </button>
+    </nav>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="sheet-layer" id="sheetLayer" hidden>
+      <button class="sheet-backdrop" data-close-sheet aria-label="关闭"></button>
+      <div class="sheet-panel" role="dialog" aria-modal="true">
+        <div class="sheet-handle"></div>
+        <h2 id="sheetTitle"></h2>
+        <div class="sheet-options" id="sheetOptions"></div>
+        <button class="sheet-cancel" data-close-sheet>取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="data/books.js"></script>
+  <script src="data/pinyin-map.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -7,6 +7,7 @@ import json
 import logging
 import struct
 import wave
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from time import perf_counter
 from urllib.parse import urlsplit, urlunsplit
@@ -58,6 +59,59 @@ def _tts_wav(data: bytes) -> bool:
                     == source.getnframes() * source.getnchannels() * source.getsampwidth())
     except (wave.Error, EOFError, RuntimeError):
         return False
+
+
+async def _bounded_body(response, kind, limit):
+    body = bytearray()
+    async for chunk in response.aiter_bytes():
+        if len(body) + len(chunk) > limit:
+            raise _error(kind, "INVALID_RESPONSE")
+        body.extend(chunk)
+    return bytes(body)
+
+
+async def _tts_events(response):
+    """Read bounded DashScope SSE records until the successful terminal event."""
+    audio = bytearray()
+    pending = bytearray()
+    data_lines = []
+    received = 0
+    # Base64 expansion and event metadata count toward this separate wire limit.
+    limit = 2 * MAX_DOWNLOAD_BYTES + MAX_RESPONSE_BYTES
+    try:
+        async for chunk in response.aiter_bytes():
+            received += len(chunk)
+            if received > limit:
+                raise ValueError
+            search_from = len(pending)
+            pending.extend(chunk)
+            start = 0
+            while (end := pending.find(b"\n", search_from)) != -1:
+                line = pending[start:end].removesuffix(b"\r")
+                start = search_from = end + 1
+                if line.startswith(b"data:"):
+                    data_lines.append(line[5:].lstrip(b" "))
+                elif not line and data_lines:
+                    event = json.loads(b"\n".join(data_lines))
+                    data_lines.clear()
+                    if event.get("code") or event.get("status_code", 200) != 200:
+                        raise ValueError
+                    output = event["output"]
+                    reason = output["finish_reason"]
+                    if reason not in (None, "null", "stop"):
+                        raise ValueError
+                    data = output["audio"].get("data")
+                    if data:
+                        decoded = base64.b64decode(data, validate=True)
+                        if len(audio) + len(decoded) > MAX_DOWNLOAD_BYTES:
+                            raise ValueError
+                        audio.extend(decoded)
+                    if reason == "stop":
+                        return bytes(audio), event
+            del pending[:start]
+        raise ValueError
+    except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
+        raise _error("TTS", "INVALID_RESPONSE") from None
 
 
 class VoiceGateway:
@@ -129,10 +183,13 @@ class VoiceGateway:
             logger.info("voice_call call_id=%s outcome=%s duration_ms=%d", call_id, outcome,
                         int((perf_counter() - started) * 1000))
 
-    async def _request(self, kind, method, url, *, payload=None, limit=MAX_RESPONSE_BYTES):
+    @asynccontextmanager
+    async def _response(self, kind, method, url, *, payload=None):
         headers = {"Accept-Encoding": "identity"}
         if method == "POST":
             headers["Authorization"] = f"Bearer {self._settings.api_key}"
+            if kind == "TTS":
+                headers["X-DashScope-SSE"] = "enable"
         async with self._client.stream(method, url, headers=headers, json=payload) as response:
             if response.status_code in (401, 403):
                 raise _error(kind, "AUTH_FAILED")
@@ -144,20 +201,16 @@ class VoiceGateway:
                 raise _error(kind, "PROVIDER_ERROR")
             if response.headers.get("Content-Encoding", "").strip().lower() not in ("", "identity"):
                 raise _error(kind, "INVALID_RESPONSE")
-            body = bytearray()
-            async for chunk in response.aiter_bytes():
-                if len(body) + len(chunk) > limit:
-                    raise _error(kind, "INVALID_RESPONSE")
-                body.extend(chunk)
-        return bytes(body)
+            yield response
 
     async def _transcribe(self, audio, media_type):
-        body = await self._request("ASR", "POST", self._settings.asr_api_url, payload={
+        async with self._response("ASR", "POST", self._settings.asr_api_url, payload={
             "model": self._settings.asr_model, "stream": False,
             "messages": [{"role": "user", "content": [{"type": "input_audio", "input_audio": {
                 "data": f"data:{media_type};base64,{base64.b64encode(audio).decode('ascii')}"}}]}],
             "asr_options": {"enable_itn": False},
-        })
+        }) as response:
+            body = await _bounded_body(response, "ASR", MAX_RESPONSE_BYTES)
         try:
             payload = json.loads(body)
             choice = payload["choices"][0]
@@ -177,12 +230,25 @@ class VoiceGateway:
     async def _synthesize(self, text, voice, rate):
         speech_input = {"text": text, "voice": voice, "format": "wav", "sample_rate": 24000,
                         "rate": MODEL_RATES[rate]}
-        body = await self._request("TTS", "POST", self._settings.tts_api_url, payload={
-            "model": self._settings.tts_model,
-            "input": speech_input,
-        })
+        request = {"model": self._settings.tts_model, "input": speech_input}
+        audio = b""
         try:
-            payload = json.loads(body)
+            async with self._response("TTS", "POST", self._settings.tts_api_url, payload=request) as response:
+                if response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() == "text/event-stream":
+                    audio, payload = await _tts_events(response)
+                else:
+                    payload = json.loads(await _bounded_body(response, "TTS", MAX_RESPONSE_BYTES))
+        except (ValueError, RecursionError):
+            raise _error("TTS", "INVALID_RESPONSE") from None
+        if not audio:
+            audio = await self._download_tts_result(payload)
+        audio = _normalize_tts_wav(audio)
+        if not _tts_wav(audio):
+            raise _error("TTS", "INVALID_RESPONSE")
+        return audio
+
+    async def _download_tts_result(self, payload):
+        try:
             output = payload["output"]
             url = output["audio"]["url"]
             if not isinstance(url, str):
@@ -199,8 +265,5 @@ class VoiceGateway:
         if not valid:
             raise _error("TTS", "INVALID_RESPONSE")
         safe_url = urlunsplit(("https", AUDIO_HOST, parts.path, parts.query, ""))
-        audio = await self._request("TTS", "GET", safe_url, limit=MAX_DOWNLOAD_BYTES)
-        audio = _normalize_tts_wav(audio)
-        if not _tts_wav(audio):
-            raise _error("TTS", "INVALID_RESPONSE")
-        return audio
+        async with self._response("TTS", "GET", safe_url) as response:
+            return await _bounded_body(response, "TTS", MAX_DOWNLOAD_BYTES)

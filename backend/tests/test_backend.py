@@ -11,10 +11,12 @@ from unittest.mock import patch
 import httpx
 from fastapi.testclient import TestClient
 
+from app.adapters.model import ModelAdapter
 from app.config import Settings
 from app.errors import ServiceError
 from app.main import create_app
 from app.model_gateway import MAX_RESPONSE_BYTES, ModelGateway
+from app.schemas.agent import ModelGenerateRequest
 
 
 API_KEY = "fake-secret-api-key"
@@ -131,6 +133,32 @@ class ModelGatewayTests(unittest.IsolatedAsyncioTestCase):
         for sensitive in (API_KEY, INPUT_TEXT, SYSTEM_PROMPT, UPSTREAM_BODY):
             self.assertNotIn(sensitive, str(caught.exception))
 
+    async def test_key_without_explicit_endpoint_does_not_reach_new_provider(self):
+        def fail_if_called(_request):
+            self.fail("A key with no explicit endpoint reached a provider")
+
+        for endpoint in ({}, {"MODEL_API_URL": ""}):
+            with self.subTest(endpoint=endpoint):
+                with patch.dict("os.environ", {"MODEL_API_KEY": API_KEY, **endpoint}, clear=True):
+                    settings = Settings.from_env()
+                async with ModelGateway(settings, transport=httpx.MockTransport(fail_if_called)) as gateway:
+                    await self.assert_service_error(gateway, "MODEL_NOT_CONFIGURED", 503)
+
+    async def test_explicit_deepseek_endpoint_keeps_its_default_model_and_thinking_field(self):
+        def provider(request):
+            payload = json.loads(request.content)
+            self.assertEqual(payload["model"], "deepseek-flash")
+            self.assertEqual(payload["thinking"], {"type": "disabled"})
+            self.assertNotIn("enable_thinking", payload)
+            return httpx.Response(200, json=model_response())
+
+        with patch.dict("os.environ", {
+            "MODEL_API_URL": "https://api.deepseek.com/v1/chat/completions", "MODEL_API_KEY": API_KEY,
+        }, clear=True):
+            settings = Settings.from_env()
+        async with ModelGateway(settings, transport=httpx.MockTransport(provider)) as gateway:
+            await gateway.generate(input_text=INPUT_TEXT, system_prompt=SYSTEM_PROMPT)
+
     async def test_invalid_or_unconfigured_calls_do_not_reach_provider(self):
         def fail_if_called(_request):
             self.fail("Invalid or unconfigured input reached the provider")
@@ -174,11 +202,63 @@ class ModelGatewayTests(unittest.IsolatedAsyncioTestCase):
             ],
             "max_tokens": MODEL_SETTINGS.model_max_tokens,
             "stream": False,
-            "thinking": {"type": "disabled"},
+            "enable_thinking": False,
         })
         self.assertIn("outcome=OK", logs.output[0])
         for sensitive in (API_KEY, INPUT_TEXT, SYSTEM_PROMPT, UPSTREAM_BODY):
             self.assertNotIn(sensitive, "\n".join(logs.output))
+
+    async def test_omits_thinking_only_when_explicitly_disabled(self):
+        sent = []
+
+        def provider(request):
+            sent.append(json.loads(request.content))
+            return httpx.Response(200, json=model_response())
+
+        for flag in ("true", "false"):
+            with patch.dict("os.environ", {
+                "MODEL_API_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+                "MODEL_API_KEY": API_KEY, "MODEL_SEND_THINKING": flag,
+            }, clear=True):
+                settings = Settings.from_env()
+            async with ModelGateway(settings, transport=httpx.MockTransport(provider)) as gateway:
+                await gateway.generate(input_text=INPUT_TEXT, system_prompt=SYSTEM_PROMPT)
+        self.assertIs(sent[0].pop("enable_thinking"), False)
+        self.assertEqual(sent[0], sent[1])
+        with patch.dict("os.environ", {"MODEL_SEND_THINKING": "unknown"}, clear=True):
+            with self.assertRaisesRegex(ValueError, "MODEL_SEND_THINKING"):
+                Settings.from_env()
+
+    async def test_structured_output_is_opt_in(self):
+        def provider(request):
+            payload = json.loads(request.content)
+            self.assertEqual(payload["response_format"], {"type": "json_object"})
+            return httpx.Response(200, json=model_response())
+
+        async with ModelGateway(MODEL_SETTINGS, transport=httpx.MockTransport(provider)) as gateway:
+            adapter = ModelAdapter(gateway)
+            result = await adapter.generate(ModelGenerateRequest(
+                system_prompt="Return JSON.", user_input=INPUT_TEXT, context_text="", json_object=True,
+            ))
+            self.assertTrue(result.success)
+
+    async def test_request_budget_never_exceeds_global_max_tokens(self):
+        sent = []
+
+        def provider(request):
+            sent.append(json.loads(request.content)["max_tokens"])
+            return httpx.Response(200, json=model_response())
+
+        for global_max, request_max in ((512, 1536), (2048, 1024), (2048, None)):
+            settings = Settings(model_api_url=MODEL_SETTINGS.model_api_url, model_api_key=API_KEY,
+                                model_max_tokens=global_max)
+            async with ModelGateway(settings, transport=httpx.MockTransport(provider)) as gateway:
+                result = await ModelAdapter(gateway).generate(ModelGenerateRequest(
+                    system_prompt=SYSTEM_PROMPT, user_input=INPUT_TEXT, context_text="",
+                    max_output_token_budget=request_max,
+                ))
+                self.assertTrue(result.success)
+        self.assertEqual(sent, [512, 1024, 2048])
 
     async def test_total_deadline_cancels_provider_without_retry(self):
         calls = []

@@ -1,0 +1,45 @@
+{
+  "candidate": "ced4ec935df8b855c8dd1669089467c9906cef27",
+  "browser": "Chrome 154.0.8037.98",
+  "isolated": true,
+  "suppliers": "none",
+  "writes": [
+    {
+      "method": "POST",
+      "route": "/admin/storybooks",
+      "http": 201,
+      "status": "DRAFT"
+    },
+    {
+      "method": "PATCH",
+      "route": "/admin/story-versions/22",
+      "http": 200,
+      "status": "PUBLISHED"
+    },
+    {
+      "method": "PATCH",
+      "route": "/admin/story-versions/22",
+      "http": 200,
+      "status": "WITHDRAWN"
+    },
+    {
+      "method": "POST",
+      "route": "/admin/knowledge-items",
+      "http": 201,
+      "status": "DRAFT"
+    },
+    {
+      "method": "PATCH",
+      "route": "/admin/knowledge-items/21",
+      "http": 200,
+      "status": "APPROVED"
+    },
+    {
+      "method": "PATCH",
+      "route": "/admin/knowledge-items/22",
+      "http": 200,
+      "status": "RETIRED"
+    }
+  ],
+  "refreshedApprovedKnowledge": true
+}

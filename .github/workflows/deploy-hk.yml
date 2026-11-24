@@ -1,0 +1,66 @@
+name: Hong Kong deployment
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install -r backend/requirements-dev.txt
+      - run: python -m pytest -q -c backend/pytest.ini backend/tests database/tests
+      - working-directory: frontend
+        run: |
+          npm ci
+          npm run check
+      - run: |
+          bash -n infra/hk/deploy.sh
+          python infra/hk/test_release.py
+          bash infra/hk/test_cutover.sh
+
+  verify:
+    name: Verify Hong Kong release
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Wait for the ECS receipt and verify public HTTPS
+        env:
+          SITE: https://zhiyahuiben.xyz
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in $(seq 1 110); do
+            latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+            if [ "$latest" != "$GITHUB_SHA" ]; then
+              echo "Superseded by a newer main" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            run="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            if curl -fsS --max-time 10 "$SITE/_deployment/current.json?v=$run-$attempt" -o receipt.json &&
+               jq -e --arg sha "$GITHUB_SHA" --arg run "$run" '.revision == $sha and .run == $run' receipt.json >/dev/null; then
+              curl -fsS --max-time 10 "$SITE/api/v1/health" | jq -e '.data.status == "ok"'
+              test "$(curl -sS --max-time 10 -D headers -o /dev/null -w '%{http_code}' "$SITE/api/v1/admin/story-versions")" = 401
+              ! grep -qi '^www-authenticate: *Basic' headers || exit 1
+              echo "$SITE · $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+              cat receipt.json >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 12
+          done
+          exit 1

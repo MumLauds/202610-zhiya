@@ -113,6 +113,32 @@ def test_synthesis_sources_short_cache_and_authorized_audio(setup):
     assert app.state.voice_gateway.synthesize.await_args.kwargs["text"] == "已保存并核验的回答"
 
 
+def test_prepared_narration_and_child_answer_survive_same_page_feedback_only(setup):
+    client, app, auth, path = setup
+    now = int(time.time() * 1000)
+    change(path, "INSERT INTO auth_sessions VALUES (1,1,'token',?,NULL)", (now + 60000,))
+    change(path, "INSERT INTO child_grants VALUES (5,1,1,'child',?,?,NULL)", (now - 1000, now + 60000))
+    change(path, "INSERT INTO child_grant_books VALUES (5,1)")
+    change(path, "UPDATE reading_sessions SET mode='CHILD_SOLO', grant_id=5 WHERE id=10")
+    auth.principal = VoicePrincipal(1, 5)
+    syntheses = "/api/v1/voice/syntheses"
+    prepared = client.post(syntheses, json={**PAGE, "preload": True})
+    assert prepared.status_code == 201
+    page_audio = prepared.json()["data"]["audioUrl"]
+    change(path, "UPDATE reading_sessions SET revision=4 WHERE id=10")
+    assert client.get(page_audio).status_code == 200
+    assert client.post(syntheses, json=PAGE).status_code == 409
+    assert client.post(syntheses, json={**PAGE, "preload": True}).json()["data"]["audioUrl"] == page_audio
+    answer = client.post(syntheses, json={"interactionEventId": 100})
+    assert answer.status_code == 201
+    answer_audio = answer.json()["data"]["audioUrl"]
+    assert client.get(answer_audio).status_code == 200
+    assert app.state.voice_gateway.synthesize.await_count == 2
+    change(path, "UPDATE reading_sessions SET current_page_no=2, revision=5 WHERE id=10")
+    assert client.get(page_audio).status_code == 409
+    assert client.get(answer_audio).status_code == 409
+
+
 @pytest.mark.parametrize("payload", [{}, {"text":"arbitrary"}, {**PAGE,"text":"arbitrary"},
     {**PAGE,"voiceId":"longniuniu_v3.1"}, {**PAGE,"interactionEventId":100},
     {"interactionEventId":None}, {**PAGE,"revision":True}, {**PAGE,"readingSessionId":"10"},

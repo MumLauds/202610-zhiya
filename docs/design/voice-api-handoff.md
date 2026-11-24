@@ -133,7 +133,7 @@ G08、G09、G10 共用 [PR #27](https://github.com/MumLauds/202610-zhiya/pull/27
 
 最终 `AgentResult` 的字段统一为 `status`、`outputText`、`strategyType`、`sources`；状态、策略枚举及 `AgentSource` 引用结构均以共享 Schema 为准。业务后端在保存事件后补充 `interactionEventId`、`revision`，并按 API-016/017 契约包装 HTTP 响应；这些持久化字段不由 G08/G09/G10 自行生成。
 
-`ModelGenerateResult` 和检索结果是内部中间结果，与最终 `AgentResult` 分工不同。模型失败时，G10 先判断 `success`，再按共同约定完成降级；G08 保留 `TIMEOUT` / `API_ERROR`，不自行新增 `strategyType`。INITIAL 的非空指令组织及 API_ERROR 的最终降级仍按[模型调用说明](../../backend/README.md#对接-pr-27-的-agent-模型接口)由工作流负责人确认，本节不将待接入逻辑记为已经实现。
+`ModelGenerateResult` 和检索结果是内部中间结果，与最终 `AgentResult` 分工不同。模型失败时，G10 先判断 `success`，再按共同约定完成降级；G08 保留 `TIMEOUT` / `API_ERROR`，不自行新增 `strategyType`。API-017 根据当前页组织 INITIAL 的非空指令，超时保存安全回退，其他模型错误记录为可重放的 503。见[模型调用说明](../../backend/README.md#对接-pr-27-的-agent-模型接口)。
 
 新增或调整字段、枚举及错误映射时，先在共享契约中说明并由接口维护人与受影响模块负责人确认，再同步 Schema、调用方、接口文档和相关测试；不得只修改某一个模块的返回字典。API-022/023/024 继续沿用各自语音接口契约，本约定不改变它们的响应结构。
 
@@ -148,7 +148,7 @@ G08、G09、G10 共用 [PR #27](https://github.com/MumLauds/202610-zhiya/pull/27
 | 接收人 | 具体怎么接 | 需要确认什么 |
 | --- | --- | --- |
 | **张智文（G09 检索与内容生成）** | 接收 ModelAdapter 调用说明、Schema 和请求/响应样例，在检索、提示词及生成模块中复用 G08 模型接口 | 上下文及 user_input 的传入方式、输出与失败处理能否满足 G09；检索、提示词和生成结果核验由其模块负责，不重复接入供应商 |
-| **陈烨婷（G05/G10 Agent 接口与流程）** | 接收已按 #27 Schema 接入的 ModelAdapter；复用已交付的超时、无知识、安全阻断、SKIPPED 四类降级约定，不重新设计既有契约 | 确认 INITIAL 由工作流根据当前页构造非空生成指令、API_ERROR 的最终 AgentResult 降级；示例和现有测试见[模型调用说明](../../backend/README.md#对接-pr-27-的-agent-模型接口)。网关继续拒绝空输入，适配器保留 success=false/text=""/API_ERROR；工作流接入时核对事件保存后的 revision 与朗读顺序 |
+| **陈烨婷（G05/G10 Agent 接口与流程）** | 接收已按 #27 Schema 接入的 ModelAdapter；复用已交付的超时、无知识、安全阻断、SKIPPED 四类降级约定，不重新设计既有契约 | API-017 已按当前页构造 INITIAL 指令，区分超时回退与 API_ERROR 的 503 失败。示例和测试见[模型调用说明](../../backend/README.md#对接-pr-27-的-agent-模型接口)。网关继续拒绝空输入，适配器保留 success=false/text=""/API_ERROR；工作流接入时核对事件保存后的 revision 与朗读顺序 |
 | **吴怡霏（G12 互动共读页面）** | 停止录音后提交完整 Blob 和会话/页码/revision；确认或修正转写，按 audioUrl 以 1 倍速播放；切页取消旧播放并忽略旧响应 | 浏览器录音格式；reliable=false 的确认/重录；409/413/415/503/504 回退；从 API-013 恢复最新进度，过期音频不得自动触发收费重合成 |
 | **刘俊延（测试验收）** | 接收可复现命令、脱敏样例、已有验证记录及未覆盖项，对已可用模块同步独立测试，无需等完整业务链路才开始 | 明确版本、真实服务与测试桩范围、异常用例和缺陷记录；真实认证/业务接入后补权限、媒体撤回、恢复与收费重试验证，不将本轮局部结果视为完整 G08 或公网验收 |
 

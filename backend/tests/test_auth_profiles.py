@@ -41,6 +41,8 @@ def test_registration_login_csrf_and_logout(client):
     duplicate = client.post("/api/v1/auth/registrations", json={"account": "guardian", "password": "strong-pass-123"})
     assert duplicate.status_code == 409
     with closing(sqlite3.connect(path)) as db:
+        session_id, revoked = db.execute("SELECT id, revoked_at FROM auth_sessions").fetchone()
+        assert revoked is None
         stored = db.execute("SELECT password_hash FROM accounts").fetchone()[0]
         assert stored.startswith("scrypt$") and "strong-pass-123" not in stored
     assert client.post("/api/v1/child-profiles", json={"ageBand": "AGE_4_5", "preferredMinutes": 10}).status_code == 403
@@ -52,7 +54,28 @@ def test_registration_login_csrf_and_logout(client):
     assert profile["nickname"] == "小芽" and profile["interests"] == []
     assert client.delete("/api/v1/auth/sessions/current").status_code == 403
     assert client.delete("/api/v1/auth/sessions/current", headers=headers).status_code == 204
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT revoked_at FROM auth_sessions WHERE id = ?", (session_id,)).fetchone()[0] is not None
     assert client.get("/api/v1/child-profiles").status_code == 401
+
+
+def test_current_identity_restores_admin_without_granting_guardian_access(client):
+    client, path = client
+    url = "/api/v1/auth/sessions/current"
+    assert client.get(url).status_code == 401
+    headers = register_and_login(client)
+    guardian = client.get(url)
+    assert guardian.json()["data"]["role"] == "GUARDIAN"
+    account_id = guardian.json()["data"]["accountId"]
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("UPDATE accounts SET role = 'ADMIN' WHERE id = ?", (account_id,))
+    response = client.get(url)
+    assert response.json()["data"] == {"role": "ADMIN", "accountId": account_id}
+    assert response.headers["cache-control"] == "no-store"
+    assert client.get("/api/v1/child-profiles").status_code == 403
+    assert client.delete(url).status_code == 403
+    assert client.delete(url, headers=headers).status_code == 204
+    assert client.get(url).status_code == 401
 
 
 def test_expired_revoked_and_invalid_sessions_are_rejected(client):

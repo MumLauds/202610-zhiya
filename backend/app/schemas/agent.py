@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
 
 # ================= 1. 知识检索模块接口 =================
@@ -27,6 +27,10 @@ class ModelGenerateRequest(BaseModel):
     system_prompt: str
     context_text: str
     user_input: str
+    timeout_seconds: Optional[float] = None
+    max_output_token_budget: int | None = Field(default=None, ge=1, le=4096, strict=True)
+    json_object: bool = False
+    page_image_url: str | None = Field(default=None, repr=False, max_length=700_000)
 
 class ModelGenerateResult(BaseModel):
     success: bool

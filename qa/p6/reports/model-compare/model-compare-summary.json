@@ -1,0 +1,68 @@
+{
+  "caseCount": 24,
+  "conditions": [
+    "baseline",
+    "domain"
+  ],
+  "callBudget": 48,
+  "resultRows": 0,
+  "scoredRows": 0,
+  "conditionMeans": {
+    "baseline": {
+      "年龄适宜性": null,
+      "情节一致性": null,
+      "引导合理性": null,
+      "知识依据": null,
+      "安全性": null,
+      "原创与分支连贯性": null,
+      "总均分": null
+    },
+    "domain": {
+      "年龄适宜性": null,
+      "情节一致性": null,
+      "引导合理性": null,
+      "知识依据": null,
+      "安全性": null,
+      "原创与分支连贯性": null,
+      "总均分": null
+    }
+  },
+  "paired": {
+    "wins": 0,
+    "ties": 0,
+    "losses": 0,
+    "cases": []
+  },
+  "agreement": {
+    "年龄适宜性": {
+      "exact": 0,
+      "within1": 0,
+      "total": 0
+    },
+    "情节一致性": {
+      "exact": 0,
+      "within1": 0,
+      "total": 0
+    },
+    "引导合理性": {
+      "exact": 0,
+      "within1": 0,
+      "total": 0
+    },
+    "知识依据": {
+      "exact": 0,
+      "within1": 0,
+      "total": 0
+    },
+    "安全性": {
+      "exact": 0,
+      "within1": 0,
+      "total": 0
+    },
+    "原创与分支连贯性": {
+      "exact": 0,
+      "within1": 0,
+      "total": 0
+    }
+  }
+}

@@ -1,6 +1,7 @@
 """Initialize and check the development database."""
 import argparse
 import os
+import shutil
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -21,9 +22,22 @@ def connect(path: Path, *, create: bool = False) -> sqlite3.Connection:
     return db
 
 
+def clear_pin_store(path: Path) -> None:
+    path = path.resolve()
+    store = path.parent / f".{path.name}.media_pins"
+    for directory in (store, store.with_name(store.name + ".bindings")):
+        try:
+            shutil.rmtree(directory)
+        except FileNotFoundError:
+            pass
+
+
 def initialize(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with closing(connect(path, create=True)) as db, db:
+    resolved = path.resolve()
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    if not resolved.exists():
+        clear_pin_store(resolved)
+    with closing(connect(resolved, create=True)) as db, db:
         db.executescript("BEGIN IMMEDIATE;\n" + SCHEMA.read_text(encoding="utf-8"))
         check_foreign_keys(db)
 
