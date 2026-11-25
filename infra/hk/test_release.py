@@ -1,10 +1,13 @@
 import io
 import json
+import os
 import runpy
+import shutil
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import closing, redirect_stdout
 from pathlib import Path
@@ -17,6 +20,46 @@ SCRIPTS = Path(__file__).resolve().parent
 
 
 class ReleaseTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux host deployment entry point")
+    def test_stale_build_cleanup_obeys_release_lock_age_and_namespace(self):
+        import fcntl
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shutil.copyfile(SCRIPTS / "deploy.sh", root / "deploy.sh")
+            # Stop at an unauthorized run, without Docker or network access.
+            for script in ("receipt.py", "gate.py"):
+                (root / script).write_text("")
+            (root / "provider").write_text("fixture")
+            git = root / "git"
+            git.write_text("#!/bin/sh\n[ \"$1\" = ls-remote ] || exit 1\nprintf '%040d\\trefs/heads/main\\n' 1\n")
+            git.chmod(0o700)
+            env = dict(os.environ, PATH=f"{root}:{os.environ['PATH']}", DEPLOY_DIR=tmp,
+                       COMPOSE_PROJECT_NAME="test", ZHIYA_PROVIDER_ENV_FILE=str(root / "provider"),
+                       ZHIYA_DOMAIN="example.invalid", ZHIYA_GATEWAY_PORT="18080")
+            old = time.time() - 25 * 3600
+            expired = ["git.zhiya-Ab01Cd23", "build.zhiya-Wx45Yz67"]
+            retained = ["git.UNRELATED", "build.zhiya-not-ours", "source.git", "other/git.zhiya-Ab01Cd23"]
+            for name in expired + retained:
+                path = root / name
+                path.mkdir(parents=True)
+                (path / "marker").touch()
+                os.utime(path, (old, old))
+            fresh = root / "git.zhiya-Fresh123"
+            fresh.mkdir()
+            link = root / "build.zhiya-Link1234"
+            link.symlink_to(root / "source.git", target_is_directory=True)
+            os.utime(link, (old, old), follow_symlinks=False)
+            argv = ["bash", str(root / "deploy.sh")]
+            with (root / "release.lock").open("w") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                subprocess.run(argv, env=env, check=True, timeout=10)
+                self.assertTrue(all((root / name / "marker").is_file() for name in expired))
+            subprocess.run(argv, env=env, check=True, timeout=10)
+            self.assertFalse(any((root / name).exists() for name in expired))
+            self.assertTrue(all((root / name / "marker").is_file() for name in retained))
+            self.assertTrue(fresh.is_dir() and link.is_symlink())
+
     def test_gate_requires_successful_job_on_trusted_main_attempt(self):
         sha = "a" * 40
         run = dict(path=".github/workflows/deploy-hk.yml", event="push",

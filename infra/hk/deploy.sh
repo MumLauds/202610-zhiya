@@ -80,6 +80,11 @@ if [[ -e history-hold ]]; then
     echo "Automatic deployment paused; reconcile original backup recorded by history-hold" >&2
     exit 1
 fi
+# Reap only this script's abandoned scratch directories. The release lock is
+# held, and no scratch directory for the current run has been allocated yet.
+find . -mindepth 1 -maxdepth 1 -regextype posix-extended -type d \
+    -regex '\./(git|build)\.zhiya-[A-Za-z0-9]{8}' -mmin +1440 \
+    -exec rm -rf --one-file-system -- {} + || echo "Could not clean stale build directories" >&2
 python3 receipt.py "$receipt" "$project" "$last_success"
 sha=$(main_sha)
 [[ $sha =~ ^[0-9a-f]{40}$ ]]
@@ -95,12 +100,18 @@ if [[ -e "$release/attempt-$run" ]]; then exit 0; fi
 api_tag="zhiya-api:main-$sha"
 web_tag="zhiya-web:main-$sha"
 if [[ ! -s "$release/images" ]]; then
-    if [[ ! -d source.git ]]; then git init -q --bare source.git; fi
-    git --git-dir=source.git fetch -q --depth=1 "$repo" "$sha"
-    [[ $(git --git-dir=source.git rev-parse FETCH_HEAD) == "$sha" ]]
-    src=$(mktemp -d "$root/build.XXXXXXXX")
-    trap 'rm -rf -- "$src"' EXIT
-    git --git-dir=source.git archive "$sha" infra backend database data/seed knowledge-base_v2.5/图片 frontend | tar -x -C "$src"
+    git_tmp=
+    src=
+    trap 'rm -rf -- "$git_tmp" "$src"' EXIT
+    git_tmp=$(mktemp -d "$root/git.zhiya-XXXXXXXX")
+    git init -q "$git_tmp"
+    git -C "$git_tmp" fetch -q --depth=1 --no-tags "$repo" "$sha"
+    fetched=$(git -C "$git_tmp" rev-parse --verify 'FETCH_HEAD^{commit}')
+    [[ $fetched == "$sha" ]] || { echo "Fetched commit does not match $sha" >&2; exit 1; }
+    src=$(mktemp -d "$root/build.zhiya-XXXXXXXX")
+    git -C "$git_tmp" archive "$sha" infra backend database data/seed knowledge-base_v2.5/图片 frontend | tar -x -C "$src"
+    rm -rf -- "$git_tmp"
+    git_tmp=
     docker build --label "org.opencontainers.image.revision=$sha" -t "$api_tag" -f "$src/infra/Dockerfile" "$src"
     docker build --label "org.opencontainers.image.revision=$sha" -t "$web_tag" -f "$root/Web.Dockerfile" "$src/frontend"
     docker image inspect -f '{{.Id}}' "$api_tag" "$web_tag" > "$release/images.tmp"

@@ -32,6 +32,48 @@ systemctl start zhiya-deploy.service
 journalctl -u zhiya-deploy.service -n 60
 ```
 
+## 已有主机：升级 Git 获取方式
+
+**仓库合并不等于主机脚本升级。** Actions 不会把 `infra/hk/deploy.sh` 写到 ECS；定时器执行独立安装的 `/opt/zhiya-release/deploy.sh`。只有负责人审查、批准并合并 PR 后，才从批准提交取出该文件，核对后在主机上持同一把锁原子替换。不要现场手改脚本、执行候选分支，或为此重启生产容器。仅换脚本不改 systemd 单元，也不需要重跑首次安装。以下从含该提交的受信任检出目录执行（需 GNU 工具）：
+
+```sh
+(
+  set -eu
+  : "${APPROVED_SHA:?请先设置为已批准并合并的完整提交号}"
+  test "$(git rev-parse --verify "${APPROVED_SHA}^{commit}")" = "$APPROVED_SHA"
+  tmp=$(mktemp)
+  trap 'rm -f -- "$tmp"' EXIT
+  git show "${APPROVED_SHA}:infra/hk/deploy.sh" > "$tmp"
+  bash -n "$tmp"
+  root=/opt/zhiya-release
+  sudo flock -n "$root/release.lock" sh -ec '
+    install -m 0750 -- "$1" "$2/deploy.sh.new"
+    mv -T -- "$2/deploy.sh.new" "$2/deploy.sh"
+  ' sh "$tmp" "$root"
+  sudo cmp "$tmp" "$root/deploy.sh"
+)
+```
+
+若锁被占用，不抢锁、不打断运行，稍后再安装。之后按原有授权流程观察下一次发布。同一 SHA 已有非空 `releases/<sha>/images` 时，不拉源码、不重建；仍逐一核对两份镜像 ID 与 revision 标签，不匹配就停止。
+
+**Git 生命周期。** 旧版每次对同一长期裸库做深度为 1 的 fetch；浅取限制提交历史深度，不保证历次 fetch 的重叠对象只占一份磁盘。新版只在需要构建时，于发布根目录 `git.zhiya-XXXXXXXX` 中初始化空库，不取标签，按授权的完整 SHA 浅取一层；验证 `FETCH_HEAD^{commit}` 相等，再从该 SHA 归档既有构建目录到 `build.zhiya-XXXXXXXX`。解包成功即删除 Git 库，才开始构建后端和前端；构建结束删除源码。代价是每个未缓存版本重新下载，需要为下载、解包、Docker 缓存及 SQLite 备份分别预留空间，不能把“无长期 pack”当成磁盘不会再满。
+
+**清理与旧库退役。** 两种临时目录共用构建阶段的 EXIT 清理；断电或 SIGKILL 无法执行 trap。后续轮询先持有 `release.lock` 并处理 `pending` / `history-hold`，再回收超过 24 小时、位于根目录第一层且名称完全匹配上述两个模板的目录（八个随机英数字符）。不跟随符号链接，不清理其他命名的目录。这两个命名空间仅供发布程序使用，不要把它们用作挂载点或在其中挂入其他业务目录。旧 `source.git` 退役方式是停止使用、原地保留；本次不迁移、不删除、不 repack，不改 `refs/keepalive`。若以后需移出另行备份和审批。保留当前及上一版本真实镜像、`releases/<sha>/images`、尝试记录、私有回执和原卷备份；回滚通过镜像 ID，而不是从 Git 重新构建。不要清除镜像或 SQLite 卷。
+
+**只读验收。** 在空闲期记录以下输出，在至少两个不同 SHA 实际完成新构建后再比较（仅复用旧镜像不能验证下载路径）。若保留旧库，其 pack 清单与 keepalive 引用应不变；原先没有旧库则不应新建。正常退出不应留下本次构建目录。将两次的发布回执与对应的 SHA、run/attempt 核对，并确认上一个版本的镜像 ID 仍可 inspect。
+
+```sh
+# 在发布根目录，以有读取权限的账号执行
+cd /opt/zhiya-release
+if test -d source.git; then
+  git --git-dir=source.git count-objects -vH
+  find source.git/objects/pack -maxdepth 1 -type f -printf '%f %s %T@\n' | sort
+  git --git-dir=source.git for-each-ref --format='%(refname) %(objectname)' refs/keepalive
+fi
+find . -mindepth 1 -maxdepth 1 -type d \
+  -regextype posix-extended -regex '\./(git|build)\.zhiya-[A-Za-z0-9]{8}' -print
+```
+
 ## 验收与恢复
 
 ECS 将最近成功的回执保存在发布目录的私有文件 `last-success.json`。Docker 暂时不可读或运行镜像发生偏差时撤下公网副本；后续轮询确认两个容器均在运行、镜像 ID 和修订号均吻合后，原子恢复同一份公网回执。Actions 只接受匹配本次运行编号、尝试次数和提交号的回执。开始构建和切换前，ECS 均要求同一次主线工作流仍在运行且测试已通过。
