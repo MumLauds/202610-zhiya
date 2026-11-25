@@ -472,15 +472,18 @@ status=CREATED, currentPage=1, visitedPageNumbers=[], revision=0
 ```json
 {
   "data": {
-    "session": {"readingSessionId": 1, "storyVersionId": 2, "currentPage": 2, "visitedPageNumbers": [1, 2], "status": "IN_PROGRESS", "revision": 2, "mode": "PARENT_CHILD", "expiresAt": null, "demoOnly": true},
-    "events": [{"interactionEventId": 1, "eventType": "STARTED", "pageNumber": 1}],
+    "session": {"readingSessionId": 1, "storyVersionId": 2, "currentPage": 1, "visitedPageNumbers": [1], "status": "IN_PROGRESS", "revision": 2, "mode": "PARENT_CHILD", "expiresAt": null, "demoOnly": true},
+    "events": [
+      {"interactionEventId": 1, "eventType": "STARTED", "pageNumber": 1},
+      {"interactionEventId": 2, "eventType": "ASK", "pageNumber": 1, "outputText": "这是本地 Mock 的固定回答，不是真实 AI 输出。", "strategyType": "CONTEXT_QUESTION", "revision": 2}
+    ],
     "report": null
   },
   "requestId": "mock-..."
 }
 ```
 
-Mock 没有真实角色投影；`report` 是演示对象，H06 不得在儿童界面展示完整报告。正式 API-013 的儿童投影建议 `report=null`，服务端权限仍以真实后端为准。
+Mock 的 ASK 事件在写入时保存 `outputText`、`strategyType` 和事件写入后的 `revision`；`GET` 会话通过 `public_event()` 恢复这些字段，而不是只返回事件编号、类型和页码。`STARTED` / `PAGE_CHANGED` 仍保持 API-013 的三字段投影。Mock 没有真实角色投影；`report` 是演示对象，H06 不得在儿童界面展示完整报告。正式 API-013 的儿童投影建议 `report=null`，服务端权限仍以真实后端为准。
 
 ### 5.5 问答
 
@@ -489,8 +492,9 @@ Mock 没有真实角色投影；`report` 是演示对象，H06 不得在儿童�
 - 要求 `IN_PROGRESS`、`pageNumber` 等于当前页、`expectedRevision` 等于当前 revision；
 - 首次成功返回 **201**，成功重放返回 **200**，与 API-016 相同；
 - 返回固定 `outputText`、`status=GENERATED`、`strategyType=CONTEXT_QUESTION`、`sources=[]`、`demoOnly=true`；
-- 追加一条 `eventType=ASK` 的内存事件并递增 session revision，返回新的 `interactionEventId` 与 revision；
-- 该 `interactionEventId` 可供 `/mock/voice/simulate` 的 `tts_failed` 复用；
+- 追加一条 `eventType=ASK` 的内存事件并递增 session revision；事件内保存 `outputText`、`strategyType`、`revision` 和 `resultStatus=SUCCESS`，返回新的 `interactionEventId` 与 revision；
+- 随后 `GET /api/v1/reading-sessions/{id}` 能恢复同一 `interactionEventId`、`outputText`、`strategyType` 和 `revision`；同键重放不追加事件、不推进 revision；
+- 该 `interactionEventId` 可供 `/mock/voice/simulate` 的 `tts_failed` 复用；模拟返回的 `answerText` 覆盖为会话中实际保存的 ASK `outputText`，并与该事件编号绑定；
 - 这不是 API-016/G10 的真实结果，不保存真实互动记录，也不调用模型。
 
 正式链路应为：API-022 识别（`reliable=false` 时儿童不自动进入问答；家长确认或后端可信策略）→ API-016/G10 生成并持久化互动事件 → 必要时 API-023 合成 → API-024 读取。H05 仅模拟 UI 状态，不把该链路写成已完成。
@@ -563,7 +567,7 @@ stateDiagram-v2
 
 - 所有场景 `audioUrl=null`，`tts.playbackMode=SIMULATED`；不得当作 API-023 的真实音频。
 - `tts_failed` 的 `RETRY_SYNTHESIS` 只回到 `SYNTHESIZING`，复用已保存的 `interactionEventId`，不重新录音、不重新问答、不新增事件；`TEXT_ONLY` 才回 `IDLE`。
-- `/mock/voice/simulate` 对 `tts_failed` 要求同时传入 `sessionId` 与已存在的 ASK `interactionEventId`；缺失或不匹配返回 422。
+- `/mock/voice/simulate` 对 `tts_failed` 要求同时传入 `sessionId` 与已存在的 ASK `interactionEventId`；缺失或不匹配返回 422。返回的 `answerText` 使用该 ASK 事件实际保存的 `outputText`，不沿用固定场景文本；`interactionEventId` 仍绑定该已保存事件，因此重试不会重新问答、录音或新增事件。
 - `success` 的 `reliable=true` 只是 Mock 字段，`reliableIsSimulated=true`；真实 API-022 当前 `reliable` 固定为 false。
 - 不生成可播放音频，不创建真实互动事件，不写真实会话记录。
 - 动画建议只使用 H04 的低资源 spinner/呼吸圈；H05 不规定帧率、延迟或内存指标。
@@ -587,6 +591,8 @@ stateDiagram-v2
 | 200 | `COVER_MISSING` | — | `?mockCover=missing` | 使用本地占位，不伪造封面 |
 
 `INVALID_PAGE` 的 HTTP 状态是 422，`code` 仍为 `VALIDATION_ERROR`；`SESSION_ENDED` 的 `code` 仍为 `SESSION_CONFLICT`。不要按 `scenarioId` 直接展示给儿童，只用于测试和日志。
+
+当前 `REQUEST_OUTCOME_UNKNOWN` 的注入发生在请求处理前，代表“未写入、客户端未收到正常响应”的 504；测试验证 504 后 GET 的 revision/事件数不变，再由新键恢复。Mock 暂不模拟“服务端已落库、客户端未收到响应”的 504，H06 若需覆盖该分支，应在真实后端或后续独立场景中验证，不能把本 Mock 的预写入 504 当成已写入恢复证据。
 
 ## 8. DEMO 与 ONLINE 边界
 
@@ -706,7 +712,7 @@ python -m unittest discover -s hardware/tests/mock -v
 实际结果：
 
 ```text
-Ran 36 tests in 6.754s
+Ran 37 tests in 6.798s
 OK
 ```
 
@@ -723,8 +729,9 @@ OK
 - API-011 创建会话 `clientRequestId`：同键同体 201→200 且会话不重复，同键改体 409 `IDEMPOTENCY_CONFLICT`，新键创建新会话；空串 422；
 - 翻页 409 后原键重放原错误、同键改体 `IDEMPOTENCY_CONFLICT`、新键修正成功；
 - 问答首次 201、重放 200、递增 revision；旧 revision 冲突；
+- ASK 结果可恢复：首次提问后 GET 会话返回同一 `interactionEventId/outputText/strategyType/revision`；同键重放不新增事件；
 - 列表分页前最新会话优先；
-- 语音 7 主状态、8 场景、TTS 重试复用 ASK 事件、无真实音频、无新问答/录音；
+- 语音 7 主状态、8 场景、TTS 重试复用 ASK 事件、返回保存的 `answerText`、无真实音频、无新问答/录音；
 - 401/403/404/409/422/429/503/504、空书架、缺封面；503 读写 retryable 差异；questions 504 后 GET 恢复；
 - 重复生成确定性、`--check`、源文件未修改、`/mock/reset`；
 - 并发相同 `STARTED` 幂等、16 个并发创建会话、读取/列表/书架/meta/语音/错误/重置交错快照一致性。
@@ -740,7 +747,7 @@ OK
 - fixtures 由真实种子生成：20 本 `PUBLISHED` 原创、104 页、40 个资源引用；1 本 `DRAFT` 联调绘本排除。
 - `storyVersionId` 按 `storybook_id` 查找，不按数组下标或 ID 等值假设。
 - 所有原创版本 `demoOnly=true`、`coverRef=null`、`imageRef=null`、`localPageAsset=null`；H03 本地封面只出现在 `localCover`。
-- Mock 服务的阅读会话、成功/失败幂等、结束态、错误注入、分页规则和并发快照通过 36 项离线测试。
+- Mock 服务的阅读会话、成功/失败幂等、ASK 结果恢复、TTS 答案复用、结束态、错误注入、分页规则和并发快照通过 37 项离线测试。
 - `GET /api/v1/storybooks` 只返回轻量元数据，不携带 `pages` / `branches` / `total`；详情由 API-009 投影单独读取。
 - `PAGE_CHANGED` 只接受当前页 `defaultNextPageNumber` 且未访问的目标；错误的后向翻页、已访问页和畸形回环均返回 409，不增加 revision。
 - 测试不依赖 Pillow、FastAPI、数据库、云端模型或 ESP32 板卡。
@@ -760,7 +767,7 @@ OK
 
 ### 11.3 与正式契约的已知差异
 
-1. **问答**：Mock 的 `/questions` 返回固定模板，不调用 G10、不写数据库；但它已对齐 API-016 的首次 201、重放 200、递增 revision 和 ASK `interactionEventId`。
+1. **问答**：Mock 的 `/questions` 返回固定模板，不调用 G10、不写数据库；但它已对齐 API-016 的首次 201、重放 200、递增 revision、ASK `interactionEventId`，并按 API-013 恢复 ASK 的 `outputText/strategyType/revision`。
 2. **语音**：Mock 的 `/mock/voice/*` 不是 API-022/023/024；`success` 的 `reliable=true` 是模拟，真实 API-022 固定 false。
 3. **角色投影**：Mock 无真实身份，不实现儿童 `report=null` 投影；H06 不能把 Mock 的 `report` 直接展示给儿童。
 4. **书架列表投影**：H05 按设备书架要求只返回轻量元数据，不返回 `pages` / `branches` / `total`；当前正式 API-008 响应示例仍包含完整版本对象。H06 进入详情必须走 API-009，接正式后端时以服务端实际响应为准。
@@ -777,10 +784,11 @@ OK
 2. 书架只使用 `THUMBNAIL`；详情只使用 `DETAIL`；缺图显示占位。
 3. 开始阅读、前进、末页和结束使用 `revision`；返回旧页仅本地回看，不发送 `PAGE_CHANGED`，不把 `versionNumber` 当 `revision`。
 4. 同键同体重放不重复递增；同键改体返回 `IDEMPOTENCY_CONFLICT`；错误 revision 显示冲突恢复提示；结束后不继续普通翻页。
-5. 语音覆盖 7 主状态；`ERROR_TTS` 的“重试”复用已保存的 `interactionEventId` 回 `SYNTHESIZING`，“只看文字”回 `IDLE`；`audioUrl=null` 时不调用真实播放。
+5. 语音覆盖 7 主状态；`ERROR_TTS` 的“重试”复用已保存的 `interactionEventId` 回 `SYNTHESIZING`，返回的 `answerText` 与 GET 会话中的 ASK `outputText` 一致；“只看文字”回 `IDLE`；`audioUrl=null` 时不调用真实播放。
 6. 断网时保留当前页；恢复后先读取会话，不假设自动补写成功。
 7. 401/403/404/422 不显示受控内容；503 读到可重试、写不自动重放；504 先读取会话，不自动创建新事件或新问题。
 8. 创建会话可带 `clientRequestId`；结果未确认时用同键同体重试，必须返回原会话而不是新建第二个会话。
+9. 问答成功后 GET 会话，ASK 事件必须恢复相同 `interactionEventId/outputText/strategyType/revision`，不能只显示事件编号和页码。
 
 实板验收（H06）：
 

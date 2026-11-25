@@ -509,6 +509,60 @@ class MockTestCase(unittest.TestCase):
         })
         self.assertEqual(409, wrong_page.status)
 
+    def test_question_result_recovers_from_session_and_tts_uses_saved_answer(self) -> None:
+        self.request("POST", "/api/v1/reading-sessions/1/events", {
+            "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "recover-start",
+        })
+        body = {
+            "inputText": "小狐狸为什么带伞？", "pageNumber": 1, "expectedRevision": 1,
+            "clientEventId": "recover-question",
+        }
+        answer = self.request("POST", "/api/v1/reading-sessions/1/questions", body)
+        self.assertEqual(201, answer.status)
+        saved = {
+            "interactionEventId": answer.data["interactionEventId"],
+            "outputText": answer.data["outputText"],
+            "strategyType": answer.data["strategyType"],
+            "revision": answer.data["revision"],
+        }
+        current = self.request("GET", "/api/v1/reading-sessions/1")
+        self.assertEqual(
+            {"interactionEventId", "eventType", "pageNumber"},
+            set(current.data["events"][0]),
+        )
+        ask_events = [event for event in current.data["events"] if event["eventType"] == "ASK"]
+        self.assertEqual(1, len(ask_events))
+        self.assertEqual(saved["interactionEventId"], ask_events[0]["interactionEventId"])
+        self.assertEqual(saved["outputText"], ask_events[0]["outputText"])
+        self.assertEqual(saved["strategyType"], ask_events[0]["strategyType"])
+        self.assertEqual(saved["revision"], ask_events[0]["revision"])
+        replay = self.request("POST", "/api/v1/reading-sessions/1/questions", body)
+        self.assertEqual(200, replay.status)
+        self.assertEqual(saved["interactionEventId"], replay.data["interactionEventId"])
+        self.assertEqual(saved["outputText"], replay.data["outputText"])
+        after_replay = self.request("GET", "/api/v1/reading-sessions/1")
+        self.assertEqual(2, len(after_replay.data["events"]))
+        self.assertEqual(saved["revision"], after_replay.data["session"]["revision"])
+        other = self.request("POST", "/api/v1/reading-sessions", {
+            "childProfileId": 1, "storyVersionId": 2, "mode": "PARENT_CHILD",
+        })
+        wrong_session = self.request("POST", "/mock/voice/simulate", {
+            "scenarioId": "tts_failed",
+            "sessionId": other.data["readingSessionId"],
+            "interactionEventId": saved["interactionEventId"],
+        })
+        self.assertEqual(422, wrong_session.status)
+        simulation = self.request("POST", "/mock/voice/simulate", {
+            "scenarioId": "tts_failed",
+            "sessionId": 1,
+            "interactionEventId": saved["interactionEventId"],
+        })
+        self.assertEqual(200, simulation.status)
+        self.assertEqual(saved["outputText"], simulation.data["answerText"])
+        after_tts = self.request("GET", "/api/v1/reading-sessions/1")
+        self.assertEqual(2, len(after_tts.data["events"]))
+        self.assertEqual(saved["revision"], after_tts.data["session"]["revision"])
+
     def test_voice_scenarios_and_simulation(self) -> None:
         scenarios = self.request("GET", "/mock/voice/scenarios")
         self.assertEqual(200, scenarios.status)

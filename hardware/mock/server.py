@@ -121,11 +121,20 @@ def success_payload(data: Any, request: str | None = None) -> dict[str, Any]:
 
 def public_event(event: dict[str, Any]) -> dict[str, Any]:
     """Project an internal event onto the API-013 public shape."""
-    return {
+    data = {
         "interactionEventId": event["interactionEventId"],
         "eventType": event["eventType"],
         "pageNumber": event["pageNumber"],
     }
+    if event.get("eventType") in ("QUESTION", "FEEDBACK", "ASK") and event.get("strategyType"):
+        data.update(
+            outputText=event.get("outputText"),
+            strategyType=event["strategyType"],
+            revision=event["revision"],
+        )
+        if event.get("feedback") is not None:
+            data["feedback"] = event["feedback"]
+    return data
 
 
 def load_fixtures(fixtures_dir: Path) -> dict[str, Any]:
@@ -322,16 +331,20 @@ class MockState:
         with self.lock:
             return session_id in self.sessions
 
-    def has_ask_event(self, session_id: int, event_id: int) -> bool:
-        """Check a saved ASK event under the same lock as session reads."""
+    def ask_event(self, session_id: int, event_id: int) -> dict[str, Any] | None:
+        """Return a saved ASK event copy under the session-state lock."""
         with self.lock:
             session = self.sessions.get(session_id)
             if session is None:
-                return False
-            return any(
-                event.get("interactionEventId") == event_id and event.get("eventType") == "ASK"
-                for event in session.events
+                return None
+            event = next(
+                (
+                    item for item in session.events
+                    if item.get("interactionEventId") == event_id and item.get("eventType") == "ASK"
+                ),
+                None,
             )
+            return copy.deepcopy(event) if event is not None else None
 
     def error_scenario(self, scenario_id: str) -> dict[str, Any] | None:
         with self.lock:
@@ -799,6 +812,7 @@ class MockRequestHandler(BaseHTTPRequestHandler):
                 session.next_event_id += 1
                 session.revision += 1
                 output_text = "这是本地 Mock 的固定回答，不是真实 AI 输出。"
+                strategy_type = "CONTEXT_QUESTION"
                 event = {
                     "interactionEventId": event_id,
                     "eventType": "ASK",
@@ -806,6 +820,9 @@ class MockRequestHandler(BaseHTTPRequestHandler):
                     "clientEventId": client_event_id,
                     "digest": digest,
                     "resultStatus": "SUCCESS",
+                    "outputText": output_text,
+                    "strategyType": strategy_type,
+                    "revision": session.revision,
                 }
                 session.events.append(event)
                 response = success_payload({
@@ -815,7 +832,7 @@ class MockRequestHandler(BaseHTTPRequestHandler):
                     "inputText": input_text,
                     "outputText": output_text,
                     "status": "GENERATED",
-                    "strategyType": "CONTEXT_QUESTION",
+                    "strategyType": strategy_type,
                     "sources": [],
                     "demoOnly": True,
                 }, self.request_id)
@@ -884,11 +901,16 @@ class MockRequestHandler(BaseHTTPRequestHandler):
         if scenario_id == "tts_failed":
             if session_id is None or interaction_event_id is None:
                 raise ApiError(422, "VALIDATION_ERROR", "tts_failed 重试必须复用已保存的 interactionEventId")
-            if not self.server.state.has_ask_event(session_id, interaction_event_id):
+            ask_event = self.server.state.ask_event(session_id, interaction_event_id)
+            if ask_event is None:
                 raise ApiError(422, "VALIDATION_ERROR", "interactionEventId 不是该会话已保存的 ASK 事件")
+        else:
+            ask_event = None
         data = scenario
         data["sessionId"] = session_id
         data["interactionEventId"] = interaction_event_id
+        if ask_event is not None:
+            data["answerText"] = ask_event["outputText"]
         data["mockPlayback"] = True
         data["audioUrl"] = None
         self._send_json(200, success_payload(data, self.request_id))
