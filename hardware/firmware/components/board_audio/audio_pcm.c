@@ -1,7 +1,104 @@
 #include "audio_pcm.h"
 
+#include <math.h>
 #include <string.h>
 #include "board_audio.h"
+
+#define REPLAY_TARGET_RMS 2200U
+#define REPLAY_MIN_AC_RMS 128U
+#define REPLAY_PEAK_LIMIT 8192
+#define REPLAY_MAX_GAIN (4U * AUDIO_GAIN_UNITY)
+
+void audio_signal_add(audio_signal_t *signal, int16_t sample)
+{
+    const int32_t value = sample;
+    const unsigned magnitude = value < 0 ? -value : value;
+    if (!signal->count) {
+        signal->min = sample;
+        signal->max = sample;
+        signal->fingerprint = UINT32_C(2166136261);
+    }
+    signal->count++;
+    signal->sum += value;
+    signal->squares += (uint32_t)(value * value);
+    signal->zeros += sample == 0;
+    signal->clipped += magnitude >= 32760;
+    signal->fingerprint = (signal->fingerprint ^ (uint16_t)sample) * UINT32_C(16777619);
+    if (sample < signal->min) {
+        signal->min = sample;
+    }
+    if (sample > signal->max) {
+        signal->max = sample;
+    }
+    if (magnitude > signal->peak) {
+        signal->peak = magnitude;
+    }
+}
+
+uint16_t audio_signal_rms(const audio_signal_t *signal)
+{
+    return signal->count ? (uint16_t)sqrtf((float)signal->squares / signal->count) : 0;
+}
+
+uint16_t audio_signal_ac_rms(const audio_signal_t *signal)
+{
+    if (!signal->count || signal->min == signal->max) {
+        return 0;
+    }
+    const double mean = (double)signal->sum / signal->count;
+    const double variance = (double)signal->squares / signal->count - mean * mean;
+    return variance > 0 ? (uint16_t)sqrt(variance) : 0;
+}
+
+audio_replay_gain_t audio_replay_gain(const audio_signal_t *signal)
+{
+    audio_replay_gain_t gain = {.gain_q8 = AUDIO_GAIN_UNITY};
+    if (!signal->count) {
+        return gain;
+    }
+    gain.dc = (int32_t)(signal->sum / signal->count);
+    const unsigned ac_rms = audio_signal_ac_rms(signal);
+    if (ac_rms >= REPLAY_MIN_AC_RMS && ac_rms < REPLAY_TARGET_RMS) {
+        const unsigned target_gain = REPLAY_TARGET_RMS * AUDIO_GAIN_UNITY / ac_rms;
+        gain.gain_q8 = target_gain < REPLAY_MAX_GAIN ? target_gain : REPLAY_MAX_GAIN;
+    }
+    const int32_t above_dc = signal->max - gain.dc;
+    const int32_t below_dc = gain.dc - signal->min;
+    const unsigned centered_peak = above_dc > below_dc ? above_dc : below_dc;
+    if (centered_peak) {
+        const unsigned peak_gain = REPLAY_PEAK_LIMIT * AUDIO_GAIN_UNITY / centered_peak;
+        if (peak_gain < gain.gain_q8) {
+            gain.gain_q8 = peak_gain;
+        }
+    }
+    return gain;
+}
+
+int16_t audio_replay_apply(int16_t sample, audio_replay_gain_t gain)
+{
+    const int32_t scaled = ((int32_t)sample - gain.dc) * (int32_t)gain.gain_q8 / (int32_t)AUDIO_GAIN_UNITY;
+    if (scaled > REPLAY_PEAK_LIMIT) {
+        return REPLAY_PEAK_LIMIT;
+    }
+    if (scaled < -REPLAY_PEAK_LIMIT) {
+        return -REPLAY_PEAK_LIMIT;
+    }
+    return (int16_t)scaled;
+}
+
+int16_t audio_pcm16_read(const uint8_t *bytes)
+{
+    const uint16_t word = (uint16_t)bytes[0] | (uint16_t)bytes[1] << 8;
+    const int32_t signed_value = word <= INT16_MAX ? word : (int32_t)word - 65536;
+    return (int16_t)signed_value;
+}
+
+void audio_pcm16_write(uint8_t *bytes, int16_t sample)
+{
+    const uint16_t word = (uint16_t)sample;
+    bytes[0] = (uint8_t)word;
+    bytes[1] = (uint8_t)(word >> 8);
+}
 
 static uint32_t read_le(const uint8_t *bytes, unsigned width)
 {

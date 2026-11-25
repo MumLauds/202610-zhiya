@@ -1,6 +1,5 @@
 #include "board_audio.h"
 
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include "audio_hw.h"
@@ -20,8 +19,8 @@
 #define RECORD_US 15000000
 
 typedef enum {
-    COMMAND_RETRY, COMMAND_TONE, COMMAND_PCM, COMMAND_RECORD, COMMAND_REPLAY,
-    COMMAND_STOP, COMMAND_CANCEL, COMMAND_CLEAR, COMMAND_VOLUME, COMMAND_MUTE, COMMAND_EXIT,
+    COMMAND_RETRY, COMMAND_TONE, COMMAND_PCM, COMMAND_RECORD, COMMAND_REPLAY, COMMAND_PSRAM_TONE,
+    COMMAND_STOP, COMMAND_CANCEL, COMMAND_CLEAR, COMMAND_SLOT, COMMAND_VOLUME, COMMAND_MUTE, COMMAND_EXIT,
 } command_kind_t;
 
 typedef struct {
@@ -33,14 +32,20 @@ typedef struct {
 
 typedef struct {
     board_audio_status_t status;
-    int16_t *recording;
+    uint8_t *recording;
     size_t recorded;
     const uint8_t *playback;
     size_t play_length;
     size_t played;
     unsigned drain_blocks;
-    int16_t input_min;
-    int16_t input_max;
+    audio_signal_t capture[2];
+    audio_signal_t compensated;
+    audio_signal_t scaled;
+    audio_signal_t tx[2];
+    audio_replay_gain_t replay_gain;
+    command_kind_t playback_kind;
+    uint8_t recorded_slot;
+    bool known_tone;
     int64_t deadline;
     bool ready;
 } audio_worker_t;
@@ -52,6 +57,47 @@ static SemaphoreHandle_t worker_done;
 static board_audio_status_t snapshot;
 static bool command_pending;
 static esp_err_t release_result;
+
+static const char *playback_name(command_kind_t kind)
+{
+    switch (kind) {
+    case COMMAND_TONE: return "tone";
+    case COMMAND_REPLAY: return "recording";
+    case COMMAND_PSRAM_TONE: return "psram-tone";
+    default: return "pcm";
+    }
+}
+
+static int16_t tone_sample(size_t index)
+{
+    static const int16_t tone[] = {0, 1254, 2317, 3027, 3277, 3027, 2317, 1254,
+                                  0, -1254, -2317, -3027, -3277, -3027, -2317, -1254};
+    return tone[index % (sizeof(tone) / sizeof(tone[0]))];
+}
+
+static void log_signal(const char *stage, const audio_signal_t *signal)
+{
+    const unsigned zero_permille = signal->count ? signal->zeros * 1000U / signal->count : 0;
+    const int dc = signal->count ? (int)(signal->sum / signal->count) : 0;
+    ESP_LOGI(TAG, "%s n=%u peak=%u rms=%u ac_rms=%u min=%d max=%d dc=%d zero_permille=%u clipped=%u",
+             stage, (unsigned)signal->count, (unsigned)signal->peak, (unsigned)audio_signal_rms(signal),
+             (unsigned)audio_signal_ac_rms(signal), (int)signal->min, (int)signal->max, dc,
+             zero_permille, (unsigned)signal->clipped);
+}
+
+static audio_signal_t scan_source(const uint8_t *pcm, size_t count)
+{
+    audio_signal_t signal = {0};
+    for (size_t index = 0; index < count; ++index) {
+        audio_signal_add(&signal, pcm ? audio_pcm16_read(pcm + index * 2) : tone_sample(index));
+    }
+    return signal;
+}
+
+static bool same_pcm(const audio_signal_t *expected, const audio_signal_t *actual)
+{
+    return expected->count == actual->count && expected->fingerprint == actual->fingerprint;
+}
 
 static void publish(const audio_worker_t *worker, bool clear_pending)
 {
@@ -79,6 +125,9 @@ static void clear_recording(audio_worker_t *worker)
     worker->recorded = 0;
     worker->status.peak = 0;
     worker->status.rms = 0;
+    memset(worker->status.slot_peak, 0, sizeof(worker->status.slot_peak));
+    memset(worker->status.slot_rms, 0, sizeof(worker->status.slot_rms));
+    memset(worker->capture, 0, sizeof(worker->capture));
     worker->status.constant_input = false;
     worker->status.clipped = false;
 }
@@ -104,6 +153,7 @@ static void initialize(audio_worker_t *worker)
 static void finish(audio_worker_t *worker, esp_err_t result, bool cancel)
 {
     const bool recording = worker->status.state == BOARD_AUDIO_RECORDING;
+    const bool playing = worker->status.state == BOARD_AUDIO_PLAYING;
     const bool io_failed = result != ESP_OK;
     const esp_err_t stopped = audio_hw_stop();
     if (stopped != ESP_OK) {
@@ -112,11 +162,41 @@ static void finish(audio_worker_t *worker, esp_err_t result, bool cancel)
             result = stopped;
         }
     }
-    if (recording && (result != ESP_OK || cancel || !audio_recording_valid(worker->recorded))) {
-        if (result == ESP_OK && !cancel) {
-            result = ESP_ERR_INVALID_SIZE;
+    if (recording) {
+        if (worker->recorded && !cancel) {
+            log_signal("record-slot0", &worker->capture[0]);
+            log_signal("record-slot1", &worker->capture[1]);
+            const audio_signal_t saved = scan_source(worker->recording, worker->recorded);
+            const bool match = same_pcm(&worker->capture[worker->recorded_slot], &saved);
+            log_signal("record-psram", &saved);
+            worker->status.peak = saved.peak;
+            worker->status.rms = audio_signal_rms(&saved);
+            ESP_LOGI(TAG, "PSRAM after capture slot=%u verified=%d", (unsigned)worker->recorded_slot, match);
+            if (!match && result == ESP_OK) {
+                result = ESP_ERR_INVALID_RESPONSE;
+            }
         }
-        clear_recording(worker);
+        if (result != ESP_OK || cancel || !audio_recording_valid(worker->recorded)) {
+            if (result == ESP_OK && !cancel) {
+                result = ESP_ERR_INVALID_SIZE;
+            }
+            clear_recording(worker);
+        }
+    }
+    if (playing) {
+        if (worker->playback_kind == COMMAND_REPLAY) {
+            log_signal("play-compensated", &worker->compensated);
+        }
+        log_signal("play-scaled", &worker->scaled);
+        log_signal("play-tx-slot0", &worker->tx[0]);
+        log_signal("play-tx-slot1", &worker->tx[1]);
+        ESP_LOGI(TAG, "Playback end source=%s target=%zu tx_frames=%u cancelled=%d error=%s",
+                 playback_name(worker->playback_kind), worker->play_length,
+                 (unsigned)worker->tx[0].count, cancel, esp_err_to_name(result));
+    }
+    if (worker->known_tone) {
+        memset(worker->recording, 0, TONE_SAMPLES * sizeof(int16_t));
+        worker->known_tone = false;
     }
     worker->playback = NULL;
     if (stopped != ESP_OK || io_failed) {
@@ -131,20 +211,25 @@ static void finish(audio_worker_t *worker, esp_err_t result, bool cancel)
     board_4_3c_log_memory();
 }
 
-static void start_recording(audio_worker_t *worker)
+static bool ensure_recording_buffer(audio_worker_t *worker)
 {
     if (!worker->recording) {
         worker->recording = heap_caps_malloc(BOARD_AUDIO_MAX_SAMPLES * sizeof(int16_t),
                                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
+    return worker->recording != NULL;
+}
+
+static void start_recording(audio_worker_t *worker)
+{
+    const bool allocated = ensure_recording_buffer(worker);
     clear_recording(worker);
     set_state(worker, BOARD_AUDIO_RECORDING, ESP_OK);
-    if (!worker->recording) {
+    if (!allocated) {
         finish(worker, ESP_ERR_NO_MEM, true);
         return;
     }
-    worker->input_min = INT16_MAX;
-    worker->input_max = INT16_MIN;
+    worker->recorded_slot = worker->status.input_slot;
     esp_err_t err = audio_hw_start_rx();
     worker->deadline = esp_timer_get_time() + RECORD_US;
     if (err != ESP_OK) {
@@ -169,28 +254,25 @@ static void record_block(audio_worker_t *worker, int16_t *stereo)
         finish(worker, err == ESP_OK ? ESP_ERR_TIMEOUT : err, true);
         return;
     }
-    uint64_t squares = 0;
-    uint16_t peak = 0;
+    audio_signal_t live = {0};
     for (size_t index = 0; index < frames; ++index) {
-        const int sample = stereo[index * 2];
-        const unsigned level = abs(sample);
-        worker->recording[worker->recorded++] = (int16_t)sample;
-        squares += (uint32_t)(sample * sample);
-        if (level > peak) {
-            peak = level;
-        }
-        if (sample < worker->input_min) {
-            worker->input_min = sample;
-        }
-        if (sample > worker->input_max) {
-            worker->input_max = sample;
-        }
+        audio_signal_add(&worker->capture[0], stereo[index * 2]);
+        audio_signal_add(&worker->capture[1], stereo[index * 2 + 1]);
+        const int16_t sample = stereo[index * 2 + worker->recorded_slot];
+        audio_pcm16_write(worker->recording + worker->recorded * 2, sample);
+        audio_signal_add(&live, sample);
+        worker->recorded++;
     }
+    for (unsigned slot = 0; slot < 2; ++slot) {
+        worker->status.slot_peak[slot] = worker->capture[slot].peak;
+        worker->status.slot_rms[slot] = audio_signal_rms(&worker->capture[slot]);
+    }
+    const audio_signal_t *selected = &worker->capture[worker->recorded_slot];
     worker->status.samples = worker->recorded;
-    worker->status.peak = peak;
-    worker->status.rms = (uint16_t)sqrtf((float)squares / frames);
-    worker->status.constant_input = worker->input_min == worker->input_max;
-    worker->status.clipped |= peak >= 32760;
+    worker->status.peak = live.peak;
+    worker->status.rms = audio_signal_rms(&live);
+    worker->status.constant_input = selected->min == selected->max;
+    worker->status.clipped = selected->clipped != 0;
     if (worker->recorded == BOARD_AUDIO_MAX_SAMPLES) {
         finish(worker, ESP_OK, false);
     }
@@ -200,13 +282,48 @@ static void start_playback(audio_worker_t *worker, const audio_command_t *comman
 {
     worker->played = 0;
     worker->drain_blocks = 0;
+    worker->scaled = (audio_signal_t){0};
+    worker->compensated = (audio_signal_t){0};
+    memset(worker->tx, 0, sizeof(worker->tx));
+    worker->playback_kind = command->kind;
     worker->playback = command->pcm;
     worker->play_length = command->count;
     if (command->kind == COMMAND_TONE) {
         worker->play_length = TONE_SAMPLES;
     } else if (command->kind == COMMAND_REPLAY) {
-        worker->playback = (const uint8_t *)worker->recording;
+        worker->playback = worker->recording;
         worker->play_length = worker->recorded;
+    } else if (command->kind == COMMAND_PSRAM_TONE) {
+        if (!ensure_recording_buffer(worker)) {
+            set_state(worker, BOARD_AUDIO_IDLE, ESP_ERR_NO_MEM);
+            return;
+        }
+        for (size_t index = 0; index < TONE_SAMPLES; ++index) {
+            audio_pcm16_write(worker->recording + index * 2, tone_sample(index));
+        }
+        worker->known_tone = true;
+        worker->playback = worker->recording;
+        worker->play_length = TONE_SAMPLES;
+    }
+    ESP_LOGI(TAG, "Playback start source=%s target=%zu volume=%u mute=%d",
+             playback_name(command->kind), worker->play_length, worker->status.volume, worker->status.muted);
+    const audio_signal_t source = scan_source(worker->playback, worker->play_length);
+    log_signal("play-before-volume", &source);
+    if (command->kind == COMMAND_REPLAY || command->kind == COMMAND_PSRAM_TONE) {
+        const audio_signal_t expected = worker->known_tone ? scan_source(NULL, TONE_SAMPLES) :
+                                        worker->capture[worker->recorded_slot];
+        const bool match = same_pcm(&expected, &source);
+        ESP_LOGI(TAG, "PSRAM before replay verified=%d", match);
+        if (!match) {
+            set_state(worker, BOARD_AUDIO_PLAYING, ESP_ERR_INVALID_RESPONSE);
+            finish(worker, ESP_ERR_INVALID_RESPONSE, false);
+            return;
+        }
+    }
+    if (command->kind == COMMAND_REPLAY) {
+        worker->replay_gain = audio_replay_gain(&source);
+        ESP_LOGI(TAG, "Replay compensation slot=%u dc_removed=%d gain_q8=%u (unity=256)",
+                 (unsigned)worker->recorded_slot, (int)worker->replay_gain.dc, worker->replay_gain.gain_q8);
     }
     set_state(worker, BOARD_AUDIO_PLAYING, ESP_OK);
     esp_err_t result = audio_hw_start_tx();
@@ -218,16 +335,12 @@ static void start_playback(audio_worker_t *worker, const audio_command_t *comman
     }
 }
 
-static int16_t playback_sample(const audio_worker_t *worker, size_t index)
+static int16_t playback_sample(audio_worker_t *worker, size_t index)
 {
-    int sample;
-    if (worker->playback) {
-        const uint8_t *bytes = worker->playback + index * 2;
-        sample = (int16_t)((uint16_t)bytes[0] | (uint16_t)bytes[1] << 8);
-    } else {
-        static const int16_t tone[] = {0, 1254, 2317, 3027, 3277, 3027, 2317, 1254,
-                                      0, -1254, -2317, -3027, -3277, -3027, -2317, -1254};
-        sample = tone[index % (sizeof(tone) / sizeof(tone[0]))];
+    int sample = worker->playback ? audio_pcm16_read(worker->playback + index * 2) : tone_sample(index);
+    if (worker->playback_kind == COMMAND_REPLAY) {
+        sample = audio_replay_apply((int16_t)sample, worker->replay_gain);
+        audio_signal_add(&worker->compensated, (int16_t)sample);
     }
     size_t fade = worker->play_length - index - 1;
     if (fade > index) {
@@ -245,11 +358,20 @@ static void play_block(audio_worker_t *worker, int16_t *stereo)
     const size_t payload = remaining < AUDIO_BLOCK_FRAMES ? remaining : AUDIO_BLOCK_FRAMES;
     for (size_t index = 0; index < AUDIO_BLOCK_FRAMES; ++index) {
         const int16_t sample = index < payload ? playback_sample(worker, worker->played + index) : 0;
+        if (index < payload) {
+            audio_signal_add(&worker->scaled, sample);
+        }
         stereo[index * 2] = sample;
         stereo[index * 2 + 1] = sample;
     }
     size_t frames = AUDIO_BLOCK_FRAMES;
     const esp_err_t err = audio_hw_write(stereo, &frames);
+    if (frames <= AUDIO_BLOCK_FRAMES) {
+        for (size_t index = 0; index < frames; ++index) {
+            audio_signal_add(&worker->tx[0], stereo[index * 2]);
+            audio_signal_add(&worker->tx[1], stereo[index * 2 + 1]);
+        }
+    }
     if (err != ESP_OK || frames != AUDIO_BLOCK_FRAMES) {
         finish(worker, err == ESP_OK ? ESP_ERR_INVALID_SIZE : err, false);
         return;
@@ -280,6 +402,7 @@ static void handle_command(audio_worker_t *worker, const audio_command_t *comman
     case COMMAND_TONE:
     case COMMAND_PCM:
     case COMMAND_REPLAY:
+    case COMMAND_PSRAM_TONE:
         start_playback(worker, command);
         break;
     case COMMAND_CANCEL:
@@ -291,6 +414,9 @@ static void handle_command(audio_worker_t *worker, const audio_command_t *comman
     case COMMAND_CLEAR:
         clear_recording(worker);
         set_state(worker, BOARD_AUDIO_IDLE, ESP_OK);
+        break;
+    case COMMAND_SLOT:
+        worker->status.input_slot = command->value;
         break;
     case COMMAND_VOLUME:
     case COMMAND_MUTE:
@@ -313,7 +439,7 @@ static void handle_command(audio_worker_t *worker, const audio_command_t *comman
 
 static bool reserves_state(command_kind_t kind)
 {
-    return kind <= COMMAND_REPLAY || kind == COMMAND_CLEAR;
+    return kind <= COMMAND_PSRAM_TONE || kind == COMMAND_CLEAR || kind == COMMAND_SLOT;
 }
 
 static void audio_task(void *argument)
@@ -428,6 +554,12 @@ static esp_err_t submit(audio_command_t command)
     case COMMAND_CLEAR:
         allowed = idle && state == BOARD_AUDIO_RECORDED;
         break;
+    case COMMAND_PSRAM_TONE:
+        allowed = idle && state == BOARD_AUDIO_IDLE;
+        break;
+    case COMMAND_SLOT:
+        allowed = idle;
+        break;
     case COMMAND_STOP:
     case COMMAND_CANCEL:
         allowed = is_running(state);
@@ -460,6 +592,7 @@ esp_err_t board_audio_retry(void)
     return commands ? submit((audio_command_t){.kind = COMMAND_RETRY}) : board_audio_init();
 }
 esp_err_t board_audio_test_tone(void) { return submit((audio_command_t){.kind = COMMAND_TONE}); }
+esp_err_t board_audio_psram_test_tone(void) { return submit((audio_command_t){.kind = COMMAND_PSRAM_TONE}); }
 esp_err_t board_audio_record(void) { return submit((audio_command_t){.kind = COMMAND_RECORD}); }
 esp_err_t board_audio_replay(void) { return submit((audio_command_t){.kind = COMMAND_REPLAY}); }
 esp_err_t board_audio_stop(void) { return submit((audio_command_t){.kind = COMMAND_STOP}); }
@@ -489,6 +622,14 @@ esp_err_t board_audio_set_volume(unsigned percent)
         return ESP_ERR_INVALID_ARG;
     }
     return submit((audio_command_t){.kind = COMMAND_VOLUME, .value = percent});
+}
+
+esp_err_t board_audio_set_input_slot(unsigned slot)
+{
+    if (slot > 1) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return submit((audio_command_t){.kind = COMMAND_SLOT, .value = slot});
 }
 
 esp_err_t board_audio_set_mute(bool muted)

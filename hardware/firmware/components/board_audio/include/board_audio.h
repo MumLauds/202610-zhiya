@@ -27,6 +27,9 @@ typedef struct {
     size_t samples;
     uint16_t peak;
     uint16_t rms;
+    uint16_t slot_peak[2];
+    uint16_t slot_rms[2];
+    uint8_t input_slot;
     unsigned volume;
     bool muted;
     bool constant_input;
@@ -40,6 +43,8 @@ esp_err_t board_audio_release(void);
 board_audio_status_t board_audio_status(void);
 esp_err_t board_audio_retry(void);
 esp_err_t board_audio_test_tone(void);
+esp_err_t board_audio_psram_test_tone(void);
+esp_err_t board_audio_set_input_slot(unsigned slot);
 /* Keep input readable until the snapshot has neither pending nor playing. */
 esp_err_t board_audio_play_pcm(const int16_t *samples, size_t count);
 esp_err_t board_audio_play_wav(const void *buffer, size_t bytes);

@@ -18,7 +18,9 @@ typedef void *SemaphoreHandle_t;
 #define pdMS_TO_TICKS(value) (value)
 #define MALLOC_CAP_SPIRAM 1
 #define MALLOC_CAP_8BIT 2
-#define ESP_LOGI(tag, ...) ((void)(tag))
+static inline void host_log(const char *tag, const char *format, ...) { (void)tag; (void)format; }
+static inline const char *esp_err_to_name(esp_err_t error) { (void)error; return ""; }
+#define ESP_LOGI(tag, ...) host_log(tag, __VA_ARGS__)
 #define ESP_LOGE(tag, ...) ((void)(tag))
 
 static inline int xSemaphoreTake(void *lock, int wait) { return lock && wait; }

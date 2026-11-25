@@ -13,7 +13,7 @@ H07 为 Waveshare ESP32-S3-Touch-LCD-4.3C（SKU 33799）提供主动录音、短
 | 物理格式 | Philips I²S，16 kHz、两路 16-bit slot，MCLK 4.096 MHz，BCLK 512 kHz |
 | 功放 | 扩展器 `0x24` 的 EXIO3 高有效，方向寄存器 `0x02`，输出寄存器 `0x03` |
 
-PA_CTRL 的选位来自 V1.1 原理图和锁定音频示例中的 `IO_EXTENSION_IO_3`，交叉核对了托管 BSP 的同一位。微雪产品在线表格曾标为 EXIO4；V1.1 原理图中 EXIO4 属于 SDCS。本轮保持 LCD 背光 EXIO2、触摸复位 EXIO1、SDCS EXIO4 和 USB GPIO19/20 的用途。实际 PCB 修订、功放极性及物理 MIC 到 slot 的对应关系仍待实板核对。固件按 slot 0 生成单声道，右 slot 不并入录音。[锁定微雪源码](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-4.3C/tree/44e412f08c1e68c0da826bc5f51436f156a02eea/examples/esp-idf/11_speaker_microphone) · [V1.1 原理图](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-4.3C/blob/44e412f08c1e68c0da826bc5f51436f156a02eea/hardware/schematics/ESP32-S3-Touch-LCD-4.3C-Schematics.pdf) · [产品页](https://docs.waveshare.com/ESP32-S3-Touch-LCD-4.3C)
+PA_CTRL 的选位来自 V1.1 原理图和锁定音频示例中的 `IO_EXTENSION_IO_3`，交叉核对了托管 BSP 的同一位。微雪产品在线表格曾标为 EXIO4；V1.1 原理图中 EXIO4 属于 SDCS。本轮保持 LCD 背光 EXIO2、触摸复位 EXIO1、SDCS EXIO4 和 USB GPIO19/20 的用途。固件默认按 Slot 0 生成单声道，可在空闲时选择下一次录音的 slot，两路输入各自统计。实际 PCB 修订及物理 MIC 到 slot 的对应关系仍待实板核对。[锁定微雪源码](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-4.3C/tree/44e412f08c1e68c0da826bc5f51436f156a02eea/examples/esp-idf/11_speaker_microphone) · [V1.1 原理图](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-4.3C/blob/44e412f08c1e68c0da826bc5f51436f156a02eea/hardware/schematics/ESP32-S3-Touch-LCD-4.3C-Schematics.pdf) · [产品页](https://docs.waveshare.com/ESP32-S3-Touch-LCD-4.3C)
 
 组件锁定 `espressif/esp_codec_dev` 1.6.2，使用其 Apache-2.0 ES7210/ES8311 实现，两个驱动的时钟表均包含 16 kHz / 4.096 MHz。代码通过自有短超时适配器使用 ESP-IDF 新 I²C 接口，转换组件的 8 位地址为硬件 7 位地址。适配器保留首个寄存器传输错误，即便组件个别方法返回成功。依赖的其他 codec 不参与 H07 构建。两款字体子集来自 Noto Sans SC，许可随 `OFL-NotoSansSC.txt` 保留，H07 字库生成参数在生成文件头部。[Codec 组件](https://components.espressif.com/components/espressif/esp_codec_dev/versions/1.6.2/readme) · [Noto Sans SC](https://fonts.google.com/noto/specimen/Noto+Sans+SC)
 
@@ -26,11 +26,22 @@ PA_CTRL 的选位来自 V1.1 原理图和锁定音频示例中的 `IO_EXTENSION_
 
 ## 业务音频和接口
 
-输入逻辑格式为 16,000 Hz、单声道、PCM16 little-endian。ADC 双 slot 中提取 slot 0；回放把同一样本复制至 TX 双 slot。与现有后端 WAV 归一化格式一致，H07 只做内存内的本地处理。
+输入逻辑格式为 16,000 Hz、单声道、PCM16 little-endian。选定的 slot 按明确的低字节在前编码写入 PSRAM。回放解码后把同一样本复制至 TX 双 slot。与现有后端 WAV 归一化格式一致，H07 只做内存内的本地处理。
 
 调用 `board_audio_init` 前先确认显示初始化完成，初始化和释放由生命周期所有者串行执行，释放前停止客户端提交和状态读取。操作返回 `ESP_OK` 表示队列接受，状态和运行结果通过 `board_audio_status` 查询。异步播放的源缓冲在 `pending` 清除且状态离开 `PLAYING` 前须保持可读。PCM 长度以样本计，WAV 输入以字节计。WAV 只接受同规格未压缩的 RIFF PCM，编码工具根据样本数生成标准 44 字节头。
 
 状态依次为初始化、空闲、录音/播放、已录音或可重试错误。同一时间只接受一个录放操作。有效录音 8,000–240,000 样本，达到 15 秒或样本上限自动停止。开始新录音时清除旧有效录音；取消、过短和采集失败不保留本次内容；播放结束、取消和失败保留已有有效录音。静音会将软件采样和 DAC 输出同时置于静音。队列满时返回超时，冲突操作返回状态错误。
+
+## 回放音量与测量
+
+实板版本 `a53417a` 在真实录音回放前后都可正常播放测试音，贴近 SPK 可听见录制内容。录放共用 PA、I²S、DMA、ES8311 恢复和静音路径，因此优先验证实际语音幅度。原 DAC 固定 −18 dB，软件默认 20% 约 −14 dB，默认播放合计约 −32 dB。最大 40% 时合计约 −26 dB。这里的计算是电平比例，实际声压尚待测量。
+
+锁定驱动 ES7210 的 PGA 支持 0 至 37.5 dB，常用区间以 3 dB 为步进；ES8311 的音量表为 −95.5 至 +32 dB。本轮维持已验板的 ADC +18 dB 和 DAC −18 dB，把校正集中到真实录音回放的数据处理。例如，交流 RMS 为 500 的录音可获得最多 4 倍补偿，达到 2,000 左右的交流 RMS，再经过原音量滑块。补偿采用整段固定比例，控制如下。[Codec 1.6.2](https://components.espressif.com/components/espressif/esp_codec_dev/versions/1.6.2/readme)
+
+- 去除整段均值，按交流 RMS 2200 为目标计算补偿，接近内置 1 kHz 测试音的原始 RMS。低于 128 的交流 RMS 无提升，用来抑制底噪或近恒定输入被抬高。
+- 补偿最多 4 倍（约 +12 dB），按去直流后的峰值下调倍率。样本硬限幅 ±8192，随后仍经过原有淡入淡出、20% 默认音量、40% 上限和静音。测试音与外部 PCM/WAV 不使用录音补偿。
+- 两个输入 slot、PSRAM 完成读回、回放前源、补偿后、音量/淡化后以及 I²S 实际接收的两路样本都输出聚合统计。整段统计包含样本数、Peak、RMS、交流 RMS、最小/最大值、DC、零值‰、削波计数；TX 帧数包括尾部静音和末块填充。PSRAM 校验比较有效样本数与序列指纹，日志只显示校验结果。
+- 清除试听完毕的录音后，可用 `PSRAM tone` 在同一分配和基址写入已知 PCM，再走与录音一致的缓存读取、音量、淡化和 TX 路径。保留录音时该按钮禁用。内置及 PSRAM 两种测试音的数字输出须一致。
 
 ## 内存预算
 
