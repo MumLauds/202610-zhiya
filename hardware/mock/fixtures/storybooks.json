@@ -802,7 +802,7 @@
     }
   ],
   "kind": "zhiya-hardware-demo-storybooks",
-  "notice": "本地 DEMO 数据：仅供知芽课程项目硬件端和 Mock 自动化测试使用，不代表绘本已获得正式在线发布或传播授权；源种子中 20 本原创绘本为 PUBLISHED，1 本《逃家小兔》联调草稿为 DRAFT 且不纳入本 DEMO。coverRef/imageRef 必须保持 null，不得当作 API-024 的受控媒体 resource key；H03 内页资源尚未由独立任务交付，localPageAsset 保持 null，禁止用封面冒充正文插画。",
+  "notice": "本地 DEMO 数据：仅供知芽课程项目硬件端和 Mock 自动化测试使用，不代表绘本已获得正式在线发布或传播授权；源种子中 20 本原创绘本为 PUBLISHED，1 本《逃家小兔》联调草稿为 DRAFT 且不纳入本 DEMO。coverRef/imageRef 必须保持 null，不得当作 API-024 的受控媒体 resource key；localCover 与 localPageAsset 都是 H03 构建期本地资源引用，其中 PAGE JPEG 尚未在 ESP32-S3/LVGL 实板验证解码或显示。",
   "schemaVersion": "1.0",
   "sourceDigest": "sha256-utf8-lf-v1",
   "sourceFiles": [
@@ -825,6 +825,10 @@
     {
       "path": "hardware/assets/generated/assets-manifest.json",
       "sha256": "78fa7eba036b06b825c5f5ef722c0ef65423c71ec257ddef670c5da1c4e6b9c5"
+    },
+    {
+      "path": "hardware/assets/generated-pages/pages-manifest.json",
+      "sha256": "1c44c6f0c822fd8e11094c75bd451ad3db3a558ce72acdb87a386c024a7c09f9"
     }
   ]
 }

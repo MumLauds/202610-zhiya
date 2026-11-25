@@ -523,9 +523,9 @@ PSRAM 初始化剩余约 7.26 MiB 不代表可同时解码全部页面。400×30
 
 ### 14.2 H05 交接
 
-H05 后续应按 `(storyVersionId, pageNumber)` 读取 `pages-manifest.json`，把每页记录映射到本地的 `assetPath` / `devicePath`，同时保留 `sourcePath` 作为内容溯源，不把 `devicePath` 冒充 API-024 资源键。封面索引与内页索引独立：封面继续使用 `hardware/assets/generated/assets-manifest.json`，内页使用 `hardware/assets/generated-pages/pages-manifest.json`，不得把 PAGE 塞进旧封面目录。
+H05 应按 `(storyVersionId, pageNumber)` 读取 `pages-manifest.json`，把每页记录映射到本地的 `assetPath` / `devicePath`，同时保留 `sourcePath` 作为内容溯源，不把 `devicePath` 冒充 API-024 资源键。封面索引与内页索引独立：封面继续使用 `hardware/assets/generated/assets-manifest.json`，内页使用 `hardware/assets/generated-pages/pages-manifest.json`，不得把 PAGE 塞进旧封面目录。
 
-当前 H03 分支按任务边界**没有修改 H05 Mock**，H05 fixtures 的 `localPageAsset` 仍为 `null`；这是待 H05 单独接入的状态，不是内页资源缺失。H03 已完成的是资源生成、独立 manifest、审计和校验；H05 的 fixture 回填需要在 H05 分支单独完成，并按 `(storyVersionId, pageNumber)` 保持键一致。
+H05 已在独立分支 `feat/hw-mock-page-assets` 中按 `(storyVersionId, pageNumber)` 读取 `pages-manifest.json`，把 104 页记录映射到 `localPageAsset` 的 `assetPath` / `devicePath`，保留 `sourcePath` 作为内容溯源，并设置 `imageStatus=LOCAL_PAGE_ASSET_AVAILABLE`、`decoderVerified=false`；`devicePath` 仍不得冒充 API-024 资源键。封面索引与内页索引独立：封面继续使用 `hardware/assets/generated/assets-manifest.json`，内页使用 `hardware/assets/generated-pages/pages-manifest.json`，不得把 PAGE 塞进旧封面目录。H03 本身不修改 H05 fixtures，真正的 Mock 回填由该 H05 分支单独审核。
 
 ### 14.3 H06 与未验证项
 

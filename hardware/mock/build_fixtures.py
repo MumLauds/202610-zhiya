@@ -31,6 +31,7 @@ SEED_FILES = (
     "story_pages.json",
     "cover_mapping.json",
 )
+PAGE_ASSET_MANIFEST = "hardware/assets/generated-pages/pages-manifest.json"
 OUTPUT_FILES = (
     "storybooks.json",
     "story-details.json",
@@ -41,14 +42,18 @@ OUTPUT_FILES = (
 EXPECTED_BOOKS = 20
 EXPECTED_PAGES = 104
 EXPECTED_ASSETS = 40
+EXPECTED_PAGE_ASSETS = 104
+PAGE_IMAGE_STATUS = "LOCAL_PAGE_ASSET_AVAILABLE"
 SOURCE_DIGEST = "sha256-utf8-lf-v1"
 NOTICE = (
     "本地 DEMO 数据：仅供知芽课程项目硬件端和 Mock 自动化测试使用，"
     "不代表绘本已获得正式在线发布或传播授权；源种子中 20 本原创绘本为 PUBLISHED，"
     "1 本《逃家小兔》联调草稿为 DRAFT 且不纳入本 DEMO。"
     "coverRef/imageRef 必须保持 null，不得当作 API-024 的受控媒体 resource key；"
-    "H03 内页资源尚未由独立任务交付，localPageAsset 保持 null，禁止用封面冒充正文插画。"
+    "localCover 与 localPageAsset 都是 H03 构建期本地资源引用，"
+    "其中 PAGE JPEG 尚未在 ESP32-S3/LVGL 实板验证解码或显示。"
 )
+
 
 
 class FixtureError(RuntimeError):
@@ -109,6 +114,201 @@ def require_int(value: Any, name: str, minimum: int = 0) -> int:
     require(isinstance(value, int) and not isinstance(value, bool), f"{name} 必须是整数")
     require(value >= minimum, f"{name} 必须 >= {minimum}")
     return value
+
+
+def require_string(value: Any, name: str) -> str:
+    require(isinstance(value, str) and value.strip() != "", f"{name} 必须是非空字符串")
+    return value
+
+
+def require_sha256(value: Any, name: str) -> str:
+    text = require_string(value, name)
+    require(len(text) == 64 and all(character in "0123456789abcdef" for character in text),
+            f"{name} 必须是 64 位小写十六进制 SHA-256")
+    return text
+
+
+def require_repo_relative(value: Any, name: str, prefix: str) -> str:
+    text = require_string(value, name)
+    path = Path(text)
+    require(not path.is_absolute() and ".." not in path.parts, f"{name} 必须是仓库相对路径: {text}")
+    require(text.startswith(prefix), f"{name} 不在预期目录 {prefix}: {text}")
+    return text
+
+
+def jpeg_dimensions(path: Path) -> tuple[int, int]:
+    """Read JPEG SOF dimensions without Pillow or a full image decode."""
+    data = path.read_bytes()
+    require(data.startswith(b"\xff\xd8"), f"JPEG SOI 标记缺失: {path}")
+    position = 2
+    while position < len(data):
+        if data[position] != 0xFF:
+            position += 1
+            continue
+        while position < len(data) and data[position] == 0xFF:
+            position += 1
+        require(position < len(data), f"JPEG 标记被截断: {path}")
+        marker = data[position]
+        position += 1
+        if marker in (0x00, 0x01, 0xD8) or 0xD0 <= marker <= 0xD7:
+            continue
+        if marker == 0xD9:
+            break
+        require(position + 2 <= len(data), f"JPEG 段长度缺失: {path}")
+        segment_length = int.from_bytes(data[position:position + 2], "big")
+        require(segment_length >= 2 and position + segment_length <= len(data),
+                f"JPEG 段长度非法或文件被截断: {path}")
+        if marker in (0xC0, 0xC1):
+            require(segment_length >= 7, f"JPEG SOF 段过短: {path}")
+            height = int.from_bytes(data[position + 3:position + 5], "big")
+            width = int.from_bytes(data[position + 5:position + 7], "big")
+            require(width > 0 and height > 0, f"JPEG SOF 尺寸非法: {path}")
+            return width, height
+        if marker == 0xDA:
+            break
+        position += segment_length
+    raise FixtureError(f"JPEG 中找不到 baseline SOF 尺寸: {path}")
+
+
+def read_page_asset_manifest(repo_root: Path) -> tuple[dict[str, Any], Path]:
+    path = repo_root / PAGE_ASSET_MANIFEST
+    manifest = read_json(path)
+    require(manifest.get("schemaVersion") == "1.0", "H03 内页清单 schemaVersion 必须为 1.0")
+    require(manifest.get("kind") == "device-page-assets", "H03 内页清单 kind 非法")
+    asset_set = manifest.get("assetSet")
+    require(isinstance(asset_set, dict), "H03 内页清单缺少 assetSet")
+    require(asset_set.get("mappingRecords") == EXPECTED_BOOKS,
+            "H03 内页清单 mappingRecords 必须为 20")
+    require(asset_set.get("pageRecords") == EXPECTED_PAGE_ASSETS,
+            "H03 内页清单 pageRecords 必须为 104")
+    require(asset_set.get("decoderVerified") is False,
+            "H03 内页清单不得声明已完成设备端 JPEG 解码")
+    role = asset_set.get("roles", {}).get("PAGE")
+    require(isinstance(role, dict), "H03 内页清单缺少 PAGE 角色")
+    require(role.get("count") == EXPECTED_PAGE_ASSETS,
+            f"H03 PAGE 角色数量必须为 {EXPECTED_PAGE_ASSETS}")
+    for name in ("maxWidth", "maxHeight", "maxFileBytes"):
+        require_int(role.get(name), f"PAGE.{name}", 1)
+    totals = manifest.get("totals")
+    require(isinstance(totals, dict), "H03 内页清单缺少 totals")
+    require(totals.get("books") == EXPECTED_BOOKS and totals.get("versions") == EXPECTED_BOOKS,
+            "H03 内页清单 books/versions 必须为 20")
+    require(totals.get("pages") == EXPECTED_PAGES and totals.get("assets") == EXPECTED_PAGE_ASSETS,
+            "H03 内页清单 pages/assets 必须为 104")
+    assets = manifest.get("assets")
+    require(isinstance(assets, list) and len(assets) == EXPECTED_PAGE_ASSETS,
+            f"H03 内页清单 assets 必须为 {EXPECTED_PAGE_ASSETS} 条")
+    return manifest, path
+
+
+def validate_page_asset_file(
+    repo_root: Path,
+    asset: dict[str, Any],
+    max_file_bytes: int,
+) -> tuple[int, int]:
+    require(isinstance(asset, dict), "H03 内页资源条目必须是对象")
+    require(asset.get("assetRole") == "PAGE", "H03 内页资源 assetRole 必须为 PAGE")
+    require(asset.get("storyVersionStatus") == "PUBLISHED", "H03 内页资源必须来自 PUBLISHED 版本")
+    require_int(asset.get("storybookId"), "内页资源 storybookId", 1)
+    require_int(asset.get("storyVersionId"), "内页资源 storyVersionId", 1)
+    require_int(asset.get("pageNumber"), "内页资源 pageNumber", 1)
+    require_string(asset.get("bookNo"), "内页资源 bookNo")
+    require(asset.get("format") == "JPEG", "H03 内页资源格式必须为 JPEG")
+    width = require_int(asset.get("width"), "内页资源 width", 1)
+    height = require_int(asset.get("height"), "内页资源 height", 1)
+    file_size = require_int(asset.get("fileSize"), "内页资源 fileSize", 1)
+    require(file_size <= max_file_bytes, f"内页资源超过 maxFileBytes={max_file_bytes}: {file_size}")
+    sha256 = require_sha256(asset.get("sha256"), "内页资源 sha256")
+    asset_path = require_repo_relative(asset.get("assetPath"), "内页资源 assetPath",
+                                       "hardware/assets/generated-pages/")
+    device_path = require_string(asset.get("devicePath"), "内页资源 devicePath")
+    require(device_path.startswith("/assets/pages/") and ".." not in Path(device_path).parts,
+            f"内页资源 devicePath 非法: {device_path}")
+    require(Path(device_path).name == Path(asset_path).name,
+            f"内页资源 devicePath 文件名与 assetPath 不一致: {device_path}")
+    source_path = require_repo_relative(asset.get("sourcePath"), "内页资源 sourcePath",
+                                        "knowledge-base_v2.5/图片/内页/")
+    require(asset.get("sourceFormat") == "PNG", "内页资源 sourceFormat 必须为 PNG")
+    require_int(asset.get("sourceWidth"), "内页资源 sourceWidth", 1)
+    require_int(asset.get("sourceHeight"), "内页资源 sourceHeight", 1)
+    require_int(asset.get("sourceFileSize"), "内页资源 sourceFileSize", 1)
+    require_sha256(asset.get("sourceSha256"), "内页资源 sourceSha256")
+    require_string(asset.get("imageLicenseNote"), "内页资源 imageLicenseNote")
+
+    path = repo_root / asset_path
+    require(path.is_file(), f"缺少 H03 内页资源: {asset_path}")
+    require(path.stat().st_size == file_size, f"H03 内页资源大小不一致: {asset_path}")
+    require(sha256_file(path) == sha256, f"H03 内页资源 SHA-256 不一致: {asset_path}")
+    actual_width, actual_height = jpeg_dimensions(path)
+    require((actual_width, actual_height) == (width, height),
+            f"H03 内页 JPEG 实际尺寸 {actual_width}x{actual_height} 与清单 {width}x{height} 不一致")
+    return width, height
+
+
+def build_page_asset_index(
+    repo_root: Path,
+    page_manifest: dict[str, Any],
+) -> dict[tuple[int, int], dict[str, Any]]:
+    profile = page_manifest["assetSet"]["roles"]["PAGE"]
+    max_file_bytes = require_int(profile.get("maxFileBytes"), "PAGE.maxFileBytes", 1)
+    index: dict[tuple[int, int], dict[str, Any]] = {}
+    for asset in page_manifest["assets"]:
+        version_id = require_int(asset.get("storyVersionId"), "内页资源 storyVersionId", 1)
+        page_number = require_int(asset.get("pageNumber"), "内页资源 pageNumber", 1)
+        key = (version_id, page_number)
+        require(key not in index, f"重复内页映射键: storyVersionId={version_id}, pageNumber={page_number}")
+        validate_page_asset_file(repo_root, asset, max_file_bytes)
+        index[key] = asset
+    require(len(index) == EXPECTED_PAGE_ASSETS,
+            f"内页资源联合键必须为 {EXPECTED_PAGE_ASSETS} 个，实际 {len(index)}")
+    return index
+
+
+def validate_page_asset_coverage(
+    assets_by_key: dict[tuple[int, int], dict[str, Any]],
+    expected_keys: set[tuple[int, int]],
+) -> None:
+    missing = sorted(expected_keys - set(assets_by_key))
+    extra = sorted(set(assets_by_key) - expected_keys)
+    require(not missing, f"缺少内页资源映射: {missing[:5]}")
+    require(not extra, f"存在未归属正式页面的内页资源: {extra[:5]}")
+    require(len(expected_keys) == EXPECTED_PAGES,
+            f"正式内页联合键必须为 {EXPECTED_PAGES} 个，实际 {len(expected_keys)}")
+
+
+def build_local_page_asset(
+    asset: dict[str, Any],
+    cover: dict[str, Any],
+    version_id: int,
+    page: dict[str, Any],
+    decoder_verified: bool,
+) -> dict[str, Any]:
+    require(asset.get("bookNo") == cover["book_no"], "内页资源 bookNo 与封面映射不一致")
+    require(asset.get("storybookId") == cover["storybook_id"], "内页资源 storybookId 与封面映射不一致")
+    require(asset.get("storyVersionId") == version_id, "内页资源 storyVersionId 与种子版本不一致")
+    require(asset.get("pageNumber") == page["page_no"], "内页资源 pageNumber 与种子页码不一致")
+    require(asset.get("sourcePath") == page.get("image_ref"),
+            f"内页资源 sourcePath 与种子 image_ref 不一致: {asset.get('sourcePath')}")
+    require(asset.get("imageLicenseNote") == page.get("image_license_note"),
+            "内页资源 imageLicenseNote 与种子不一致")
+    return {
+        "assetRole": asset["assetRole"],
+        "assetPath": asset["assetPath"],
+        "devicePath": asset["devicePath"],
+        "format": asset["format"],
+        "width": asset["width"],
+        "height": asset["height"],
+        "fileSize": asset["fileSize"],
+        "sha256": asset["sha256"],
+        "sourcePath": asset["sourcePath"],
+        "sourceFormat": asset["sourceFormat"],
+        "sourceWidth": asset["sourceWidth"],
+        "sourceHeight": asset["sourceHeight"],
+        "sourceFileSize": asset["sourceFileSize"],
+        "sourceSha256": asset["sourceSha256"],
+        "imageLicenseNote": asset["imageLicenseNote"],
+        "decoderVerified": decoder_verified,
+    }
 
 
 def resolve_version(versions: list[dict[str, Any]], storybook_id: int) -> dict[str, Any]:
@@ -187,6 +387,7 @@ def build_payloads(repo_root: Path = REPO_ROOT) -> dict[str, dict[str, Any]]:
     mapping = read_json(seed_dir / "cover_mapping.json")
     asset_manifest_path = repo_root / "hardware" / "assets" / "generated" / "assets-manifest.json"
     asset_manifest = read_json(asset_manifest_path)
+    page_manifest, page_manifest_path = read_page_asset_manifest(repo_root)
 
     require(isinstance(storybooks, list), "storybooks.json 必须是数组")
     require(isinstance(versions, list), "story_versions.json 必须是数组")
@@ -206,9 +407,14 @@ def build_payloads(repo_root: Path = REPO_ROOT) -> dict[str, dict[str, Any]]:
         require(role in ("THUMBNAIL", "DETAIL"), f"H03 资源角色非法: {role}")
         assets_by_storybook.setdefault(identify, {}).setdefault(role, []).append(asset)
 
+    page_assets_by_key = build_page_asset_index(repo_root, page_manifest)
+    decoder_verified = page_manifest["assetSet"]["decoderVerified"]
+
     records: list[dict[str, Any]] = []
     details: list[dict[str, Any]] = []
     selected_pages = 0
+    expected_page_asset_keys: set[tuple[int, int]] = set()
+
 
     for cover in mapping:
         book_no = cover.get("book_no")
@@ -254,20 +460,25 @@ def build_payloads(repo_root: Path = REPO_ROOT) -> dict[str, dict[str, Any]]:
             "demoOnly": True,
         }
         detail = dict(record)
+        page_items: list[dict[str, Any]] = []
+        for item in sorted(version_pages, key=lambda seed_page: seed_page["page_no"]):
+            key = (version_id, item["page_no"])
+            page_asset = page_assets_by_key.get(key)
+            require(page_asset is not None,
+                    f"缺少内页资源映射: storyVersionId={version_id}, pageNumber={item['page_no']}")
+            expected_page_asset_keys.add(key)
+            page_items.append({
+                "pageNumber": item["page_no"],
+                "text": item["body_text"],
+                "imageRef": None,
+                "defaultNextPageNumber": item.get("default_next_page_number"),
+                "imageStatus": PAGE_IMAGE_STATUS,
+                "localPageAsset": build_local_page_asset(
+                    page_asset, cover, version_id, item, decoder_verified
+                ),
+            })
         detail.update({
-            "pages": [
-                {
-                    "pageNumber": item["page_no"],
-                    "text": item["body_text"],
-                    "imageRef": None,
-                    "defaultNextPageNumber": item.get("default_next_page_number"),
-                    "imageStatus": "MISSING_INNER_ILLUSTRATION",
-                    # Reserved hook for the independent H03 page-asset task.
-                    # Do not populate a path/hash until that task ships audited files.
-                    "localPageAsset": None,
-                }
-                for item in sorted(version_pages, key=lambda item: item["page_no"])
-            ],
+            "pages": page_items,
             "branches": [],
             "summary": None,
         })
@@ -283,6 +494,7 @@ def build_payloads(repo_root: Path = REPO_ROOT) -> dict[str, dict[str, Any]]:
         all("pages" not in record and "branches" not in record for record in records),
         "storybooks.json 必须保持轻量元数据，不得包含 pages/branches",
     )
+    validate_page_asset_coverage(page_assets_by_key, expected_page_asset_keys)
 
     source_files = []
     for name in SEED_FILES:
@@ -294,6 +506,10 @@ def build_payloads(repo_root: Path = REPO_ROOT) -> dict[str, dict[str, Any]]:
     source_files.append({
         "path": relative_repo_path(repo_root, asset_manifest_path),
         "sha256": sha256_text_file(asset_manifest_path),
+    })
+    source_files.append({
+        "path": relative_repo_path(repo_root, page_manifest_path),
+        "sha256": sha256_text_file(page_manifest_path),
     })
 
     storybook_fixture = {
@@ -718,7 +934,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         written = build(repo_root, output_dir)
         for name, path in written.items():
             print(f"写出 {name}: {display_path(repo_root, path)}")
-        print(f"H05 fixtures 完成：{len(written)} 个文件，{EXPECTED_BOOKS} 本 / {EXPECTED_PAGES} 页 / {EXPECTED_ASSETS} 个封面资源")
+        print(f"H05 fixtures 完成：{len(written)} 个文件，{EXPECTED_BOOKS} 本 / {EXPECTED_PAGES} 页 / "
+              f"{EXPECTED_ASSETS} 个封面资源 / {EXPECTED_PAGE_ASSETS} 个内页资源")
         return 0
     except FixtureError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

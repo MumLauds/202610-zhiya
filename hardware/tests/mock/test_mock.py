@@ -11,6 +11,7 @@ backend.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import copy
 import hashlib
 import json
 import shutil
@@ -104,7 +105,15 @@ class MockTestCase(unittest.TestCase):
         self.assertTrue(all(item["demoOnly"] for item in books))
         self.assertTrue(all(item["coverRef"] is None for item in books))
         self.assertTrue(all(page["imageRef"] is None for item in details for page in item["pages"]))
-        self.assertTrue(all(page["localPageAsset"] is None for item in details for page in item["pages"]))
+        self.assertTrue(all(page["localPageAsset"] is not None for item in details for page in item["pages"]))
+        self.assertTrue(all(
+            page["imageStatus"] == build_fixtures.PAGE_IMAGE_STATUS
+            for item in details for page in item["pages"]
+        ))
+        self.assertTrue(all(
+            page["localPageAsset"]["decoderVerified"] is False
+            for item in details for page in item["pages"]
+        ))
         self.assertEqual(20, len({item["storybookId"] for item in books}))
         versions = json.loads((REPO_ROOT / "data" / "seed" / "story_versions.json").read_text(encoding="utf-8"))
         drafts = [item for item in versions if item["status"] == "DRAFT"]
@@ -143,8 +152,22 @@ class MockTestCase(unittest.TestCase):
                 self.assertEqual(page["pageNumber"] + 1, page["defaultNextPageNumber"])
                 self.assertTrue(page["text"].strip())
             for page in detail["pages"]:
-                self.assertIsNone(page["localPageAsset"])
-                self.assertEqual("MISSING_INNER_ILLUSTRATION", page["imageStatus"])
+                local = page["localPageAsset"]
+                self.assertIsNotNone(local)
+                self.assertEqual(build_fixtures.PAGE_IMAGE_STATUS, page["imageStatus"])
+                self.assertEqual(
+                    {
+                        "assetRole", "assetPath", "devicePath", "format", "width", "height",
+                        "fileSize", "sha256", "sourcePath", "sourceFormat", "sourceWidth",
+                        "sourceHeight", "sourceFileSize", "sourceSha256", "imageLicenseNote",
+                        "decoderVerified",
+                    },
+                    set(local),
+                )
+                self.assertEqual("PAGE", local["assetRole"])
+                self.assertEqual("JPEG", local["format"])
+                self.assertEqual("PNG", local["sourceFormat"])
+                self.assertFalse(local["decoderVerified"])
 
     def test_books_and_details_are_consistent(self) -> None:
         books = {item["storybookId"]: item for item in self.fixture("storybooks.json")["items"]}
@@ -166,10 +189,149 @@ class MockTestCase(unittest.TestCase):
             self.assertEqual(asset["fileSize"], path.stat().st_size)
             self.assertEqual(asset["format"], "JPEG")
 
+    def test_page_assets_are_complete_and_traceable(self) -> None:
+        page_manifest = json.loads(
+            (REPO_ROOT / "hardware" / "assets" / "generated-pages" / "pages-manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual("1.0", page_manifest["schemaVersion"])
+        self.assertEqual("device-page-assets", page_manifest["kind"])
+        self.assertFalse(page_manifest["assetSet"]["decoderVerified"])
+        self.assertEqual(104, page_manifest["assetSet"]["roles"]["PAGE"]["count"])
+        assets = page_manifest["assets"]
+        self.assertEqual(104, len(assets))
+        assets_by_key = {(asset["storyVersionId"], asset["pageNumber"]): asset for asset in assets}
+        self.assertEqual(104, len(assets_by_key))
+
+        seed_pages = json.loads((REPO_ROOT / "data" / "seed" / "story_pages.json").read_text(encoding="utf-8"))
+        seed_by_key = {(page["version_id"], page["page_no"]): page for page in seed_pages}
+        details = self.fixture("story-details.json")["items"]
+        fixture_keys = {
+            (detail["storyVersionId"], page["pageNumber"])
+            for detail in details for page in detail["pages"]
+        }
+        self.assertEqual(set(assets_by_key), fixture_keys)
+        self.assertEqual(104, len(fixture_keys))
+
+        compared = 0
+        for detail in details:
+            self.assertIsNone(detail["coverRef"])
+            for page in detail["pages"]:
+                key = (detail["storyVersionId"], page["pageNumber"])
+                asset = assets_by_key[key]
+                seed_page = seed_by_key[key]
+                local = page["localPageAsset"]
+                self.assertIsNone(page["imageRef"])
+                self.assertEqual(build_fixtures.PAGE_IMAGE_STATUS, page["imageStatus"])
+                self.assertEqual(seed_page["image_ref"], asset["sourcePath"])
+                self.assertEqual(seed_page["image_ref"], local["sourcePath"])
+                self.assertEqual(seed_page["image_license_note"], asset["imageLicenseNote"])
+                self.assertEqual(seed_page["image_license_note"], local["imageLicenseNote"])
+                for field in (
+                    "assetRole", "assetPath", "devicePath", "format", "width", "height",
+                    "fileSize", "sha256", "sourcePath", "sourceFormat", "sourceWidth",
+                    "sourceHeight", "sourceFileSize", "sourceSha256", "imageLicenseNote",
+                ):
+                    self.assertEqual(asset[field], local[field], field)
+                self.assertFalse(local["decoderVerified"])
+                path = REPO_ROOT / local["assetPath"]
+                self.assertTrue(path.is_file())
+                self.assertEqual(local["fileSize"], path.stat().st_size)
+                self.assertEqual(local["sha256"], sha256_file(path))
+                self.assertEqual((local["width"], local["height"]), build_fixtures.jpeg_dimensions(path))
+                self.assertTrue(local["devicePath"].startswith("/assets/pages/"))
+                compared += 1
+        self.assertEqual(104, compared)
+
+    def test_duplicate_page_asset_key_is_rejected(self) -> None:
+        manifest = json.loads(
+            (REPO_ROOT / "hardware" / "assets" / "generated-pages" / "pages-manifest.json").read_text(encoding="utf-8")
+        )
+        manifest["assets"].append(copy.deepcopy(manifest["assets"][0]))
+        with self.assertRaises(build_fixtures.FixtureError):
+            build_fixtures.build_page_asset_index(REPO_ROOT, manifest)
+
+    def test_page_asset_missing_corrupt_and_hash_mismatch_are_rejected(self) -> None:
+        manifest = json.loads(
+            (REPO_ROOT / "hardware" / "assets" / "generated-pages" / "pages-manifest.json").read_text(encoding="utf-8")
+        )
+        source = REPO_ROOT / manifest["assets"][0]["assetPath"]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            target = root / "hardware" / "assets" / "generated-pages" / "page.jpg"
+            target.parent.mkdir(parents=True)
+            shutil.copyfile(source, target)
+            asset = copy.deepcopy(manifest["assets"][0])
+            asset["assetPath"] = "hardware/assets/generated-pages/page.jpg"
+            asset["devicePath"] = "/assets/pages/page.jpg"
+            asset["fileSize"] = target.stat().st_size
+            asset["sha256"] = sha256_file(target)
+            build_fixtures.validate_page_asset_file(root, asset, 262144)
+
+            target.unlink()
+            with self.assertRaises(build_fixtures.FixtureError):
+                build_fixtures.validate_page_asset_file(root, asset, 262144)
+
+            shutil.copyfile(source, target)
+            broken_hash = copy.deepcopy(asset)
+            broken_hash["sha256"] = "0" * 64
+            with self.assertRaises(build_fixtures.FixtureError):
+                build_fixtures.validate_page_asset_file(root, broken_hash, 262144)
+
+            target.write_bytes(b"not-a-jpeg")
+            broken_file = copy.deepcopy(asset)
+            broken_file["fileSize"] = target.stat().st_size
+            broken_file["sha256"] = sha256_file(target)
+            with self.assertRaises(build_fixtures.FixtureError):
+                build_fixtures.validate_page_asset_file(root, broken_file, 262144)
+
+    def test_page_asset_binding_rejects_wrong_version_and_image_ref(self) -> None:
+        manifest = json.loads(
+            (REPO_ROOT / "hardware" / "assets" / "generated-pages" / "pages-manifest.json").read_text(encoding="utf-8")
+        )
+        mapping = json.loads((REPO_ROOT / "data" / "seed" / "cover_mapping.json").read_text(encoding="utf-8"))
+        versions = json.loads((REPO_ROOT / "data" / "seed" / "story_versions.json").read_text(encoding="utf-8"))
+        pages = json.loads((REPO_ROOT / "data" / "seed" / "story_pages.json").read_text(encoding="utf-8"))
+        cover = next(item for item in mapping if item["book_no"] == "B-002")
+        version = next(item for item in versions if item["storybook_id"] == cover["storybook_id"])
+        page = next(item for item in pages if item["version_id"] == version["id"] and item["page_no"] == 1)
+        asset = copy.deepcopy(manifest["assets"][0])
+        build_fixtures.build_local_page_asset(asset, cover, version["id"], page, False)
+
+        for field, value in (
+            ("storyVersionId", version["id"] + 1),
+            ("storybookId", cover["storybook_id"] + 1),
+            ("bookNo", "B-999"),
+            ("sourcePath", page["image_ref"] + ".wrong"),
+            ("pageNumber", 2),
+        ):
+            broken = copy.deepcopy(asset)
+            broken[field] = value
+            with self.subTest(field=field), self.assertRaises(build_fixtures.FixtureError):
+                build_fixtures.build_local_page_asset(broken, cover, version["id"], page, False)
+
+    def test_page_asset_coverage_rejects_missing_and_extra(self) -> None:
+        manifest = json.loads(
+            (REPO_ROOT / "hardware" / "assets" / "generated-pages" / "pages-manifest.json").read_text(encoding="utf-8")
+        )
+        index = build_fixtures.build_page_asset_index(REPO_ROOT, manifest)
+        expected = set(index)
+        missing = copy.deepcopy(index)
+        missing.pop(next(iter(missing)))
+        with self.assertRaises(build_fixtures.FixtureError):
+            build_fixtures.validate_page_asset_coverage(missing, expected)
+        extra = copy.deepcopy(index)
+        extra[(999, 1)] = copy.deepcopy(manifest["assets"][0])
+        with self.assertRaises(build_fixtures.FixtureError):
+            build_fixtures.validate_page_asset_coverage(extra, expected)
+
     def test_source_files_use_stable_lf_text_digest(self) -> None:
         fixture = self.fixture("storybooks.json")
         self.assertEqual("sha256-utf8-lf-v1", fixture["sourceDigest"])
-        self.assertEqual(5, len(fixture["sourceFiles"]))
+        self.assertEqual(6, len(fixture["sourceFiles"]))
+        self.assertIn(
+            build_fixtures.PAGE_ASSET_MANIFEST,
+            {entry["path"] for entry in fixture["sourceFiles"]},
+        )
         for entry in fixture["sourceFiles"]:
             self.assertEqual(entry["sha256"], build_fixtures.sha256_text_file(REPO_ROOT / entry["path"]))
         self.assertEqual(
@@ -227,6 +389,28 @@ class MockTestCase(unittest.TestCase):
         self.assertEqual(6, len(detail.data["pages"]))
         self.assertIsNone(detail.data["coverRef"])
         self.assertIsNone(detail.data["pages"][0]["imageRef"])
+        self.assertIsNotNone(detail.data["pages"][0]["localPageAsset"])
+
+    def test_http_detail_returns_all_page_assets(self) -> None:
+        details = self.fixture("story-details.json")["items"]
+        total = 0
+        for fixture_detail in details:
+            response = self.request("GET", f"/api/v1/story-versions/{fixture_detail['storyVersionId']}")
+            self.assertEqual(200, response.status)
+            self.assertIsNone(response.data["coverRef"])
+            self.assertEqual(fixture_detail["pageCount"], len(response.data["pages"]))
+            for page in response.data["pages"]:
+                self.assertIsNone(page["imageRef"])
+                self.assertEqual(build_fixtures.PAGE_IMAGE_STATUS, page["imageStatus"])
+                self.assertIsInstance(page["localPageAsset"], dict)
+                self.assertEqual("PAGE", page["localPageAsset"]["assetRole"])
+                self.assertTrue(page["localPageAsset"]["assetPath"].startswith("hardware/assets/generated-pages/"))
+                self.assertTrue(page["localPageAsset"]["devicePath"].startswith("/assets/pages/"))
+                self.assertFalse(page["localPageAsset"]["decoderVerified"])
+                total += 1
+        self.assertEqual(104, total)
+        shelf = self.request("GET", "/api/v1/storybooks")
+        self.assertTrue(all("localPageAsset" not in item for item in shelf.data["items"]))
 
     def test_storybook_list_is_lightweight(self) -> None:
         response = self.request("GET", "/api/v1/storybooks")

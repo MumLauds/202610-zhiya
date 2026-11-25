@@ -8,13 +8,13 @@
 | 设备 | Waveshare ESP32-S3-Touch-LCD-4.3C，SKU 33799，无外壳版；800×480、16 MiB Flash、8 MiB PSRAM |
 | 固件基线 | ESP-IDF v5.5.5；H02 正在实现 LCD、GT911 和 LVGL 底层适配 |
 | UI 依据 | `hardware/docs/ui-flow.md`（H04） |
-| 素材依据 | `hardware/docs/media-format.md`、`hardware/assets/generated/assets-manifest.json`（H03） |
+| 素材依据 | `hardware/docs/media-format.md`（H03）、`hardware/assets/generated/assets-manifest.json`、`hardware/assets/generated-pages/pages-manifest.json` |
 | 数据依据 | `data/seed/storybooks.json`、`story_versions.json`、`story_pages.json`、`cover_mapping.json`（2026-11-24 基线） |
 | 接口依据 | `docs/design/api-contract.md`、`docs/design/api-contract-v0.4.json`、`backend/app/api/v1/reading_sessions.py` |
-| 本文版本 | 2026-11-25，H05 审查修复版 |
+| 本文版本 | 2026-11-25，H05 内页资源接入版 |
 | 适用范围 | 本地 DEMO、离线自动化测试、H06 UI 联调准备；不替代真实后端、设备认证、真机解码或上板验收 |
 
-本文描述的是**本地 Mock 层**，不是新增正式 API 契约。所有响应和 fixtures 都标记 `demoOnly=true`；不得把 Mock 的成功结果写成真实后端联调成功，也不得把 H03 本地封面路径写成 API-024 的受控媒体 `resource_key`。
+本文描述的是**本地 Mock 层**，不是新增正式 API 契约。所有响应和 fixtures 都标记 `demoOnly=true`；不得把 Mock 的成功结果写成真实后端联调成功，也不得把 H03 本地封面/内页路径写成 API-024 的受控媒体 `resource_key`。
 
 ## 1. 目的、范围与限制
 
@@ -28,10 +28,10 @@ H05 让 H06 在没有真实后端、没有云端 ASR/TTS/LLM、没有 ESP32 实�
 
 同时提供：
 
-- 由仓库真实种子和 H03 manifest 自动生成的数据，而不是手写 20 条记录；
+- 由仓库真实种子、40 张封面和 104 张内页 PAGE 清单自动生成的数据，而不是手写 20 条记录或 104 条资源路径；
 - 可注入 401/403/404/409/422/429/503/504 和空数据、缺封面的 Mock HTTP 服务；
 - 可重复的会话状态和幂等行为，用于验证 H04 数据流；
-- 不依赖 Pillow、真实模型或实板的离线测试。
+- 不依赖 Pillow、真实模型或实板的离线测试；JPEG 只校验原始字节 SHA-256、SOI/SOF 尺寸，不宣称已解码。
 
 ### 1.2 明确不负责
 
@@ -40,7 +40,7 @@ H05 让 H06 在没有真实后端、没有云端 ASR/TTS/LLM、没有 ESP32 实�
 - 不模拟正式设备认证、家长 Cookie/CSRF、儿童档案服务端授权；H05 的 401/403 只是错误注入。
 - 不生成真实录音、真实音频、真实模型回答、真实阅读报告或模型评测结果。
 - 不把 `DRAFT` 联调绘本纳入设备书架；不把封面当成 104 页正文插画；不把 H05 的 `PUBLISHED` 标记当作在线发布授权。
-- 不验证 JPEG 在 ESP32-S3/LVGL 上的解码兼容性；该结论必须由 H06 实板确认。
+- 不验证 JPEG 在 ESP32-S3/LVGL 上的解码兼容性；`localPageAsset` 只证明构建期 JPEG 存在且与清单哈希/尺寸一致，屏幕显示必须由 H06 实板确认。
 
 ## 2. 数据来源与转换规则
 
@@ -55,8 +55,10 @@ H05 让 H06 在没有真实后端、没有云端 ASR/TTS/LLM、没有 ESP32 实�
 | `data/seed/story_pages.json` | 正文、`page_no`、`default_next_page_number`、原始 `image_ref` |
 | `data/seed/cover_mapping.json` | 20 条书号、`storybook_id`、封面源路径 |
 | `hardware/assets/generated/assets-manifest.json` | H03 的 THUMBNAIL/DETAIL 资源、SHA-256、尺寸和 `devicePath` |
+| `hardware/assets/generated-pages/pages-manifest.json` | H03 的 104 个 PAGE 资源、`(storyVersionId, pageNumber)`、`sourcePath`、SHA-256、尺寸和 `devicePath` |
+| `hardware/assets/generated-pages/*.jpg` | 104 个 PAGE JPEG 原始文件，构建时按字节校验 SHA-256/大小和 SOF 尺寸 |
 
-源文件只读；构建过程不会重命名、覆盖、删除或重新压缩任何原图。
+源文件只读；构建过程不会重命名、覆盖、删除或重新压缩任何原图或 PAGE JPEG。
 
 ### 2.2 选取规则
 
@@ -66,9 +68,12 @@ H05 让 H06 在没有真实后端、没有云端 ASR/TTS/LLM、没有 ESP32 实�
 - 选中版本必须为 `PUBLISHED`；构建器从种子读取真实状态并写入 fixtures，不强制原创绘本为 `DRAFT`。
 - 每条详情页必须从 1 开始连续编号，最后一页的 `default_next_page_number` 必须为 `null`。
 - 只使用种子已有的正文和页面数；不编造 104 页之外的分页正文或插画。
+- 内页以 `(storyVersionId, pageNumber)` 为联合键，与 H03 `pages-manifest.json` 的 104 条 PAGE 一一对应；重复键、错误版本、缺失页、多余页、DRAFT 资源都会让构建失败。
+- 每条内页资源必须是 `PUBLISHED`、`assetRole=PAGE`、`format=JPEG`；`sourcePath` 必须与种子 `image_ref` 完全一致，`imageLicenseNote` 必须与种子 `image_license_note` 一致。
+- 每条 `localPageAsset` 的 `assetPath/devicePath/width/height/fileSize/sha256` 等值必须直接取自 H03 清单；构建器同时校验文件真实大小、原始字节 SHA-256 和 JPEG SOF 尺寸，不能手写或用封面替代。
 - `demoOnly=true` 和 `notice` 明确标识本地演示；`PUBLISHED` 仅表示种子状态，不代表在线发布授权、家长确认或 API-024 媒体访问权。
-- `coverRef` 和 `imageRef` 输出为 `null`。H03 的本地封面只放在 `localCover`，不让它看起来像服务端受控媒体键。
-- `story-details` 中每页的 `imageStatus` 为 `MISSING_INNER_ILLUSTRATION`，`localPageAsset=null`；H06 使用占位图，不用封面顶替正文插画。
+- `coverRef` 和 `imageRef` 输出为 `null`。H03 的本地封面只放在 `localCover`，内页只放在 `localPageAsset`，不让它们看起来像服务端受控媒体键。
+- `story-details` 中每页的 `imageStatus` 为 `LOCAL_PAGE_ASSET_AVAILABLE`，表示本地构建期资源可用；`localPageAsset.decoderVerified=false`，不表示设备端 JPEG 解码或实板显示已完成。
 
 ### 2.3 结果计数
 
@@ -83,19 +88,20 @@ H05 让 H06 在没有真实后端、没有云端 ASR/TTS/LLM、没有 ESP32 实�
 | 版本状态 | 20 个均为 `PUBLISHED`（源种子真实状态，`demoOnly=true`） |
 | 联调草稿 | 1 本《逃家小兔》，`storybookId=1`、6 页、`DRAFT`，H05 不选 |
 | 原始页面总数 | 110 页（含联调草稿 6 页）；H05 只取 104 页 |
-| 内页资源 | 0 个；`imageRef=null`、`localPageAsset=null`，等待独立 H03 内页任务 |
-| fixtures 文件 | 5 个，共 98,154 B |
+| 内页资源 | 104 个 PAGE；全部 `imageRef=null`、`localPageAsset` 非空、`imageStatus=LOCAL_PAGE_ASSET_AVAILABLE` |
+| fixtures 文件 | 5 个，共 185,707 B |
 
-H03 清单的 `assetBytes=806,090`、`sourceBytes=117,248,465`、`compressionRatio=0.006875` 只描述文件体积，不等于解码后的内存。H05 不重复做 H03 的图像审计。
+H03 封面清单的 `assetBytes=806,090`、`sourceBytes=117,248,465`、`compressionRatio=0.006875` 只描述封面文件体积；内页清单的 `assetBytes=2,951,679`（2.81 MiB）、`sourceBytes=176,613,480`（168.43 MiB）只描述 PAGE 文件体积。这些都不是解码后的内存占用；H05 只按清单校验输出 JPEG 的存在、大小、SHA-256 和 SOF 尺寸，不重复 H03 的源图审计或重新编码。
 
 ### 2.4 确定性和源文件可追溯
 
 - JSON 使用 UTF-8、`sort_keys=True`、2 空格缩进和固定 LF 换行。
 - 通过同目录临时文件 + `os.replace` 写出，避免半截文件。
-- `storybooks.json` 和 `story-details.json` 根节点的 `sourceFiles` 记录 5 个输入文件的仓库相对路径，`sourceDigest` 固定为 `sha256-utf8-lf-v1`。
+- `storybooks.json` 和 `story-details.json` 根节点的 `sourceFiles` 记录 6 个文本输入的仓库相对路径，`sourceDigest` 固定为 `sha256-utf8-lf-v1`。
+  - 4 个种子 JSON、`assets-manifest.json` 和 `pages-manifest.json` 都按 `sha256-utf8-lf-v1` 计算文本摘要；后两者虽是 H03 manifest，也按文本规范参与 fixtures 来源哈希。
   - 规范：按无 BOM 的 UTF-8 解码文本，先将 `CRLF` 和单独的 `CR` 归一为 `LF`，再对规范化文本的 UTF-8 字节计算 SHA-256。
   - 该规范只消除 Git/Windows 检出造成的换行差异，不删除空白、不重排 JSON、不忽略内容；其他文本变化仍会导致 `--check` 失败。
-  - H03 JPEG 等二进制资源仍按原始字节计算 SHA-256。
+  - H03 封面/内页 JPEG 等二进制资源仍按原始字节计算 SHA-256，不参与文本摘要。
 - `python hardware/mock/build_fixtures.py --check` 只对比重新计算的内容，不写入。
 - 同一输入重复生成应得到相同业务内容；`requestId` 只在 HTTP 响应中随机生成，不进入 fixtures。
 
@@ -190,16 +196,50 @@ H03 清单的 `assetBytes=806,090`、`sourceBytes=117,248,465`、`compressionRat
       "text": "下雨了。小狐狸站在门口，看着外面的雨。",
       "imageRef": null,
       "defaultNextPageNumber": 2,
-      "imageStatus": "MISSING_INNER_ILLUSTRATION",
-      "localPageAsset": null
+      "imageStatus": "LOCAL_PAGE_ASSET_AVAILABLE",
+      "localPageAsset": {
+        "assetRole": "PAGE",
+        "assetPath": "hardware/assets/generated-pages/book-b002-v2-p001.jpg",
+        "devicePath": "/assets/pages/book-b002-v2-p001.jpg",
+        "format": "JPEG",
+        "width": 400,
+        "height": 300,
+        "fileSize": 23734,
+        "sha256": "a52d99be4afc2c1eb57f3216a403b2972a4a8d22029317a3e68ec0a5b558b92b",
+        "sourcePath": "knowledge-base_v2.5/图片/内页/PIC-B01_小狐狸的雨伞/PIC-B01_小狐狸的雨伞-P1.png",
+        "sourceFormat": "PNG",
+        "sourceWidth": 1200,
+        "sourceHeight": 900,
+        "sourceFileSize": 1640462,
+        "sourceSha256": "ae87a12508c6d28c1ceec913eb1f003b9ca808b4b2109ad1c87f2d3e6c6509cb",
+        "imageLicenseNote": "NO-COMMERCIAL",
+        "decoderVerified": false
+      }
     },
     {
       "pageNumber": 6,
       "text": "雨停了。小狐狸收起伞，笑了。",
       "imageRef": null,
       "defaultNextPageNumber": null,
-      "imageStatus": "MISSING_INNER_ILLUSTRATION",
-      "localPageAsset": null
+      "imageStatus": "LOCAL_PAGE_ASSET_AVAILABLE",
+      "localPageAsset": {
+        "assetRole": "PAGE",
+        "assetPath": "hardware/assets/generated-pages/book-b002-v2-p006.jpg",
+        "devicePath": "/assets/pages/book-b002-v2-p006.jpg",
+        "format": "JPEG",
+        "width": 400,
+        "height": 300,
+        "fileSize": 33842,
+        "sha256": "b1b8ec69d76cc6caf242f1eb6faad5a9a9f3f113e4c9e640ba33a77edc2c9aef",
+        "sourcePath": "knowledge-base_v2.5/图片/内页/PIC-B01_小狐狸的雨伞/PIC-B01_小狐狸的雨伞-P6.png",
+        "sourceFormat": "PNG",
+        "sourceWidth": 1200,
+        "sourceHeight": 900,
+        "sourceFileSize": 1796677,
+        "sourceSha256": "0c0d71e808340c15ed5115425886ab1bdb6e89b8410e023e8b7ed581b44a970e",
+        "imageLicenseNote": "NO-COMMERCIAL",
+        "decoderVerified": false
+      }
     }
   ],
   "branches": [],
@@ -209,8 +249,10 @@ H03 清单的 `assetBytes=806,090`、`sourceBytes=117,248,465`、`compressionRat
 
 - 页码从 1 开始。
 - 末页 `defaultNextPageNumber=null`，不能把数组长度当作永远可连续翻页。
-- `imageRef=null` 表示本 DEMO 没有服务端逐页插画引用；H06 显示占位，不得拿封面冒充正文插画。
-- `localPageAsset=null` 是为后续独立 H03 内页资源任务预留的本地接入位。该任务完成前不得填入路径、尺寸或 SHA-256；H05 不复制、不猜测 104 张内页 PNG。
+- `imageRef=null` 表示本 DEMO 没有服务端逐页插画引用；`localPageAsset` 只是本地构建期资源，不得当作 API-024 资源键。
+- `localPageAsset` 以 `(storyVersionId, pageNumber)` 与 H03 清单一一绑定，字段来自真实清单并逐文件核对 SHA-256/大小/SOF 尺寸；不是手写路径。
+- `imageStatus=LOCAL_PAGE_ASSET_AVAILABLE` 只表示本地 JPEG 资源已具备；`decoderVerified=false` 明确表示没有完成设备端 JPEG 解码或实板显示验证。
+- H06 解码失败、资源缺失或未挂载时仍显示占位，不得拿封面冒充正文插画。
 - `storyVersionId` 与 `storybookId` 是两个字段；H06 不得用后者替换前者。
 
 ### 3.3 `demo-session.json`：初始 DEMO 会话
@@ -602,7 +644,7 @@ stateDiagram-v2
 | 绘本状态 | 20 本源种子为 `PUBLISHED`，`demoOnly=true`；联调 DRAFT 不纳入 | 仅服务端授权范围内的已发布/已批准内容 |
 | 身份 | 无真实认证；`childProfileId=1` | 家长登录、儿童档案、设备绑定/凭证 |
 | 封面 | H03 本地 JPEG + `localCover` | API-024 受控媒体 `resource_key` |
-| 内页插画 | `imageRef=null` + `localPageAsset=null` + 占位；等独立 H03 内页任务 | 服务端真实 `imageRef`；无图仍占位 |
+| 内页插画 | H03 104 张本地 PAGE JPEG + `localPageAsset`；`imageRef=null`；`decoderVerified=false` | 服务端真实 `imageRef`；无图/解码失败仍占位 |
 | 语音 | `/mock/voice/*` 状态时间线 | API-022/023/024 + 真实 ASR/TTS/媒体 |
 | 结束报告 | 固定 DEMO 文案 | API-019 + 服务端小结 |
 | 错误注入 | 请求头/查询参数 | 真实 401/403/404/409/422/503/504 |
@@ -638,7 +680,7 @@ DEMO 实现读取 fixtures 或调用 Mock HTTP；ONLINE 实现使用正式 API �
 | HW-UI-03 首页 | `storybooks.items[].localCover.detail` | 继续阅读卡只用 DETAIL；无图占位 |
 | HW-UI-04 书架 | `storybooks.items[].localCover.thumbnail`、`status` | 20 本源种子状态为 `PUBLISHED`，仍仅 DEMO；不得据此宣称在线发布 |
 | HW-UI-05 详情 | `story-details`、`localCover.detail` | `storybookId` 与 `storyVersionId` 分开显示/传参 |
-| HW-UI-06 阅读 | `pages[].text/pageNumber/defaultNextPageNumber/localPageAsset` | `imageRef=null`、`localPageAsset=null` 时用占位；不用封面当正文 |
+| HW-UI-06 阅读 | `pages[].text/pageNumber/defaultNextPageNumber/localPageAsset/imageStatus` | `imageRef=null`；本地 PAGE 可用时按 `localPageAsset.devicePath` 映射，`decoderVerified=false` 仍需实板解码；不用封面当正文 |
 | HW-UI-07 语音 | `voice-scenarios.json` / `/mock/voice/*` | 只演示状态和文案；`audioUrl=null` |
 | HW-UI-08 结束 | `completions` 返回的 `session/report` | 儿童端不展示完整报告；`report` 为 DEMO |
 | HW-UI-09 异常 | `error-scenarios.json` | 至少覆盖 401/403/404/409/422/503/504、空书架、缺封面 |
@@ -646,10 +688,11 @@ DEMO 实现读取 fixtures 或调用 Mock HTTP；ONLINE 实现使用正式 API �
 
 ### 9.3 素材挂载
 
-- H03 `devicePath` 形如 `/assets/covers/book-b002-thumb.jpg` / `/assets/covers/book-b002-detail.jpg`。
-- H06 可将这些逻辑路径映射到 Flash 资源分区；具体分区由 H06 决定，H05 不修改 `firmware/partitions.csv`。
-- `THUMBNAIL` 只用于书架卡；`DETAIL` 用于详情/继续阅读；阅读页内页只用 `imageRef` 或占位。
-- `localPageAsset` 是后续 H03 内页资源的接入位。当前为 `null`；独立任务交付真实路径/哈希前，H05 不编造 104 页内页清单，也不把封面或 `knowledge-base_v2.5/图片/内页/**` 中的未审计文件直接写入。
+- H03 封面 `devicePath` 形如 `/assets/covers/book-b002-thumb.jpg` / `/assets/covers/book-b002-detail.jpg`；内页形如 `/assets/pages/book-b002-v2-p001.jpg`。
+- H06 可将这些逻辑路径映射到 Flash 资源分区；具体分区由 H06 决定，H05 不修改 `firmware/partitions.csv`。104 张 PAGE 合计 2.81 MiB，内页 + 封面约 3.58 MiB，需按 H03 容量说明选择 DEMO 子集或独立资源分区。
+- `THUMBNAIL` 只用于书架卡；`DETAIL` 用于详情/继续阅读；阅读页内页只使用 `localPageAsset` 或占位。
+- `localPageAsset` 已由 H05 按 `(storyVersionId, pageNumber)` 从 H03 `pages-manifest.json` 回填，包含 `assetRole/assetPath/devicePath/format/width/height/fileSize/sha256` 和 `sourcePath/sourceFormat/sourceWidth/sourceHeight/sourceFileSize/sourceSha256/imageLicenseNote`；`decoderVerified=false`。
+- `localPageAsset` 是本地 DEMO 资源引用，不是 API-024 的 `resource_key`；H06 不得把 `assetPath/devicePath` 当服务端媒体键。
 - 缺图、缺封面、解码失败统一显示占位；不得用封面冒充正文插画。
 
 ### 9.4 事件边界
@@ -665,7 +708,7 @@ touch event -> UI intent -> controller/state machine -> data provider (async) ->
 ### 10.1 生成和一致性
 
 ```powershell
-Set-Location D:\zhiya-hardware-workspace\worktrees\zhiya-h05
+Set-Location D:\zhiya-hardware-workspace\worktrees\zhiya-h05-pages
 python hardware/mock/build_fixtures.py
 python hardware/mock/build_fixtures.py --check
 ```
@@ -678,7 +721,7 @@ python hardware/mock/build_fixtures.py --check
 写出 demo-session.json: hardware/mock/fixtures/demo-session.json
 写出 voice-scenarios.json: hardware/mock/fixtures/voice-scenarios.json
 写出 error-scenarios.json: hardware/mock/fixtures/error-scenarios.json
-H05 fixtures 完成：5 个文件，20 本 / 104 页 / 40 个封面资源
+H05 fixtures 完成：5 个文件，20 本 / 104 页 / 40 个封面资源 / 104 个内页资源
 ```
 
 `--check` 实际输出：
@@ -712,17 +755,21 @@ python -m unittest discover -s hardware/tests/mock -v
 实际结果：
 
 ```text
-Ran 37 tests in 6.798s
+Ran 43 tests in 9.493s
 OK
 ```
 
 覆盖范围：
 
-- 20 本原创绘本、104 页、40 个 H03 引用；20 本源状态为 `PUBLISHED`、`demoOnly=true`；
+- 20 本原创绘本、104 页、40 个封面引用、104 个内页 PAGE 引用；20 本源状态为 `PUBLISHED`、`demoOnly=true`；
 - 书号、`storybookId`、`storyVersionId`、`sourcePath` 映射；DRAFT 联调绘本排除；
-- 页码 1 开始、末页 null、`imageRef=null`、`localPageAsset=null`；
+- 页码 1 开始、末页 null、`imageRef=null`、`localPageAsset` 非空、`imageStatus=LOCAL_PAGE_ASSET_AVAILABLE`；
+- 104 个联合键 `(storyVersionId, pageNumber)` 完整覆盖，重复键、缺页、多余页、错误版本、`sourcePath`/`image_ref` 不一致均拒绝；
+- 104 个本地 PAGE 文件存在、大小/SHA-256/SOF 尺寸一致；缺文件、损坏文件、哈希篡改均拒绝；
+- `localPageAsset` 字段来自 H03 清单并保留 `sourcePath/sourceSha256/imageLicenseNote`；`coverRef/imageRef=null`，`decoderVerified=false`；
 - 书架/详情一致；书架列表不包含 `pages` / `branches` / `total`；书架 fixture 误塞入 `pages` 时启动失败；
-- H03 40 个资源存在、SHA/大小/JPEG；
+- H03 40 个封面资源存在、SHA/大小/JPEG；
+- HTTP 详情 20 本返回 104 页，逐页带本地 PAGE 资产且书架响应不带 `localPageAsset`；
 - `STARTED`、前进、错误返回旧页、跳过页、最后一页、结束态；
 - 畸形 fixture 把 `defaultNextPageNumber` 指回旧页时仍拒绝 `PAGE_CHANGED`；
 - 成功首次 201 / 重放 200；8 并发相同请求为 1×201 + 7×200，只写一次；
@@ -738,22 +785,22 @@ OK
 
 ### 10.4 只读边界
 
-测试和构建都只读 `data/seed/`、`hardware/assets/generated/`；不修改 H02 固件、H03 脚本/图片、H04 UI 文档、前端、后端、数据库或正式 API 契约。
+测试和构建都只读 `data/seed/`、`hardware/assets/generated/`、`hardware/assets/generated-pages/`；不修改 H02 固件、H03 脚本/图片、H04 UI 文档、前端、后端、数据库或正式 API 契约。
 
 ## 11. 已验证、未验证与契约差异
 
 ### 11.1 已验证
 
-- fixtures 由真实种子生成：20 本 `PUBLISHED` 原创、104 页、40 个资源引用；1 本 `DRAFT` 联调绘本排除。
-- `storyVersionId` 按 `storybook_id` 查找，不按数组下标或 ID 等值假设。
-- 所有原创版本 `demoOnly=true`、`coverRef=null`、`imageRef=null`、`localPageAsset=null`；H03 本地封面只出现在 `localCover`。
-- Mock 服务的阅读会话、成功/失败幂等、ASK 结果恢复、TTS 答案复用、结束态、错误注入、分页规则和并发快照通过 37 项离线测试。
-- `GET /api/v1/storybooks` 只返回轻量元数据，不携带 `pages` / `branches` / `total`；详情由 API-009 投影单独读取。
+- fixtures 由真实种子和 H03 清单生成：20 本 `PUBLISHED` 原创、104 页、40 个封面引用、104 个内页 PAGE；1 本 `DRAFT` 联调绘本排除。
+- `storyVersionId` 按 `storybook_id` 查找，不按数组下标或 ID 等值假设；内页按 `(storyVersionId, pageNumber)` 联合键一一绑定。
+- 所有原创版本 `demoOnly=true`、`coverRef=null`、`imageRef=null`；H03 本地封面只出现在 `localCover`，104 页内页只出现在 `localPageAsset`，`imageStatus=LOCAL_PAGE_ASSET_AVAILABLE`、`decoderVerified=false`。
+- Mock 服务的阅读会话、成功/失败幂等、ASK 结果恢复、TTS 答案复用、结束态、错误注入、分页规则和并发快照通过 43 项离线测试；其中既有 37 项审查通过测试全部保留。
+- `GET /api/v1/storybooks` 只返回轻量元数据，不携带 `pages` / `branches` / `total` / `localPageAsset`；详情由 API-009 投影单独读取，20 本详情共返回 104 页内页资产。
 - `PAGE_CHANGED` 只接受当前页 `defaultNextPageNumber` 且未访问的目标；错误的后向翻页、已访问页和畸形回环均返回 409，不增加 revision。
-- 测试不依赖 Pillow、FastAPI、数据库、云端模型或 ESP32 板卡。
-- 源文本使用 `sha256-utf8-lf-v1`；工作树 CRLF 与 Git LF 原始字节归一后得到相同摘要，干净检出可直接运行 `--check`。
-- 2026-11-25 已在独立 detached clean worktree 运行 `python hardware/mock/build_fixtures.py --check`，输出“H05 fixtures 一致”，退出码 0。
-- H03 40 个封面 JPEG 与 manifest 的 SHA-256/大小一致；原图和种子未被构建或测试改写。
+- 测试不依赖 Pillow、FastAPI、数据库、云端模型或 ESP32 板卡；JPEG 仅用标准库读 SOI/SOF，不执行真实图像解码。
+- 6 个文本输入使用 `sha256-utf8-lf-v1`，包括 `pages-manifest.json`；工作树 CRLF 与 Git LF 原始字节归一后得到相同摘要，干净检出可直接运行 `--check`。
+- 2026-11-25 已在实际工作树运行 `python hardware/mock/build_fixtures.py --check`，输出“H05 fixtures 一致”，退出码 0。
+- H03 40 个封面和 104 个内页 JPEG 均与各自 manifest 的 SHA-256/大小一致；104 个内页 SOF 尺寸与清单一致；原图、种子和 H03 图片未被构建或测试改写。
 
 ### 11.2 未验证 / 待 H06
 
@@ -763,7 +810,7 @@ OK
 - API-022 真实 ASR、API-023 真实 TTS、API-024 图片分派和设备认证；H05 没有实现这些。
 - API-016/G10 的真实模型问答、持久化与跨请求执行记录；H05 只验证固定回答、201/200、revision 和 ASK 事件复用。
 - 家长/儿童角色投影、家长锁安全强度、设备绑定 API；H05 的 401/403 是模拟。
-- 104 页正文插画：当前全部缺失；`localPageAsset=null`，等待独立 H03 内页任务，H05 不编造清单/哈希/路径。
+- 104 页正文插画：构建期本地 PAGE JPEG 已全部接入并校验，但 `decoderVerified=false`；ESP32-S3/LVGL 是否能解码、显示颜色/尺寸和翻页性能仍需 H06 实板验证。
 
 ### 11.3 与正式契约的已知差异
 
@@ -772,7 +819,7 @@ OK
 3. **角色投影**：Mock 无真实身份，不实现儿童 `report=null` 投影；H06 不能把 Mock 的 `report` 直接展示给儿童。
 4. **书架列表投影**：H05 按设备书架要求只返回轻量元数据，不返回 `pages` / `branches` / `total`；当前正式 API-008 响应示例仍包含完整版本对象。H06 进入详情必须走 API-009，接正式后端时以服务端实际响应为准。
 5. **状态**：20 本源种子为 `PUBLISHED` 且全部 `demoOnly=true`；这只用于本地 DEMO，不代表在线授权、审核通过或家长可见。
-6. **媒体**：`localCover.assetPath/devicePath` 不是 API-024 `resource_key`；正式媒体必须由 API-024 逐次校验权限。`localPageAsset` 当前为 null，不接入未审计的 H03 内页。
+6. **媒体**：`localCover.assetPath/devicePath` 和 `localPageAsset.assetPath/devicePath` 都不是 API-024 `resource_key`；正式媒体必须由 API-024 逐次校验权限。`localPageAsset` 只是 H05 回填的 H03 构建期本地资源，`decoderVerified=false`。
 7. **健康检查**：Mock `/api/v1/health` 不是正式 API-032 实现，不能作为生产健康检查结论。
 8. **阅读能力子集**：Mock 只实现 STARTED/PAGE_CHANGED 事件和固定问答；未实现正式 API-015 的 ANSWER/FEEDBACK、API-017 guidance、API-018 branches、API-020 mode-settings 等。
 
@@ -789,10 +836,11 @@ OK
 7. 401/403/404/422 不显示受控内容；503 读到可重试、写不自动重放；504 先读取会话，不自动创建新事件或新问题。
 8. 创建会话可带 `clientRequestId`；结果未确认时用同键同体重试，必须返回原会话而不是新建第二个会话。
 9. 问答成功后 GET 会话，ASK 事件必须恢复相同 `interactionEventId/outputText/strategyType/revision`，不能只显示事件编号和页码。
+10. 详情 20 本共 104 页都必须带 `localPageAsset`，且 `imageStatus=LOCAL_PAGE_ASSET_AVAILABLE`、`imageRef=null`、`decoderVerified=false`；书架响应不得带 `localPageAsset`；缺图或解码失败保留占位。
 
 实板验收（H06）：
 
-1. H03 JPEG 能被真机解码，书架/详情/占位实际可见；记录实测分辨率、解码耗时和内存。
+1. H03 40 张封面与 104 张内页 JPEG 能被真机解码，书架/详情/阅读页/占位实际可见；记录实测分辨率、解码耗时和内存。
 2. 资源分区、挂载路径和 `devicePath` 映射由 H06 验证；H05 未修改分区。
 3. 触摸、滚动、点击、返回与 H04 坐标一致；JPEG 解码不阻塞 LVGL 事件。
 4. 断网、缺图、授权失败、语音失败的屏幕表现与 H04 一致。
