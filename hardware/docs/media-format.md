@@ -1,12 +1,11 @@
-# 知芽 4.3C 封面资源格式与校验说明（H03）
+# 知芽 4.3C 封面与内页资源格式与校验说明（H03）
 
-> 任务：H03 绘本封面素材校验、图片转换脚本与资源清单生成
-> 基线：`MumLauds/202610-zhiya` `main` `6ae0d50`（PR #34 合并后，`hardware/` 已在主线）
-> 分支：`feat/hw-assets`
+> 任务：H03 绘本封面 / 内页素材校验、图片转换脚本与资源清单生成
+> 基线：`MumLauds/202610-zhiya` `main` `3ce9a23`（H05 Mock 已合并；H03 内页增补分支 `feat/hw-story-page-assets`）
 > 适用硬件：Waveshare **ESP32-S3-Touch-LCD-4.3C，SKU 33799，无外壳版**（800×480 RGB565、16 MiB Flash、8 MiB PSRAM）
-> 本文所有数量、尺寸、哈希与体积均来自本机实际运行 `hardware/tools/prepare_assets.py` 与 `hardware/tools/validate_assets.py` 的输出；**真机解码与显示均未验证**。
+> 本文所有数量、尺寸、哈希与体积均来自本机实际运行 `hardware/tools/prepare_assets.py`、`prepare_page_assets.py` 与对应校验工具的输出；**真机解码与显示均未验证**。
 
-**本文档的边界**：只描述 H03 的素材处理结果。H03 不实现 LCD、LVGL、FreeRTOS 或网络驱动，也不修改 `backend/`、`frontend/`、`database/`、`knowledge-base_v2.5/`、`data/seed/` 的原始文件与 `hardware/firmware/`。
+**本文档的边界**：只描述 H03 的素材处理结果。H03 不实现 LCD、LVGL、FreeRTOS 或网络驱动，也不修改 `backend/`、`frontend/`、`database/`、`knowledge-base_v2.5/`、`data/seed/` 的原始文件、`hardware/firmware/` 或 `hardware/mock/`。
 
 ---
 
@@ -331,20 +330,20 @@ RGB888: width × height × 3 字节
 ### 9.3 使用约束
 
 - **不要把 `assetPath` 当作 API-024 的 `resource_key`**，也不要把仓库路径暴露成公网 URL。线上受控媒体由后端按版本与授权签发，与本地演示资源是两套体系。
-- 本地设备演示包仅包含封面。20 本课程原创另有 104 张内页插画，由 `data/seed/story_pages.json` 逐页引用，家长书架通过 API-024 读取。
+- 本地设备演示包包含封面与内页两套独立资源：20 本课程原创的 40 张封面，以及 104 张 PAGE 内页；两者分别由 `assets-manifest.json` 和 `pages-manifest.json` 索引。
 - 设备端按每条资源的 `storyVersionStatus` 展示内容状态。本批 20 本已上架，使用范围仍限非商业课程学习与演示。
-- 书架一屏建议只解码可见项；滚动/翻页时释放不可见缩略图，避免 20 张同时驻留。
+- 书架一屏建议只解码可见项；滚动/翻页时释放不可见缩略图，避免 20 张同时驻留。阅读页一次只解码当前页内页，翻页后释放上一页。
 - 图片解码必须放在独立任务或分块流程中，不在 LVGL 绘制回调里做文件 IO 与解码（H06/H08 责任）。
 
 ### 9.4 是否把图片放进仓库
 
-本次**决定入库全部 40 个 JPEG**（合计 787.2 KiB）：
+本次**决定入库全部 40 个封面 JPEG 与 104 个内页 PAGE JPEG**：
 
-- 体积小于 1 MiB，对仓库与 16 MiB Flash 都可接受；
+- 封面合计 787.2 KiB，内页合计 2,951,679 B（2.81 MiB），对仓库与 16 MiB Flash 的演示子集都可接受；
 - 干净克隆即可取用已生成的 JPEG 做 H-Demo。校验 Manifest 前，在仓库根目录运行 `python -m pip install -r hardware/tools/requirements.txt` 安装锁定的 Pillow；
-- 原图 111.82 MiB 不重复入库，`knowledge-base_v2.5/` 保持唯一权威来源。
+- 原图 111.82 MiB 封面源与 168.43 MiB 内页源不重复入库，`knowledge-base_v2.5/` 保持唯一权威来源。
 
-若后续在设备包中引入逐页插画（单套可能数十 MB），改为只入库工具、Manifest 与少量演示样本，并对生成物配置忽略规则。`hardware/.gitignore` 已忽略临时文件与半成品清单。
+若后续在设备包中引入更多绘本内页，改为只入库工具、Manifest 与少量演示样本，并对生成物配置忽略规则。`hardware/.gitignore` 已忽略临时文件与半成品清单。
 
 ---
 
@@ -361,3 +360,177 @@ RGB888: width × height × 3 字节
 7. **ESP-IDF 分区与文件系统选择**：本任务不触碰 `hardware/firmware/partitions.csv`，资源如何烧入（LittleFS、SPIFFS、只读段或 TF 卡）由 H06 决定。
 
 结论：H03 交付的是**经过审计与校验的构建期资源与清单**，不是「已在屏幕上显示」的证明。真机解码与显示验收属于 H06。
+
+---
+
+## 11. 内页资源增补（H03-P1/P2/P3）
+
+### 11.1 真实映射与审计
+
+内页任务只处理 20 本课程原创、104 页；`version_id=1` 的《逃家小兔》是 DRAFT 联调本，6 页，明确排除。映射链路为：
+
+`cover_mapping.json` 的 `book_no/storybook_id` → `storybooks.json` 身份 → `story_versions.json` 唯一版本 → `story_pages.json` 的 `(version_id,page_no)` → `image_ref` 真实仓库相对路径。
+
+不使用文件名序号或 `storybook_id == version_id` 猜测。实际审计结果：
+
+| 指标 | 实际值 |
+| --- | ---: |
+| 映射封面记录 | 20 |
+| 绘本 / 版本 | 20 / 20 |
+| 内页记录 | 104 |
+| 通过 / 失败 / 告警 | 104 / 0 / 0 |
+| 原始格式 | PNG 104/104 |
+| 原始尺寸 | 1200×900 104/104 |
+| 含 alpha / EXIF 方向 | 0 / 0 |
+| 原始内页合计 | 176,613,480 B（168.43 MiB） |
+| 排除版本 | v1 DRAFT，6 页 |
+
+页面数分布来自种子实际数据：B-002/B-003/B-005/B-006 各 6 页，其余 16 本各 5 页，共 104 页。完整逐页路径、哈希与告警见 `hardware/assets/generated-pages/pages-source-audit.json`。
+
+### 11.2 真实转换样例与视觉核对
+
+默认 PAGE 框为 400×300，等比缩放、不放大、不裁剪、不拉伸。本批全部 1200×900 源图转为 400×300。真实 B-002 首末页对照图见 [`reports/images/h03-b002-pages-preview.jpg`](reports/images/h03-b002-pages-preview.jpg)（JPEG 197,941 B；左侧源图仅缩小用于并排预览，右侧为实际 400×300 设备图）。
+
+| 样例 | 源尺寸 / 字节 | 输出尺寸 / 字节 | 输出文件 |
+| --- | --- | --- | --- |
+| B-002 第 1 页 | 1200×900 / 1,640,462 B | 400×300 / 23,734 B | `book-b002-v2-p001.jpg` |
+| B-002 末页（第 6 页） | 1200×900 / 1,796,677 B | 400×300 / 33,842 B | `book-b002-v2-p006.jpg` |
+| B-013 第 1 页（最重） | 1200×900 / 1,978,304 B | 400×300 / 39,357 B | `book-b013-v13-p001.jpg` |
+
+B-013 第 1 页同时是本批输出体积最大的资源，已做视觉核对。源图全部为 1200×900，因此最宽、最高源尺寸相同，取体积最大且细节较多的 B-013 第 1 页作为代表。示例使用的是仓库真实内页，没有使用网图或生成式重绘。
+
+### 11.3 输出目录与命名
+
+```text
+hardware/assets/generated-pages/
+├── pages-manifest.json
+├── pages-source-audit.json
+├── book-b002-v2-p001.jpg
+├── book-b002-v2-p002.jpg
+└── ...  # 104 张 PAGE JPEG
+```
+
+命名规则：`book-<slug>-v<storyVersionId>-p<pageNumber:03d>.jpg`，例如 `book-b002-v2-p001.jpg`。文件名全 ASCII、小写、确定性生成。`devicePath` 为 `/assets/pages/<file>`，仅表示 H06 待定本地路径，**不是** API-024 的资源键。
+
+## 12. `pages-manifest.json` 合同
+
+顶层固定 `schemaVersion="1.0"`、`kind="device-page-assets"`，与封面 `device-cover-assets` 分开。关键字段：
+
+| 字段 | 实际内容 |
+| --- | --- |
+| `assetSet.sourceRoot` | `knowledge-base_v2.5/图片/内页` |
+| `assetSet.outputDir` | `hardware/assets/generated-pages` |
+| `assetSet.excludedVersions` | v1 DRAFT，6 页 |
+| `assetSet.sourceFiles` | `cover_mapping.json`、`storybooks.json`、`story_versions.json`、`story_pages.json` 的路径与 SHA-256 |
+| `assetSet.roles.PAGE` | 400×300，单张 256 KiB 上限，count=104 |
+| `assetSet.encoder` | `prepare_page_assets.py`、Pillow 13.0.0、JPEG q85、Baseline、LANCZOS、白底、无 pad、EXIF 转正后剥离 |
+| `assetSet.decoderVerified` | `false` |
+| `totals` | books=20、versions=20、pages=104、assets=104、sourceBytes=176,613,480、assetBytes=2,951,679、compressionRatio=0.016713 |
+| `assets` | 按 `bookNo/storyVersionId/pageNumber` 稳定排序 |
+
+单条资源保留 `bookNo`、`storybookId`、`storyVersionId`、`storyVersionStatus`、`title`、`pageNumber`、`assetRole`、`sourcePath`、`assetPath`、`devicePath`、`imageLicenseNote`、`format`、实际 `width/height/fileSize/sha256`、源图 `sourceFormat/sourceWidth/sourceHeight/sourceFileSize/sourceSha256`、`alphaComposited`、`exifOrientationApplied`、`sizeRatio`。不把故事正文或会话数据写进图像清单。
+
+B-002 第 1 页的实际条目：
+
+```json
+{
+  "bookNo": "B-002",
+  "storybookId": 2,
+  "storyVersionId": 2,
+  "storyVersionStatus": "PUBLISHED",
+  "title": "小狐狸的雨伞",
+  "pageNumber": 1,
+  "assetRole": "PAGE",
+  "sourcePath": "knowledge-base_v2.5/图片/内页/PIC-B01_小狐狸的雨伞/PIC-B01_小狐狸的雨伞-P1.png",
+  "assetPath": "hardware/assets/generated-pages/book-b002-v2-p001.jpg",
+  "devicePath": "/assets/pages/book-b002-v2-p001.jpg",
+  "imageLicenseNote": "NO-COMMERCIAL",
+  "format": "JPEG",
+  "width": 400,
+  "height": 300,
+  "fileSize": 23734,
+  "sha256": "a52d99be4afc2c1eb57f3216a403b2972a4a8d22029317a3e68ec0a5b558b92b",
+  "sourceFormat": "PNG",
+  "sourceWidth": 1200,
+  "sourceHeight": 900,
+  "sourceFileSize": 1640462,
+  "sourceSha256": "ae87a12508c6d28c1ceec913eb1f003b9ca808b4b2109ad1c87f2d3e6c6509cb",
+  "alphaComposited": false,
+  "exifOrientationApplied": false,
+  "sizeRatio": 0.014468
+}
+```
+
+## 13. 内页命令、独立校验与测试
+
+```powershell
+# 只读审计，不写图片；报告写到指定安全路径
+python hardware/tools/prepare_page_assets.py --audit-only --report hardware/assets/generated-pages/pages-source-audit.json
+
+# 生成 104 张 PAGE，先在同级临时目录组装并校验，成功后才替换正式输出
+python hardware/tools/prepare_page_assets.py
+
+# 独立校验：重新读取真实种子、原图、输出、哈希、覆盖和未引用文件
+python hardware/tools/validate_page_assets.py --json
+```
+
+实际结果：
+
+```text
+[audit] covers: 20  books: 20  versions: 20  pages: 104  passed: 104  failed: 0  warnings: 0  errors: 0
+[audit] excluded versions: v1(DRAFT/6p)
+[assets] converted: 104/104  source: 168.43 MiB  asset: 2.81 MiB
+[manifest] written: hardware/assets/generated-pages/pages-manifest.json
+[result] OK assets=104 errors=0 warnings=0
+
+{"ok": true, "assets": 104, "passed": 104, "failed": 0, "books": 20, "versions": 20, "pages": 104}
+```
+
+测试命令：
+
+```powershell
+python -m unittest discover -s hardware/tests/assets -v
+```
+
+覆盖原有 40 项封面测试，并新增 12 项内页/真实包测试，共 52 项。实际输出：
+
+```text
+Ran 52 tests in 45.618s
+OK
+```
+
+新增覆盖：全量映射、manifest 合同、横竖方图不放大、透明/EXIF、重复页码、URL/目录穿越、损坏源图、输出篡改、源哈希互换、缺失/多余输出、生成失败保留旧包、二次生成字节一致，以及真实 104 页包和原 40 张封面 manifest 的兼容性。
+
+校验失败不能被忽略：`--audit-only` 不写图片；生成阶段先写同级 staging，独立校验通过后才替换正式目录；失败时保留旧的有效资源，不发布半套清单。真实 104 页包已执行二次生成：106 个文件（104 张 JPEG + manifest + 审计）SHA-256 全部一致，`DIFF_COUNT=0`。
+
+## 14. 容量、H05/H06 交接与未验证项
+
+### 14.1 实际容量
+
+| 项目 | 实际体积 |
+| --- | ---: |
+| 104 张 PAGE | 2,951,679 B（2.81 MiB） |
+| 单张最小 / 平均 / 最大 | 12,665 / 28,381.5 / 39,357 B |
+| `pages-manifest.json` | 105,500 B |
+| `pages-source-audit.json` | 87,755 B（构建审计用，可不进设备包） |
+| B-002 全 6 页 | 180,421 B |
+| 原 40 张封面 | 787.2 KiB |
+| 内页原图合计（只读、不入库） | 176,613,480 B（168.43 MiB） |
+
+当前固件仍是 4 MiB factory 应用分区，没有专用资源分区。104 张 PAGE 加上封面、清单和文件系统元数据约 3.7 MiB；若按 4 KiB 块对齐，104 个 PAGE 文件最多再增加约 416 KiB 开销。**不能直接把全部资源塞进现有应用分区**。建议 H06 先选 B-002 全 6 页 + 1–3 本绘本做离线 DEMO 子集，或另立资源分区 / Micro SD 方案；H03 不修改分区表，也不要求购买 SD 卡。
+
+PSRAM 初始化剩余约 7.26 MiB 不代表可同时解码全部页面。400×300 RGB565 单页像素缓冲为 240,000 B（234.4 KiB），RGB888 为 360,000 B；H06 应按需解码、限制缓存并释放上一页。
+
+### 14.2 H05 交接
+
+H05 后续应按 `(storyVersionId, pageNumber)` 读取 `pages-manifest.json`，把每页记录映射到本地的 `assetPath` / `devicePath`，同时保留 `sourcePath` 作为内容溯源，不把 `devicePath` 冒充 API-024 资源键。封面索引与内页索引独立：封面继续使用 `hardware/assets/generated/assets-manifest.json`，内页使用 `hardware/assets/generated-pages/pages-manifest.json`，不得把 PAGE 塞进旧封面目录。
+
+当前 H03 分支按任务边界**没有修改 H05 Mock**，H05 fixtures 的 `localPageAsset` 仍为 `null`；这是待 H05 单独接入的状态，不是内页资源缺失。H03 已完成的是资源生成、独立 manifest、审计和校验；H05 的 fixture 回填需要在 H05 分支单独完成，并按 `(storyVersionId, pageNumber)` 保持键一致。
+
+### 14.3 H06 与未验证项
+
+- H06 先用 B-002 全 6 页验证离线阅读闭环，缺图使用占位，不用封面冒充正文插画。
+- H06 按 `pages-manifest.json` 的 `devicePath` 映射到实际分区/文件系统；当前没有定义资源分区，也没有烧录。
+- `decoderVerified=false`：ESP-IDF/LVGL 的 JPEG 解码能力、颜色、耗时、最大连续块、峰值内存和翻页稳定性均需实板验证。
+- 同一 Pillow 版本、同参数、同输入重复生成应得到相同文件集合和字节；跨机器/跨 Pillow 版本不保证字节一致。
+- 原图、种子、40 张封面及封面 manifest 未在本任务中修改；H03 不生成新插画，不引入 LFS，不修改固件。

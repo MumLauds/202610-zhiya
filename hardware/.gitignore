@@ -21,10 +21,10 @@ secrets/
 *.bak
 *.swp
 
-# H03 设备封面资源（assets/generated/）
-# 当前 40 个 JPEG 合计约 787 KiB，已入库，便于干净克隆直接校验与离线演示；
-# manifest 引用这些文件，删除后 validate_assets.py 会按预期失败。
-# 若将来引入逐页插画等大体积生成物，改为取消下面注释、只保留少量演示样本。
-# /assets/generated/*.jpg
+# H03 设备资源：40 张封面（约 787 KiB）与 104 张内页 PAGE（约 2.81 MiB）均已入库，
+# 便于干净克隆直接校验与离线演示；manifest 引用这些文件，删除后校验会按预期失败。
+# 若将来引入更多大体积生成物，改为只保留少量演示样本，并同步更新 manifest。
 /assets/generated/*.partial.json
 /assets/generated/*.failed.json
+/assets/.pages-stage-*/
+/assets/generated-pages.bak-*/
