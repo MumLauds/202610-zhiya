@@ -1,0 +1,7 @@
+menu "Zhiya diagnostics"
+
+config ZHIYA_H07_AUDIO_DIAGNOSTIC
+    bool "Use the H07 audio diagnostic screen"
+    default n
+
+endmenu

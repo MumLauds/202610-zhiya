@@ -20,6 +20,8 @@
 
 ## 目录与构建
 
+H07 提供板载音频诊断模式，采用独立编译开关。[音频设计](docs/audio-design.md) · [构建与实板验收](docs/audio-bringup.md)
+
 | 路径 | 用途 |
 | --- | --- |
 | `firmware/CMakeLists.txt` | ESP-IDF 工程入口，校验目标及版本 |
