@@ -11,7 +11,9 @@ static bool rx_active;
 static bool tx_active;
 static unsigned releases;
 static unsigned tx_blocks;
-static int16_t first_left;
+static unsigned applied_adc_gain;
+static int applied_dac_gain;
+static unsigned rx_blocks;
 static audio_signal_t observed_tx;
 static bool muted_at_dac;
 static int16_t tone_reference[TONE_SAMPLES + AUDIO_DMA_BLOCKS * AUDIO_BLOCK_FRAMES];
@@ -60,17 +62,20 @@ esp_err_t audio_hw_release(void)
     return audio_hw_stop();
 }
 
-esp_err_t audio_hw_start_rx(void)
+esp_err_t audio_hw_start_rx(unsigned gain_db)
 {
     assert(!tx_active && !rx_active);
     rx_active = true;
+    rx_blocks = 0;
+    applied_adc_gain = gain_db;
     return ESP_OK;
 }
 
-esp_err_t audio_hw_start_tx(void)
+esp_err_t audio_hw_start_tx(int gain_db)
 {
     assert(!rx_active && !tx_active);
     tx_active = true;
+    applied_dac_gain = gain_db;
     tx_blocks = 0;
     observed_tx = (audio_signal_t){0};
     return ESP_OK;
@@ -93,9 +98,10 @@ esp_err_t audio_hw_set_mute(bool muted)
 esp_err_t audio_hw_read(int16_t *stereo, size_t *frames)
 {
     assert(rx_active && !tx_active && *frames <= AUDIO_BLOCK_FRAMES);
+    const bool quiet = rx_blocks++ < 12;
     for (size_t index = 0; index < *frames; ++index) {
-        stereo[index * 2] = index % 2 ? 800 : -200;
-        stereo[index * 2 + 1] = index % 2 ? 320 : -280;
+        stereo[index * 2] = quiet ? (index % 2 ? 301 : 299) : (index % 2 ? 800 : -200);
+        stereo[index * 2 + 1] = quiet ? (index % 2 ? 21 : 19) : (index % 2 ? 320 : -280);
     }
     return read_result;
 }
@@ -106,9 +112,7 @@ esp_err_t audio_hw_write(const int16_t *stereo, size_t *frames)
     for (size_t index = 0; index < *frames; ++index) {
         assert(stereo[index * 2] == stereo[index * 2 + 1]);
     }
-    if (tx_blocks++ == 1) {
-        first_left = stereo[0];
-    }
+    tx_blocks++;
     if (short_write) {
         --*frames;
     }
@@ -203,6 +207,19 @@ static void drain_playback(audio_worker_t *worker, int16_t *stereo)
     publish(worker, false);
 }
 
+static audio_signal_t make_fixture(uint8_t *pcm, size_t samples, unsigned voice_amplitude,
+                                   int16_t spike, size_t spike_index)
+{
+    audio_signal_t signal = {0};
+    for (size_t index = 0; index < samples; ++index) {
+        const int amplitude = index < samples / 4 ? 2 : (int)voice_amplitude;
+        const int16_t sample = index == spike_index ? spike : (int16_t)(50 + (index % 2 ? amplitude : -amplitude));
+        audio_pcm16_write(pcm + index * 2, sample);
+        audio_signal_add(&signal, sample);
+    }
+    return signal;
+}
+
 static void test_gain(void)
 {
     uint8_t bytes[2];
@@ -210,32 +227,40 @@ static void test_gain(void)
     assert(bytes[0] == 0 && bytes[1] == 128 && audio_pcm16_read(bytes) == INT16_MIN);
     audio_pcm16_write(bytes, INT16_MAX);
     assert(audio_pcm16_read(bytes) == INT16_MAX);
-    audio_signal_t signal = {0};
-    audio_signal_add(&signal, 250);
-    audio_signal_add(&signal, -150);
-    const audio_replay_gain_t quiet_speech = audio_replay_gain(&signal);
-    assert(quiet_speech.dc == 50 && quiet_speech.gain_q8 == 4 * AUDIO_GAIN_UNITY);
-    assert(audio_replay_apply(250, quiet_speech) == 800 && audio_replay_apply(-150, quiet_speech) == -800);
-    signal = (audio_signal_t){0};
-    audio_signal_add(&signal, 1);
-    audio_signal_add(&signal, -1);
-    assert(audio_replay_gain(&signal).gain_q8 == AUDIO_GAIN_UNITY);
-    signal = (audio_signal_t){0};
-    audio_signal_add(&signal, 30000);
-    audio_signal_add(&signal, 30000);
-    assert(audio_signal_ac_rms(&signal) == 0);
-    assert(audio_replay_apply(30000, audio_replay_gain(&signal)) == 0);
-    audio_signal_add(&signal, INT16_MIN);
+    enum { SAMPLES = 32000 };
+    static uint8_t pcm[SAMPLES * 2];
+    audio_signal_t signal = make_fixture(pcm, SAMPLES, 61, 0, SIZE_MAX);
+    const audio_replay_gain_t weak = audio_replay_gain(&signal, pcm, -18);
+    assert(weak.dc == 50 && weak.voice_frames == 75 && weak.gain_q8 == 16 * AUDIO_GAIN_UNITY);
+    assert(audio_replay_apply(111, weak) == 976);
+    signal = make_fixture(pcm, SAMPLES, 61, 16089, 5);
+    const audio_replay_gain_t spike = audio_replay_gain(&signal, pcm, -18);
+    assert(signal.peak == 16089 && signal.peak_index == 5 && spike.transient_frames == 1);
+    assert(spike.gain_q8 == weak.gain_q8);
+    assert(audio_replay_apply(16089, spike) < 8192 && audio_replay_apply(111, spike) >= 960);
+    signal = make_fixture(pcm, SAMPLES, 226, 7853, 12000);
+    const audio_replay_gain_t stronger = audio_replay_gain(&signal, pcm, -6);
+    assert(signal.peak_index == 12000 && stronger.transient_frames == 1 &&
+           stronger.gain_q8 > 8 * AUDIO_GAIN_UNITY);
+    assert(audio_replay_apply(7853, stronger) < 2057);
+    signal = make_fixture(pcm, SAMPLES, 2, 16089, 0);
+    const audio_replay_gain_t transient_only = audio_replay_gain(&signal, pcm, -18);
+    assert(transient_only.gain_q8 == AUDIO_GAIN_UNITY && !transient_only.voice_frames);
+    memset(pcm, 0, sizeof(pcm));
+    signal = scan_source(pcm, SAMPLES);
+    const audio_replay_gain_t silence = audio_replay_gain(&signal, pcm, -6);
+    assert(silence.gain_q8 == AUDIO_GAIN_UNITY && audio_replay_apply(0, silence) == 0);
+    signal = make_fixture(pcm, SAMPLES, 120, INT16_MIN, 5);
+    const audio_replay_gain_t limited = audio_replay_gain(&signal, pcm, -6);
     assert(signal.peak == 32768 && signal.clipped == 1);
-    const audio_replay_gain_t limited = audio_replay_gain(&signal);
-    assert(audio_replay_apply(INT16_MIN, limited) >= -8192);
-    assert(audio_replay_apply(30000, limited) <= 8192);
+    assert(audio_replay_apply(INT16_MIN, limited) >= -2057);
+    assert(audio_replay_apply(INT16_MAX, limited) <= 2057);
 }
 
 static void test_worker(void)
 {
     assert(board_audio_init() == ESP_OK);
-    audio_worker_t worker = {.status = {.volume = 20}};
+    audio_worker_t worker = {.status = default_status(BOARD_AUDIO_OFFLINE, ESP_OK)};
     int16_t stereo[AUDIO_BLOCK_FRAMES * 2];
     init_result = ESP_ERR_TIMEOUT;
     initialize(&worker);
@@ -246,6 +271,12 @@ static void test_worker(void)
     next(&worker);
     assert(board_audio_stop() == ESP_ERR_INVALID_STATE);
     assert(board_audio_set_volume(41) == ESP_ERR_INVALID_ARG);
+    assert(board_audio_set_adc_gain(21) == ESP_ERR_INVALID_ARG);
+    assert(board_audio_set_dac_gain(0) == ESP_ERR_INVALID_ARG);
+    assert(board_audio_set_adc_gain(24) == ESP_OK);
+    next(&worker);
+    assert(board_audio_set_dac_gain(-6) == ESP_OK);
+    next(&worker);
 
     no_memory = true;
     assert(board_audio_record() == ESP_OK);
@@ -258,7 +289,9 @@ static void test_worker(void)
     assert(board_audio_record() == ESP_OK && board_audio_status().pending);
     assert(board_audio_test_tone() == ESP_ERR_INVALID_STATE);
     next(&worker);
-    assert(rx_active && !tx_active);
+    assert(rx_active && !tx_active && applied_adc_gain == 24);
+    assert(board_audio_set_adc_gain(27) == ESP_ERR_INVALID_STATE);
+    assert(board_audio_set_dac_gain(-12) == ESP_ERR_INVALID_STATE);
     record_block(&worker, stereo);
     assert(board_audio_stop() == ESP_OK);
     next(&worker);
@@ -274,13 +307,14 @@ static void test_worker(void)
     record_block(&worker, stereo);
     publish(&worker, false);
     assert(worker.status.state == BOARD_AUDIO_RECORDED && worker.recorded == 8000);
-    assert(audio_pcm16_read(worker.recording) == -200 && worker.status.peak == 800);
+    assert(audio_pcm16_read(worker.recording) == 299 && worker.status.peak == 800);
     assert(worker.capture[0].min == -200 && worker.capture[1].max == 320);
     assert(worker.status.slot_peak[0] == 800 && worker.status.slot_peak[1] == 320);
     assert(board_audio_psram_test_tone() == ESP_ERR_INVALID_STATE);
 
     assert(board_audio_test_tone() == ESP_OK);
     next(&worker);
+    assert(applied_dac_gain == -18);
     tone_check = TONE_SAVE;
     drain_playback(&worker, stereo);
     tone_check = TONE_UNCHECKED;
@@ -288,11 +322,12 @@ static void test_worker(void)
     assert(builtin_tone_tx.peak && !muted_at_dac);
     assert(board_audio_replay() == ESP_OK);
     next(&worker);
+    assert(applied_dac_gain == -6 && board_audio_set_dac_gain(-12) == ESP_ERR_INVALID_STATE);
     drain_playback(&worker, stereo);
-    assert(first_left == -400 && !tx_active && tx_blocks == 50 + AUDIO_DMA_BLOCKS);
+    assert(!tx_active && tx_blocks == 50 + AUDIO_DMA_BLOCKS);
     assert(worker.status.state == BOARD_AUDIO_RECORDED && worker.recorded == 8000);
-    assert(worker.compensated.peak == 2000 && worker.scaled.peak == 400);
-    assert(audio_pcm16_read(worker.recording) == -200);
+    assert(worker.compensated.peak > 1000 && worker.compensated.peak < 2057);
+    assert(worker.scaled.peak > 200 && audio_pcm16_read(worker.recording) == 299);
     assert(board_audio_test_tone() == ESP_OK);
     next(&worker);
     drain_playback(&worker, stereo);
@@ -321,7 +356,7 @@ static void test_worker(void)
     uint8_t *original_buffer = worker.recording;
     assert(board_audio_psram_test_tone() == ESP_OK);
     next(&worker);
-    assert(worker.playback == original_buffer);
+    assert(worker.playback == original_buffer && applied_dac_gain == -18);
     tone_check = TONE_COMPARE;
     drain_playback(&worker, stereo);
     tone_check = TONE_UNCHECKED;
@@ -336,7 +371,7 @@ static void test_worker(void)
     while (worker.recorded < BOARD_AUDIO_MIN_SAMPLES) {
         record_block(&worker, stereo);
     }
-    assert(worker.recorded_slot == 1 && audio_pcm16_read(worker.recording) == -280);
+    assert(worker.recorded_slot == 1 && audio_pcm16_read(worker.recording) == 19);
     assert(board_audio_stop() == ESP_OK);
     next(&worker);
     assert(board_audio_set_mute(true) == ESP_OK);
@@ -391,7 +426,7 @@ int main(void)
     test_wav();
     puts("PASS PCM/WAV, padding, truncation, size bounds");
     test_gain();
-    puts("PASS signed PCM16, DC rejection, bounded gain, noise floor and peak ceiling");
+    puts("PASS weak speech, low noise, isolated 16089/7853 peaks, silence and DAC-aware soft limiter");
     test_worker();
     puts("PASS tone/replay/tone, PSRAM A/B, slot selection, corruption rejection, mute, 20 cycles and faults");
     return 0;

@@ -20,7 +20,8 @@
 
 typedef enum {
     COMMAND_RETRY, COMMAND_TONE, COMMAND_PCM, COMMAND_RECORD, COMMAND_REPLAY, COMMAND_PSRAM_TONE,
-    COMMAND_STOP, COMMAND_CANCEL, COMMAND_CLEAR, COMMAND_SLOT, COMMAND_VOLUME, COMMAND_MUTE, COMMAND_EXIT,
+    COMMAND_STOP, COMMAND_CANCEL, COMMAND_CLEAR, COMMAND_SLOT, COMMAND_ADC_GAIN, COMMAND_DAC_GAIN,
+    COMMAND_VOLUME, COMMAND_MUTE, COMMAND_EXIT,
 } command_kind_t;
 
 typedef struct {
@@ -28,6 +29,7 @@ typedef struct {
     const uint8_t *pcm;
     size_t count;
     unsigned value;
+    int gain_db;
 } audio_command_t;
 
 typedef struct {
@@ -79,8 +81,9 @@ static void log_signal(const char *stage, const audio_signal_t *signal)
 {
     const unsigned zero_permille = signal->count ? signal->zeros * 1000U / signal->count : 0;
     const int dc = signal->count ? (int)(signal->sum / signal->count) : 0;
-    ESP_LOGI(TAG, "%s n=%u peak=%u rms=%u ac_rms=%u min=%d max=%d dc=%d zero_permille=%u clipped=%u",
-             stage, (unsigned)signal->count, (unsigned)signal->peak, (unsigned)audio_signal_rms(signal),
+    ESP_LOGI(TAG, "%s n=%u peak=%u peak_ms=%u rms=%u ac_rms=%u min=%d max=%d dc=%d zero_permille=%u clipped=%u",
+             stage, (unsigned)signal->count, (unsigned)signal->peak,
+             (unsigned)(signal->peak_index / (BOARD_AUDIO_RATE / 1000)), (unsigned)audio_signal_rms(signal),
              (unsigned)audio_signal_ac_rms(signal), (int)signal->min, (int)signal->max, dc,
              zero_permille, (unsigned)signal->clipped);
 }
@@ -230,7 +233,7 @@ static void start_recording(audio_worker_t *worker)
         return;
     }
     worker->recorded_slot = worker->status.input_slot;
-    esp_err_t err = audio_hw_start_rx();
+    esp_err_t err = audio_hw_start_rx(worker->status.adc_gain_db);
     worker->deadline = esp_timer_get_time() + RECORD_US;
     if (err != ESP_OK) {
         finish(worker, err, true);
@@ -320,13 +323,18 @@ static void start_playback(audio_worker_t *worker, const audio_command_t *comman
             return;
         }
     }
+    const int dac_db = command->kind == COMMAND_REPLAY ? worker->status.dac_gain_db : BOARD_AUDIO_DEFAULT_DAC_DB;
     if (command->kind == COMMAND_REPLAY) {
-        worker->replay_gain = audio_replay_gain(&source);
+        worker->replay_gain = audio_replay_gain(&source, worker->playback, dac_db);
         ESP_LOGI(TAG, "Replay compensation slot=%u dc_removed=%d gain_q8=%u (unity=256)",
                  (unsigned)worker->recorded_slot, (int)worker->replay_gain.dc, worker->replay_gain.gain_q8);
+        ESP_LOGI(TAG, "Replay frames=%u voice=%u transient=%u noise_upper_rms=%u voice_rms=%u limiter=%u dac_db=%d",
+                 worker->replay_gain.total_frames, worker->replay_gain.voice_frames,
+                 worker->replay_gain.transient_frames, worker->replay_gain.noise_rms,
+                 worker->replay_gain.voice_rms, worker->replay_gain.peak_limit, dac_db);
     }
     set_state(worker, BOARD_AUDIO_PLAYING, ESP_OK);
-    esp_err_t result = audio_hw_start_tx();
+    esp_err_t result = audio_hw_start_tx(dac_db);
     if (result == ESP_OK) {
         result = audio_hw_set_mute(worker->status.muted || !worker->status.volume);
     }
@@ -418,6 +426,12 @@ static void handle_command(audio_worker_t *worker, const audio_command_t *comman
     case COMMAND_SLOT:
         worker->status.input_slot = command->value;
         break;
+    case COMMAND_ADC_GAIN:
+        worker->status.adc_gain_db = (unsigned)command->gain_db;
+        break;
+    case COMMAND_DAC_GAIN:
+        worker->status.dac_gain_db = command->gain_db;
+        break;
     case COMMAND_VOLUME:
     case COMMAND_MUTE:
         if (command->kind == COMMAND_VOLUME) {
@@ -439,13 +453,21 @@ static void handle_command(audio_worker_t *worker, const audio_command_t *comman
 
 static bool reserves_state(command_kind_t kind)
 {
-    return kind <= COMMAND_PSRAM_TONE || kind == COMMAND_CLEAR || kind == COMMAND_SLOT;
+    return kind <= COMMAND_PSRAM_TONE || (kind >= COMMAND_CLEAR && kind <= COMMAND_DAC_GAIN);
+}
+
+static board_audio_status_t default_status(board_audio_state_t state, esp_err_t error)
+{
+    return (board_audio_status_t){
+        .state = state, .error = error, .volume = 20,
+        .adc_gain_db = BOARD_AUDIO_DEFAULT_ADC_DB, .dac_gain_db = BOARD_AUDIO_DEFAULT_DAC_DB,
+    };
 }
 
 static void audio_task(void *argument)
 {
     (void)argument;
-    audio_worker_t worker = {.status = {.volume = 20}};
+    audio_worker_t worker = {.status = default_status(BOARD_AUDIO_OFFLINE, ESP_OK)};
     int16_t stereo[AUDIO_BLOCK_FRAMES * 2];
     initialize(&worker);
     publish(&worker, false);
@@ -483,7 +505,7 @@ esp_err_t board_audio_init(void)
     commands = xQueueCreate(COMMAND_DEPTH, sizeof(audio_command_t));
     snapshot_lock = xSemaphoreCreateMutex();
     worker_done = xSemaphoreCreateBinary();
-    snapshot = (board_audio_status_t){.state = BOARD_AUDIO_INITIALIZING, .volume = 20};
+    snapshot = default_status(BOARD_AUDIO_INITIALIZING, ESP_OK);
     command_pending = false;
     if (commands && snapshot_lock && worker_done &&
         xTaskCreate(audio_task, "zhiya_audio", WORKER_STACK_BYTES, NULL, 4, NULL) == pdPASS) {
@@ -501,7 +523,7 @@ esp_err_t board_audio_init(void)
     commands = NULL;
     snapshot_lock = NULL;
     worker_done = NULL;
-    snapshot = (board_audio_status_t){.state = BOARD_AUDIO_ERROR, .error = ESP_ERR_NO_MEM, .volume = 20};
+    snapshot = default_status(BOARD_AUDIO_ERROR, ESP_ERR_NO_MEM);
     return ESP_ERR_NO_MEM;
 }
 
@@ -558,6 +580,8 @@ static esp_err_t submit(audio_command_t command)
         allowed = idle && state == BOARD_AUDIO_IDLE;
         break;
     case COMMAND_SLOT:
+    case COMMAND_ADC_GAIN:
+    case COMMAND_DAC_GAIN:
         allowed = idle;
         break;
     case COMMAND_STOP:
@@ -635,4 +659,20 @@ esp_err_t board_audio_set_input_slot(unsigned slot)
 esp_err_t board_audio_set_mute(bool muted)
 {
     return submit((audio_command_t){.kind = COMMAND_MUTE, .value = muted});
+}
+
+esp_err_t board_audio_set_adc_gain(unsigned db)
+{
+    if (db != 18 && db != 24 && db != 27 && db != 30) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return submit((audio_command_t){.kind = COMMAND_ADC_GAIN, .gain_db = (int)db});
+}
+
+esp_err_t board_audio_set_dac_gain(int db)
+{
+    if (db != -18 && db != -12 && db != -6) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return submit((audio_command_t){.kind = COMMAND_DAC_GAIN, .gain_db = db});
 }

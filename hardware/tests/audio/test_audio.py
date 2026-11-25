@@ -23,10 +23,12 @@ def main():
         panel = (components / "board_4_3c" / "board_4_3c_panel.c").read_text(encoding="utf-8")
         write_functions(build / "expander_functions.h", panel, ("update_expander", "set_output"))
         driver = (audio / "audio_hw.c").read_text(encoding="utf-8")
+        dac_constants = "\n".join(line for line in driver.splitlines() if line.startswith("#define ES8311_"))
         write_functions(build / "hardware_functions.h", driver, (
-            "keep_first_error", "start_silent_clock", "audio_hw_start_rx", "audio_hw_start_tx",
+            "keep_first_error", "start_silent_clock", "read_codec_reg", "configure_adc_gain",
+            "configure_dac_gain", "audio_hw_start_rx", "audio_hw_start_tx",
             "audio_hw_stop", "audio_hw_release",
-        ))
+        ), dac_constants)
         includes = [str(path) for path in (build, here, audio, audio / "include")]
         compiler = [args.cc, "-std=c11", "-Wall", "-Wextra", "-Werror", *(f"-I{path}" for path in includes)]
         for test, sources in (
@@ -38,10 +40,10 @@ def main():
             subprocess.run([str(executable)], check=True)
 
 
-def write_functions(path, source, names):
+def write_functions(path, source, names, prefix=""):
     bodies = [re.search(r"(?:static )?(?:esp_err_t|void) " + name + r"\([^{}]+\)\n\{.*?\n\}",
                        source, re.S).group() for name in names]
-    path.write_text("\n".join(bodies), encoding="utf-8")
+    path.write_text("\n".join([prefix, *bodies]), encoding="utf-8")
 
 
 if __name__ == "__main__":

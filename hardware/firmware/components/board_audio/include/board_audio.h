@@ -9,6 +9,8 @@
 #define BOARD_AUDIO_MIN_SAMPLES 8000U
 #define BOARD_AUDIO_MAX_SAMPLES 240000U
 #define BOARD_AUDIO_MAX_VOLUME 40U
+#define BOARD_AUDIO_DEFAULT_ADC_DB 18U
+#define BOARD_AUDIO_DEFAULT_DAC_DB (-18)
 #define BOARD_AUDIO_WAV_HEADER_BYTES 44U
 
 typedef enum {
@@ -30,6 +32,8 @@ typedef struct {
     uint16_t slot_peak[2];
     uint16_t slot_rms[2];
     uint8_t input_slot;
+    unsigned adc_gain_db;
+    int dac_gain_db;
     unsigned volume;
     bool muted;
     bool constant_input;
@@ -45,6 +49,8 @@ esp_err_t board_audio_retry(void);
 esp_err_t board_audio_test_tone(void);
 esp_err_t board_audio_psram_test_tone(void);
 esp_err_t board_audio_set_input_slot(unsigned slot);
+esp_err_t board_audio_set_adc_gain(unsigned db);
+esp_err_t board_audio_set_dac_gain(int db);
 /* Keep input readable until the snapshot has neither pending nor playing. */
 esp_err_t board_audio_play_pcm(const int16_t *samples, size_t count);
 esp_err_t board_audio_play_wav(const void *buffer, size_t bytes);

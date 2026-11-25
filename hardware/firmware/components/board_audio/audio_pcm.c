@@ -5,9 +5,14 @@
 #include "board_audio.h"
 
 #define REPLAY_TARGET_RMS 2200U
-#define REPLAY_MIN_AC_RMS 128U
-#define REPLAY_PEAK_LIMIT 8192
-#define REPLAY_MAX_GAIN (4U * AUDIO_GAIN_UNITY)
+#define REPLAY_MAX_GAIN (16U * AUDIO_GAIN_UNITY)
+#define REPLAY_FRAME_SAMPLES (BOARD_AUDIO_RATE / 50U)
+#define REPLAY_MIN_VOICE_FRAMES 3U
+
+static const uint16_t frame_limits[] = {
+    1, 2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384,
+    512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384, 24576, 32768,
+};
 
 void audio_signal_add(audio_signal_t *signal, int16_t sample)
 {
@@ -32,6 +37,7 @@ void audio_signal_add(audio_signal_t *signal, int16_t sample)
     }
     if (magnitude > signal->peak) {
         signal->peak = magnitude;
+        signal->peak_index = signal->count - 1;
     }
 }
 
@@ -50,25 +56,67 @@ uint16_t audio_signal_ac_rms(const audio_signal_t *signal)
     return variance > 0 ? (uint16_t)sqrt(variance) : 0;
 }
 
-audio_replay_gain_t audio_replay_gain(const audio_signal_t *signal)
+audio_replay_gain_t audio_replay_gain(const audio_signal_t *signal, const uint8_t *pcm, int dac_db)
 {
-    audio_replay_gain_t gain = {.gain_q8 = AUDIO_GAIN_UNITY};
+    audio_replay_gain_t gain = {
+        .gain_q8 = AUDIO_GAIN_UNITY, .peak_limit = dac_db == -6 ? 2057U : dac_db == -12 ? 4105U : 8192U,
+    };
     if (!signal->count) {
         return gain;
     }
     gain.dc = (int32_t)(signal->sum / signal->count);
-    const unsigned ac_rms = audio_signal_ac_rms(signal);
-    if (ac_rms >= REPLAY_MIN_AC_RMS && ac_rms < REPLAY_TARGET_RMS) {
-        const unsigned target_gain = REPLAY_TARGET_RMS * AUDIO_GAIN_UNITY / ac_rms;
-        gain.gain_q8 = target_gain < REPLAY_MAX_GAIN ? target_gain : REPLAY_MAX_GAIN;
+
+    enum { BIN_COUNT = sizeof(frame_limits) / sizeof(frame_limits[0]) };
+    unsigned counts[BIN_COUNT] = {0};
+    unsigned totals[BIN_COUNT] = {0};
+    unsigned clean_frames = 0;
+    for (size_t offset = 0; offset + REPLAY_FRAME_SAMPLES <= signal->count; offset += REPLAY_FRAME_SAMPLES) {
+        audio_signal_t frame = {0};
+        for (size_t index = 0; index < REPLAY_FRAME_SAMPLES; ++index) {
+            audio_signal_add(&frame, audio_pcm16_read(pcm + (offset + index) * 2));
+        }
+        gain.total_frames++;
+        const unsigned rms = audio_signal_ac_rms(&frame);
+        const int32_t mean = (int32_t)(frame.sum / frame.count);
+        const int32_t positive = frame.max - mean;
+        const int32_t negative = mean - frame.min;
+        const unsigned peak = positive > negative ? positive : negative;
+        if (peak >= 1024 && peak > 12 * rms) {
+            gain.transient_frames++;
+            continue;
+        }
+        unsigned bin = 0;
+        while (rms > frame_limits[bin] && bin + 1 < BIN_COUNT) {
+            ++bin;
+        }
+        counts[bin]++;
+        totals[bin] += rms;
+        clean_frames++;
     }
-    const int32_t above_dc = signal->max - gain.dc;
-    const int32_t below_dc = gain.dc - signal->min;
-    const unsigned centered_peak = above_dc > below_dc ? above_dc : below_dc;
-    if (centered_peak) {
-        const unsigned peak_gain = REPLAY_PEAK_LIMIT * AUDIO_GAIN_UNITY / centered_peak;
-        if (peak_gain < gain.gain_q8) {
-            gain.gain_q8 = peak_gain;
+    if (!clean_frames) {
+        return gain;
+    }
+    unsigned seen = 0;
+    for (unsigned bin = 0; bin < BIN_COUNT; ++bin) {
+        seen += counts[bin];
+        if (seen > clean_frames / 5) {
+            gain.noise_rms = frame_limits[bin];
+            break;
+        }
+    }
+    const unsigned threshold = gain.noise_rms < 2 ? 4 : gain.noise_rms * 2;
+    unsigned voice_total = 0;
+    for (unsigned bin = 1; bin < BIN_COUNT; ++bin) {
+        if (frame_limits[bin - 1] >= threshold) {
+            gain.voice_frames += counts[bin];
+            voice_total += totals[bin];
+        }
+    }
+    if (gain.voice_frames >= REPLAY_MIN_VOICE_FRAMES) {
+        gain.voice_rms = voice_total / gain.voice_frames;
+        const unsigned target_gain = REPLAY_TARGET_RMS * AUDIO_GAIN_UNITY / gain.voice_rms;
+        if (target_gain > AUDIO_GAIN_UNITY) {
+            gain.gain_q8 = target_gain < REPLAY_MAX_GAIN ? target_gain : REPLAY_MAX_GAIN;
         }
     }
     return gain;
@@ -77,11 +125,13 @@ audio_replay_gain_t audio_replay_gain(const audio_signal_t *signal)
 int16_t audio_replay_apply(int16_t sample, audio_replay_gain_t gain)
 {
     const int32_t scaled = ((int32_t)sample - gain.dc) * (int32_t)gain.gain_q8 / (int32_t)AUDIO_GAIN_UNITY;
-    if (scaled > REPLAY_PEAK_LIMIT) {
-        return REPLAY_PEAK_LIMIT;
-    }
-    if (scaled < -REPLAY_PEAK_LIMIT) {
-        return -REPLAY_PEAK_LIMIT;
+    const unsigned magnitude = scaled < 0 ? -scaled : scaled;
+    const unsigned knee = gain.peak_limit / 2;
+    if (magnitude > knee) {
+        const unsigned excess = magnitude - knee;
+        const unsigned span = gain.peak_limit - knee;
+        const int32_t limited = knee + (uint32_t)((uint64_t)span * excess / (span + excess));
+        return (int16_t)(scaled < 0 ? -limited : limited);
     }
     return (int16_t)scaled;
 }

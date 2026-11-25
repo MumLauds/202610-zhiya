@@ -7,6 +7,9 @@
 #include "es7210_adc.h"
 #include "es8311_codec.h"
 
+#define ES8311_VOLUME_ZERO_CODE 191
+#define ES8311_DEFAULT_VOLTAGE_COMP_CODES 7
+
 #if CONFIG_CODEC_I2C_BACKWARD_COMPATIBLE
 #error H07 requires the ESP-IDF I2C master bus API
 #endif
@@ -148,7 +151,6 @@ esp_err_t audio_hw_init(void)
 
     ESP_RETURN_ON_ERROR(configure_serial_format(adc), TAG, "ES7210 format");
     ESP_RETURN_ON_ERROR(configure_serial_format(dac), TAG, "ES8311 format");
-    ESP_RETURN_ON_ERROR(codec_result(adc->set_mic_gain(adc, 18.0f)), TAG, "ES7210 gain");
     ESP_RETURN_ON_ERROR(codec_result(dac->mute(dac, true)), TAG, "ES8311 mute");
 
     i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
@@ -181,24 +183,72 @@ static esp_err_t start_silent_clock(void)
     return ESP_OK;
 }
 
-esp_err_t audio_hw_start_rx(void)
+static esp_err_t read_codec_reg(const audio_codec_if_t *codec, int reg, int *value)
+{
+    return codec_result(codec->get_reg(codec, reg, value));
+}
+
+static esp_err_t configure_adc_gain(unsigned gain_db)
+{
+    int previous_left = 0;
+    int previous_right = 0;
+    int left = 0;
+    int right = 0;
+    int serial = 0;
+    int mode = 0;
+    ESP_RETURN_ON_ERROR(read_codec_reg(adc, 0x43, &previous_left), TAG, "Read ADC MIC1 gain after enable");
+    ESP_RETURN_ON_ERROR(read_codec_reg(adc, 0x44, &previous_right), TAG, "Read ADC MIC2 gain after enable");
+    const int driver_result = adc->set_mic_gain(adc, (float)gain_db);
+    const esp_err_t result = codec_result(driver_result);
+    ESP_LOGI(TAG, "ADC requested=+%u dB driver=%d status=%s previous_gain_code=%d/%d",
+             gain_db, driver_result, esp_err_to_name(result), previous_left & 0x0f, previous_right & 0x0f);
+    ESP_RETURN_ON_ERROR(result, TAG, "Set ES7210 gain after enable");
+    ESP_RETURN_ON_ERROR(read_codec_reg(adc, 0x43, &left), TAG, "Verify ADC MIC1 gain");
+    ESP_RETURN_ON_ERROR(read_codec_reg(adc, 0x44, &right), TAG, "Verify ADC MIC2 gain");
+    ESP_RETURN_ON_ERROR(read_codec_reg(adc, 0x11, &serial), TAG, "Verify ADC serial format");
+    ESP_RETURN_ON_ERROR(read_codec_reg(adc, 0x12, &mode), TAG, "Verify ADC slot mode");
+    const int expected = 0x10 | (int)(gain_db / 3);
+    const bool valid = (left & 0x1f) == expected && (right & 0x1f) == expected &&
+                       (serial & 0xe3) == 0x60 && !(mode & 0x02);
+    ESP_LOGI(TAG, "ADC MIC1=0x%02x MIC2=0x%02x format=0x%02x mode=0x%02x verified=%d",
+             (unsigned)left, (unsigned)right, (unsigned)serial, (unsigned)mode, valid);
+    return valid ? ESP_OK : ESP_ERR_INVALID_RESPONSE;
+}
+
+static esp_err_t configure_dac_gain(int gain_db)
+{
+    const int driver_result = dac->set_vol(dac, (float)gain_db);
+    const esp_err_t result = codec_result(driver_result);
+    ESP_LOGI(TAG, "DAC requested=%d dB driver=%d status=%s", gain_db, driver_result, esp_err_to_name(result));
+    ESP_RETURN_ON_ERROR(result, TAG, "Set ES8311 gain");
+    int actual = 0;
+    ESP_RETURN_ON_ERROR(read_codec_reg(dac, 0x32, &actual), TAG, "Read ES8311 gain");
+    const int expected = ES8311_VOLUME_ZERO_CODE + ES8311_DEFAULT_VOLTAGE_COMP_CODES + 2 * gain_db;
+    ESP_LOGI(TAG, "DAC volume=0x%02x expected=0x%02x register_half_db=%d verified=%d",
+             (unsigned)actual, (unsigned)expected, actual - ES8311_VOLUME_ZERO_CODE, actual == expected);
+    return actual == expected ? ESP_OK : ESP_ERR_INVALID_RESPONSE;
+}
+
+esp_err_t audio_hw_start_rx(unsigned gain_db)
 {
     ESP_RETURN_ON_ERROR(board_4_3c_set_audio_amp(false), TAG, "PA disable before RX");
     ESP_RETURN_ON_ERROR(start_silent_clock(), TAG, "I2S clock for RX");
     ESP_RETURN_ON_ERROR(codec_result(adc->enable(adc, true)), TAG, "Enable ES7210");
+    ESP_RETURN_ON_ERROR(configure_serial_format(adc), TAG, "Restore ES7210 format");
+    ESP_RETURN_ON_ERROR(configure_adc_gain(gain_db), TAG, "Verify ES7210 active gain and format");
     const esp_err_t result = i2s_channel_enable(receive);
     receiving = result == ESP_OK;
     return result;
 }
 
-esp_err_t audio_hw_start_tx(void)
+esp_err_t audio_hw_start_tx(int gain_db)
 {
     ESP_RETURN_ON_ERROR(board_4_3c_set_audio_amp(false), TAG, "PA disable before TX");
     ESP_RETURN_ON_ERROR(start_silent_clock(), TAG, "I2S clock for TX");
     ESP_RETURN_ON_ERROR(codec_result(dac->enable(dac, true)), TAG, "Enable ES8311");
     ESP_RETURN_ON_ERROR(codec_result(dac->mute(dac, true)), TAG, "Mute ES8311 before PA");
     ESP_RETURN_ON_ERROR(configure_serial_format(dac), TAG, "Restore ES8311 format");
-    ESP_RETURN_ON_ERROR(codec_result(dac->set_vol(dac, -18.0f)), TAG, "Restore ES8311 gain");
+    ESP_RETURN_ON_ERROR(configure_dac_gain(gain_db), TAG, "Verify ES8311 active gain");
     ESP_RETURN_ON_ERROR(board_4_3c_set_audio_amp(true), TAG, "Enable PA");
     return ESP_OK;
 }

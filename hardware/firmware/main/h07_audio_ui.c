@@ -27,6 +27,8 @@ static lv_obj_t *volume_slider;
 static lv_obj_t *psram_button;
 static lv_obj_t *slot_button;
 static lv_obj_t *slot_label;
+static lv_obj_t *adc_button;
+static lv_obj_t *dac_button;
 static esp_err_t request_error;
 
 static lv_obj_t *label_at(lv_obj_t *parent, const char *text, int x, int y)
@@ -66,6 +68,19 @@ static esp_err_t toggle_mute(void)
 static esp_err_t toggle_slot(void)
 {
     return board_audio_set_input_slot(1U - board_audio_status().input_slot);
+}
+
+static esp_err_t next_adc_gain(void)
+{
+    const unsigned current = board_audio_status().adc_gain_db;
+    const unsigned next = current == 18 ? 24 : current == 30 ? 18 : current + 3;
+    return board_audio_set_adc_gain(next);
+}
+
+static esp_err_t next_dac_gain(void)
+{
+    const int current = board_audio_status().dac_gain_db;
+    return board_audio_set_dac_gain(current == -6 ? -18 : current + 6);
 }
 
 static lv_obj_t *button_at(lv_obj_t *parent, const char *text, int x, int y, audio_action_t action,
@@ -126,6 +141,8 @@ static void refresh(lv_timer_t *timer)
                           (unsigned)status.slot_peak[0], (unsigned)status.slot_rms[0],
                           (unsigned)status.slot_peak[1], (unsigned)status.slot_rms[1]);
     lv_label_set_text_fmt(slot_label, "Use slot %u", (unsigned)status.input_slot);
+    lv_label_set_text_fmt(lv_obj_get_child(adc_button, 0), "ADC +%u dB", status.adc_gain_db);
+    lv_label_set_text_fmt(lv_obj_get_child(dac_button, 0), "DAC %d dB", status.dac_gain_db);
     lv_label_set_text_fmt(volume_label, "Volume %u%%", status.volume);
     lv_label_set_text(mute_label, status.muted ? "恢复" : "静音");
     const esp_err_t error = request_error != ESP_OK ? request_error : status.error;
@@ -142,11 +159,13 @@ static void refresh(lv_timer_t *timer)
     set_enabled(mute_button, status.state != BOARD_AUDIO_OFFLINE);
     set_enabled(psram_button, idle && status.state == BOARD_AUDIO_IDLE);
     set_enabled(slot_button, idle);
+    set_enabled(adc_button, idle);
+    set_enabled(dac_button, idle);
 }
 
 esp_err_t h07_audio_ui_create(lv_display_t *display)
 {
-    static audio_action_t actions[10];
+    static audio_action_t actions[12];
     lv_obj_t *screen = lv_display_get_screen_active(display);
     lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(screen, lv_color_hex(0xedf5f2), 0);
@@ -180,19 +199,23 @@ esp_err_t h07_audio_ui_create(lv_display_t *display)
     mute_button = button_at(screen, "静音", 534, 325, toggle_mute, &actions[7]);
     slot_button = button_at(screen, "Use slot 0", 530, 21, toggle_slot, &actions[8]);
     psram_button = button_at(screen, "PSRAM tone", 658, 21, board_audio_psram_test_tone, &actions[9]);
+    adc_button = button_at(screen, "ADC +18 dB", 534, 389, next_adc_gain, &actions[10]);
+    dac_button = button_at(screen, "DAC -18 dB", 662, 389, next_dac_gain, &actions[11]);
     volume_label = label_at(screen, "", 22, 340);
     message = label_at(screen, "", 22, 412);
     volume_slider = lv_slider_create(screen);
     if (!state_label || !length_label || !progress || !level_label || !level_meter ||
         !tone_button || !record_button || !stop_button || !cancel_button || !replay_button ||
         !clear_button || !retry_button || !mute_button || !volume_label || !message || !volume_slider ||
-        !slot_button || !psram_button) {
+        !slot_button || !psram_button || !adc_button || !dac_button) {
         return ESP_ERR_NO_MEM;
     }
     mute_label = lv_obj_get_child(mute_button, 0);
     slot_label = lv_obj_get_child(slot_button, 0);
     lv_obj_set_style_text_font(slot_label, LV_FONT_DEFAULT, 0);
     lv_obj_set_style_text_font(lv_obj_get_child(psram_button, 0), LV_FONT_DEFAULT, 0);
+    lv_obj_set_style_text_font(lv_obj_get_child(adc_button, 0), LV_FONT_DEFAULT, 0);
+    lv_obj_set_style_text_font(lv_obj_get_child(dac_button, 0), LV_FONT_DEFAULT, 0);
     lv_obj_set_pos(progress, 0, 73);
     lv_obj_set_size(progress, 326, 14);
     lv_bar_set_range(progress, 0, 150);
