@@ -1,0 +1,183 @@
+{
+  "demoOnly": true,
+  "kind": "zhiya-hardware-demo-error-scenarios",
+  "notice": "仅用于本地 Mock 错误注入；响应不是真实后端记录，也不代表真实授权结果。",
+  "scenarios": [
+    {
+      "appliesTo": [
+        "/api/v1/*"
+      ],
+      "code": "AUTH_REQUIRED",
+      "demoOnly": true,
+      "message": "本地 Mock 没有设备凭证",
+      "mode": "error",
+      "retryable": false,
+      "scenarioId": "AUTH_REQUIRED",
+      "status": 401
+    },
+    {
+      "appliesTo": [
+        "/api/v1/*"
+      ],
+      "code": "FORBIDDEN",
+      "demoOnly": true,
+      "message": "本地 Mock 的授权范围拒绝",
+      "mode": "error",
+      "retryable": false,
+      "scenarioId": "FORBIDDEN",
+      "status": 403
+    },
+    {
+      "appliesTo": [
+        "/api/v1/*"
+      ],
+      "code": "RESOURCE_NOT_FOUND",
+      "demoOnly": true,
+      "message": "本地 Mock 资源不存在",
+      "mode": "error",
+      "retryable": false,
+      "scenarioId": "RESOURCE_NOT_FOUND",
+      "status": 404
+    },
+    {
+      "appliesTo": [
+        "/api/v1/reading-sessions/*/events",
+        "/api/v1/reading-sessions/*/questions",
+        "/api/v1/reading-sessions/*/completions"
+      ],
+      "code": "SESSION_CONFLICT",
+      "demoOnly": true,
+      "message": "Mock 会话修订冲突，请先读取会话",
+      "mode": "error",
+      "retryable": false,
+      "scenarioId": "SESSION_CONFLICT",
+      "status": 409
+    },
+    {
+      "appliesTo": [
+        "/api/v1/reading-sessions/*/events",
+        "/api/v1/reading-sessions/*/questions",
+        "/api/v1/reading-sessions/*/completions"
+      ],
+      "code": "IDEMPOTENCY_CONFLICT",
+      "demoOnly": true,
+      "message": "Mock 请求标识已用于其他操作",
+      "mode": "error",
+      "retryable": false,
+      "scenarioId": "IDEMPOTENCY_CONFLICT",
+      "status": 409
+    },
+    {
+      "appliesTo": [
+        "/api/v1/reading-sessions/*/events",
+        "/api/v1/reading-sessions/*/questions"
+      ],
+      "code": "SESSION_CONFLICT",
+      "demoOnly": true,
+      "message": "本次阅读已结束",
+      "mode": "error",
+      "retryable": false,
+      "scenarioId": "SESSION_ENDED",
+      "status": 409
+    },
+    {
+      "appliesTo": [
+        "/api/v1/reading-sessions/*/events"
+      ],
+      "code": "VALIDATION_ERROR",
+      "demoOnly": true,
+      "message": "Mock 页码不合法",
+      "mode": "error",
+      "retryable": false,
+      "scenarioId": "INVALID_PAGE",
+      "status": 422
+    },
+    {
+      "appliesTo": [
+        "/api/v1/*"
+      ],
+      "code": "VALIDATION_ERROR",
+      "demoOnly": true,
+      "message": "Mock 请求字段不合法",
+      "mode": "error",
+      "retryable": false,
+      "scenarioId": "VALIDATION_ERROR",
+      "status": 422
+    },
+    {
+      "appliesTo": [
+        "/api/v1/*"
+      ],
+      "code": "DEPENDENCY_UNAVAILABLE",
+      "demoOnly": true,
+      "message": "Mock 依赖暂不可用",
+      "mode": "error",
+      "retryable": true,
+      "retryableByMethod": {
+        "GET": true,
+        "POST": false
+      },
+      "scenarioId": "DEPENDENCY_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "appliesTo": [
+        "/api/v1/reading-sessions/*/events",
+        "/api/v1/reading-sessions/*/questions",
+        "/api/v1/reading-sessions/*/completions"
+      ],
+      "code": "REQUEST_OUTCOME_UNKNOWN",
+      "demoOnly": true,
+      "message": "Mock 写入结果未知，请先读取会话",
+      "mode": "error",
+      "retryable": false,
+      "scenarioId": "REQUEST_OUTCOME_UNKNOWN",
+      "status": 504
+    },
+    {
+      "appliesTo": [
+        "/api/v1/storybooks"
+      ],
+      "code": null,
+      "demoOnly": true,
+      "message": "Mock 空书架",
+      "mode": "payload",
+      "payload": {
+        "items": [],
+        "page": 1,
+        "pageSize": 20
+      },
+      "retryable": false,
+      "scenarioId": "NO_BOOKS",
+      "status": 200
+    },
+    {
+      "action": "stripLocalCover",
+      "appliesTo": [
+        "/api/v1/storybooks",
+        "/api/v1/story-versions/*"
+      ],
+      "code": null,
+      "demoOnly": true,
+      "message": "Mock 移除本地封面，模拟缺图",
+      "mode": "payload",
+      "retryable": false,
+      "scenarioId": "COVER_MISSING",
+      "status": 200
+    },
+    {
+      "appliesTo": [
+        "/mock/voice/*"
+      ],
+      "code": "VOICE_BUSY",
+      "demoOnly": true,
+      "message": "Mock 语音并发忙碌",
+      "mode": "error",
+      "retryAfter": 1,
+      "retryable": true,
+      "scenarioId": "VOICE_BUSY",
+      "status": 429
+    }
+  ],
+  "schemaVersion": "1.0"
+}

@@ -1,0 +1,830 @@
+{
+  "demoOnly": true,
+  "items": [
+    {
+      "ageBand": "AGE_3_4",
+      "ageMax": 4,
+      "ageMin": 3,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b002-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b002-detail.jpg",
+          "fileSize": 38105,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "69a4af335f9868c1ae0c37223f32b3b52f4480995154c8372b8c8145ac1902c3",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b002-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b002-thumb.jpg",
+          "fileSize": 12011,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "ae20451a4ba1aeddd1f9796a94d424dc670a99e9cec5391002a8ac38898e3be4",
+          "width": 213
+        }
+      },
+      "pageCount": 6,
+      "status": "PUBLISHED",
+      "storyVersionId": 2,
+      "storybookId": 2,
+      "title": "小狐狸的雨伞",
+      "topics": [
+        "勇气",
+        "亲子依恋"
+      ],
+      "totalPages": 6,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_4_5",
+      "ageMax": 5,
+      "ageMin": 4,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b003-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b003-detail.jpg",
+          "fileSize": 30427,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "5fde62892b9ecbde89e27e1db7e0a3050907fb344cdf7a7db3f62327cd09d4f7",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b003-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b003-thumb.jpg",
+          "fileSize": 10312,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "44c11ebc428151335f170ee7c0420ea47f9a61bc51704f49b932293c13951cfd",
+          "width": 213
+        }
+      },
+      "pageCount": 6,
+      "status": "PUBLISHED",
+      "storyVersionId": 3,
+      "storybookId": 3,
+      "title": "青蛙的音乐会",
+      "topics": [
+        "友谊",
+        "自然观察"
+      ],
+      "totalPages": 6,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_3_4",
+      "ageMax": 4,
+      "ageMin": 3,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b004-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b004-detail.jpg",
+          "fileSize": 30309,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "f80c3ef6337e5b2519e19d8931e916a78a93797313d5616234cee232d3c99357",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b004-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b004-thumb.jpg",
+          "fileSize": 9570,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "be8f0bf6ee49a413d45646f8b3c23508f1c8122561d337f54bed09a4a88fdf0e",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 4,
+      "storybookId": 4,
+      "title": "晚安小熊",
+      "topics": [
+        "情绪安抚",
+        "亲子依恋"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_4_5",
+      "ageMax": 5,
+      "ageMin": 4,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b005-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b005-detail.jpg",
+          "fileSize": 27427,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "41e98ace6f19add5d0bd765cf9c9f29ba8d56d820b9f160c59a2bd17b0e746d2",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b005-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b005-thumb.jpg",
+          "fileSize": 9166,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "ee5bee38873f0cf39b5fccf938c0bc0876791d00f99504e17eb68a52f8a2d2fa",
+          "width": 213
+        }
+      },
+      "pageCount": 6,
+      "status": "PUBLISHED",
+      "storyVersionId": 5,
+      "storybookId": 5,
+      "title": "蜗牛的旅行",
+      "topics": [
+        "生命成长",
+        "勇气"
+      ],
+      "totalPages": 6,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_5_6",
+      "ageMax": 6,
+      "ageMin": 5,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b006-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b006-detail.jpg",
+          "fileSize": 32900,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "77644d7f7e625009af445cacf553c6bdcc9ead2f7f305e2190748b6776f43f09",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b006-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b006-thumb.jpg",
+          "fileSize": 10523,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "c25b12731175d1f10f0c0353d46333b5c1d135d9f4634803fa5cc5f32f41215c",
+          "width": 213
+        }
+      },
+      "pageCount": 6,
+      "status": "PUBLISHED",
+      "storyVersionId": 6,
+      "storybookId": 6,
+      "title": "胡萝卜的种子",
+      "topics": [
+        "生命成长",
+        "自然观察"
+      ],
+      "totalPages": 6,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_3_4",
+      "ageMax": 4,
+      "ageMin": 3,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b007-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b007-detail.jpg",
+          "fileSize": 27777,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "9999ca6e49c208f60c10876265a70d9aca66514df9b096dce4380b2b7cd359fd",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b007-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b007-thumb.jpg",
+          "fileSize": 9358,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "6f619368ea768ce905adfe62bebd4db6e3d0113abf74f5383d13a7057e3d0dad",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 7,
+      "storybookId": 7,
+      "title": "猫咪和蝴蝶",
+      "topics": [
+        "自然观察",
+        "友谊"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_3_4",
+      "ageMax": 4,
+      "ageMin": 3,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b008-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b008-detail.jpg",
+          "fileSize": 29645,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "8a18301deb5cdf897414cb51245f3c3373c9d3ff770375120d4ad14c2016477f",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b008-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b008-thumb.jpg",
+          "fileSize": 10118,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "dd0c1e4bb39429a0ca3b56890c4fe65f715961af0e63e00c79b94b6477d53366",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 8,
+      "storybookId": 8,
+      "title": "月亮的小被子",
+      "topics": [
+        "情绪安抚",
+        "想象"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_3_4",
+      "ageMax": 4,
+      "ageMin": 3,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b009-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b009-detail.jpg",
+          "fileSize": 25916,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "1e023a16fd56c564a4bfd8e9173f3c1125c535a3987687ae7c18041729f24bcd",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b009-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b009-thumb.jpg",
+          "fileSize": 9059,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "e42e49eb5f366ece3ffaf86d7e72701f3ad952137955c21ba9159ad2d1bdbe1f",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 9,
+      "storybookId": 9,
+      "title": "小熊的面包店",
+      "topics": [
+        "分享",
+        "友谊"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_3_4",
+      "ageMax": 4,
+      "ageMin": 3,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b010-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b010-detail.jpg",
+          "fileSize": 26807,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "784c0ab43dc6984b49f7558877dae151160aff139bbfff984de0c2dc7dbb9f79",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b010-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b010-thumb.jpg",
+          "fileSize": 9134,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "254fb93d0d4771aaf0695425acbeb1a05b72e30e9e394822d7306ca870748919",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 10,
+      "storybookId": 10,
+      "title": "小鸭子学游泳",
+      "topics": [
+        "勇气",
+        "生命成长"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_3_4",
+      "ageMax": 4,
+      "ageMin": 3,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b011-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b011-detail.jpg",
+          "fileSize": 16856,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "41d1e316692246a1590f3bbb553e5b040451ac5e1e68a5f0e2ce21171dff4b29",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b011-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b011-thumb.jpg",
+          "fileSize": 5964,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "51e87303f4585bdf5c394c2386dc06929b46e383f9c9be6d5f233d69b0ddabd8",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 11,
+      "storybookId": 11,
+      "title": "云朵棉花糖",
+      "topics": [
+        "想象"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_4_5",
+      "ageMax": 5,
+      "ageMin": 4,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b012-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b012-detail.jpg",
+          "fileSize": 35942,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "8130deaaf36eae87577575d89837fbfd23a89fe2066e716b3d911df300c7fe78",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b012-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b012-thumb.jpg",
+          "fileSize": 11315,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "2cca932214353d3509f41781d7a62977fc89df57ec9ccf54d0dafca7707a009d",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 12,
+      "storybookId": 12,
+      "title": "蚂蚁搬家",
+      "topics": [
+        "合作",
+        "自然观察"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_4_5",
+      "ageMax": 5,
+      "ageMin": 4,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b013-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b013-detail.jpg",
+          "fileSize": 39543,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "47e926454e746a154c621a1ce862faa3f9717ce4fb5f497abcb20a9650c4a512",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b013-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b013-thumb.jpg",
+          "fileSize": 12497,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "0c15e54cd748d5d626ecc9dee305106dbcb11c94dd2ba32fbd3987d6fe44d775",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 13,
+      "storybookId": 13,
+      "title": "小刺猬的礼物",
+      "topics": [
+        "分享",
+        "友谊"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_4_5",
+      "ageMax": 5,
+      "ageMin": 4,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b014-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b014-detail.jpg",
+          "fileSize": 39258,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "6b117d3148e39b9f9de80d00a46bf49c766b6509b2041cb50d5c9adb2a09b2f8",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b014-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b014-thumb.jpg",
+          "fileSize": 12677,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "f5b99b77ff8bca284b42c64eb46fa9e41489e44d27eeffb8f399058941cc804c",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 14,
+      "storybookId": 14,
+      "title": "会唱歌的树",
+      "topics": [
+        "自然观察",
+        "想象"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_4_5",
+      "ageMax": 5,
+      "ageMin": 4,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b015-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b015-detail.jpg",
+          "fileSize": 34886,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "bcd7602df52bf34e87625b779a82c2a4a3dfb9bc0b88067e5be4ca5cb483aae4",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b015-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b015-thumb.jpg",
+          "fileSize": 11254,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "a80d1df7803e94bc1e7d53495b15470bdf9910f8cc87417989c4ef9561985e8d",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 15,
+      "storybookId": 15,
+      "title": "萤火虫找朋友",
+      "topics": [
+        "友谊",
+        "勇气"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_4_5",
+      "ageMax": 5,
+      "ageMin": 4,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b016-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b016-detail.jpg",
+          "fileSize": 33018,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "4374efd3720cd184632088c268760d5e01ae40ec9ad987b14deec3783ea62d0b",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b016-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b016-thumb.jpg",
+          "fileSize": 10839,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "3812824662a92c880069f0e51e8dd29b36013c26ba8f22ce1b1f8b1d8be9c111",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 16,
+      "storybookId": 16,
+      "title": "小松鼠的冬天",
+      "topics": [
+        "生命成长",
+        "习惯"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_5_6",
+      "ageMax": 6,
+      "ageMin": 5,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b017-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b017-detail.jpg",
+          "fileSize": 26761,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "45d82f2705d9bf326a61504621c563b2d14bf9b6351a6bb74923a0e766ce94e7",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b017-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b017-thumb.jpg",
+          "fileSize": 8130,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "1d2173d1c13f1437190d0726d05286387e4632e1eb081c237eea406cb76c2aac",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 17,
+      "storybookId": 17,
+      "title": "种子去旅行",
+      "topics": [
+        "自然观察",
+        "生命成长"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_5_6",
+      "ageMax": 6,
+      "ageMin": 5,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b018-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b018-detail.jpg",
+          "fileSize": 28734,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "98e1e0c1e3f5097bb340622355d10624b7a57d4c292780375956e7069c100ddb",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b018-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b018-thumb.jpg",
+          "fileSize": 9370,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "53c9a0fc46855fb547ed83ea9f441fc906da25a65cf6c9d3aa640c455f0ccdec",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 18,
+      "storybookId": 18,
+      "title": "钟表小镇的一天",
+      "topics": [
+        "习惯",
+        "时间认知"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_5_6",
+      "ageMax": 6,
+      "ageMin": 5,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b019-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b019-detail.jpg",
+          "fileSize": 28532,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "51e520230ba1601d9e1f823876d7d822735bfd092985da9ceee2770536062ee2",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b019-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b019-thumb.jpg",
+          "fileSize": 9240,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "ac33f9727b42351040afcb32056062b79afc2011e5b93a9a41265e67639f77da",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 19,
+      "storybookId": 19,
+      "title": "小鲸鱼的大海",
+      "topics": [
+        "勇气",
+        "自然观察"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_5_6",
+      "ageMax": 6,
+      "ageMin": 5,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b020-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b020-detail.jpg",
+          "fileSize": 22925,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "34c359324c46d6acb4ecb7fbb690e36d46f92a2c1bb28e541bf4e7b003bb3653",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b020-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b020-thumb.jpg",
+          "fileSize": 7564,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "fe2b7f62a4440466da37543da38636e3aff84dc7b52d2ba867d296aa5f7480cb",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 20,
+      "storybookId": 20,
+      "title": "彩虹桥那边",
+      "topics": [
+        "想象",
+        "友谊"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    },
+    {
+      "ageBand": "AGE_5_6",
+      "ageMax": 6,
+      "ageMin": 5,
+      "coverRef": null,
+      "demoOnly": true,
+      "localCover": {
+        "detail": {
+          "assetPath": "hardware/assets/generated/book-b021-detail.jpg",
+          "assetRole": "DETAIL",
+          "devicePath": "/assets/covers/book-b021-detail.jpg",
+          "fileSize": 31810,
+          "format": "JPEG",
+          "height": 300,
+          "sha256": "28234d363b0b8641c9bcb93536a064c06b7d8c6dfea1edb6a433dfec8d319d43",
+          "width": 400
+        },
+        "thumbnail": {
+          "assetPath": "hardware/assets/generated/book-b021-thumb.jpg",
+          "assetRole": "THUMBNAIL",
+          "devicePath": "/assets/covers/book-b021-thumb.jpg",
+          "fileSize": 10411,
+          "format": "JPEG",
+          "height": 160,
+          "sha256": "42251bf30d3c411cc39390760709c1b457d0fec38738b22403ef0b6f04bb559d",
+          "width": 213
+        }
+      },
+      "pageCount": 5,
+      "status": "PUBLISHED",
+      "storyVersionId": 21,
+      "storybookId": 21,
+      "title": "图书馆的小老鼠",
+      "topics": [
+        "阅读",
+        "友谊"
+      ],
+      "totalPages": 5,
+      "versionNumber": 1
+    }
+  ],
+  "kind": "zhiya-hardware-demo-storybooks",
+  "notice": "本地 DEMO 数据：仅供知芽课程项目硬件端和 Mock 自动化测试使用，不代表绘本已获得正式在线发布或传播授权；源种子中 20 本原创绘本为 PUBLISHED，1 本《逃家小兔》联调草稿为 DRAFT 且不纳入本 DEMO。coverRef/imageRef 必须保持 null，不得当作 API-024 的受控媒体 resource key；H03 内页资源尚未由独立任务交付，localPageAsset 保持 null，禁止用封面冒充正文插画。",
+  "schemaVersion": "1.0",
+  "sourceDigest": "sha256-utf8-lf-v1",
+  "sourceFiles": [
+    {
+      "path": "data/seed/storybooks.json",
+      "sha256": "3d47970c2480168fc5f4bf43f914ac0ef90544fb49a4f9993236f963ed27e6e2"
+    },
+    {
+      "path": "data/seed/story_versions.json",
+      "sha256": "c14d753a2664f7c1fb4349a0e0cb42aa552a214241eb05e237edcd5bfca4226c"
+    },
+    {
+      "path": "data/seed/story_pages.json",
+      "sha256": "ee298aa5815e8978afa66a5ed846be97ff8c54ae9ae77ebbb0d7b14b108d15f4"
+    },
+    {
+      "path": "data/seed/cover_mapping.json",
+      "sha256": "487b526a58073b1707855e490d1692b0135486314d7278b9aa09c6752d357b75"
+    },
+    {
+      "path": "hardware/assets/generated/assets-manifest.json",
+      "sha256": "78fa7eba036b06b825c5f5ef722c0ef65423c71ec257ddef670c5da1c4e6b9c5"
+    }
+  ]
+}

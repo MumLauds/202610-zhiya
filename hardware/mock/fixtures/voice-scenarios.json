@@ -1,0 +1,481 @@
+{
+  "demoOnly": true,
+  "errorStates": [
+    "ERROR_ASR",
+    "ERROR_TIMEOUT",
+    "ERROR_TTS",
+    "ERROR_NETWORK",
+    "ERROR_TOO_SHORT"
+  ],
+  "kind": "zhiya-hardware-demo-voice-scenarios",
+  "notice": "语音场景只模拟 H04 状态机的界面文案与迁移，不包含真实录音、真实 ASR/TTS、真实模型回答或可播放音频。audioUrl 必须为 null，不得伪装成 API-023 的真实输出。",
+  "scenarios": [
+    {
+      "answerSource": "MOCK_TEMPLATE",
+      "answerText": "因为下雨了，小狐狸撑起雨伞，想快点回家。",
+      "asrText": "小狐狸为什么带着雨伞？",
+      "consumer": "PARENT_CONFIRMED",
+      "demoOnly": true,
+      "description": "只演示家长确认后的目标链路；真实 API-022 的 reliable 固定为 false，儿童模式不能据此自动问答。",
+      "finalState": "IDLE",
+      "outcome": "SUCCESS",
+      "recoverTo": null,
+      "reliable": true,
+      "reliableIsSimulated": true,
+      "scenarioId": "success",
+      "states": [
+        {
+          "delayMs": 0,
+          "hint": "点麦克风开始",
+          "isError": false,
+          "label": "想问什么就问吧",
+          "state": "IDLE"
+        },
+        {
+          "delayMs": 800,
+          "hint": "说完再点一下，最多 15 秒",
+          "isError": false,
+          "label": "我在听…",
+          "state": "RECORDING"
+        },
+        {
+          "delayMs": 600,
+          "hint": "本地 Mock，不上传真实录音",
+          "isError": false,
+          "label": "正在上传…",
+          "state": "UPLOADING"
+        },
+        {
+          "delayMs": 600,
+          "hint": "识别结果为固定测试文本",
+          "isError": false,
+          "label": "正在听懂你说的话…",
+          "state": "RECOGNIZING"
+        },
+        {
+          "delayMs": 900,
+          "hint": "本地 Mock 不调用云端模型",
+          "isError": false,
+          "label": "让我想一想…",
+          "state": "THINKING"
+        },
+        {
+          "delayMs": 700,
+          "hint": "只返回测试播放状态",
+          "isError": false,
+          "label": "正在把答案读出来…",
+          "state": "SYNTHESIZING"
+        },
+        {
+          "delayMs": 1200,
+          "hint": "模拟播放，不产生真实音频",
+          "isError": false,
+          "label": "知芽在回答",
+          "state": "PLAYING"
+        },
+        {
+          "delayMs": 600,
+          "hint": "关闭返回阅读页",
+          "isError": false,
+          "label": "还想问点什么？",
+          "state": "IDLE"
+        }
+      ],
+      "title": "模拟识别与回答成功",
+      "tts": {
+        "audioUrl": null,
+        "durationMs": 2400,
+        "playbackMode": "SIMULATED",
+        "status": "SIMULATED"
+      }
+    },
+    {
+      "answerSource": null,
+      "answerText": null,
+      "asrText": "小狐狸为什么……",
+      "consumer": "CHILD",
+      "demoOnly": true,
+      "description": "模拟真实 API-022 的 reliable=false 限制；儿童模式只能重录，不能自动进入问答。",
+      "finalState": "ERROR_ASR",
+      "outcome": "RELIABLE_FALSE",
+      "recoverTo": "IDLE",
+      "reliable": false,
+      "reliableIsSimulated": true,
+      "scenarioId": "reliable_false_child",
+      "states": [
+        {
+          "delayMs": 0,
+          "hint": "点麦克风开始",
+          "isError": false,
+          "label": "想问什么就问吧",
+          "state": "IDLE"
+        },
+        {
+          "delayMs": 700,
+          "hint": "说完再点一下",
+          "isError": false,
+          "label": "我在听…",
+          "state": "RECORDING"
+        },
+        {
+          "delayMs": 500,
+          "hint": "本地 Mock",
+          "isError": false,
+          "label": "正在上传…",
+          "state": "UPLOADING"
+        },
+        {
+          "delayMs": 500,
+          "hint": "识别结果不可信",
+          "isError": false,
+          "label": "正在听懂你说的话…",
+          "state": "RECOGNIZING"
+        },
+        {
+          "delayMs": 700,
+          "hint": "请重录或取消",
+          "isError": true,
+          "label": "没听清这句话，换个说法试试",
+          "state": "ERROR_ASR"
+        }
+      ],
+      "title": "识别结果不可信（儿童重录）",
+      "tts": null
+    },
+    {
+      "answerSource": null,
+      "answerText": null,
+      "asrText": null,
+      "consumer": "PARENT_OR_CHILD",
+      "demoOnly": true,
+      "finalState": "ERROR_ASR",
+      "outcome": "ASR_FAILED",
+      "recoverTo": "IDLE",
+      "reliable": false,
+      "reliableIsSimulated": true,
+      "scenarioId": "asr_failed",
+      "states": [
+        {
+          "delayMs": 0,
+          "hint": "点麦克风开始",
+          "isError": false,
+          "label": "想问什么就问吧",
+          "state": "IDLE"
+        },
+        {
+          "delayMs": 700,
+          "hint": "说完再点一下",
+          "isError": false,
+          "label": "我在听…",
+          "state": "RECORDING"
+        },
+        {
+          "delayMs": 500,
+          "hint": "本地 Mock",
+          "isError": false,
+          "label": "正在上传…",
+          "state": "UPLOADING"
+        },
+        {
+          "delayMs": 500,
+          "hint": "识别失败",
+          "isError": false,
+          "label": "正在听懂你说的话…",
+          "state": "RECOGNIZING"
+        },
+        {
+          "delayMs": 700,
+          "hint": "重录或取消",
+          "isError": true,
+          "label": "没听清这句话，换个说法试试",
+          "state": "ERROR_ASR"
+        }
+      ],
+      "title": "识别失败",
+      "tts": null
+    },
+    {
+      "answerSource": null,
+      "answerText": null,
+      "asrText": "小狐狸要去哪里？",
+      "consumer": "PARENT_CONFIRMED",
+      "demoOnly": true,
+      "finalState": "ERROR_TIMEOUT",
+      "outcome": "AI_TIMEOUT",
+      "recoverTo": "IDLE",
+      "reliable": false,
+      "reliableIsSimulated": true,
+      "scenarioId": "ai_timeout",
+      "states": [
+        {
+          "delayMs": 0,
+          "hint": "点麦克风开始",
+          "isError": false,
+          "label": "想问什么就问吧",
+          "state": "IDLE"
+        },
+        {
+          "delayMs": 700,
+          "hint": "说完再点一下",
+          "isError": false,
+          "label": "我在听…",
+          "state": "RECORDING"
+        },
+        {
+          "delayMs": 500,
+          "hint": "本地 Mock",
+          "isError": false,
+          "label": "正在上传…",
+          "state": "UPLOADING"
+        },
+        {
+          "delayMs": 500,
+          "hint": "识别成功",
+          "isError": false,
+          "label": "正在听懂你说的话…",
+          "state": "RECOGNIZING"
+        },
+        {
+          "delayMs": 1200,
+          "hint": "模拟等待超过 20 秒",
+          "isError": false,
+          "label": "让我想一想…",
+          "state": "THINKING"
+        },
+        {
+          "delayMs": 700,
+          "hint": "重试或取消",
+          "isError": true,
+          "label": "想得太久啦，再问一次好吗",
+          "state": "ERROR_TIMEOUT"
+        }
+      ],
+      "title": "AI 问答超时",
+      "tts": null
+    },
+    {
+      "answerSource": "MOCK_TEMPLATE",
+      "answerText": "因为下雨了，小狐狸撑起雨伞，想快点回家。",
+      "asrText": "小狐狸为什么带着雨伞？",
+      "consumer": "PARENT_CONFIRMED",
+      "demoOnly": true,
+      "finalState": "ERROR_TTS",
+      "outcome": "TTS_FAILED",
+      "recoverTo": "SYNTHESIZING",
+      "recoveryActions": [
+        {
+          "actionId": "RETRY_SYNTHESIS",
+          "label": "重试",
+          "recordsNewEvent": false,
+          "requiresSavedInteractionEventId": true,
+          "rerunQuestion": false,
+          "rerunRecording": false,
+          "targetState": "SYNTHESIZING"
+        },
+        {
+          "actionId": "TEXT_ONLY",
+          "label": "只看文字",
+          "recordsNewEvent": false,
+          "requiresSavedInteractionEventId": true,
+          "rerunQuestion": false,
+          "rerunRecording": false,
+          "targetState": "IDLE"
+        }
+      ],
+      "reliable": false,
+      "reliableIsSimulated": true,
+      "scenarioId": "tts_failed",
+      "states": [
+        {
+          "delayMs": 0,
+          "hint": "点麦克风开始",
+          "isError": false,
+          "label": "想问什么就问吧",
+          "state": "IDLE"
+        },
+        {
+          "delayMs": 700,
+          "hint": "说完再点一下",
+          "isError": false,
+          "label": "我在听…",
+          "state": "RECORDING"
+        },
+        {
+          "delayMs": 500,
+          "hint": "本地 Mock",
+          "isError": false,
+          "label": "正在上传…",
+          "state": "UPLOADING"
+        },
+        {
+          "delayMs": 500,
+          "hint": "识别成功",
+          "isError": false,
+          "label": "正在听懂你说的话…",
+          "state": "RECOGNIZING"
+        },
+        {
+          "delayMs": 900,
+          "hint": "模拟已拿到文字答案",
+          "isError": false,
+          "label": "让我想一想…",
+          "state": "THINKING"
+        },
+        {
+          "delayMs": 700,
+          "hint": "模拟 TTS 失败",
+          "isError": false,
+          "label": "正在把答案读出来…",
+          "state": "SYNTHESIZING"
+        },
+        {
+          "delayMs": 700,
+          "hint": "只看文字或重试",
+          "isError": true,
+          "label": "答案有了，但声音没准备好",
+          "state": "ERROR_TTS"
+        }
+      ],
+      "title": "语音合成失败",
+      "tts": null
+    },
+    {
+      "answerSource": null,
+      "answerText": null,
+      "asrText": null,
+      "consumer": "PARENT_OR_CHILD",
+      "demoOnly": true,
+      "finalState": "IDLE",
+      "outcome": "CANCELLED",
+      "recoverTo": "IDLE",
+      "reliable": false,
+      "reliableIsSimulated": true,
+      "scenarioId": "cancelled",
+      "states": [
+        {
+          "delayMs": 0,
+          "hint": "点麦克风开始",
+          "isError": false,
+          "label": "想问什么就问吧",
+          "state": "IDLE"
+        },
+        {
+          "delayMs": 500,
+          "hint": "用户点击取消",
+          "isError": false,
+          "label": "我在听…",
+          "state": "RECORDING"
+        },
+        {
+          "delayMs": 300,
+          "hint": "返回阅读页",
+          "isError": false,
+          "label": "先不问啦",
+          "state": "IDLE"
+        }
+      ],
+      "title": "用户取消录音",
+      "tts": null
+    },
+    {
+      "answerSource": null,
+      "answerText": null,
+      "asrText": null,
+      "consumer": "PARENT_OR_CHILD",
+      "demoOnly": true,
+      "finalState": "IDLE",
+      "outcome": "NETWORK_LOST",
+      "recoverTo": "IDLE",
+      "reliable": false,
+      "reliableIsSimulated": true,
+      "scenarioId": "network_lost",
+      "states": [
+        {
+          "delayMs": 0,
+          "hint": "点麦克风开始",
+          "isError": false,
+          "label": "想问什么就问吧",
+          "state": "IDLE"
+        },
+        {
+          "delayMs": 600,
+          "hint": "说完再点一下",
+          "isError": false,
+          "label": "我在听…",
+          "state": "RECORDING"
+        },
+        {
+          "delayMs": 500,
+          "hint": "模拟网络断开",
+          "isError": false,
+          "label": "正在上传…",
+          "state": "UPLOADING"
+        },
+        {
+          "delayMs": 600,
+          "hint": "网络恢复或取消",
+          "isError": true,
+          "label": "网络断开啦，先读故事吧",
+          "state": "ERROR_NETWORK"
+        },
+        {
+          "delayMs": 500,
+          "hint": "可重新提问",
+          "isError": false,
+          "label": "连接已恢复",
+          "state": "IDLE"
+        }
+      ],
+      "title": "上传时网络中断",
+      "tts": null
+    },
+    {
+      "answerSource": null,
+      "answerText": null,
+      "asrText": null,
+      "consumer": "PARENT_OR_CHILD",
+      "demoOnly": true,
+      "finalState": "ERROR_TOO_SHORT",
+      "outcome": "TOO_SHORT",
+      "recoverTo": "IDLE",
+      "reliable": false,
+      "reliableIsSimulated": true,
+      "scenarioId": "too_short",
+      "states": [
+        {
+          "delayMs": 0,
+          "hint": "点麦克风开始",
+          "isError": false,
+          "label": "想问什么就问吧",
+          "state": "IDLE"
+        },
+        {
+          "delayMs": 300,
+          "hint": "0.3 秒后停止",
+          "isError": false,
+          "label": "我在听…",
+          "state": "RECORDING"
+        },
+        {
+          "delayMs": 500,
+          "hint": "重试或取消",
+          "isError": true,
+          "label": "没有听清，再说一次吧",
+          "state": "ERROR_TOO_SHORT"
+        }
+      ],
+      "title": "录音为空或过短",
+      "tts": null
+    }
+  ],
+  "schemaVersion": "1.0",
+  "states": [
+    "IDLE",
+    "RECORDING",
+    "UPLOADING",
+    "RECOGNIZING",
+    "THINKING",
+    "SYNTHESIZING",
+    "PLAYING"
+  ]
+}
