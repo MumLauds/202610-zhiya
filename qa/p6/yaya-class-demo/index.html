@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>芽芽共读 · 课程演示</title>
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header><p class="eyebrow">知芽 · 课程演示</p><h1>和芽芽共读</h1><p id="mode" class="notice">正在连接演示后端……</p></header>
+<main>
+<section aria-labelledby="demo-title">
+<h2 id="demo-title">现场互动</h2>
+<p>仅使用虚构绘本和预写的合成话语。不支持输入真实对话。</p>
+<label for="card">选择演示卡</label> <select id="card"></select>
+<button id="restart" type="button">重新开始</button>
+<div id="page" class="page"></div>
+<div id="demo-evidence" class="page evidence" hidden></div>
+<div id="preset" class="chat" hidden></div>
+<div id="choices" role="group" aria-label="选择孩子接下来说什么" hidden></div>
+<div id="chat" class="chat" aria-live="polite"></div>
+<button id="turn" type="button" disabled>下一句</button>
+<p id="status" aria-live="polite"></p>
+<button id="retry-choice" type="button" hidden>换个说法再试</button>
+</section>
+<section aria-labelledby="perf-title">
+<h2 id="perf-title">页面计时</h2>
+<p>从提交这句合成话语，到完整正文（含追问）或回退已绘制。请保持标签页在前台。</p>
+<p id="counts">等待首个样本。</p>
+<button id="download" type="button" disabled>下载本次页面计时 JSON</button>
+</section>
+<section aria-labelledby="replay-title"><h2 id="replay-title">第五轮历史回放</h2>
+<p>这里展示已保存的老记录，不会再次调用 API。草稿与最终回执不是同一份内容。</p>
+<div id="replay"></div>
+</section>
+</main>
+</body>
+</html>
