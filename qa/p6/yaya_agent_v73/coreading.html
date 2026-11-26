@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>芽芽共读 · 多页课堂演示</title>
+<link rel="stylesheet" href="/coreading.css"><script src="/coreading.js" defer></script>
+</head>
+<body>
+<header><a href="/">回到 v5 单页对照</a><p class="kicker">知芽 / 合成共读实验</p><h1>一起读这本书</h1>
+<p id="mode">正在准备会话……</p></header>
+<main><section class="controls" aria-label="选择演示"><label for="case">演示片段</label> <select id="case" disabled></select>
+<button id="restart" type="button" disabled>重新开始</button></section>
+<section class="sheet" aria-labelledby="title"><p class="kicker" id="page-id">当前书页</p><h2 id="title">绘本原文</h2>
+<blockquote id="page-text"></blockquote><details id="notes" hidden><summary>讲解用的书页依据 · 不传给模型</summary><ul id="facts"></ul></details></section>
+<section aria-labelledby="conversation-title"><h2 id="conversation-title">这一段共读</h2>
+<p id="state"></p><ol id="chat" aria-label="已发生的对话" aria-live="polite"></ol>
+<div class="next"><p id="next-text"></p><button id="send" class="primary" type="button" disabled>提交这句话</button>
+<button id="page-button" class="primary" type="button" hidden>翻到下一页</button></div>
+<p id="status" role="status"></p></section>
+<section aria-labelledby="timing"><h2 id="timing">这次会话的页面计时</h2>
+<p>从提交到完整正文或回退显示，保持本页在前台。模拟不计入真实模型表现。</p>
+<p id="counts">尚未提交。</p><button id="download" type="button" disabled>下载本次会话记录</button>
+<p>重新开始会清空页面记录；需要保留时，请先下载。只演示预写的合成话语。</p></section>
+</main></body></html>

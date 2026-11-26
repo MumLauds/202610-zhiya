@@ -1,0 +1,291 @@
+[
+  {
+    "id": "R01",
+    "category": "character_attribute",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "ACCEPT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "RELEVANCE",
+    "codes": [],
+    "desk_reason": "三道线印在书签上，直接给出书中对象；不接受的理由属相关性反馈。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R02",
+    "category": "character_attribute",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "REJECT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "FACT_UNSPECIFIED",
+    "codes": [
+      "WRONG_ATTRIBUTE"
+    ],
+    "desk_reason": "书签上的斜线被错给青鸢的衣服。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R03",
+    "category": "character_action",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "ACCEPT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "RELEVANCE",
+    "codes": [],
+    "desk_reason": "动作归属准确；评审不希望补充尧宁，是简洁/相关性问题。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R04",
+    "category": "unsupported_action",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "REJECT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "SPOILER_CONCERN",
+    "codes": [
+      "UNSUPPORTED_FACT"
+    ],
+    "desk_reason": "当前文字没有摇竹架或把风铃摇响；称为剧透需知道未读页，现无此证。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R05",
+    "category": "event_order",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "ACCEPT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "NO_NOTE",
+    "codes": [],
+    "desk_reason": "过去湿与现在干顺序均有原文。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R06",
+    "category": "event_order",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "REJECT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "SPOILER_CONCERN",
+    "codes": [
+      "UNREAD_EVENT"
+    ],
+    "desk_reason": "当前只读到夹湿袜滴水；草稿擅自提前说已干并摸过。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R07",
+    "category": "imagination",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "ACCEPT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "RELEVANCE",
+    "codes": [],
+    "desk_reason": "限定在孩子的想象里；人评困惑是承接质量问题。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R08",
+    "category": "imagination_as_fact",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "REJECT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "TONE",
+    "codes": [
+      "IMAGINATION_AS_FACT"
+    ],
+    "desk_reason": "草稿把想象说成书中事实；人评记录的却是语气。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R09",
+    "category": "natural_listening",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "ACCEPT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "NO_NOTE",
+    "codes": [],
+    "desk_reason": "孩子要求留白，答复不追问。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R10",
+    "category": "hidden_question",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "REJECT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "NO_NOTE",
+    "codes": [
+      "HIDDEN_QUESTION",
+      "UNWANTED_QUESTION"
+    ],
+    "desk_reason": "LISTEN 仍问孩子是不是这样想，即使没有问号；不是已断言的绘本事实错误。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R11",
+    "category": "natural_quotation",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "ACCEPT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "NO_NOTE",
+    "codes": [],
+    "desk_reason": "转述角色的原文问句，没有要求孩子作答。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R12",
+    "category": "unsupported_detail",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "REJECT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "EVIDENCE_QUESTION",
+    "codes": [
+      "UNSUPPORTED_FACT"
+    ],
+    "desk_reason": "没有重量或三斤的证据。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R13",
+    "category": "unattributed_guess",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "REJECT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "TONE",
+    "codes": [
+      "MISATTRIBUTED_VIEW"
+    ],
+    "desk_reason": "角色猜测被说成已经发生的事；人评只说太直率。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R14",
+    "category": "supported_uncertainty",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "ACCEPT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "RELEVANCE",
+    "codes": [],
+    "desk_reason": "墙后物体未揭晓，可转述角色的猜测；人评认为后句不相关。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R15",
+    "category": "character_action",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "REJECT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "WRONG_ACTOR_AND_TONE",
+    "codes": [
+      "WRONG_ACTOR"
+    ],
+    "desk_reason": "扶竹架的是尧宁，挂风铃的是芃宝；另记录语气问题。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R16",
+    "category": "unsupported_detail",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "REJECT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "EVIDENCE_QUESTION",
+    "codes": [
+      "UNSUPPORTED_PREMISE"
+    ],
+    "desk_reason": "正文可靠，追问却预设「两道裂痕」存在；问题也需要查证。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R17",
+    "category": "natural_quotation",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "ACCEPT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "NO_NOTE",
+    "codes": [],
+    "desk_reason": "引述问题与显式追问不是一次问两遍。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  },
+  {
+    "id": "R18",
+    "category": "natural_listening",
+    "v71_reference": {
+      "status": "PENDING_HUMAN_REVIEW",
+      "decision": "ACCEPT"
+    },
+    "prior_human": {
+      "verdict": null
+    },
+    "prior_note_dimension": "NO_NOTE",
+    "codes": [],
+    "desk_reason": "忠实转述孩子想看，没有强迫其回答。",
+    "gold_status": "PENDING_HUMAN_REVIEW"
+  }
+]

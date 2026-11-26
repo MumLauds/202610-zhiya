@@ -1,0 +1,91 @@
+[
+  {
+    "row_id": "qwen3.8-flash/B/dev-11/B/2/rollout",
+    "title": "帐篷里的夜灯",
+    "child": "先不问我",
+    "page": {
+      "p1.e1": "小象关小了灯，在帐篷里安静地坐下。"
+    },
+    "question": null,
+    "draft": {
+      "next_action": "LISTEN",
+      "reply": "好，我就陪着你。"
+    },
+    "receipt": {
+      "reason": "uncalibrated_candidate_only",
+      "status": "SAVED_FALLBACK"
+    },
+    "receipt_text": "我在这里陪你。"
+  },
+  {
+    "row_id": "qwen3.8-flash/B/dev-06/B/3/rollout",
+    "title": "井沿的纽扣",
+    "child": "真的写了吗",
+    "page": {
+      "p1.e1": "一粒木纽扣安静地躺在井沿。最后一行没有提到船。"
+    },
+    "question": null,
+    "draft": {
+      "next_action": "LISTEN",
+      "reply": "嗯，书里确实是这样写的。"
+    },
+    "receipt": {
+      "reason": "candidate_found_issue",
+      "status": "SAVED_FALLBACK"
+    },
+    "receipt_text": "我在这里陪你。"
+  },
+  {
+    "row_id": "qwen3.8-flash/B/dev-04/A/2/matched",
+    "title": "慢慢邮局",
+    "child": "不，我想是等车",
+    "page": {
+      "p1.e1": "邮筒边有两封信，灰鸭捏着一封，看看路口。"
+    },
+    "question": null,
+    "draft": {
+      "followup_question": "你觉得这封信里会写什么悄悄话呢？",
+      "next_action": "ASK_FOLLOWUP",
+      "reply": "原来是等车呀，那它手里捏着的信，是要寄给远方的人吗？"
+    },
+    "receipt": {
+      "reason": "candidate_found_issue",
+      "status": "SAVED_FALLBACK"
+    },
+    "receipt_text": "我在这里陪你。"
+  },
+  {
+    "row_id": "qwen3.8-flash/A/dev-04/A/2/rollout",
+    "title": "慢慢邮局",
+    "child": "不，我想是等车",
+    "page": {
+      "p1.e1": "邮筒边有两封信，灰鸭捏着一封，看看路口。"
+    },
+    "question": null,
+    "draft": {
+      "claims": [
+        {
+          "evidence_refs": [],
+          "mode": "CHILD_VIEW",
+          "span": "原来是等车呀",
+          "target": "reply"
+        },
+        {
+          "evidence_refs": [
+            "p1.e1"
+          ],
+          "mode": "BOOK_FACT",
+          "span": "灰鸭站在路口",
+          "target": "reply"
+        }
+      ],
+      "next_action": "RESPOND",
+      "reply": "原来是等车呀，灰鸭站在路口，正盼着车子快点来呢。"
+    },
+    "receipt": {
+      "reason": "candidate_found_issue",
+      "status": "SAVED_FALLBACK"
+    },
+    "receipt_text": "我在这里陪你。"
+  }
+]

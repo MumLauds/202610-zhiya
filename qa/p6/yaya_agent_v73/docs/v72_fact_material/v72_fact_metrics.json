@@ -1,0 +1,125 @@
+{
+  "review_type": "independent model desk audit, not Qwen or human verification",
+  "prediction_count": 18,
+  "prediction_status": {
+    "ACCEPT": 9,
+    "REJECT": 9
+  },
+  "human_signed_count": 0,
+  "human_reference_metrics": {
+    "fact_miss": {
+      "numerator": 0,
+      "denominator": 0,
+      "rate": null,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "safe_false_reject": {
+      "numerator": 0,
+      "denominator": 0,
+      "rate": null,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "attribute_miss": {
+      "numerator": 0,
+      "denominator": 0,
+      "rate": null,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "actor_miss": {
+      "numerator": 0,
+      "denominator": 0,
+      "rate": null,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "timeline_miss": {
+      "numerator": 0,
+      "denominator": 0,
+      "rate": null,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "imagination_false_reject": {
+      "numerator": 0,
+      "denominator": 0,
+      "rate": null,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "natural_false_reject": {
+      "numerator": 0,
+      "denominator": 0,
+      "rate": null,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "hidden_question_miss": {
+      "numerator": 0,
+      "denominator": 0,
+      "rate": null,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    }
+  },
+  "desk_vs_provisional_only": {
+    "fact_miss": {
+      "numerator": 0,
+      "denominator": 8,
+      "rate": 0.0,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "safe_false_reject": {
+      "numerator": 0,
+      "denominator": 9,
+      "rate": 0.0,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "attribute_miss": {
+      "numerator": 0,
+      "denominator": 1,
+      "rate": 0.0,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "actor_miss": {
+      "numerator": 0,
+      "denominator": 1,
+      "rate": 0.0,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "timeline_miss": {
+      "numerator": 0,
+      "denominator": 1,
+      "rate": 0.0,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "imagination_false_reject": {
+      "numerator": 0,
+      "denominator": 1,
+      "rate": 0.0,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "natural_false_reject": {
+      "numerator": 0,
+      "denominator": 4,
+      "rate": 0.0,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    },
+    "hidden_question_miss": {
+      "numerator": 0,
+      "denominator": 1,
+      "rate": 0.0,
+      "error_ids": [],
+      "abstained_or_missing_ids": []
+    }
+  }
+}

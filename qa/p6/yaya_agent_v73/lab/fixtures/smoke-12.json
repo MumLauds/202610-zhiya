@@ -1,0 +1,452 @@
+{
+  "format": "yaya-synthetic-smoke/1",
+  "split": "development_smoke",
+  "synthetic_only": true,
+  "reference_status": "PENDING_HUMAN_REVIEW",
+  "cases": [
+    {
+      "id": "dev-01",
+      "cluster_id": "dev-book-01",
+      "scene": "same_words",
+      "age": "AGE_3_4",
+      "title": "门上的三声响",
+      "page_evidence": {
+        "p1.e1": "小猫用尾巴轻轻碰了三下绿门，小羊站在窗边。"
+      },
+      "counterfactual_axis": "实际敲门者／期待的来客",
+      "arms": [
+        {
+          "question": "谁碰了门？",
+          "turns": [
+            "猫猫",
+            "那只小猫",
+            "我也想轻轻敲"
+          ],
+          "expected_behavior": "能用书页证据承接小猫碰门。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        },
+        {
+          "question": "你还希望谁来敲门？",
+          "turns": [
+            "猫猫",
+            "那只小猫",
+            "我也想轻轻敲"
+          ],
+          "expected_behavior": "理解为希望，不把愿望说成第二次敲门。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev-02",
+      "cluster_id": "dev-book-02",
+      "scene": "short_words",
+      "age": "AGE_4_5",
+      "title": "系蓝带的纸袋",
+      "page_evidence": {
+        "p1.e1": "小鹿把热栗子装入纸袋，还没决定送给谁。"
+      },
+      "counterfactual_axis": "想送给谁",
+      "arms": [
+        {
+          "question": "你想把栗子送给谁？",
+          "turns": [
+            "熊熊",
+            "给它",
+            "闻起来香香的"
+          ],
+          "expected_behavior": "把口语和代词连到小熊，故事还没写实际交付。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        },
+        {
+          "question": "你想把栗子送给谁？",
+          "turns": [
+            "自己",
+            "给我",
+            "闻起来香香的"
+          ],
+          "expected_behavior": "受赠者是说话者，不替换成角色。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev-03",
+      "cluster_id": "dev-book-03",
+      "scene": "fragment",
+      "age": "AGE_5_6",
+      "title": "藤桥另一端",
+      "page_evidence": {
+        "p1.e1": "桥板翘起一角。小鼹鼠停下来，把耳朵贴近木板。"
+      },
+      "counterfactual_axis": "省略句的后续补全",
+      "arms": [
+        {
+          "question": "它停下来想做什么？",
+          "turns": [
+            "它想……",
+            "听",
+            "听下面的水吧"
+          ],
+          "expected_behavior": "等待补全，将听水当作推断。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        },
+        {
+          "question": "它停下来想做什么？",
+          "turns": [
+            "它想……",
+            "搬",
+            "把翘起来的板搬平吧"
+          ],
+          "expected_behavior": "等待补全，不坚持先前猜的听水。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev-04",
+      "cluster_id": "dev-book-04",
+      "scene": "revision",
+      "age": "AGE_3_4",
+      "title": "慢慢邮局",
+      "page_evidence": {
+        "p1.e1": "邮筒边有两封信，灰鸭捏着一封，看看路口。"
+      },
+      "counterfactual_axis": "是否改口",
+      "arms": [
+        {
+          "question": "你觉得它在等什么？",
+          "turns": [
+            "等船",
+            "不，我想是等车",
+            "因为它看着路呢"
+          ],
+          "expected_behavior": "采用新观点等车，不说书里车一定来。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        },
+        {
+          "question": "你觉得它在等什么？",
+          "turns": [
+            "等船",
+            "还是等船",
+            "也许能看到船"
+          ],
+          "expected_behavior": "保留等船的想法而不当成书中事实。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev-05",
+      "cluster_id": "dev-book-05",
+      "scene": "stance",
+      "age": "AGE_4_5",
+      "title": "纸窗里的影子",
+      "page_evidence": {
+        "p1.e1": "纸窗后传来一声啾啾。是谁发出的，书里还没有说。"
+      },
+      "counterfactual_axis": "孩子话语的确定程度",
+      "arms": [
+        {
+          "question": "你觉得是谁的声音？",
+          "turns": [
+            "我猜是鸟",
+            "也可能不是",
+            "要等窗打开"
+          ],
+          "expected_behavior": "正确保留猜测和未知来源。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        },
+        {
+          "question": "你觉得是谁的声音？",
+          "turns": [
+            "就是鸟",
+            "我听着像",
+            "还没看见"
+          ],
+          "expected_behavior": "听懂确定语气但不无依据认可鸟的身份。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev-06",
+      "cluster_id": "dev-book-06",
+      "scene": "imagination",
+      "age": "AGE_5_6",
+      "title": "井沿的纽扣",
+      "page_evidence": {
+        "p1.e1": "一粒木纽扣安静地躺在井沿。"
+      },
+      "counterfactual_axis": "想象／声称书中已发生",
+      "arms": [
+        {
+          "question": "你想到什么了？",
+          "turns": [
+            "我想让它变成小船",
+            "游到天上去",
+            "这是我想的"
+          ],
+          "expected_behavior": "欢迎假想航行，不要求想象本身举证。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        },
+        {
+          "question": "你想到什么了？",
+          "turns": [
+            "它已经变成小船了",
+            "书里写的",
+            "真的写了吗"
+          ],
+          "expected_behavior": "不能把变船当原书事实，可回看书证。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev-07",
+      "cluster_id": "dev-book-07",
+      "scene": "unsupported",
+      "age": "AGE_3_4",
+      "title": "装铃铛的罐子",
+      "page_evidence": {
+        "p1.e1": "罐盖开了一条小缝，里面露出一只银铃。"
+      },
+      "counterfactual_axis": "有据物品／无据物品",
+      "arms": [
+        {
+          "question": "罐子里露出了什么？",
+          "turns": [
+            "铃铃",
+            "亮亮的那个",
+            "我喜欢铃声"
+          ],
+          "expected_behavior": "可以认可银铃，书里没有说它已经响。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        },
+        {
+          "question": "罐子里露出了什么？",
+          "turns": [
+            "青蛙",
+            "绿绿的那个",
+            "我喜欢青蛙"
+          ],
+          "expected_behavior": "接住喜欢青蛙，不说在图中看见青蛙。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev-08",
+      "cluster_id": "dev-book-08",
+      "scene": "followup_chain",
+      "age": "AGE_4_5",
+      "title": "小梯子的用处",
+      "page_evidence": {
+        "p1.e1": "一张地图挂在高处。兔子搬来小梯子，踮脚看地图。"
+      },
+      "counterfactual_axis": "最后回答指向的对象",
+      "arms": [
+        {
+          "question": "兔子为什么搬来梯子？",
+          "turns": [
+            "想看地图",
+            "地图太高",
+            "我也想看地图"
+          ],
+          "expected_behavior": "承接最后的地图兴趣，不回到搬梯首题。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        },
+        {
+          "question": "兔子为什么搬来梯子？",
+          "turns": [
+            "想看地图",
+            "地图太高",
+            "我更想看看梯子"
+          ],
+          "expected_behavior": "将最后的兴趣改为梯子，不将回答错配给旧焦点。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev-09",
+      "cluster_id": "dev-book-09",
+      "scene": "focus_change",
+      "age": "AGE_5_6",
+      "title": "操场上的粉笔线",
+      "page_evidence": {
+        "p1.e1": "灰鹅在地上画了一个圈，在圈外放下一片叶子。"
+      },
+      "counterfactual_axis": "换焦点／泛问重复",
+      "arms": [
+        {
+          "question": "你发现了什么？",
+          "turns": [
+            "一个圈",
+            "圈我说过啦",
+            "我想知道叶子放哪儿"
+          ],
+          "expected_behavior": "允许转向叶子，避免把泛问换词再问。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        },
+        {
+          "question": "你发现了什么？",
+          "turns": [
+            "一个圈",
+            "我没看明白",
+            "我看不清那个圈"
+          ],
+          "expected_behavior": "可用明确的圈的位置简化观察，不耗在泛问。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev-10",
+      "cluster_id": "dev-book-10",
+      "scene": "close_observe",
+      "age": "AGE_3_4",
+      "title": "苗苗的一天",
+      "page_evidence": {
+        "p1.e1": "扁豆的叶子上停着一滴雨珠，这页的角落画着一片叶影。"
+      },
+      "counterfactual_axis": "继续阅读／留看",
+      "arms": [
+        {
+          "question": "还想看看这里吗？",
+          "turns": [
+            "亮亮的",
+            "我看到了",
+            "我们接着读吧"
+          ],
+          "expected_behavior": "自然收束当前话题，不替用户翻页。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        },
+        {
+          "question": "还想看看这里吗？",
+          "turns": [
+            "亮亮的",
+            "我看到了",
+            "别继续读，我还想看这滴水"
+          ],
+          "expected_behavior": "陪孩子留看，不把“继续”关键词当翻页。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev-11",
+      "cluster_id": "dev-book-11",
+      "scene": "listen_invalid",
+      "age": "AGE_4_5",
+      "title": "帐篷里的夜灯",
+      "page_evidence": {
+        "p1.e1": "小象关小了灯，在帐篷里安静地坐下。"
+      },
+      "counterfactual_axis": "有效倾听请求／空输入",
+      "arms": [
+        {
+          "question": "你想说什么？",
+          "turns": [
+            "我想待一会儿",
+            "先不问我",
+            "我在听"
+          ],
+          "expected_behavior": "允许倾听，不用问题填满安静。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        },
+        {
+          "question": "你想说什么？",
+          "turns": [
+            "我想待一会儿",
+            "先不问我",
+            ""
+          ],
+          "expected_behavior": "空输入不伪造已提交的有效交流或新问题。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev-12",
+      "cluster_id": "dev-book-12",
+      "scene": "age_adaptation",
+      "age": "AGE_5_6",
+      "title": "慢慢漏水的桶",
+      "page_evidence": {
+        "p1.e1": "水桶底部有一个洞，沿路留下水点，桶里剩下半桶水。"
+      },
+      "counterfactual_axis": "同龄读者的理解线索",
+      "arms": [
+        {
+          "question": "为什么地上有一串水点？",
+          "turns": [
+            "有个洞",
+            "水从那里滴出来",
+            "所以桶里的水少了"
+          ],
+          "expected_behavior": "孩子已串起因果，可简短自然收束。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        },
+        {
+          "question": "为什么地上有一串水点？",
+          "turns": [
+            "有个洞",
+            "可我还没明白",
+            "地上为什么会湿"
+          ],
+          "expected_behavior": "同龄不等于同一理解度，支持更具体的引导。",
+          "visible_evidence": [
+            "p1.e1"
+          ]
+        }
+      ]
+    }
+  ]
+}

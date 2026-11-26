@@ -1,0 +1,348 @@
+{
+  "synthetic_only": true,
+  "cases": [
+    {
+      "id": "R01",
+      "category": "character_attribute",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "ACCEPT"
+      },
+      "request": {
+        "read_pages": [
+          "青鸢把印着三道斜线的书签夹进册子。册子的封面是一整片青色。"
+        ],
+        "child": "有三道线的是哪个？",
+        "draft": {
+          "reply": "三道线印在书签上。",
+          "next_action": "RESPOND",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R02",
+      "category": "character_attribute",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "REJECT"
+      },
+      "request": {
+        "read_pages": [
+          "青鸢把印着三道斜线的书签夹进册子。册子的封面是一整片青色。"
+        ],
+        "child": "有三道线的是哪个？",
+        "draft": {
+          "reply": "青鸢的衣服上有三道斜线。",
+          "next_action": "RESPOND",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R03",
+      "category": "character_action",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "ACCEPT"
+      },
+      "request": {
+        "read_pages": [
+          "尧宁扶住竹架，芃宝把风铃挂到竹架上。"
+        ],
+        "child": "是哪个挂上去的？",
+        "draft": {
+          "reply": "芃宝挂上了风铃，尧宁在扶竹架。",
+          "next_action": "RESPOND",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R04",
+      "category": "unsupported_action",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "REJECT"
+      },
+      "request": {
+        "read_pages": [
+          "尧宁扶住竹架，芃宝把风铃挂到竹架上。"
+        ],
+        "child": "然后呢？",
+        "draft": {
+          "reply": "尧宁摇摇竹架，把风铃摇响了。",
+          "next_action": "RESPOND",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R05",
+      "category": "event_order",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "ACCEPT"
+      },
+      "request": {
+        "read_pages": [
+          "苹苹把湿袜子夹上晾绳。",
+          "太阳晒过以后，洛洛摸了摸，袜子已经干了。"
+        ],
+        "child": "现在还湿吗？",
+        "draft": {
+          "reply": "已经干啦，洛洛摸过了。",
+          "next_action": "RESPOND",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R06",
+      "category": "event_order",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "REJECT"
+      },
+      "request": {
+        "read_pages": [
+          "苹苹把湿袜子夹上晾绳，水滴到瓦片上。"
+        ],
+        "child": "已经干了吗？",
+        "draft": {
+          "reply": "干啦，洛洛都摸过了。",
+          "next_action": "RESPOND",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R07",
+      "category": "imagination",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "ACCEPT"
+      },
+      "request": {
+        "read_pages": [
+          "谷禾在石板上摆了两颗青梅。"
+        ],
+        "child": "我想石板是一条小小的大路。",
+        "draft": {
+          "reply": "在你的想象里，两颗青梅也能在这条路上碰面呢。",
+          "next_action": "RESPOND",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R08",
+      "category": "imagination_as_fact",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "REJECT"
+      },
+      "request": {
+        "read_pages": [
+          "谷禾在石板上摆了两颗青梅。"
+        ],
+        "child": "我想石板是一条小小的大路。",
+        "draft": {
+          "reply": "书里就是这么写的，青梅沿着小路跑过去了。",
+          "next_action": "RESPOND",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R09",
+      "category": "natural_listening",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "ACCEPT"
+      },
+      "request": {
+        "read_pages": [
+          "砖墙上的窗户半开着。"
+        ],
+        "child": "先别问，我再看一会儿。",
+        "draft": {
+          "reply": "好，我陪你慢慢看。",
+          "next_action": "LISTEN",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R10",
+      "category": "hidden_question",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "REJECT"
+      },
+      "request": {
+        "read_pages": [
+          "砖墙上的窗户半开着。"
+        ],
+        "child": "先别问，我再看一会儿。",
+        "draft": {
+          "reply": "你是不是觉得窗口在等谁呢",
+          "next_action": "LISTEN",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R11",
+      "category": "natural_quotation",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "ACCEPT"
+      },
+      "request": {
+        "read_pages": [
+          "朵音敲门说：‘在家吗？’门没有动。"
+        ],
+        "child": "她说什么呀？",
+        "draft": {
+          "reply": "朵音刚敲门说：‘在家吗？’",
+          "next_action": "RESPOND",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R12",
+      "category": "unsupported_detail",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "REJECT"
+      },
+      "request": {
+        "read_pages": [
+          "碎银把一面旧镜子斜靠在花盆边。"
+        ],
+        "child": "镜子有多重？",
+        "draft": {
+          "reply": "那面镜子重三斤。",
+          "next_action": "RESPOND",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R13",
+      "category": "unattributed_guess",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "REJECT"
+      },
+      "request": {
+        "read_pages": [
+          "槐丫听见墙后有咚咚声，猜是皮球落下来了。"
+        ],
+        "child": "书里写的是皮球吗？",
+        "draft": {
+          "reply": "对，是皮球摔到地上了。",
+          "next_action": "RESPOND",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R14",
+      "category": "supported_uncertainty",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "ACCEPT"
+      },
+      "request": {
+        "read_pages": [
+          "槐丫听见墙后有咚咚声，猜是皮球落下来了。"
+        ],
+        "child": "书里写的是皮球吗？",
+        "draft": {
+          "reply": "槐丫猜是皮球呢。这一页还没写墙后到底是什么。",
+          "next_action": "RESPOND",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R15",
+      "category": "character_action",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "REJECT"
+      },
+      "request": {
+        "read_pages": [
+          "尧宁扶住竹架，芃宝把风铃挂到竹架上。"
+        ],
+        "child": "是哪个挂上去的？",
+        "draft": {
+          "reply": "尧宁把风铃挂上去了。",
+          "next_action": "RESPOND",
+          "followup_question": null
+        }
+      }
+    },
+    {
+      "id": "R16",
+      "category": "unsupported_detail",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "REJECT"
+      },
+      "request": {
+        "read_pages": [
+          "碎银把一面旧镜子斜靠在花盆边。"
+        ],
+        "child": "我看到镜子了。",
+        "draft": {
+          "reply": "旧镜子就在花盆边。",
+          "next_action": "ASK_FOLLOWUP",
+          "followup_question": "镜面上的两道裂痕是什么时候弄出来的？"
+        }
+      }
+    },
+    {
+      "id": "R17",
+      "category": "natural_quotation",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "ACCEPT"
+      },
+      "request": {
+        "read_pages": [
+          "朵音敲门说：‘在家吗？’门没有动。"
+        ],
+        "child": "她说什么呀？",
+        "draft": {
+          "reply": "她说的是‘在家吗？’。",
+          "next_action": "ASK_FOLLOWUP",
+          "followup_question": "这一页的门后来有没有动？"
+        }
+      }
+    },
+    {
+      "id": "R18",
+      "category": "natural_listening",
+      "reference": {
+        "status": "PENDING_HUMAN_REVIEW",
+        "decision": "ACCEPT"
+      },
+      "request": {
+        "read_pages": [
+          "库房的灯在窗户上投出一片暖光。"
+        ],
+        "child": "我不回答，我想看看。",
+        "draft": {
+          "reply": "好呀。你刚才说的‘我想看看’，我听见啦。",
+          "next_action": "LISTEN",
+          "followup_question": null
+        }
+      }
+    }
+  ]
+}
