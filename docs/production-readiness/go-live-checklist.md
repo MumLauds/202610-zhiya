@@ -37,11 +37,11 @@
 
 ## PR #97 Gate 1 本轮证据
 
-本轮只为隔离合成验收增加证据。独立百炼测试空间已取得 12 次真实响应。仍需独立云 Staging、B3/C 质量复核、真实语音、账单与正式审批证据，Gate 1、2、3 保持 BLOCKED。详见[Gate 1 验收](gate1-staging-validation.md)。
+临时云 Staging 已完成独立构建、Caddy HTTPS、合成库、桌面 Chrome、移动视口、名单隔离、镜像回滚和 14 回合合成验收。历史 B3/C 问题在本轮定向回合中未复现。云端真实 ASR/TTS 合成样本通过。仍需 Android 真机录放、账单、独立质评与正式审批，Gate 1、2、3 保持 BLOCKED。详见[Gate 1 验收](gate1-staging-validation.md)。
 
 ## PR #97 Gate 2 准备记录
 
-Gate 1 联调暂缓。已完成合成安全回归、历史真实响应复盘和用量逐笔对账。Gate 2 仍需正式门禁证据，受控试运行尚未开放。 [风险、盲评与签字条件](gate2-pilot-readiness.md)
+已完成合成安全回归、三本合成绘本真实复验和应用用量逐笔核对。Gate 2 仍需正式门禁证据，受控试运行尚未开放。 [风险、盲评与签字条件](gate2-pilot-readiness.md)
 
 ## PR #97 Gate 3 发布准备
 

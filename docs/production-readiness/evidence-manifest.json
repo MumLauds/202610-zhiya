@@ -1173,6 +1173,80 @@
           "bytes": 2158
         }
       ]
+    },
+    "E18": {
+      "stage": "Gate 1 isolated cloud staging and Gate 3 rollback preparation",
+      "recorded_on": "2026-11-27",
+      "runtime_revision": "63bfe2cd12eec17c10c3e0988440397804c52b6a",
+      "runtime_environment": "temporary Hong Kong ECS, verified Caddy HTTPS over SSH, synthetic only",
+      "ci_run_id": 46003378841,
+      "provider_model": "qwen3.8-flash",
+      "staging_smoke": {
+        "status": "PASS",
+        "archive_sha256": "fcec78aa59ee376132676b0459854a3d6abb63a10b9be7a66c7b5efcd75e590d",
+        "checks": [
+          "candidate_build_and_start",
+          "verified_https",
+          "synthetic_sqlite",
+          "cohort_boundary",
+          "cross_guardian_rejection",
+          "input_consent_revoke",
+          "production_model_untouched"
+        ]
+      },
+      "browsers": {
+        "desktop_chrome": "PASS",
+        "desktop_chrome_version": "158.0.8127.38",
+        "mobile_viewport": "PASS",
+        "android_real_device": "BLOCKED"
+      },
+      "model_live": {
+        "archive_sha256": "5a6598754d282c94dc7a0babba504010babbf70c7957c5990b88751e306b06fc",
+        "verified_provider_responses": 12,
+        "local_listening_turns": 2,
+        "full_fallbacks": 0,
+        "format_errors": 0,
+        "application_micros_settled": 8767,
+        "prior_denied_http_status": 403,
+        "prior_denied_app_attempts": 2,
+        "prior_denied_conservative_micros_reserved": 6750,
+        "prior_denied_archives_sha256": [
+          "7bd23a2841a121d540a773ff4a0086de5d93a86cdbfd4440bc5fcfbd65ea1ab5",
+          "6e814ed6949f5f85ef93df8b6672c350dc0cab9d753100e2e6a09b1424161af6"
+        ]
+      },
+      "rollback": {
+        "status": "PASS",
+        "bridge_revision": "42bd04626979d3c93f36f8619e92072ca6fe654a",
+        "candidate_backend_image_id": "sha256:6e2d01bfc79018ed1952b36bd56e19340ac8af8e301577bf25c9aba0cd230028",
+        "candidate_web_image_id": "sha256:54ab65a00c5d45444ff1068b90eb3cf7747015bfab90519f11fc41c8042aa193",
+        "bridge_backend_image_id": "sha256:fc2c32367587694e26fe4d08a1c5e8eba4528fa016a6696115e91e2f3691089d",
+        "bridge_web_image_id": "sha256:6838d6b944bd1bbc6796330ed955b836e4f9b9d5337d29e150fba62199aa8aa7",
+        "sqlite_and_caddy_ca_preserved": true,
+        "pinned_sessions_preserved": true,
+        "new_sessions_revert_to_legacy": true
+      },
+      "restore": {
+        "status": "PASS",
+        "separate_staging_restore_file": true,
+        "restored_sessions": 6,
+        "sqlite_snapshot_sha256": "636f44902f670f8f91677ba21c599b060afeed9b48afe0d61002c13e29f61558",
+        "receipt_sha256": "fe7aa46cde5cd597a12e639095bacab1a925a56a8d2309f12c37984ab4db683f"
+      },
+      "gate1": "BLOCKED",
+      "gate2": "BLOCKED",
+      "gate3": "BLOCKED",
+      "limitations": "Cloud Android microphone and on-device playback, vendor invoice, independent human review, and formal approvals remain pending.",
+      "voice": {
+        "asr": "PASS",
+        "confirmed_answer_submission": "PASS",
+        "tts": "PASS",
+        "cross_account_media_isolation": "PASS",
+        "input": "approved_synthetic_wav",
+        "tts_audio_bytes": 130604,
+        "receipt_sha256": "c6d9741caf75f60a2c987eca047436cd142b3839a254202929391f305b027def",
+        "android_microphone_and_playback": "BLOCKED"
+      }
     }
   },
   "deliverables": [
@@ -1203,13 +1277,13 @@
     },
     {
       "path": "docs/production-readiness/gap-analysis.md",
-      "sha256": "23e928852a31e79c89257ead1243dd906391d636583784a406715dffd9032bea",
-      "bytes": 8965
+      "sha256": "78e906c4406b92841ce65534a0eb38341cfd8313fd07da87dc7b6e79603058fb",
+      "bytes": 9065
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
-      "sha256": "db8b2df701b1dac8cce63aa9356dfc93b1d31c255bc91d3ae449186ddb144896",
-      "bytes": 4254
+      "sha256": "62697b920b38db5c3965bf43ca3d8654929875ce89ac5671ae0dbff2844669f5",
+      "bytes": 4372
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
@@ -1248,8 +1322,8 @@
     },
     {
       "path": "docs/production-readiness/gate1-staging-validation.md",
-      "sha256": "a2aa13452e0eb941c9660392c95d324569cd0ffe9358f85502de5d89693b6aaa",
-      "bytes": 8979
+      "sha256": "6f962a5da7fc898bc8fbb7293b82801144610e68be83c32c39e9d3c02d417941",
+      "bytes": 11297
     },
     {
       "path": "docs/production-readiness/browser-e2e-report.md",
@@ -1283,13 +1357,13 @@
     },
     {
       "path": "docs/production-readiness/gate2-pilot-readiness.md",
-      "sha256": "b60af6c3b6c820b1040fdaa4c80569692082dfefbdc76dfabd54bd896812a2e8",
-      "bytes": 9947
+      "sha256": "454ea8c77168ea2a394cf37430620752bf274e0764aae6f69dc9847dfec631b0",
+      "bytes": 9940
     },
     {
       "path": "docs/production-readiness/gate3-release-readiness.md",
-      "sha256": "8951b88ac07cccb031dbd0dc1431aedfb46e4ba4bf93dcfa498474f5ef0ff26b",
-      "bytes": 2936
+      "sha256": "8c4ca750722e18797ce20ae4a19e8e203ae8dcfe4a14bcd7634ed3d475714599",
+      "bytes": 3078
     }
   ]
 }
