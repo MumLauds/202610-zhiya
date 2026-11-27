@@ -40,6 +40,8 @@ jobs:
         run: bash infra/staging/smoke_ci.sh
       - name: Run Yaya Chrome acceptance with synthetic providers
         if: github.event_name == 'pull_request'
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
         run: |
           python -m pip install playwright==1.65.2
           python infra/staging/gate1_local_browser.py --output "${RUNNER_TEMP}/yaya-browser.json"
