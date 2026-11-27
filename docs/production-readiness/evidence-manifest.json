@@ -1110,6 +1110,69 @@
         "independent_human_reviews_completed": 0,
         "blind_html_sha256": "e9e1849ab8709b6df253ed1c3a3c86151e6049da73a2130e82c76a2bc1fe7abf"
       }
+    },
+    "E17": {
+      "stage": "Gate 2 branch-arrival fix and matched multi-book live rerun",
+      "baseline_revision": "df6e80636273b98e8fabd087310d63194c896f8a",
+      "runtime_revision": "106a66a99b9bdb63fb2240576362c48b242597a7",
+      "provider_model": "qwen3.8-flash",
+      "fixture_sha256": "5621deb21ca72eb1bf3689a9d8b8c52f7342e715aec2d964ab32650db73ae3a6",
+      "prompt_sha256": "56a5acaf8c90e956c65eeeecd9806f9238b5df45eaa5bcbb79a1ca677104aef8",
+      "probe_sha256": "2f345f1af1412e01e11bee158632e56ebf8bee60db844ac382f4f3895d403202",
+      "archive_sha256": "5a9a76175720b4c4edcb43d5a5e7f61d5a8e68276bc72d11cfb5ef3d76d1de7a",
+      "baseline_archive_sha256": "ae0a9624a23b5c02c33fd8fdd24b7bbf73a80430c01dc64627b5640cbe32a91c",
+      "offline_archive_sha256": "d7a55234e7dbd07559aa9d9dca9f83c96750d7ce5a0ec05c5dc83ed251f0bd8c",
+      "matched_fixtures": true,
+      "verification": {
+        "targeted_api_tests_passed": 6,
+        "other_targeted_tests_passed": 77,
+        "offline_mocked_provider_turns": 63,
+        "verified_provider_responses": 63,
+        "full_fallbacks": 0,
+        "reply_only_nonlocal_actions": 2,
+        "format_errors": 0,
+        "local_listening_turns": 6,
+        "missing_branch_page_before": 9,
+        "missing_branch_page_after": 0,
+        "unexpected_outbound_pages": 0,
+        "unmatched_outbound_quotes": 0,
+        "checked_future_output_cases": 3,
+        "checked_unselected_branch_output_cases": 6,
+        "checked_backtrack_output_cases": 6,
+        "output_leaks_in_target_cases": 0,
+        "timeline_cases_correct": [
+          "light-15",
+          "garden-15"
+        ],
+        "usage_lines_reconciled": 63,
+        "prompt_tokens": 35328,
+        "completion_tokens": 2422,
+        "settled_application_micros": 34832
+      },
+      "gate2": "BLOCKED",
+      "gate3": "BLOCKED",
+      "sources": [
+        {
+          "path": "backend/app/services/yaya_agent.py",
+          "sha256": "8427b7b392df007c0f30e6d9b6166113eb6c59e6c93c5f6366fc9712d75b0ad0",
+          "bytes": 28614
+        },
+        {
+          "path": "backend/tests/test_interactions.py",
+          "sha256": "206ad7a83a0758e39f29a518b559a986018e5abfcf368002377635eb3f02d63a",
+          "bytes": 139824
+        },
+        {
+          "path": "infra/staging/gate2_live_probe.py",
+          "sha256": "2f345f1af1412e01e11bee158632e56ebf8bee60db844ac382f4f3895d403202",
+          "bytes": 15552
+        },
+        {
+          "path": "infra/staging/run_gate2_live.ps1",
+          "sha256": "03c0e057b1f7839b173d938a88f3584a6d17d9c78cd3acc420d9ca637aecf022",
+          "bytes": 2158
+        }
+      ]
     }
   },
   "deliverables": [
@@ -1140,8 +1203,8 @@
     },
     {
       "path": "docs/production-readiness/gap-analysis.md",
-      "sha256": "50c3a2757a33b76bef7a0547444ea56caf89b803527ca60047c4bdcfdea0e7ee",
-      "bytes": 8917
+      "sha256": "23e928852a31e79c89257ead1243dd906391d636583784a406715dffd9032bea",
+      "bytes": 8965
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
@@ -1220,13 +1283,13 @@
     },
     {
       "path": "docs/production-readiness/gate2-pilot-readiness.md",
-      "sha256": "ee94afdc8f83b06eb327e369a16c457ba31d5bf4c1f130d57f45b7fe467d1295",
-      "bytes": 7946
+      "sha256": "b60af6c3b6c820b1040fdaa4c80569692082dfefbdc76dfabd54bd896812a2e8",
+      "bytes": 9947
     },
     {
       "path": "docs/production-readiness/gate3-release-readiness.md",
-      "sha256": "0850b830b6a3d1ce35e1804e0878d47c52f64133a6b851d2076299c1d9a693d1",
-      "bytes": 2811
+      "sha256": "8951b88ac07cccb031dbd0dc1431aedfb46e4ba4bf93dcfa498474f5ef0ff26b",
+      "bytes": 2936
     }
   ]
 }
