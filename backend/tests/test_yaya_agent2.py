@@ -10,7 +10,10 @@ import pytest
 from app.config import Settings
 from app.db import yaya_agent as yaya_db
 from app.model_gateway import ModelGateway, ModelReply
-from app.services.yaya_agent import Context, YayaAgent, local_turn, project, reading_context, until_disconnect
+from app.services.yaya_agent import (
+    BOOK_ANNOTATIONS, BookEvidenceIndex, Context, YayaAgent, fallback, handoff, local_turn,
+    project, project_input, question_result, reading_context, until_disconnect,
+)
 from app.services.yaya_agent_config import MODEL, YayaSettings
 
 
@@ -34,14 +37,17 @@ def test_default_enrollment_needs_release_approval_and_separate_credentials(monk
     monkeypatch.setenv("YAYA_AGENT2_LEDGER_SECRET", "x" * 32)
     settings = YayaSettings.from_env()
     assert settings.model.model_name == MODEL == "qwen3.8-flash"
-    assert settings.enrolls(123)
+    assert settings.enrolls(123) and not settings.authorizes_model_input(123)
+    monkeypatch.setenv("YAYA_AGENT2_INPUT_ALLOWLIST", "123")
+    settings = YayaSettings.from_env()
+    assert settings.authorizes_model_input(123) and not settings.authorizes_model_input(456)
 
 
 @pytest.mark.parametrize(("text", "state", "action", "reply"), [
-    ("我觉得这片叶子是一床小被子。", None, "RESPOND", "这个想法真有意思呀。"),
     ("你先别问，让我看看它怎么转。", None, "LISTEN", "好，我陪你看。"),
     ("我还在看。", "LISTEN", "LISTEN", "嗯。"),
-    ("松鼠是怕信掉了才轻轻放进去的吗？", None, "RESPOND", "有可能哦。"),
+    ("我们先休息一下。", None, "PAUSE", "好，我们先歇一会儿。"),
+    ("我不想接着聊。", None, "CLOSE_TOPIC", "好，那我们就先停在这里。"),
 ])
 def test_local_positive_interaction(text, state, action, reply):
     result = local_turn(Context(text, (), {}, state))
@@ -86,13 +92,15 @@ def test_gateway_projection_and_daily_reservation(tmp_path, monkeypatch, fault, 
     config = Settings(model_api_url="https://ws-test.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
                       model_api_key="synthetic-key", model_name=MODEL)
     settings = YayaSettings(mode="allowlist", guardians=frozenset({1}), model=config,
-                            ledger_secret="x" * 32, guardian_calls=1, session_calls=1)
+                            ledger_secret="x" * 32, model_input_guardians=frozenset({1}),
+                            guardian_calls=1, session_calls=1)
     calls = []
 
     def provider(request):
         payload = json.loads(request.content)
         calls.append(payload)
-        assert "synthetic-child-secret" not in request.content.decode()
+        assert "synthetic-key" not in request.content.decode()
+        assert payload["messages"][-1]["content"].endswith("松鼠把信放在哪儿啦？")
         assert payload["model"] == MODEL
         assert payload["response_format"] == {"type": "json_object"}
         if fault == "connection":
@@ -116,7 +124,7 @@ def test_gateway_projection_and_daily_reservation(tmp_path, monkeypatch, fault, 
     async def run():
         async with ModelGateway(config, transport=httpx.MockTransport(provider)) as gateway:
             agent = YayaAgent(settings, gateway)
-            context = Context("synthetic-child-secret", (), {"currentQuotes": ["松鼠把信放进信箱。"]},
+            context = Context("松鼠把信放在哪儿啦？", (), {"currentQuotes": ["松鼠把信放进信箱。"]},
                               allow_provider=True)
             first = await agent.turn(context, request_id="first", guardian=1, session=2, disconnected=connected)
             second = await agent.turn(context, request_id="second", guardian=1, session=2, disconnected=connected)
@@ -157,6 +165,8 @@ def test_evidence_is_bound_to_current_book_visited_prefix_and_session():
     with closing(sqlite3.connect(":memory:")) as db:
         db.row_factory = sqlite3.Row
         db.executescript("""
+            CREATE TABLE story_versions (id INTEGER, source_ref TEXT);
+            INSERT INTO story_versions VALUES (11,NULL),(12,NULL);
             CREATE TABLE story_pages (version_id INTEGER, page_no INTEGER, body_text TEXT);
             CREATE TABLE interaction_events (id INTEGER, session_id INTEGER, version_id INTEGER, page_no INTEGER,
                                              event_type TEXT, result_status TEXT, response_json TEXT);
@@ -177,6 +187,7 @@ def test_evidence_is_bound_to_current_book_visited_prefix_and_session():
     assert "松鼠打开信箱" in material and "松鼠轻轻放好信" in material
     assert "纸风车" not in material and "其他绘本" not in material and "PAUSE" not in material
     assert result.last_state == "LISTEN"
+    assert result.material["currentEvidenceLevel"] == "sentence" and not result.material["currentFacts"]
 
 
 def test_local_guidance_uses_current_safe_excerpt_and_fixed_child_question():
@@ -187,3 +198,118 @@ def test_local_guidance_uses_current_safe_excerpt_and_fixed_child_question():
         assert result.status == "GENERATED"
         assert "松鼠轻轻地把信放进信箱" in result.outputText
         assert result.outputText.count("？") == 1
+
+
+def test_reviewed_story_facts_keep_actor_object_state_and_citation():
+    source = "synthetic-yaya-staging"
+    book = BOOK_ANNOTATIONS[source]
+    pages = [(int(page), data["text"], source) for page, data in book.items()]
+    index = BookEvidenceIndex(pages)
+    current = index.context(1, [1, 3], "我让雨点住进帐篷。")
+    assert current["currentEvidenceLevel"] == "reviewed_structured"
+    facts = {fact["evidenceRef"]: fact for fact in current["currentFacts"]}
+    assert (facts["1.mail"]["subject"], facts["1.mail"]["object"]) == ("松鼠", "信")
+    assert (facts["1.leaf"]["subject"], facts["1.leaf"]["action"]) == ("小兔", "拿起")
+    hat = facts["1.hat"]
+    assert (hat["subject"], hat["object"], hat["attribute"]) == ("小熊", "帽子", "蓝色")
+    imagined = facts["1.blanket"]
+    assert imagined["subject"] == "小兔" and imagined["state"] == "CHARACTER_IMAGINATION"
+    assert all(fact["quote"] in book["1"]["text"] for fact in facts.values())
+    assert not current["visitedTimeline"] and "雨点" not in json.dumps(current, ensure_ascii=False)
+
+    later = index.context(3, [1, 2, 3], "后来谁把信拿走了？")
+    assert [event["page"] for event in later["visitedTimeline"]] == [1, 1, 1, 2, 2]
+    assert later["currentFacts"][0]["state"] == "ESTABLISHED"
+    assert any(event["state"] == "IN_PROGRESS" for event in later["visitedTimeline"])
+    stale = BookEvidenceIndex([(1, book["1"]["text"] + "正文已改。", source)]).context(1, (), "")
+    assert stale["currentEvidenceLevel"] == "sentence" and not stale["currentFacts"]
+    unreviewed = BookEvidenceIndex([(1, book["1"]["text"], "another-source")]).context(1, (), "")
+    assert unreviewed["currentEvidenceLevel"] == "sentence"
+
+
+def test_authorized_provider_receives_minimized_distinct_child_expressions(tmp_path, monkeypatch):
+    db_path = tmp_path / "usage.sqlite3"
+    db_path.touch()
+    monkeypatch.setenv("ZHIYA_DB_PATH", str(db_path))
+    yaya_db.install()
+    allowed, not_authorized, session = 78012345, 98912345, 89312345
+    config = Settings(model_api_url="https://ws-test.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+                      model_api_key="synthetic-provider-key", model_name=MODEL)
+    settings = YayaSettings(mode="allowlist", guardians=frozenset({allowed, not_authorized}), model=config,
+                            ledger_secret="x" * 32, model_input_guardians=frozenset({allowed}))
+    expressions = [
+        "我觉得叶子是一床小被子。",
+        "我让雨点住进帐篷。",
+        "我把小船改成一座车站。",
+        "拿叶子的小兔和戴蓝帽子的小熊是一个人吗？",
+        "松鼠是怕信掉了才轻轻放进去的吗？",
+        "我叫虚构小米，我的电话是13800138000，小熊戴的帽子是什么颜色？",
+    ]
+    replies = [
+        "给叶子盖着小小的梦，真有意思。",
+        "雨点在你的帐篷里也有住处啦。",
+        "小船在你的故事里变成车站啦。",
+        "这页里的小兔和小熊是两个角色。",
+        "有可能哦，书里只写了松鼠轻轻把信放进信箱。",
+        "小熊戴的是蓝色帽子。",
+    ]
+    captured = []
+
+    def provider(request):
+        payload = json.loads(request.content)
+        assert request.headers["Authorization"] == "Bearer synthetic-provider-key"
+        assert all(secret not in request.content.decode() for secret in (
+            "synthetic-provider-key", "13800138000", "虚构小米",
+            str(allowed), str(not_authorized), str(session), "儿童档案",
+        ))
+        system, user = payload["messages"]
+        assert (system["role"], user["role"]) == ("system", "user")
+        evidence, expression = user["content"].split("用户输入：\n")
+        assert expression not in system["content"]
+        assert "CHARACTER_IMAGINATION" in evidence and "带回了小屋" not in evidence and "纸风车" not in evidence
+        captured.append(expression)
+        return httpx.Response(200, json={"model": MODEL, "choices": [{"finish_reason": "stop", "message": {
+            "role": "assistant", "content": json.dumps({"reply": replies[len(captured)-1], "next_action": "RESPOND"}),
+        }}]})
+
+    async def connected():
+        return False
+
+    async def run():
+        source = "synthetic-yaya-staging"
+        index = BookEvidenceIndex((int(page), data["text"], source)
+                                  for page, data in BOOK_ANNOTATIONS[source].items())
+        material = index.context(1, (1, 3), expressions[0])
+        async with ModelGateway(config, transport=httpx.MockTransport(provider)) as gateway:
+            agent = YayaAgent(settings, gateway)
+            for i, expression in enumerate(expressions):
+                context = Context(expression, (), material, allow_provider=True)
+                assert local_turn(context) is None
+                result = await agent.turn(context, request_id=f"prompt-{i}", guardian=allowed, session=session,
+                                          disconnected=connected)
+                assert result.upstream and result.decision == "UNCHANGED" and result.reply == replies[i]
+            for i, (text, authority, visible, reason) in enumerate([
+                ("我让雨点住进帐篷。", not_authorized, True, "DEPENDENCY_UNAVAILABLE"),
+                ("我让雨点住进帐篷。", allowed, False, "DEPENDENCY_UNAVAILABLE"),
+                ("我的家庭地址是未来路88号，小兔拿了什么？", allowed, True, "SAFETY_BLOCK"),
+                ("账号ID是abc123，我觉得叶子是被子。", allowed, True, "SAFETY_BLOCK"),
+                ("sk-fictional-key,小熊在做什么？", allowed, True, "SAFETY_BLOCK"),
+            ]):
+                result = await agent.turn(Context(text, (), material, allow_provider=visible), request_id=f"blocked-{i}",
+                                          guardian=authority, session=session, disconnected=connected)
+                assert result.reason == reason
+
+    asyncio.run(run())
+    assert captured == expressions[:5] + ["小熊戴的帽子是什么颜色？"]
+    assert project_input(expressions[-1]).redacted
+
+
+@pytest.mark.parametrize("reason", (
+    "API_TIMEOUT", "API_CONNECTION_ERROR", "API_HTTP_ERROR", "MODEL_OUTPUT_INVALID",
+    "QUESTION_FORMAT", "BUDGET_LIMIT", "CLIENT_DISCONNECTED", "DEPENDENCY_UNAVAILABLE", "SAFETY_BLOCK",
+))
+def test_question_fallback_reason_matches_strategy_and_receipt(reason):
+    outcome = handoff() if reason == "SAFETY_BLOCK" else fallback(reason)
+    result = question_result(outcome)
+    assert result.status == ("BLOCKED" if reason == "SAFETY_BLOCK" else "FALLBACK")
+    assert result.strategyType == outcome.public()["reason"] == reason

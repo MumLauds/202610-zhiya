@@ -865,12 +865,13 @@ def save_reading_event(request: Request, session_id: int, payload: ReadingEvent,
                 VALUES (?, ?, ?, ?, '{}', ?, ?, ?, ?, 'SUCCESS', ?, ?)""",
                 (session_id, row["version_id"], payload.clientEventId, digest, payload.pageNumber,
                  payload.eventType, payload.feedback,
-                 None if isinstance(context, yaya.Context) and yaya.unsafe(payload.inputText) else payload.inputText,
+                 None if isinstance(context, yaya.Context) and context.input_projection.redacted else payload.inputText,
                  revision, now))
             response = {"data": {"interactionEventId": cursor.lastrowid, "revision": revision}, "requestId": request.state.request_id}
             if isinstance(context, yaya.Context):
                 provisional = yaya.local_turn(context) or yaya.fallback("DEPENDENCY_UNAVAILABLE")
-                response["data"].update(replyText=provisional.reply, agentReceipt=provisional.public())
+                response["data"].update(replyText=provisional.reply, agentReceipt=provisional.public(
+                    input_redacted=context.input_projection.redacted))
             elif context is not None:
                 latest = context["recent_turns"][-1] if context["recent_turns"] else None
                 question_answered = bool(latest and latest.question == context["question"])
@@ -958,7 +959,8 @@ def finalize_answer_reply(request: Request, session_id: int, payload: ReadingEve
                 reply_text, followup = reply
             finalized = {**response, "data": {**response["data"], "replyText": reply_text}}
             if isinstance(reply, yaya.Outcome):
-                finalized["data"]["agentReceipt"] = reply.public()
+                finalized["data"]["agentReceipt"] = reply.public(
+                    input_redacted=response["data"]["agentReceipt"].get("inputRedacted", False))
             if followup:
                 # A fresh question invalidates feedback based on the provisional answer snapshot.
                 revision = session["revision"] + 1

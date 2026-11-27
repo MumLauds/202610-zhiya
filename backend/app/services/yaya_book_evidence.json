@@ -1,0 +1,148 @@
+{
+  "synthetic-yaya-staging": {
+    "1": {
+      "text": "松鼠把信轻轻放进信箱。小兔拿起一片黄色叶子。小熊戴着蓝色帽子。小兔想象黄色叶子是一床小被子。",
+      "facts": [
+        {
+          "name": "mail",
+          "subject": "松鼠",
+          "action": "放进信箱",
+          "object": "信",
+          "state": "ESTABLISHED",
+          "relation": "ACTS_ON",
+          "quote": "松鼠把信轻轻放进信箱。"
+        },
+        {
+          "name": "leaf",
+          "subject": "小兔",
+          "action": "拿起",
+          "object": "黄色叶子",
+          "state": "ESTABLISHED",
+          "relation": "ACTS_ON",
+          "quote": "小兔拿起一片黄色叶子。"
+        },
+        {
+          "name": "hat",
+          "subject": "小熊",
+          "action": "戴着",
+          "object": "帽子",
+          "attribute": "蓝色",
+          "state": "ESTABLISHED",
+          "relation": "HAS_ATTRIBUTE",
+          "quote": "小熊戴着蓝色帽子。"
+        },
+        {
+          "name": "blanket",
+          "subject": "小兔",
+          "action": "想象",
+          "object": "黄色叶子是一床小被子",
+          "state": "CHARACTER_IMAGINATION",
+          "quote": "小兔想象黄色叶子是一床小被子。"
+        }
+      ]
+    },
+    "2": {
+      "text": "小熊把纸风车插进土里。一阵风吹来，纸风车慢慢转了起来。",
+      "facts": [
+        {
+          "name": "windmill",
+          "subject": "小熊",
+          "action": "插进土里",
+          "object": "纸风车",
+          "state": "ESTABLISHED",
+          "relation": "ACTS_ON",
+          "quote": "小熊把纸风车插进土里。"
+        },
+        {
+          "name": "spinning",
+          "subject": "纸风车",
+          "action": "转了起来",
+          "object": "纸风车",
+          "state": "IN_PROGRESS",
+          "quote": "一阵风吹来，纸风车慢慢转了起来。"
+        }
+      ]
+    },
+    "3": {
+      "text": "松鼠后来取出信，带回了小屋。",
+      "facts": [
+        {
+          "name": "retrieval",
+          "subject": "松鼠",
+          "action": "取出并带回小屋",
+          "object": "信",
+          "state": "ESTABLISHED",
+          "relation": "ACTS_ON",
+          "quote": "松鼠后来取出信，带回了小屋。"
+        }
+      ]
+    }
+  },
+  "妈妈夸我说的队 · 知芽项目自研绘本": {
+    "1": {
+      "text": "下雨了。小狐狸站在门口，看着外面的雨。",
+      "facts": [
+        {
+          "name": "rain",
+          "subject": "雨",
+          "action": "下了起来",
+          "object": "门外",
+          "state": "IN_PROGRESS",
+          "quote": "下雨了。"
+        },
+        {
+          "name": "fox-at-door",
+          "subject": "小狐狸",
+          "action": "站在",
+          "object": "门口",
+          "state": "ESTABLISHED",
+          "relation": "ACTS_ON",
+          "quote": "小狐狸站在门口，看着外面的雨。"
+        }
+      ]
+    },
+    "3": {
+      "text": "小狐狸撑开伞，走进森林小路。",
+      "facts": [
+        {
+          "name": "open-umbrella",
+          "subject": "小狐狸",
+          "action": "撑开",
+          "object": "伞",
+          "state": "ESTABLISHED",
+          "relation": "ACTS_ON",
+          "quote": "小狐狸撑开伞，走进森林小路。"
+        },
+        {
+          "name": "walk",
+          "subject": "小狐狸",
+          "action": "走进",
+          "object": "森林小路",
+          "state": "ESTABLISHED",
+          "quote": "小狐狸撑开伞，走进森林小路。"
+        }
+      ]
+    },
+    "5": {
+      "text": "小狐狸回头看，妈妈就在后面。",
+      "facts": [
+        {
+          "name": "look-back",
+          "subject": "小狐狸",
+          "action": "回头看",
+          "object": "身后",
+          "state": "ESTABLISHED",
+          "quote": "小狐狸回头看，妈妈就在后面。"
+        },
+        {
+          "name": "mother-position",
+          "subject": "妈妈",
+          "action": "在",
+          "object": "小狐狸后面",
+          "state": "ESTABLISHED",
+          "quote": "小狐狸回头看，妈妈就在后面。"
+        }
+      ]
+    }
+  }
+}

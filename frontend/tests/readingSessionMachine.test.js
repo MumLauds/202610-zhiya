@@ -1,5 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { describeYayaReceipt, yayaFallbackLabels } from '../src/data/readingQuestions.js'
+import { STRATEGY_LABELS } from '../mobile/api/g10.js'
 import { ApiError } from '../mobile/api/client.js'
 import { ReadingSessionMachine, RecoverableSessionError } from '../mobile/services/readingSessionMachine.js'
 
@@ -322,3 +324,13 @@ for (const retryable of [true, false]) {
     assert.equal(machine.snapshot().syncRequired, false)
   })
 }
+
+
+test('2.0 answer and story question render the same fallback categories', () => {
+  for (const [reason, label] of Object.entries(yayaFallbackLabels)) {
+    assert.equal(STRATEGY_LABELS[reason], label)
+    assert.equal(describeYayaReceipt({ version: '2.0', decision: 'FALLBACK', reason }), `${label}。`)
+  }
+  assert.equal(STRATEGY_LABELS.TIMEOUT_FALLBACK, '超时回退')
+  assert.equal(describeYayaReceipt({ version: '2.0', decision: 'REPLY_ONLY', reason: 'QUESTION_FORMAT' }), '')
+})

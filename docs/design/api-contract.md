@@ -144,9 +144,9 @@ API-015 在同一写事务内重新计算允许的选项。儿童的 `ANSWER.inp
 
 ### 芽芽 2.0 会话迁移期间的可选回执
 
-服务端在 API-011 创建会话及续读新建会话时固定 Agent 版本。读取既有会话、请求重放和模式设置更新均延用会话初始归属。家长的 API-015 作答、API-016 提问和 API-013 对应历史事件可带 `agentReceipt`。该对象包含 `version`（`"2.0"`）、`action`、`state`、`decision`、`reason`（无分类时为 null）。儿童和旧版历史可省略字段。内容安全拦截时回应会保留安全文案，原输入不落库。供应商草稿、请求键和费用数据均属服务端数据。
+服务端在 API-011 创建会话及续读新建会话时固定 Agent 版本。读取既有会话、请求重放和模式设置更新均延用会话初始归属。家长的 API-015 作答、API-016 提问和 API-013 对应历史事件可带 `agentReceipt`。该对象包含 `version`（`"2.0"`）、`action`、`state`、`decision`、`reason`（无分类时为 null）。儿童和旧版历史可省略字段。脱敏或拦截时回执可含 `inputRedacted: true`，原始输入不落库。内容安全拦截保留安全文案。供应商草稿、请求键和费用数据均属服务端数据。
 
-`action` 可为 `RESPOND`、`ASK_FOLLOWUP`、`LISTEN`、`PAUSE`、`CLOSE_TOPIC` 或 `HANDOFF`。状态取 `CONTINUE`、`LISTEN`、`PAUSE` 或 `END_TOPIC`。`decision=REPLY_ONLY` 表示正文有效且追问已移除。`decision=FALLBACK` 表示使用安全回退。2.0 的 API-017 提供本地题目和原契约的固定儿童选项，访问限制、修订号、播放和幂等行为沿用现有规则。详见 [发布与回滚](../production-readiness/deployment-and-rollback.md)。
+`action` 可为 `RESPOND`、`ASK_FOLLOWUP`、`LISTEN`、`PAUSE`、`CLOSE_TOPIC` 或 `HANDOFF`。状态取 `CONTINUE`、`LISTEN`、`PAUSE` 或 `END_TOPIC`。`decision=REPLY_ONLY` 表示正文有效且追问已移除。`decision=FALLBACK` 表示使用安全回退。2.0 的 API-016 以相同的 `strategyType` 与 `agentReceipt.reason` 表示 `API_TIMEOUT`、`API_CONNECTION_ERROR`、`API_HTTP_ERROR`、`MODEL_OUTPUT_INVALID`、`QUESTION_FORMAT`、`BUDGET_LIMIT`、`CLIENT_DISCONNECTED`、`DEPENDENCY_UNAVAILABLE` 或 `SAFETY_BLOCK`。旧回执保留原枚举。2.0 的 API-017 提供本地题目和原契约的固定儿童选项，访问限制、修订号、播放和幂等行为沿用现有规则。详见 [发布与回滚](../production-readiness/deployment-and-rollback.md)。
 
 ## 本期有限续写范围
 

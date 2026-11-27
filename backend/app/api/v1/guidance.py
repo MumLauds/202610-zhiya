@@ -72,7 +72,8 @@ def save_event(db, request, session, payload, digest, result: AgentResult, now, 
             feedback, input_text, output_text, strategy_type, result_status, revision_after, created_at)
            VALUES (?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (session["id"], session["version_id"], payload.clientEventId, digest, payload.pageNumber,
-         event_type, feedback, payload.inputText if ask and result.status != "BLOCKED" else None,
+         event_type, feedback, payload.inputText if ask and result.status != "BLOCKED"
+         and not (receipt or {}).get("inputRedacted") else None,
          result.outputText, result.strategyType, status, revision, now),
     )
     event_id = cursor.lastrowid
@@ -252,14 +253,16 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
 
     try:
         if new_context is not None:
-            if new_guardian:
+            if new_guardian and session["mode"] == "PARENT_CHILD":
                 outcome = await request.app.state.yaya_agent.turn(
                     new_context, request_id=request.state.request_id, guardian=owner, session=session_id,
                     disconnected=request.is_disconnected, allow_followup=False)
-                receipt = outcome.public()
             else:
                 quotes = new_context.material["currentQuotes"]
-                outcome = yaya.Outcome(quotes[0], decision="LOCAL") if quotes else yaya.fallback("DEPENDENCY_UNAVAILABLE")
+                outcome = yaya.local_turn(new_context) or (
+                    yaya.Outcome(quotes[0], decision="LOCAL") if quotes else yaya.fallback("DEPENDENCY_UNAVAILABLE"))
+            if new_guardian:
+                receipt = outcome.public(input_redacted=new_context.input_projection.redacted)
             result = yaya.question_result(outcome)
         else:
             result = await legacy_guidance(model, ask, payload, context, page_image, session, previous_question,
@@ -268,7 +271,9 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
         if new_context is not None:
             outcome = yaya.fallback("CLIENT_DISCONNECTED")
             await asyncio.shield(run_in_threadpool(finish_guidance, request, session_id, payload, digest, token,
-                                                   yaya.question_result(outcome), outcome.public() if new_guardian else None))
+                                                   yaya.question_result(outcome),
+                                                   outcome.public(input_redacted=new_context.input_projection.redacted)
+                                                   if new_guardian else None))
         raise
     except Exception as exc:
         # Keep private prompts and provider messages out of logs; record a definite failure for this key.

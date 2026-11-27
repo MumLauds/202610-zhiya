@@ -2072,6 +2072,25 @@ def test_yaya2_migration_pins_existing_and_new_sessions(started_session, env, mo
     })
     assert response.status_code == 201, response.text
     assert response.json()["data"]["agentReceipt"]["reason"] == "DEPENDENCY_UNAVAILABLE"
+    ask = client.post(url + "/questions", headers=headers, json={
+        "pageNumber": 1, "expectedRevision": 3, "clientEventId": "redacted-ask",
+        "inputText": "我叫虚构小米，松鼠在做什么？",
+    })
+    assert ask.status_code == 201, ask.text
+    asked = ask.json()["data"]
+    assert asked["agentReceipt"]["inputRedacted"] is True
+    assert asked["strategyType"] == asked["agentReceipt"]["reason"] == "DEPENDENCY_UNAVAILABLE"
+    blocked_answer = client.post(url + "/events", headers=headers, json={
+        **payload, "expectedRevision": asked["revision"], "clientEventId": "redacted-answer",
+        "inputText": "我的家庭地址是未来路88号。",
+    })
+    assert blocked_answer.status_code == 201, blocked_answer.text
+    assert blocked_answer.json()["data"]["agentReceipt"]["inputRedacted"] is True
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("""SELECT input_text FROM interaction_events
+                             WHERE request_key IN ('redacted-ask','redacted-answer') ORDER BY id""").fetchall() == [
+            (None,), (None,),
+        ]
     legacy_response = client.post(f"/api/v1/reading-sessions/{legacy}/events", headers=headers, json=payload)
     assert legacy_response.status_code == 201, legacy_response.text
     assert "agentReceipt" not in legacy_response.json()["data"]
@@ -2114,15 +2133,51 @@ def test_yaya2_loopback_http_session_and_replay(started_session, monkeypatch):
                 url = f"/api/v1/reading-sessions/{sid}"
                 assert live.get("/api/v1/health").status_code == 200
                 payload = {"eventType": "ANSWER", "pageNumber": 1, "expectedRevision": 1,
-                           "clientEventId": "loopback", "inputText": "我觉得这片叶子是一床小被子。"}
+                           "clientEventId": "loopback", "inputText": "你先别问，让我看看它怎么转。"}
                 first = live.post(url + "/events", json=payload)
                 replay = live.post(url + "/events", json=payload)
                 assert (first.status_code, replay.status_code) == (201, 200), first.text
                 assert first.json()["data"] == replay.json()["data"]
                 readback = live.get(url)
                 assert readback.headers["cache-control"] == "private, no-store"
-                assert readback.json()["data"]["events"][-1]["replyText"] == "这个想法真有意思呀。"
+                assert readback.json()["data"]["events"][-1]["replyText"] == "好，我陪你看。"
         finally:
             server.should_exit = True
             worker.join(timeout=5)
         assert not worker.is_alive()
+
+
+def test_yaya2_child_session_keeps_reviewed_short_answer_contract(child_guidance_session, monkeypatch):
+    from app.db import yaya_agent as yaya_db
+
+    client, guardian, path, sid, headers = child_guidance_session
+    yaya_db.install()
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("INSERT INTO yaya_agent_sessions VALUES (?, '2.0')", (sid,))
+    agent = client.app.state.yaya_agent
+    mock_turn = AsyncMock(side_effect=AssertionError("child mode uses no model turn"))
+    monkeypatch.setattr(agent, "turn", mock_turn)
+    url = f"/api/v1/reading-sessions/{sid}"
+    result = guidance(client, headers, sid, "local-child-guidance", revision=1)
+    assert result.status_code == 201
+    data = result.json()["data"]
+    assert data["answerOptions"] == ["是", "不是", "不知道"]
+    expected = {"pageNumber": 1, "expectedRevision": data["revision"], "clientEventId": "child-ask"}
+    invalid = client.post(url + "/questions", headers=headers, json={**expected, "inputText": "我让雨点住进帐篷。"})
+    assert invalid.status_code == 422
+    asked = client.post(url + "/questions", headers=headers, json={**expected, "inputText": "这一页发生了什么？"})
+    assert asked.status_code == 201 and "agentReceipt" not in asked.json()["data"]
+    answer = {"eventType": "ANSWER", "pageNumber": 1, "expectedRevision": asked.json()["data"]["revision"],
+              "clientEventId": "child-answer", "inputText": "是"}
+    answered = client.post(url + "/events", headers=headers, json=answer)
+    assert answered.status_code == 201 and "agentReceipt" not in answered.json()["data"]
+    login = guardian.post("/api/v1/auth/sessions", json={"account": "guardian-one", "password": "strong-pass-123"})
+    assert login.status_code == 201
+    guardian_headers = {"X-CSRF-Token": guardian.cookies["zhiya_csrf"]}
+    guardian_ask = guardian.post(url + "/questions", headers=guardian_headers, json={
+        "pageNumber": 1, "expectedRevision": answered.json()["data"]["revision"],
+        "clientEventId": "guardian-child-ask", "inputText": "小熊在做什么？",
+    })
+    assert guardian_ask.status_code == 201, guardian_ask.text
+    assert guardian_ask.json()["data"]["agentReceipt"]["decision"] == "LOCAL"
+    mock_turn.assert_not_called()

@@ -1843,7 +1843,8 @@ function appendReadingInteraction(operation, result) {
       interactionEventId: result.interactionEventId,
       eventType: 'ANSWER',
       pageNumber: operation.payload.pageNumber,
-      inputText: result.agentReceipt?.reason === 'SAFETY_BLOCK' ? undefined : operation.payload.inputText,
+      inputText: result.agentReceipt?.inputRedacted || result.agentReceipt?.reason === 'SAFETY_BLOCK'
+        ? undefined : operation.payload.inputText,
       replyText: result.replyText,
       ...(result.agentReceipt ? { agentReceipt: result.agentReceipt } : {}),
       ...(result.followupQuestion ? { followupQuestion: result.followupQuestion } : {}),

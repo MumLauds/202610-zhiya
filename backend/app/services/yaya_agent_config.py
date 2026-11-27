@@ -22,6 +22,7 @@ class YayaSettings:
     session_calls: int = 20
     concurrency: int = 6
     retention_days: int = 2
+    model_input_guardians: frozenset[int] = field(default=frozenset(), repr=False)
 
     def __post_init__(self):
         if self.mode not in {"off", "allowlist", "default"}:
@@ -41,6 +42,9 @@ class YayaSettings:
     def enrolls(self, guardian_id: int) -> bool:
         return self.mode == "default" or (self.mode == "allowlist" and guardian_id in self.guardians)
 
+    def authorizes_model_input(self, guardian_id: int) -> bool:
+        return self.enrolls(guardian_id) and guardian_id in self.model_input_guardians
+
     @classmethod
     def from_env(cls):
         mode = os.getenv("YAYA_AGENT2_MODE", "off")
@@ -56,6 +60,8 @@ class YayaSettings:
         return cls(
             mode=mode,
             guardians=frozenset(int(value.strip()) for value in os.getenv("YAYA_AGENT2_ALLOWLIST", "").split(",") if value.strip()),
+            model_input_guardians=frozenset(int(value) for value in os.getenv("YAYA_AGENT2_INPUT_ALLOWLIST", "").split(",")
+                                            if value.strip()),
             model=Settings(model_api_url=os.getenv("YAYA_AGENT2_API_URL", ""), model_api_key=key,
                            model_name=MODEL, model_timeout_seconds=3.5, model_max_tokens=256,
                            model_send_thinking=True),
