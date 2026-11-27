@@ -851,7 +851,7 @@ def save_reading_event(request: Request, session_id: int, payload: ReadingEvent,
             if payload.eventType == "ANSWER" and principal.role == "GUARDIAN" and row["mode"] == "PARENT_CHILD":
                 if yaya_db.pinned(db, session_id):
                     arrival = current_page_arrival_id(db, row)
-                    context = yaya.reading_context(db, row, payload.inputText, arrival, parent_visit_questions(db, row, arrival))
+                    context = request.app.state.yaya_agent.reading_context(db, row, payload.inputText, arrival, parent_visit_questions(db, row, arrival))
                     request.state.yaya_guardian = principal.guardian_id
                 else:
                     context = answer_context(db, row, payload.inputText)

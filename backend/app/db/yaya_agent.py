@@ -15,7 +15,9 @@ SCHEMA = (
     )""",
     """CREATE TABLE IF NOT EXISTS yaya_agent_calls (
        call_id TEXT PRIMARY KEY, day TEXT NOT NULL, guardian_tag TEXT NOT NULL, session_tag TEXT NOT NULL,
-       ceiling_micros INTEGER NOT NULL CHECK (ceiling_micros > 0), lease_until INTEGER NOT NULL
+       ceiling_micros INTEGER NOT NULL CHECK (ceiling_micros > 0), lease_until INTEGER NOT NULL,
+       settled_micros INTEGER CHECK (settled_micros >= 0),
+       priced INTEGER NOT NULL DEFAULT 0 CHECK (priced IN (0,1))
     )""",
     "CREATE INDEX IF NOT EXISTS idx_yaya_calls_day ON yaya_agent_calls(day)",
 )
@@ -26,6 +28,11 @@ def install():
         db.execute("BEGIN IMMEDIATE")
         for statement in SCHEMA:
             db.execute(statement)
+        columns = {col[1] for col in db.execute("PRAGMA table_info(yaya_agent_calls)")}
+        if "settled_micros" not in columns:
+            db.execute("ALTER TABLE yaya_agent_calls ADD COLUMN settled_micros INTEGER CHECK (settled_micros >= 0)")
+        if "priced" not in columns:
+            db.execute("ALTER TABLE yaya_agent_calls ADD COLUMN priced INTEGER NOT NULL DEFAULT 0 CHECK (priced IN (0,1))")
 
 
 def pin_new_session(db, settings: YayaSettings, session_id: int, guardian_id: int):
@@ -45,17 +52,20 @@ def purge_expired(db, settings: YayaSettings, today: date):
 
 
 def reserve(settings: YayaSettings, call_id: str, guardian_id: int, session_id: int, ceiling_micros: int) -> bool:
-    now = time.time()
-    today = datetime.fromtimestamp(now, timezone.utc).date()
+    if ceiling_micros <= 0:
+        return False
     guardian = hmac.digest(settings.ledger_secret.encode(), f"guardian:{guardian_id}".encode(), "sha256").hex()
     session = hmac.digest(settings.ledger_secret.encode(), f"session:{session_id}".encode(), "sha256").hex()
     with closing(connect(timeout=0.2)) as db, db:
         db.execute("BEGIN IMMEDIATE")
+        now = time.time()
+        today = datetime.fromtimestamp(now, timezone.utc).date()
         purge_expired(db, settings, today)
         usage = db.execute(
-            """SELECT COALESCE(SUM(ceiling_micros), 0),
+            """SELECT COALESCE(SUM(COALESCE(settled_micros, ceiling_micros)) FILTER (WHERE priced = 1), 0),
                       COUNT(*) FILTER (WHERE guardian_tag = ?),
-                      COUNT(*) FILTER (WHERE session_tag = ?)
+                      COUNT(*) FILTER (WHERE session_tag = ?),
+                      COUNT(*) FILTER (WHERE priced = 0)
                FROM yaya_agent_calls WHERE day = ?""",
             (guardian, session, today.isoformat()),
         ).fetchone()
@@ -63,18 +73,21 @@ def reserve(settings: YayaSettings, call_id: str, guardian_id: int, session_id: 
             "SELECT COUNT(*), COUNT(*) FILTER (WHERE session_tag = ?) FROM yaya_agent_calls WHERE lease_until > ?",
             (session, int(now * 1000)),
         ).fetchone()
-        if (usage[0] + ceiling_micros > settings.daily_micros or usage[1] >= settings.guardian_calls
+        # Old ledger estimates used a different unit. Hold that UTC day without repricing them.
+        if (usage[3] or usage[0] + ceiling_micros > settings.daily_micros or usage[1] >= settings.guardian_calls
                 or usage[2] >= settings.session_calls or active >= settings.concurrency or session_active):
             return False
-        db.execute("INSERT INTO yaya_agent_calls VALUES (?, ?, ?, ?, ?, ?)",
+        db.execute("""INSERT INTO yaya_agent_calls (call_id, day, guardian_tag, session_tag, ceiling_micros, lease_until, priced)
+                      VALUES (?, ?, ?, ?, ?, ?, 1)""",
                    (call_id, today.isoformat(), guardian, session, ceiling_micros, int(now * 1000) + 5500))
         return True
 
 
-def release(call_id: str):
-    # Retain the conservative daily reservation even on cancellation or missing upstream usage.
+def settle(call_id: str, actual_micros: int | None):
+    # Missing usage retains the reservation, while every outcome releases the concurrency lease.
     with closing(connect(timeout=0.2)) as db, db:
-        db.execute("UPDATE yaya_agent_calls SET lease_until=0 WHERE call_id=?", (call_id,))
+        db.execute("""UPDATE yaya_agent_calls SET lease_until=0, settled_micros=?
+                      WHERE call_id=? AND lease_until>0""", (actual_micros, call_id))
 
 
 def expire(settings: YayaSettings):

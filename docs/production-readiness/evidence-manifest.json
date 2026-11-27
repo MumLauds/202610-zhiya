@@ -775,7 +775,62 @@
         "Original v7.5 suite"
       ],
       "ci_entry": "https://github.com/MumLauds/202610-zhiya/pull/97/checks",
-      "limitations": "Real Beijing provider credentials and independent cloud staging approval are pending."
+      "limitations": "Real Beijing provider credentials and independent cloud staging approval are pending.",
+      "revision": "e680b87de11072962ff30ccfae20397c2b1e7639"
+    },
+    "E12": {
+      "stage": "PR #97 final-review accounting, privacy, and offline factual evaluation",
+      "rate_source": "https://help.aliyun.com/zh/model-studio/qwen3-8-flash",
+      "sources": [
+        {
+          "path": "backend/app/db/yaya_agent.py",
+          "sha256": "29c24fd9d11862907a46843e3782a87a058bdd0406734b57d727e619692a49b9"
+        },
+        {
+          "path": "backend/app/model_gateway.py",
+          "sha256": "c8509a505e34b32544355725724bf09d34dc98d0ded8f8cdcdd01a178c892882"
+        },
+        {
+          "path": "backend/app/services/yaya_agent.py",
+          "sha256": "df9716d16db038cc7efa40f66a8691bd9bcde709b4121898947e1c88450ada05"
+        },
+        {
+          "path": "backend/app/services/yaya_agent_config.py",
+          "sha256": "02760feeae86946c8e447b3f6359f7b183d15ef70f94f94b474952f479a09905"
+        },
+        {
+          "path": "backend/app/services/yaya_book_evidence.json",
+          "sha256": "a6a39d876950a7e13d4c09b75cf892c4a88fd12b2a2bd7baba8a53ac252ccb90"
+        },
+        {
+          "path": "backend/tests/test_yaya_budget.py",
+          "sha256": "8db40fe930487dac9934d2b4fc81484d02a294e759889a48f5412cfeb93f86d7"
+        },
+        {
+          "path": "backend/tests/test_yaya_fact_consistency.py",
+          "sha256": "d302d78a11f1f95a256e20d8751c669c91965c6f484da641d120cc5302c7f49c"
+        },
+        {
+          "path": "backend/tests/test_yaya_agent2.py",
+          "sha256": "fe860e39b94c501b358f862488fb37bf766cedf2a7e2d6d249ca4578f5fa8684"
+        },
+        {
+          "path": "backend/tests/test_interactions.py",
+          "sha256": "2759af0e83841ae3fe8846cf66973dfb9508cb2b0e5e072d181635071c3fc441"
+        },
+        {
+          "path": "infra/staging/smoke_ci.sh",
+          "sha256": "c94b9f5ed2be3a6f20465fbd8212964543c9635420707a3211a6ee54a2dbc1f7"
+        }
+      ],
+      "verification_scope": [
+        "atomic weighted token reservation and usage settlement",
+        "synthetic multilingual API, provider-request, persistence, and log privacy cases",
+        "offline synthetic positive and negative factual contrasts and evidence grades"
+      ],
+      "ci_entry": "https://github.com/MumLauds/202610-zhiya/pull/97/checks",
+      "limitations": "Offline fixture scoring is not live provider quality or runtime factual validation. Approved Beijing synthetic credentials, real invoices, privacy audits and Gates 2–3 remain pending.",
+      "local_verified": "65 targeted backend cases passed, including budget, multilingual privacy, evidence and offline factual contrasts."
     }
   },
   "deliverables": [
@@ -806,23 +861,23 @@
     },
     {
       "path": "docs/production-readiness/gap-analysis.md",
-      "sha256": "e5094d171e833746031d0458f6651c5589d67ec3ed78b2acfc8a298f84db860a",
-      "bytes": 6988
+      "sha256": "870a036f299d265fbe12bc508f412eae30dc64e3b6c33420e45e5a3c4ac36b42",
+      "bytes": 7986
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
-      "sha256": "6191b0cdf0e9fc2695f6c50b25868bb0b8d9e77f58cef66916c41adc0fcc5733",
-      "bytes": 2737
+      "sha256": "4a0301c6b2977db524178c659d4f3667b1a957b9a80476ab36555e61fcc79cb5",
+      "bytes": 3431
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
-      "sha256": "c7749646aeb22aabcc366677b0f5ca0b5fea7b79e3832617cdee2dbbfc89e4d2",
-      "bytes": 5103
+      "sha256": "425fe460a87144baa7e341da37f0d3c76bd42d216de12581c2b636126e30714d",
+      "bytes": 6827
     },
     {
       "path": "docs/production-readiness/privacy-and-data-governance.md",
-      "sha256": "ce75cbf18a726f7fde2cff739b52767a10c15c8a5f1bebb21e5bd2bbf28aea04",
-      "bytes": 7051
+      "sha256": "c2e540c9ec1fa73d64a433811fa9d856468c5233da809362b7ca90d226a4d3b5",
+      "bytes": 7991
     },
     {
       "path": "docs/production-readiness/production-readiness-scorecard.json",

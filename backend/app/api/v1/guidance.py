@@ -217,7 +217,7 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
                 return JSONResponse(status_code=201, content=response)
             if new_agent:
                 visit = current_page_arrival_id(db, session)
-                new_context = yaya.reading_context(db, session, payload.inputText, visit, ())
+                new_context = request.app.state.yaya_agent.reading_context(db, session, payload.inputText, visit, ())
                 new_guardian = principal.role == "GUARDIAN"
             if (not new_agent and principal.role == "GUARDIAN" and session["mode"] == "PARENT_CHILD"
                     and getattr(model, "supports_page_images", False) is True

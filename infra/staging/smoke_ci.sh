@@ -39,6 +39,7 @@ export YAYA_AGENT2_INPUT_ALLOWLIST="${YAYA_AGENT2_ALLOWLIST%%,*}:$(python -c 'im
 export YAYA_AGENT2_API_URL=https://ws-synthetic-ci.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions
 export YAYA_AGENT2_API_KEY=synthetic-ci-placeholder
 export YAYA_AGENT2_LEDGER_SECRET=synthetic-ci-ledger-secret-not-a-production-credential
+export YAYA_AGENT2_INPUT_CNY_PER_MILLION_TOKENS=1.25 YAYA_AGENT2_OUTPUT_CNY_PER_MILLION_TOKENS=3.5
 "${compose[@]}" up -d --wait --wait-timeout 120 --no-build backend
 "${compose[@]}" exec -T backend python - <<'PYTHON'
 import os, sqlite3
@@ -50,12 +51,14 @@ allowed, local_only = [int(part) for part in os.environ["YAYA_AGENT2_ALLOWLIST"]
 assert settings.model.model_name == "qwen3.8-flash"
 assert settings.model.model_api_url.startswith("https://ws-synthetic-ci.cn-beijing.maas.aliyuncs.com/")
 assert settings.model.model_api_key == "synthetic-ci-placeholder"
+assert settings.cost_micros(56, 13) == 116
 _, profile = [int(part) for part in os.environ["YAYA_AGENT2_INPUT_ALLOWLIST"].split(":")]
 assert settings.enrolls(local_only) and settings.authorizes_model_input(allowed, profile)
 assert not settings.authorizes_model_input(local_only, profile)
 assert not settings.authorizes_model_input(allowed, profile+1)
 with closing(sqlite3.connect(os.environ["ZHIYA_DB_PATH"])) as db:
     assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert {"priced", "settled_micros"} <= {row[1] for row in db.execute("PRAGMA table_info(yaya_agent_calls)")}
     assert db.execute("SELECT source_ref, status FROM story_versions").fetchall() == [("synthetic-yaya-staging", "PUBLISHED")]
     assert db.execute("SELECT count(*) FROM story_pages").fetchone() == (3,)
 PYTHON

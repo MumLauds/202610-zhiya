@@ -2181,3 +2181,84 @@ def test_yaya2_child_session_keeps_reviewed_short_answer_contract(child_guidance
     assert guardian_ask.status_code == 201, guardian_ask.text
     assert guardian_ask.json()["data"]["agentReceipt"]["decision"] == "LOCAL"
     mock_turn.assert_not_called()
+
+
+def test_yaya2_multilingual_privacy_is_applied_before_provider_persistence_and_logs(started_session, monkeypatch, caplog):
+    from app.db import yaya_agent as yaya_db
+    from app.services.yaya_agent import YayaAgent
+    from app.services.yaya_agent_config import MODEL, YayaSettings
+
+    client, headers, path, sid = started_session
+    yaya_db.install()
+    with closing(sqlite3.connect(path)) as db, db:
+        profile = db.execute("SELECT profile_id FROM reading_sessions WHERE id=?", (sid,)).fetchone()[0]
+        db.execute("INSERT INTO yaya_agent_sessions VALUES (?, '2.0')", (sid,))
+        db.execute("UPDATE story_pages SET body_text='松鼠把信放进信箱。小熊戴着蓝色帽子。' WHERE version_id=11 AND page_no=1")
+
+    samples = [
+        ("My full name is Alexandra Example-Fable. What did the squirrel put in the box?",
+         "What did the squirrel put in the box?", ("Alexandra", "Example-Fable")),
+        ("我叫欧阳虚拟合成测试小朋友，松鼠把什么放进信箱了？",
+         "松鼠把什么放进信箱了？", ("欧阳虚拟合成测试小朋友",)),
+        ("Me llamo Marisol Ficticia。我的邮箱是pista@example.invalid；松鼠为什么放得那么轻？",
+         "松鼠为什么放得那么轻？", ("Marisol", "pista@example.invalid")),
+        ("My phone is +1 (202) 555-0147, my email is luna@example.invalid. What color was the bear's hat?",
+         "What color was the bear's hat?", ("555-0147", "luna@example.invalid")),
+        ("我家地址是虚构花园路42号，合成街区3单元，绘本里松鼠放了什么？",
+         "绘本里松鼠放了什么？", ("虚构花园路", "合成街区")),
+        ("I go to Example Orchard School. What did the squirrel put away?",
+         "What did the squirrel put away?", ("Example Orchard School",)),
+        ("身份证 000000190001010000; Account ID toy-account-123; 书里小熊戴的帽子是什么颜色？",
+         "书里小熊戴的帽子是什么颜色？", ("000000190001010000", "toy-account-123")),
+        ("I'm Juniper Fable. In this picture, what did the rabbit pick up?",
+         "what did the rabbit pick up?", ("Juniper Fable",)),
+        ("我叫合成岚小星；我在虚构星球小学上学；email: blob@example.invalid，phone: +1 202 555 0165；画里小熊戴的帽子是什么颜色？",
+         "画里小熊戴的帽子是什么颜色？", ("合成岚小星", "虚构星球小学", "blob@example.invalid", "555 0165")),
+        ("my home address is Synthetic Orchard Road 18, room 307", None, ("Synthetic Orchard", "room 307")),
+        ("unmarked-staging-synthetic-key，书里松鼠做了什么？", None, ("unmarked-staging-synthetic-key",)),
+        ("My name is Example Fable; 我想伤害自己，书里松鼠做了什么？", None, ("Example Fable",)),
+    ]
+    model_config = Settings(model_api_url="https://ws-test.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+                            model_api_key="unmarked-staging-synthetic-key", model_name=MODEL)
+    settings = YayaSettings(mode="allowlist", guardians=frozenset({1}), model=model_config,
+                            model_input_profiles=frozenset({(1, profile)}), ledger_secret="x" * 32)
+    expected = [text for _, text, _ in samples if text]
+    private_markers = [marker for _, _, markers in samples for marker in markers]
+    requests = []
+
+    def provider(request):
+        wire = json.loads(request.content)
+        body = request.content.decode()
+        assert all(marker not in body for marker in private_markers)
+        requests.append(wire["messages"][-1]["content"].split("用户输入：\n", 1)[-1])
+        return httpx.Response(200, json={"model": MODEL, "choices": [{"finish_reason": "stop", "message": {
+            "role": "assistant", "content": '{"reply":"我们一起继续看这一页。","next_action":"RESPOND"}',
+        }}], "usage": {"prompt_tokens": 30, "completion_tokens": 12}})
+
+    gateway = ModelGateway(model_config, transport=httpx.MockTransport(provider))
+    monkeypatch.setitem(client.app.state._state, "yaya_agent", YayaAgent(settings, gateway))
+    caplog.set_level("INFO", logger="zhiya")
+    revision = 1
+    try:
+        for i, (text, projected, _) in enumerate(samples):
+            ask = i % 2 == 0
+            payload = {"inputText": text, "pageNumber": 1, "expectedRevision": revision, "clientEventId": f"privacy-{i}"}
+            if not ask:
+                payload["eventType"] = "ANSWER"
+            response = client.post(f"/api/v1/reading-sessions/{sid}/" + ("questions" if ask else "events"),
+                                   headers=headers, json=payload)
+            assert response.status_code == 201, i
+            data = response.json()["data"]
+            assert data["agentReceipt"]["inputRedacted"] is True, i
+            assert data["agentReceipt"]["reason"] == (None if projected else "SAFETY_BLOCK"), i
+            revision = data["revision"]
+    finally:
+        asyncio.run(gateway.__aexit__(None, None, None))
+
+    assert requests == expected
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT input_text FROM interaction_events WHERE request_key LIKE 'privacy-%'").fetchall() == [
+            (None,) for _ in samples
+        ]
+    assert "prompt_tokens=30" in caplog.text
+    assert all(marker not in caplog.text for marker in private_markers)

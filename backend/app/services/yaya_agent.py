@@ -16,10 +16,10 @@ from starlette.concurrency import run_in_threadpool
 
 from app.db import yaya_agent as ledger
 from app.errors import ServiceError
-from app.model_gateway import ModelGateway, ModelReply
+from app.model_gateway import InvalidModelOutput, ModelGateway, ModelReply, format_user_content
 from app.schemas.agent import AgentResult
 from app.services.reading_agent import answer_is_unsafe
-from app.services.yaya_agent_config import AGENT_VERSION, MODEL, YayaSettings
+from app.services.yaya_agent_config import AGENT_VERSION, MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS, MODEL, YayaSettings
 
 logger = logging.getLogger("zhiya.yaya_agent")
 BOOK_ANNOTATIONS = json.loads(Path(__file__).with_name("yaya_book_evidence.json").read_text(encoding="utf-8"))
@@ -73,20 +73,42 @@ ERROR_CODES = {
 
 
 def unsafe(text: str) -> bool:
-    return bool(answer_is_unsafe(text) or PRIVATE.search(text) or HARMFUL.search(text) or INJECTION.search(text))
+    normalized = unicodedata.normalize("NFKC", text)
+    return bool(answer_is_unsafe(normalized) or any(rule.search(normalized) for rule in (
+        PRIVATE, PRIVATE_INPUT, PROTECTED_INPUT, CREDENTIAL_INPUT, HARMFUL, INJECTION,
+    )))
 
 
-IDENTITY_CLAUSE = re.compile(
-    r"(?:^|(?<=[，,。；;！？!?]))\s*(?:(?:我叫|我姓)[\u3400-\u9fff]{1,4}(?=[，,。；;！？!?]|$)|"
-    r"(?:我的(?:姓名|真名|名字|手机号|电话|手机号码|电话号码|电子邮箱|邮箱|学校)|"
-    r"我今年\s*[零一二三四五六七八九十\d]{1,4}岁|我在(?:[^，,。；;！？!?]{1,24})上学)[^，,。；;！？!?]{0,48})(?:[，,。；;！？!?]|$)",
-    re.I,
+PRIVATE_INPUT = re.compile(
+    r"我叫|我姓|我的(?:真?实?姓名|真名|名字|年龄|电话|手机|联系方式|电子邮箱|邮箱|学校)|"
+    r"(?:姓名|学校|联系方式|电话号码|手机号码|电子邮箱)\s*[:：]|"
+    r"我们学校|我今年\s*[零一二三四五六七八九十\d]{1,4}岁|"
+    r"我(?:在|就读于)[^，,。；;!?？]{1,64}(?:上学|学校|小学|幼儿园|读书|就读)|"
+    r"\b(?:my (?:full |real )?name is|call me(?: at)?|my (?:phone|mobile|email|e-mail|school)|"
+    r"i (?:attend|go to|study at) [^,;!?]{1,64}\bschool|me llamo|mi nombre es|"
+    r"(?:(?:i am|i['’]m) (?-i:[A-Z][a-z]+(?:[ '’-][A-Z][a-z]+){1,4}))|"
+    r"(?:full name|name|phone|e-mail|email|school)\s*[:：]|"
+    r"je m['’]appelle|mon nom est|ich heiße|mein name ist)\b|"
+    r"私の名前は|と申します|제 이름은|(?:\d[\s().-]*){7,}|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}",
+    re.IGNORECASE,
 )
-RESTRICTED_INPUT = re.compile(
-    r"我(?:们)?家(?:住|在|地址)|我住在|住址|家庭地址|我的(?:账号|账户|儿童档案)|(?:账号|账户|儿童档案)\s*(?:id|编号|是|[:：])|"
-    r"密码|验证码|身份证|银行卡|(?:api\s*key|access\s*token|密钥)|"
-    r"\b(?:sk|ak)[-_][A-Za-z0-9._-]{6,}", re.I,
+PROTECTED_INPUT = re.compile(
+    r"我(?:们)?家(?:住|在|地址)|我住在|住处\s*[:：]|住址|家庭地址|"
+    r"我的(?:账号|账户|儿童档案)|(?:账号|账户|儿童档案)\s*(?:id|编号|是|[:：])|"
+    r"身份证|银行卡|学号|学生编号|\b(?:my address|i live (?:at|on|in)|we live (?:at|on|in)|home address|"
+    r"account (?:id|number)|(?:national|personal) id|passport (?:id|number)|social security number)\b",
+    re.IGNORECASE,
 )
+CREDENTIAL_INPUT = re.compile(
+    r"密码|验证码|api\s*key|access\s*token|密钥|\b(?:password|verification code)\b|"
+    r"\b(?:sk|ak)[-_][A-Za-z0-9._-]{6,}", re.IGNORECASE,
+)
+CLAUSE_END = re.compile(r"([，,。；;？?！!、\n]|\.(?=\s|$))")
+QUESTION_WORDS = re.compile(
+    r"谁|什么|哪|怎么|为何|为什么|几|是否|是不是|吗|"
+    r"\b(?:who|what|which|where|why|when|how|is|does|did)\b", re.IGNORECASE,
+)
+BOOK_QUESTION = re.compile(r"^(?:绘本里|故事里|书里|图里|画里|这一页|in (?:this|the) (?:book|story|picture|page)\b)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -96,17 +118,37 @@ class InputProjection:
 
 
 def project_input(value: str) -> InputProjection:
-    cleaned = "".join(" " if char.isspace() else char for char in value
+    cleaned = "".join("\n" if char in "\r\n" else " " if char.isspace() else char for char in value
                       if char.isspace() or unicodedata.category(char) not in {"Cc", "Cf", "Cs"}).strip()
-    normalized = unicodedata.normalize("NFKC", cleaned)
-    # Keep safety signals across the entire utterance, including clauses we could otherwise redact.
-    if (RESTRICTED_INPUT.search(normalized) or HARMFUL.search(normalized) or INJECTION.search(normalized)):
+    normalized = unicodedata.normalize("NFKC", cleaned).replace("\n", " ")
+    # Safety and credential signals in a removed clause still stop the entire model call.
+    if not cleaned or any(rule.search(normalized) for rule in (CREDENTIAL_INPUT, HARMFUL, INJECTION)):
         return InputProjection(None, True)
-    # A masked identity clause never becomes part of the story evidence or a public receipt.
-    text = IDENTITY_CLAUSE.sub("", cleaned).strip()
-    if not text or unsafe(unicodedata.normalize("NFKC", text)) or len(text) > 200:
-        return InputProjection(None, True)
-    return InputProjection(text, text != value.strip())
+    protected = bool(PROTECTED_INPUT.search(normalized))
+    if not protected and not unsafe(normalized):
+        text = cleaned.replace("\n", " ")
+        return InputProjection(text, text != value.strip()) if len(text) <= 200 else InputProjection(None, True)
+
+    # Retain only a self-contained trailing question after the last sensitive clause.
+    # Address and account/identity fields require an explicit book reference to recover any text.
+    pieces = CLAUSE_END.split(cleaned)
+    question = None
+    for pos in range(0, len(pieces), 2):
+        text = pieces[pos].strip()
+        if not text:
+            continue
+        mark = pieces[pos + 1] if pos + 1 < len(pieces) else ""
+        normalized_clause = unicodedata.normalize("NFKC", text)
+        if unsafe(normalized_clause):
+            question = None
+        elif (mark in {"?", "？"} and QUESTION_WORDS.search(normalized_clause)
+              and (not protected or BOOK_QUESTION.match(normalized_clause))):
+            question = text + mark
+        else:
+            question = None
+    if question is not None and len(question) <= 200:
+        return InputProjection(question, True)
+    return InputProjection(None, True)
 
 
 def key_question(question: str) -> str:
@@ -129,7 +171,7 @@ class StoryTimeline:
     pages: dict[int, tuple[dict, ...]]
 
     def through(self, pages: list[int]):
-        return [event for page in pages for event in self.pages.get(page, ())[:3]]
+        return [event for page in pages for event in self.pages.get(page, ())[:4]]
 
 
 class BookEvidenceIndex:
@@ -141,7 +183,7 @@ class BookEvidenceIndex:
             self.quotes[page] = sentences
             annotation = BOOK_ANNOTATIONS.get(source_ref, {}).get(str(page), {})
             # Bind authored facts to the exact published page. Sentence-only evidence stays usable after edits.
-            if body == annotation.get("text"):
+            if body == annotation.get("text") and sha256(body.encode("utf-8")).hexdigest() == annotation.get("text_sha256"):
                 reviewed = tuple(
                     {**event, "page": page, "evidenceRef": f"{page}.{event['name']}",
                      "evidenceLevel": "reviewed_structured"}
@@ -177,13 +219,15 @@ class Context:
     last_state: str | None = None
     allow_provider: bool = False
     child_profile_id: int | None = field(default=None, repr=False)
+    _input_projection: InputProjection | None = field(default=None, repr=False)
 
     @cached_property
     def input_projection(self) -> InputProjection:
-        return project_input(self.input_text)
+        return self._input_projection or project_input(self.input_text)
 
 
-def reading_context(db, row, input_text: str, arrival: int, questions: tuple[str, ...]) -> Context:
+def reading_context(db, row, input_text: str, arrival: int, questions: tuple[str, ...], *,
+                    credential: str | None = None) -> Context:
     current, session_id, version = row["current_page_no"], row["id"], row["version_id"]
     # Only actual arrival events through the current visit and the carried, authorized prefix qualify.
     visit_data = db.execute(
@@ -200,9 +244,10 @@ def reading_context(db, row, input_text: str, arrival: int, questions: tuple[str
         (version, current, *prior),
     ).fetchall()
     reviewed_library = row["source_type"] == "LIBRARY"
+    projection = InputProjection(None, True) if credential and credential in input_text else project_input(input_text)
     material = BookEvidenceIndex((page, text, source_ref if reviewed_library else None)
                                  for page, text, source_ref in pages).context(
-                                     current, prior, project_input(input_text).text or "")
+                                     current, prior, projection.text or "")
     history = db.execute(
         """SELECT json_extract(response_json,'$.data.agentReceipt.state') AS state,
                   json_extract(response_json,'$.data.agentReceipt.action') AS action
@@ -213,7 +258,7 @@ def reading_context(db, row, input_text: str, arrival: int, questions: tuple[str
     material["recentActions"] = [item["action"] for item in reversed(history) if item["action"] in STATES]
     material["questionBudget"] = max(0, 2 - len(questions))
     return Context(input_text, questions, material, history[0]["state"] if history else None,
-                   reviewed_library, row["profile_id"])
+                   reviewed_library, row["profile_id"], projection)
 
 
 @dataclass(frozen=True)
@@ -334,6 +379,10 @@ class YayaAgent:
         self.settings = settings
         self.gateway = gateway
 
+    def reading_context(self, db, row, input_text, arrival, questions):
+        credential = self.settings.model.model_api_key if self.settings.model else None
+        return reading_context(db, row, input_text, arrival, questions, credential=credential)
+
     def guidance(self, feedback: str, *, child_mode: bool, page_text: str, age_band: str, used=()) -> AgentResult:
         excerpt = next((sentence.rstrip("。！？.!?") for sentence in clean_sentences(page_text)
                         if len(sentence) <= 32 and "？" not in sentence and "?" not in sentence), "")
@@ -374,8 +423,12 @@ class YayaAgent:
             return record(handoff())
         if await disconnected():
             return record(fallback("CLIENT_DISCONNECTED"))
-        # Ceiling uses UTF-8 bytes plus framing, and rounded-up per-token price in micro-CNY.
-        ceiling = len((outbound + PROMPT + text).encode()) + 256 + 3 * 256
+        # Estimate a conservative token bound from the rendered text plus chat framing.
+        input_bound = len(PROMPT.encode("utf-8")) + len(format_user_content(text, outbound).encode("utf-8")) + 256
+        if input_bound > MAX_INPUT_TOKENS:
+            return record(fallback("BUDGET_LIMIT"))
+        output_bound = min(self.settings.model.model_max_tokens, MAX_OUTPUT_TOKENS)
+        ceiling = self.settings.cost_micros(input_bound, output_bound)
         try:
             reserved = await run_in_threadpool(ledger.reserve, self.settings, request_id, guardian, session, ceiling)
         except sqlite3.Error:
@@ -383,24 +436,39 @@ class YayaAgent:
         if not reserved:
             return record(fallback("BUDGET_LIMIT"))
 
+        usage = None
+
+        async def generate():
+            nonlocal usage
+            try:
+                usage = await self.gateway.generate_detailed(
+                    input_text=text, context_text=outbound, system_prompt=PROMPT, json_object=True,
+                    require_model_match=True, timeout_seconds=3.5, max_output_token_budget=output_bound,
+                )
+                return usage
+            except InvalidModelOutput as exc:
+                usage = exc.usage
+                raise
+
         try:
-            reply = await until_disconnect(
-                lambda: self.gateway.generate_detailed(input_text=text, context_text=outbound, system_prompt=PROMPT,
-                                                       json_object=True, require_model_match=True, timeout_seconds=3.5),
-                disconnected,
-            )
+            reply = await until_disconnect(generate, disconnected)
             if reply is None:
-                outcome = fallback("CLIENT_DISCONNECTED")
+                outcome = fallback("CLIENT_DISCONNECTED", upstream=usage)
             else:
                 outcome = project(reply, context.previous_questions, allow_followup=allow_followup)
         except ServiceError as exc:
-            outcome = fallback(ERROR_CODES.get(exc.code, "DEPENDENCY_UNAVAILABLE"))
+            outcome = fallback(ERROR_CODES.get(exc.code, "DEPENDENCY_UNAVAILABLE"), upstream=usage)
         except asyncio.CancelledError:
             record(fallback("CLIENT_DISCONNECTED"))
             raise
         finally:
+            actual = (self.settings.cost_micros(usage.prompt_tokens, usage.completion_tokens)
+                      if usage and usage.prompt_tokens and usage.completion_tokens is not None else None)
             try:
-                await run_in_threadpool(ledger.release, request_id)
+                await run_in_threadpool(ledger.settle, request_id, actual)
             except sqlite3.Error:
-                logger.warning("yaya request_id=%s outcome=LEASE_RELEASE_FAILED", request_id)
+                logger.warning("yaya request_id=%s outcome=BUDGET_SETTLEMENT_FAILED", request_id)
+            if actual is not None and actual > ceiling:
+                logger.warning("yaya request_id=%s outcome=BUDGET_ESTIMATE_OVERRUN reserved_micros=%d settled_micros=%d",
+                               request_id, ceiling, actual)
         return record(outcome)

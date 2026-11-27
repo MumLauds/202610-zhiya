@@ -39,7 +39,8 @@
           "state": "CHARACTER_IMAGINATION",
           "quote": "小兔想象黄色叶子是一床小被子。"
         }
-      ]
+      ],
+      "text_sha256": "ed21f5a6f82ccf8be9c46006e8cf7b9f494d1e6f95cb759701abb5159c768f29"
     },
     "2": {
       "text": "小熊把纸风车插进土里。一阵风吹来，纸风车慢慢转了起来。",
@@ -61,7 +62,8 @@
           "state": "IN_PROGRESS",
           "quote": "一阵风吹来，纸风车慢慢转了起来。"
         }
-      ]
+      ],
+      "text_sha256": "07f2ee569044ba491ae961ebb0aa01eb8cbb225ce9f79563e500b5f4bdeabb4c"
     },
     "3": {
       "text": "松鼠后来取出信，带回了小屋。",
@@ -75,7 +77,8 @@
           "relation": "ACTS_ON",
           "quote": "松鼠后来取出信，带回了小屋。"
         }
-      ]
+      ],
+      "text_sha256": "0c7b7dff7feda06b36545a234832583923c857e545cfb40ebd0650f23118564f"
     }
   },
   "妈妈夸我说的队 · 知芽项目自研绘本": {
@@ -99,7 +102,8 @@
           "relation": "ACTS_ON",
           "quote": "小狐狸站在门口，看着外面的雨。"
         }
-      ]
+      ],
+      "text_sha256": "bd1a9a81f8e175f1e8b5ee896c4136446ff870f644509138abc88979ee1d4f23"
     },
     "3": {
       "text": "小狐狸撑开伞，走进森林小路。",
@@ -121,7 +125,8 @@
           "state": "ESTABLISHED",
           "quote": "小狐狸撑开伞，走进森林小路。"
         }
-      ]
+      ],
+      "text_sha256": "bfc0692460cd403c9687034ea42855d084050179eb0c988bb0db42861bc47acc"
     },
     "5": {
       "text": "小狐狸回头看，妈妈就在后面。",
@@ -142,7 +147,8 @@
           "state": "ESTABLISHED",
           "quote": "小狐狸回头看，妈妈就在后面。"
         }
-      ]
+      ],
+      "text_sha256": "dd8e3364b5d75d0c5c805739b71d38fdfc1d3a9f1d5c22ab1d0ff6c1edde025b"
     }
   }
 }

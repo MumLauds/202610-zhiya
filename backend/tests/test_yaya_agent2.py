@@ -222,7 +222,7 @@ def test_reviewed_story_facts_keep_actor_object_state_and_citation():
     assert not current["visitedTimeline"] and "雨点" not in json.dumps(current, ensure_ascii=False)
 
     later = index.context(3, [1, 2, 3], "后来谁把信拿走了？")
-    assert [event["page"] for event in later["visitedTimeline"]] == [1, 1, 1, 2, 2]
+    assert [event["page"] for event in later["visitedTimeline"]] == [1, 1, 1, 1, 2, 2]
     assert later["currentFacts"][0]["state"] == "ESTABLISHED"
     assert any(event["state"] == "IN_PROGRESS" for event in later["visitedTimeline"])
     stale = BookEvidenceIndex([(1, book["1"]["text"] + "正文已改。", source)]).context(1, (), "")
