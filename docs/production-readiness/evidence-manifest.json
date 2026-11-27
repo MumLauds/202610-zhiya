@@ -1,0 +1,787 @@
+{
+  "schema_version": 1,
+  "recorded_on": "2026-11-27",
+  "hash_algorithm": "SHA-256",
+  "hash_scope": "Git sources and delivered documents use raw Git/LF bytes. Local archives use raw file bytes. Windows checkout CRLF may differ. Only fingerprints of restricted artifacts are included.",
+  "evidence": {
+    "E01": {
+      "revision": "48844b2ee267bc539ed0580a358470beca13e449",
+      "remote": "https://github.com/MumLauds/202610-zhiya",
+      "sources": [
+        {
+          "path": "backend/app/main.py",
+          "sha256": "ccfb969f6e860fbb996aea0d0c5730b32b1fbea5d89702ba89e4a42192f47ceb",
+          "bytes": 6057,
+          "line_anchors": {
+            "async def lifespan": 48,
+            "async def request_context": 75
+          }
+        },
+        {
+          "path": "backend/app/config.py",
+          "sha256": "7e859a01820c1c33b3b94f82cc312f7e1d1289b020839943ecc18ec5a238edab",
+          "bytes": 4398,
+          "line_anchors": {
+            "DASHSCOPE_TEXT_MODEL =": 12,
+            "def from_env(": 77
+          }
+        },
+        {
+          "path": "backend/app/model_gateway.py",
+          "sha256": "1e6c586003fd11ae9e3e6020b4c6d3be609ba89947a2e7daf0602dfa02cfbebb",
+          "bytes": 8930,
+          "line_anchors": {
+            "class ModelGateway": 20,
+            "async with asyncio.timeout": 81,
+            "response.status_code == 429": 147
+          }
+        },
+        {
+          "path": "backend/app/adapters/model.py",
+          "sha256": "e1e11f6b93a3419724950cace95040ba3c743789f776a169586d7079dcc8ab50",
+          "bytes": 1753,
+          "line_anchors": {
+            "class ModelAdapter": 8,
+            "error_code=\"TIMEOUT\"": 40
+          }
+        },
+        {
+          "path": "backend/app/services/reading_agent.py",
+          "sha256": "1fcd7b582911df50522fd1271d0afe636aa090fb681315b097efea8c6f7a3fbd",
+          "bytes": 73886,
+          "line_anchors": {
+            "def answer_is_unsafe(": 135,
+            "async def generate_answer_reply(": 937,
+            "async def answer_question(": 1063
+          }
+        },
+        {
+          "path": "backend/app/agent/retrieval.py",
+          "sha256": "a80cc86b938360293d7a00b7cbcbf17647ae53f7886c04cdc7d687c39e942a29",
+          "bytes": 5695,
+          "line_anchors": {
+            "class KnowledgeRetriever": 66,
+            "def retrieve(": 96
+          }
+        },
+        {
+          "path": "backend/app/api/v1/auth.py",
+          "sha256": "55cc646d116ffd4cd930ff84c5984df479550f9194d3f3069949f56aada90f28",
+          "bytes": 15753,
+          "line_anchors": {
+            "def authorized_db(": 142
+          }
+        },
+        {
+          "path": "backend/app/api/v1/reading_sessions.py",
+          "sha256": "dcb742791a8de3338f81a092846526a2db66045f69b8ac0ad90e10cee9e4767a",
+          "bytes": 63428,
+          "line_anchors": {
+            "def get_session(": 441,
+            "def owned_session(": 625,
+            "def replay_execution(": 650,
+            "async def add_reading_event(": 766,
+            "def save_reading_event(": 781,
+            "def answer_context(": 865,
+            "def finalize_answer_reply(": 902,
+            "def finish_session(": 1015
+          }
+        },
+        {
+          "path": "backend/app/api/v1/guidance.py",
+          "sha256": "346f8eeb4b38b04d8de38472cf8b981b1e23ffd271d6f8a4d251eda8ffd4bb5d",
+          "bytes": 15166,
+          "line_anchors": {
+            "async def ask_question(": 135,
+            "def finish_guidance(": 88,
+            "async def process_question_or_guidance(": 139
+          }
+        },
+        {
+          "path": "backend/app/api/v1/voice.py",
+          "sha256": "dc433afdddbf1951fcf2de08a289026ab9ea31e65144d84da1da0babad19f178",
+          "bytes": 12419,
+          "line_anchors": {
+            "request.is_disconnected()": 61,
+            "async def ": 33
+          }
+        },
+        {
+          "path": "backend/app/api/v1/health.py",
+          "sha256": "538c6ac827ecc2cf18a4decbfbe7058e2b2b30e52ca7b36b65c988bbf07a87ce",
+          "bytes": 639,
+          "line_anchors": {
+            "def health(": 10
+          }
+        },
+        {
+          "path": "backend/app/services/reading_reports.py",
+          "sha256": "ab03376bb0821ef4e672959597cf618fb6dd65d5c7367ac17f10664225bd19af",
+          "bytes": 16407,
+          "line_anchors": {
+            "def recover_pending_reports(": 245
+          }
+        },
+        {
+          "path": "database/schema.sql",
+          "sha256": "2ed3993353d0a440009ecd50ab50affa36a15ddb273ebeb5a16ef924b67dc366",
+          "bytes": 13350,
+          "line_anchors": {
+            "CREATE TABLE IF NOT EXISTS reading_sessions": 122,
+            "CREATE TABLE IF NOT EXISTS interaction_events": 161,
+            "CREATE TABLE IF NOT EXISTS request_executions": 198,
+            "CREATE TABLE IF NOT EXISTS child_grants": 105
+          }
+        },
+        {
+          "path": "frontend/src/pages/ReaderPage.vue",
+          "sha256": "6223704adb73d3325dfeff4ef82d1ed7393d306f44a77939e4624a69d8cfd338",
+          "bytes": 54025,
+          "line_anchors": {
+            "const answerReply = ": 166,
+            "const pageGuidanceKey": 112,
+            "async function submitConfirmedAnswer": 662,
+            "new AbortController()": 410
+          }
+        },
+        {
+          "path": "frontend/mobile/components/ReaderView.vue",
+          "sha256": "021da893033ef7f0202261ee1cafe74d79e2523507010722c7c7c497a53edd1f",
+          "bytes": 31815,
+          "line_anchors": {
+            "const pending =": 129,
+            "const revision =": 133,
+            "requestGeneration": 68,
+            "async function submitAnswerText": 399
+          }
+        },
+        {
+          "path": "frontend/mobile/services/readingSessionMachine.js",
+          "sha256": "abdd399a1a65b101038530f5ba44da5a2f1566f09b31b2864fb682cc08652f83",
+          "bytes": 15324,
+          "line_anchors": {}
+        },
+        {
+          "path": "frontend/mobile/composables/useReadingSession.js",
+          "sha256": "2dbb74ead0941f985792fa0fe922c356d437183dae5cdfbbc17fc4477e6d4ee1",
+          "bytes": 3944,
+          "line_anchors": {}
+        },
+        {
+          "path": "docs/design/api-contract.md",
+          "sha256": "cff961f79a4f22254657876cd986d2f154945004d166362c3143c611e537fbfa",
+          "bytes": 37664,
+          "line_anchors": {
+            "API-015 先保存答案": 138,
+            "回答生成的总时限": 142
+          }
+        },
+        {
+          "path": "docs/testing/yaya-answer-evaluation.md",
+          "sha256": "66c0d5dc1e15302fa4bd3a4209e36f2beb4ddccb4be700d13c567aace1cf744b",
+          "bytes": 5933,
+          "line_anchors": {}
+        },
+        {
+          "path": "docs/testing/yaya-qwen-decision-pilot.md",
+          "sha256": "d1bd24778465319e12a6b2d32e56ee34858589ae3edf790e0e3dd5d6d9797842",
+          "bytes": 31709,
+          "line_anchors": {}
+        },
+        {
+          "path": "docs/testing/yaya-short-answer-review.md",
+          "sha256": "2ce702d79121953f1501c006cfb0b95eec709800d5ed9eefd7a021599b83a147",
+          "bytes": 6630,
+          "line_anchors": {}
+        },
+        {
+          "path": "docs/testing/g13/round1/README.md",
+          "sha256": "494cd33f84d5c393767b1c461177116b5d161acf672b11c3c5a604e3e62bd11b",
+          "bytes": 3713,
+          "line_anchors": {}
+        },
+        {
+          "path": "docs/testing/g13/round2/result.json",
+          "sha256": "ce9cea563bb28e804fd6e57be33633447b5615d65d86630765d70f2ebfcb915c",
+          "bytes": 3434,
+          "line_anchors": {}
+        },
+        {
+          "path": "docs/testing/g13/round5/README.md",
+          "sha256": "0fb536638914a983faa9169119e2c33e30a64cc052d61a33c39dbf9bd3be2768",
+          "bytes": 7417,
+          "line_anchors": {}
+        },
+        {
+          "path": "infra/Dockerfile",
+          "sha256": "7a3b69108d294d27be9d39a8fbe71d538c74b9f5384d907b24f85b258a086eef",
+          "bytes": 913,
+          "line_anchors": {
+            "uvicorn": 19
+          }
+        },
+        {
+          "path": "infra/compose.yaml",
+          "sha256": "2c2922a626b72f4ea8351da063dd56310c17115bba1d3ee6ef5895df042e1023",
+          "bytes": 1326,
+          "line_anchors": {
+            "sqlite-data": 27
+          }
+        },
+        {
+          "path": "infra/hk/README.md",
+          "sha256": "9bdcd95f1510c71d49dc9b3c0312130b0cd5c974fb977807f16df3cf73f25255",
+          "bytes": 14319,
+          "line_anchors": {
+            "Git 生命周期": 108,
+            "历史数据核验失败时": 155
+          }
+        },
+        {
+          "path": "infra/hk/deploy.sh",
+          "sha256": "c877a99d57ece92257daa928f48edbe9e7ac96f85a8b2556b78c9b98cc04b2bd",
+          "bytes": 8189,
+          "line_anchors": {
+            "switch_images()": 28,
+            "probe()": 33,
+            "recover()": 36
+          }
+        },
+        {
+          "path": "infra/hk/Web.Dockerfile",
+          "sha256": "74fac2d5f8260766e791030f1fddcb99da379e4629d50bca79d79b06e462ea5f",
+          "bytes": 336,
+          "line_anchors": {
+            "FROM caddy:": 8
+          }
+        },
+        {
+          "path": "infra/hk/receipt.yaml",
+          "sha256": "d1b6284af7832b13da46b3c0876022b3ff52c2c3756f468d3fc8987ef84f78e0",
+          "bytes": 88,
+          "line_anchors": {}
+        },
+        {
+          "path": "infra/hk/zhiya-deploy.timer",
+          "sha256": "b90dadea759d8638e1484ef07cacb8b33c175f7d876f57029337df64e5cda69e",
+          "bytes": 151,
+          "line_anchors": {}
+        },
+        {
+          "path": ".github/workflows/deploy-hk.yml",
+          "sha256": "c9cd9dbbde36fc8eea74e7561ac00100fac52990d09fd13ee7a5fe31d922799b",
+          "bytes": 2302,
+          "line_anchors": {
+            "Verify Hong Kong release": 37,
+            "/_deployment/current.json": 55
+          }
+        }
+      ]
+    },
+    "E02": {
+      "revision": "1eb9fb4a0e401d1e648ce95f3209f5d591415be6",
+      "source_locator": "yaya-qwen4-max-benchmark",
+      "v75_frozen_candidate": "89eb60335c9c2b344afca87bf91ea6d90361c6c7",
+      "sources": [
+        {
+          "path": "qa/p6/yaya_agent_v73/v75-run-manifest.json",
+          "sha256": "2c96f00e2a742ee089ad8c88416f70d62a468eae2decbb7cf1c7c1029efa68d5",
+          "bytes": 5590,
+          "line_anchors": {
+            "system_prompt_sha256": 6
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/coreading.py",
+          "sha256": "5b207a03c155e87e4460d93027a39bb923152df17b2c539b34bd6b42fef94385",
+          "bytes": 20822,
+          "line_anchors": {
+            "SYSTEM_V75 =": 50,
+            "def make_messages_v7(": 155,
+            "def project_v72(": 212
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/story_v7.py",
+          "sha256": "2be5c3991f85e9bf03d12ec58ae96ca3bfe791f92573430122816e57896011a9",
+          "bytes": 3959,
+          "line_anchors": {
+            "class StoryTimeline": 39,
+            "class BookEvidenceIndex": 47,
+            "def context(": 79
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/provider.py",
+          "sha256": "b3fa259cd9a17369e7b22de86bfa2e2a06bbd8e628011afa11bcaa69ff31d005",
+          "bytes": 13427,
+          "line_anchors": {
+            "PRIMARY_MODEL = \"qwen3.8-flash\"": 21,
+            "def complete(": 162
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/demo.py",
+          "sha256": "e09b9af015405decc1dc068c42e3fdda372668364dfbe90e951ea1099e65ae92",
+          "bytes": 18310,
+          "line_anchors": {
+            "class DeadlineGenerator": 229,
+            "seconds=4.1": 231
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/lab/yaya2_lab/protocol.py",
+          "sha256": "bcc7f0ae973e25b27db64de98971fd76203d40917bcc4ea87f46295442c22aa5",
+          "bytes": 7148,
+          "line_anchors": {
+            "def parse_draft(": 75
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/run_v75.py",
+          "sha256": "a6f253572f81d2ef1ee963b9fe00c3cc6f065a2b41776fc7fb892bdf16c2bc92",
+          "bytes": 200,
+          "line_anchors": {}
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/eval_v6.py",
+          "sha256": "947ec53444afa6a241d70516069fb00e065bc843730ee1f354fd029aced75ca5",
+          "bytes": 24126,
+          "line_anchors": {
+            "def reconcile(": 53
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/paired_benchmark.py",
+          "sha256": "4d571a5d43a68d93f3d72842b7def1f21518d6bc4bb0a9cedd7bd3229a18343a",
+          "bytes": 27492,
+          "line_anchors": {
+            "MAX_SYSTEM_SUFFIX": 74,
+            "def project_sample(": 327
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/paired_review.py",
+          "sha256": "b76de54bb6401d3de2ea56bb134a51597f9d6f460613b9b13b9c2aa08e0b228d",
+          "bytes": 15156,
+          "line_anchors": {
+            "def load(": 35,
+            "def blind(": 179
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/docs/yaya-agent-2.0-v7-test-report.md",
+          "sha256": "cd58efbcd866eab200b3fb7c5dcafaaead21a47b31f2bac09a8d8d44973a59a5",
+          "bytes": 1030,
+          "line_anchors": {}
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/docs/yaya-agent-2.0-v7.1-test-report.md",
+          "sha256": "0477b5951027210e391e93faa325b64c4d6a1eccb4e24e475de181cd5e9ec63a",
+          "bytes": 2449,
+          "line_anchors": {}
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/docs/yaya-agent-2.0-v7.2-test-report.md",
+          "sha256": "c1cb44861240c9d4547c2e42572debeca55500bdcf62e896713417faf148c3bd",
+          "bytes": 1822,
+          "line_anchors": {}
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/docs/yaya-agent-2.0-v7.3-test-report.md",
+          "sha256": "e56a0f3dece7c1042e254a3e964543e8d01be4b256e4044dfbae66d9a4e96f94",
+          "bytes": 1268,
+          "line_anchors": {}
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/docs/yaya-agent-2.0-v7.5-test-report.md",
+          "sha256": "9c9567d583055dd645e6b951bbef3e2daecc371c01e1ab94af8a3d45e6b13acc",
+          "bytes": 3839,
+          "line_anchors": {}
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/docs/yaya-qwen4-max-benchmark-design.md",
+          "sha256": "6715aee43a0d14dc2145328b5b5daf26f89ad99c72cd6e15c44869235b6b89b5",
+          "bytes": 5968,
+          "line_anchors": {}
+        }
+      ]
+    },
+    "E03": {
+      "kind": "SYNTHETIC_API_HISTORY",
+      "archived_runs": [
+        {
+          "version": "v7.3",
+          "kind": "LIVE_SYNTHETIC_REPORT",
+          "report": {
+            "locator": "live-manual-8580-13314/report/report.json",
+            "sha256": "80a176d573cf43de6762033ecf9150e3e974e4673428d9208fd4fabec1eac337",
+            "bytes": 83589
+          },
+          "preflight": {
+            "locator": "live-manual-8580-13314/preflight.json",
+            "sha256": "dddd3ea3f8e7c6c83bfa12ec77302db698d4c8bcb66ddec2b01d79493925f530",
+            "bytes": 410
+          },
+          "observed_live_api_calls": 14,
+          "fallbacks": 3
+        },
+        {
+          "version": "v7.4",
+          "kind": "LIVE_SYNTHETIC_REPORT",
+          "report": {
+            "locator": "live-12408-27534/report/report.json",
+            "sha256": "517bbcf79f1632589f06971460da73b748113948834419cd28610f93240210a1",
+            "bytes": 90514
+          },
+          "preflight": {
+            "locator": "live-12408-27534/preflight.json",
+            "sha256": "62153ecea5ee7cbbf5e90ffe939785f7e7e98fd08d4cb301973d8667b1a0e764",
+            "bytes": 410
+          },
+          "observed_live_api_calls": 14,
+          "fallbacks": 1
+        },
+        {
+          "version": "v7.5 first",
+          "kind": "LIVE_SYNTHETIC_REPORT",
+          "report": {
+            "locator": "live-16904-16953/report/report.json",
+            "sha256": "469ea6617bd0c02ddaf614af3334a1cf72550005759b11745f6239bc15ac99e1",
+            "bytes": 101042
+          },
+          "preflight": {
+            "locator": "live-16904-16953/preflight.json",
+            "sha256": "efad92301640574c9902afca74c5dcd90ecf79aaecbf93b6e65223287006a2c7",
+            "bytes": 410
+          },
+          "observed_live_api_calls": 14,
+          "fallbacks": 0
+        },
+        {
+          "version": "v7.5 second",
+          "kind": "LIVE_SYNTHETIC_REPORT",
+          "report": {
+            "locator": "live-r2-17695-29396/report/report.json",
+            "sha256": "ed1fe0982f22941249cc6f41acd0b32de0246f52b3b2b946c454b67f44508cf2",
+            "bytes": 100667
+          },
+          "preflight": {
+            "locator": "live-r2-17695-29396/preflight.json",
+            "sha256": "74bce3c73f84e5a71f2e5154f63b5b8ed5f490b8aeebf10476b9b84db37ca8ff",
+            "bytes": 410
+          },
+          "observed_live_api_calls": 14,
+          "fallbacks": 0
+        }
+      ],
+      "frozen_bundle": {
+        "locator": "frozen-v75-evidence.zip",
+        "sha256": "4ce5ba9acabd5ca1ba1b35a37521d46e2a774d6027266e6c05e270a5e9d6893f",
+        "bytes": 166741
+      },
+      "system_prompt_sha256": "375c513b07e877b5fcd593201f20268554cbd3b6b0ac975b2eb9c545694c6c00",
+      "limitations": [
+        "v7–v7.2 historical observations from archived reports where raw records were unavailable",
+        "CLI/HTTP receipt evidence does not provide current real browser latency"
+      ]
+    },
+    "E04": {
+      "kind": "LIVE_PAIRED_SYNTHETIC",
+      "batch_id": "031aaa96a5a842cda704d47f8860807a",
+      "files": [
+        {
+          "locator": "live-direct-full-1eb9fb4-cc4c72/batch.json",
+          "sha256": "a8fe7e5b50cf5d3b169f002040518db51959a012b69b0851b6876b6b1bce8dd3",
+          "bytes": 3752
+        },
+        {
+          "locator": "live-direct-full-1eb9fb4-cc4c72/calls.jsonl",
+          "sha256": "152200a4e20f9c8a3e66fc0ccfd8a8adbc284886bf120792968ebb74b16d797b",
+          "bytes": 212911
+        },
+        {
+          "locator": "live-direct-full-1eb9fb4-cc4c72/plan.json",
+          "sha256": "57dff2180636935c8054da12dd22af5cb1da4496c18bc2a206f923abd1b83ba9",
+          "bytes": 73154
+        },
+        {
+          "locator": "live-direct-full-1eb9fb4-cc4c72/fixture.json",
+          "sha256": "d1076b1dac14da34a5312ba8fc6640e9ccb3ffb9ebefc4e8975980aa8ebcf91e",
+          "bytes": 13351
+        },
+        {
+          "locator": "live-direct-full-1eb9fb4-cc4c72/preflight.json",
+          "sha256": "3b63230b28eb7e6c8975901c226455300defd91620aa65a955cd14f317677c29",
+          "bytes": 5939
+        },
+        {
+          "locator": "live-direct-full-1eb9fb4-cc4c72/report.json",
+          "sha256": "5e2ab7f25269f9824e008b3024f1924215e76c4faa09698d33dd699b5333c06e",
+          "bytes": 1899
+        }
+      ],
+      "flash_delivered": 14,
+      "max_delivered": 14
+    },
+    "E05": {
+      "kind": "SINGLE_AI_RATING",
+      "batch_id": "031aaa96a5a842cda704d47f8860807a",
+      "cards": 14,
+      "scoring_file": {
+        "locator": "芽芽共读配对盲评-本轮14组_AI评分.json",
+        "sha256": "d00555b7020b6a92d52f704e4eef5d25a816cb4ef483d71a199a2b25c87d6d93",
+        "bytes": 10360
+      },
+      "restricted_mapping": {
+        "locator": "live-direct-full-1eb9fb4-cc4c72/review-map-private.json",
+        "sha256": "9d63fab00f6749fc91f3e949a0ffd63e0bcc78bd003c15f200cf7366601dd64d",
+        "bytes": 1511
+      },
+      "preferences": {
+        "Flash": 6,
+        "Max": 6,
+        "tie": 2
+      }
+    },
+    "E06": {
+      "kind": "HISTORICAL_FORMAL_READING",
+      "refer_to_E01": [
+        "docs/testing/g13/round1/README.md",
+        "docs/testing/g13/round2/result.json",
+        "docs/testing/g13/round5/README.md",
+        "docs/testing/yaya-answer-evaluation.md",
+        "docs/testing/yaya-qwen-decision-pilot.md"
+      ],
+      "pull_requests": [
+        "https://github.com/MumLauds/202610-zhiya/pull/88",
+        "https://github.com/MumLauds/202610-zhiya/pull/91"
+      ]
+    },
+    "E07": {
+      "kind": "READ_ONLY_ECS_AND_PUBLIC_OBSERVATION",
+      "public_receipt": "https://zhiyahuiben.xyz/_deployment/current.json",
+      "health": "https://zhiyahuiben.xyz/api/v1/health",
+      "github_run": "https://github.com/MumLauds/202610-zhiya/actions/runs/45550056951",
+      "public_revision": "48844b2ee267bc539ed0580a358470beca13e449",
+      "run_attempt": "45550056951-1",
+      "image_ids": {
+        "backend": "sha256:8483fc88252d79e9f94319541c05a046edb4d3379fbf8f979f2e466909b11d70",
+        "web": "sha256:6a1e99af7b3beb35522501183e779f10172b5887f42676897dd82a292d087064"
+      },
+      "fingerprints_observed_on_host": {
+        "installed_deploy_sh": "9a2a133e5df33ed56c778b494a6680924a5f65e2e24d420049c24d64625abd9d",
+        "public_receipt_json": "46f6a1a3fec7360e8a376329c6703602d3100f68e58432d0c943057ac45e198a",
+        "caddyfile": "249dd2673eb179bc506502ca196a1eb291074465a3c7c86df10a1e5544162008"
+      },
+      "install_matches_repository_blob": false,
+      "host_observations": {
+        "os": "Ubuntu 22.04.5 LTS",
+        "compose": "v5.6.1",
+        "caddy_gateway": "v2.11.7",
+        "root_use_percent": 79,
+        "root_available_gib_approx": 8.2,
+        "configured_model": "qwen3.6-plus",
+        "configured_host": "dashscope.aliyuncs.com",
+        "credential_present": true,
+        "timer": "active",
+        "last_service_result": "success",
+        "local_health": "ok",
+        "public_health": "ok",
+        "public_health_cache": "DYNAMIC",
+        "local_admin_anonymous_status": 401
+      },
+      "open_checks": [
+        "independent Staging",
+        "private cache and origin network controls",
+        "backup restoration and sustained SLO",
+        "installed host deploy script differs from main and matches historical Git blob"
+      ],
+      "method": "GitHub read plus Workbench and authenticated ECS console read-only. Public GET from ECS and browser. No direct external origin connection or production model request.",
+      "installed_deploy_script_matches_historical_revision": "4297f3cf13f747117f3792e8b846584839b6b789",
+      "source_controls_observed": {
+        "gateway_ports": [
+          80,
+          443
+        ],
+        "loopback_gateway_port": 18080,
+        "security_group_ingress_ipv4_any": [
+          "80/tcp",
+          "443/tcp",
+          "22/tcp",
+          "3389/tcp",
+          "ICMP"
+        ],
+        "caddyfile_observed_filter_counts": {
+          "remote_ip": 0,
+          "client_ip": 0,
+          "trusted_proxies": 0,
+          "Cache-Control": 1
+        },
+        "direct_external_origin_tested": false
+      }
+    },
+    "E08": {
+      "kind": "LOCAL_AUTOMATION_ONLY",
+      "checks": [
+        {
+          "scope": "formal source focused backend and database",
+          "command": "python -B -m pytest -q -p no:cacheprovider -c backend/pytest.ini backend/tests/test_reading_agent.py backend/tests/test_co_reading_visit_fixture.py backend/tests/test_g09_agent.py backend/tests/test_voice_api.py database/tests --basetemp <isolated>",
+          "status": "PASS",
+          "passed": 115,
+          "subtests": 114,
+          "warnings": 1,
+          "notes": "Initial run lacked the scratch parent directory, then rolled forward with an isolated path."
+        },
+        {
+          "scope": "formal source mobile session and write recovery",
+          "command": "node --test frontend/tests/readingSessionMachine.test.js frontend/tests/mobileWriteRecovery.test.js",
+          "status": "PASS",
+          "passed": 14
+        },
+        {
+          "scope": "frozen experiment branch",
+          "command": "python -B -m unittest discover",
+          "status": "PASS",
+          "passed": 78
+        },
+        {
+          "scope": "frozen experiment browser simulation",
+          "command": "node --test test_browser.mjs test_coreading_browser.mjs",
+          "status": "PASS",
+          "passed": 11,
+          "skipped": 1,
+          "notes": "Optional jsdom path skipped. No real browser latency inferred."
+        },
+        {
+          "scope": "formal frontend full suite on copied pinned frontend",
+          "command": "node node_modules/vitest/vitest.mjs run --maxWorkers=2",
+          "status": "FAIL",
+          "passed": 466,
+          "failed": 1,
+          "notes": "ShelfSameFilterRefresh.test.js, one case reached the original 5000ms deadline."
+        },
+        {
+          "scope": "formal frontend isolated retry",
+          "command": "node node_modules/vitest/vitest.mjs run src/ShelfSameFilterRefresh.test.js --maxWorkers=1",
+          "status": "PASS",
+          "passed": 7,
+          "notes": "Same file, original timeout. Does not replace the full-run record."
+        },
+        {
+          "scope": "formal frontend public bundle",
+          "command": "node node_modules/vite/bin/vite.js build --mode public",
+          "status": "PASS"
+        },
+        {
+          "scope": "formal frontend full single-worker retry",
+          "command": "node node_modules/vitest/vitest.mjs run --maxWorkers=1",
+          "status": "PASS",
+          "passed": 467
+        },
+        {
+          "scope": "formal backend and database full suite in Windows worktree",
+          "command": "python -B -m pytest -q -p no:cacheprovider -c backend/pytest.ini backend/tests database/tests --basetemp <isolated>",
+          "status": "FAIL",
+          "passed": 812,
+          "failed": 1,
+          "subtests": 313,
+          "warnings": 1,
+          "notes": "test_qwen_semantic_benchmark.py fixture SHA-256 differs only due to CRLF checkout conversion. Full suite result retained."
+        },
+        {
+          "scope": "formal semantic module in isolated copy using raw Git fixture bytes",
+          "command": "python -B -m pytest -q -p no:cacheprovider -c backend/pytest.ini backend/tests/test_qwen_semantic_benchmark.py --basetemp <isolated>",
+          "status": "PASS",
+          "passed": 5,
+          "notes": "Verified both working bytes after CRLF normalization exactly equal their original Git blobs and their pinned test hashes."
+        }
+      ]
+    },
+    "E09": {
+      "kind": "PUBLIC_PRIMARY_REFERENCES",
+      "sources": [
+        "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_f374e8245320413181742e6d1baf4366.html",
+        "https://app.www.gov.cn/govdata/gov/202310/24/508651/article.html",
+        "https://www.moj.gov.cn/pub/sfbgw/flfggz/flfggzbmgz/202101/t20210105_146377.html",
+        "https://www.cac.gov.cn/2025-03/14/c_1743654684782215.htm",
+        "https://help.aliyun.com/zh/model-studio/privacy-notice",
+        "https://help.aliyun.com/zh/model-studio/bailian-service-notes",
+        "https://terms.alicdn.com/legal-agreement/terms/common_platform_service/20230728213935489/20230728213935489.html",
+        "https://help.aliyun.com/zh/model-studio/regions"
+      ]
+    }
+  },
+  "deliverables": [
+    {
+      "path": "docs/production-readiness/architecture-assessment.md",
+      "sha256": "b586a63d658dd4e0ffbebbf657fcc5fa5f0596ebfc0183c70f66edbc4b37545c",
+      "bytes": 4529
+    },
+    {
+      "path": "docs/production-readiness/current-state-inventory.md",
+      "sha256": "ff8e98f5b5656626ba55e4ab5a2e0bbf3c1abbd3c9487362184caa54ffee9de0",
+      "bytes": 5226
+    },
+    {
+      "path": "docs/production-readiness/data-flow-and-api-contract.md",
+      "sha256": "a4a9e9e83a1d9bcbbabefcda8291db52c15b6d298aa4cf87d22329631517966f",
+      "bytes": 4326
+    },
+    {
+      "path": "docs/production-readiness/decision-log.md",
+      "sha256": "0e20e3748bcb0a9353ca2a809aa52104f529a86417a17f3b5aee6acdbbbb80ab",
+      "bytes": 1582
+    },
+    {
+      "path": "docs/production-readiness/deployment-and-rollback.md",
+      "sha256": "8eacc7d47cf075110622aa189346fc7d515557ff7df53a510db8be29674862b8",
+      "bytes": 6592
+    },
+    {
+      "path": "docs/production-readiness/gap-analysis.md",
+      "sha256": "5bc25e1ca23fab19e5afcb742f4d7db80c30be52eb529484b4813689e1db25f4",
+      "bytes": 4664
+    },
+    {
+      "path": "docs/production-readiness/go-live-checklist.md",
+      "sha256": "2172ef7dde53dcf1f3399c6840f372edb69f955c17c670cf8d1bf4b6861d30b5",
+      "bytes": 2318
+    },
+    {
+      "path": "docs/production-readiness/observability-and-cost.md",
+      "sha256": "d5a925bc75e3ef84db3feba97d1f13854c074b4da2d3a93c58c8ff8e9bc76000",
+      "bytes": 4140
+    },
+    {
+      "path": "docs/production-readiness/privacy-and-data-governance.md",
+      "sha256": "687a9537543be686157fd465f36ae283630118fb7c695b3a342e0e4e2e633f2b",
+      "bytes": 5779
+    },
+    {
+      "path": "docs/production-readiness/production-readiness-scorecard.json",
+      "sha256": "657506f07d5fcbdb2bfebe8774419649043cd8c9fe18358e757ff00016e8210b",
+      "bytes": 4760
+    },
+    {
+      "path": "docs/production-readiness/production-test-plan.md",
+      "sha256": "351c6e4d4aad54cd3ba6dc34d20fa172166484de4bde37047546b01949c0274f",
+      "bytes": 4418
+    },
+    {
+      "path": "docs/production-readiness/README.md",
+      "sha256": "4dbd6c9c8754901b5b3985922186b871d8eb31b882e7161c6ce5eae796977ed5",
+      "bytes": 2894
+    },
+    {
+      "path": "docs/production-readiness/seven-series-assessment.md",
+      "sha256": "dbad7a5613cc3b5cdee68b8607e19f1182895f4b9d9d6c96a76860f016be033f",
+      "bytes": 5979
+    },
+    {
+      "path": "docs/production-readiness/staging-plan.md",
+      "sha256": "73bd12127ac3fc398bf872ac8251f79b36967f44c3089fab56a68fb9bde24630",
+      "bytes": 3063
+    }
+  ]
+}
