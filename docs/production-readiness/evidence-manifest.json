@@ -1149,6 +1149,15 @@
         "completion_tokens": 2422,
         "settled_application_micros": 34832
       },
+      "blind_review": {
+        "status": "PREPARED_NOT_PUBLISHED",
+        "anonymous_response_examples": 69,
+        "provider_turns": 63,
+        "local_listening_turns": 6,
+        "independent_human_reviews_completed": 0,
+        "html_sha256": "c12bb6f78d484c94c79d77162d37a3d96aafbcb5fb1309b54467035d11147120",
+        "wjx_import_package_sha256": "501b2b566e562d2093535d1683098eb03a08a6d74becf05f47e276b369dc55d4"
+      },
       "gate2": "BLOCKED",
       "gate3": "BLOCKED",
       "sources": [
@@ -1333,8 +1342,8 @@
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
-      "sha256": "b98e9e734a10a622b84add0e65bee36dbffb77940f331d1a77cc140caba8a22d",
-      "bytes": 5935
+      "sha256": "cb296e6de4c101cefde1ad455622b068e1e53a2f378f78479fe799f03990267d",
+      "bytes": 6063
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
@@ -1373,8 +1382,8 @@
     },
     {
       "path": "docs/production-readiness/gate1-staging-validation.md",
-      "sha256": "c3457c69690a213c4510370be8c87501b84595b5f35856145692f19c3bd74ca1",
-      "bytes": 12704
+      "sha256": "c85a75e38a50887ab6d3f370f0fcade71126a4641ccefbe6b172c56c1ff2ca4d",
+      "bytes": 13006
     },
     {
       "path": "docs/production-readiness/browser-e2e-report.md",
@@ -1408,8 +1417,8 @@
     },
     {
       "path": "docs/production-readiness/gate2-pilot-readiness.md",
-      "sha256": "3cd3fd2c2cefe02fd3a260c71800f3a29d992c6a6160f84043ac61ec04f73849",
-      "bytes": 10020
+      "sha256": "366110471f609a8f2bc9461106a3a5220cdd93a4a7d94d6f23c5bb9135778e17",
+      "bytes": 14081
     },
     {
       "path": "docs/production-readiness/gate3-release-readiness.md",
