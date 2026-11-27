@@ -29,7 +29,7 @@
 - 前端：`npm run check`，包含桌面与移动，另外使用 `npm run build:public` 检查公开制品。
 - 独立 Staging：`docker compose --env-file infra/staging/.env.example -f infra/staging/compose.yaml config --quiet` 校验模板。经审查批准后记录真实北京 Flash、浏览器和移动设备、语音播放、弱网、备份恢复及独立延时指标。
 
-本地 HTTP 使用真实 TCP 与业务应用。供应商异常分类由可控传输测试，合成数据的本机到百炼真实调用已在北京默认业务空间执行两轮。独立测试空间复跑和独立云 Staging 端到端仍为 BLOCKED。 [测试代码](../../backend/tests/test_yaya_agent2.py)
+本地 HTTP 使用真实 TCP 与业务应用。供应商异常分类由可控传输测试，合成数据的本机到百炼真实调用已在北京默认业务空间执行两轮。独立测试空间复跑已有真实响应。独立云 Staging 端到端仍为 BLOCKED，回答质量缺口单列。 [测试代码](../../backend/tests/test_yaya_agent2.py)
 
 ## PR #97 审查回归
 

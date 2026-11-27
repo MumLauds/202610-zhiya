@@ -29,7 +29,7 @@ Compose 项目 `zhiya-agent-stg` 默认关闭。HTTPS 绑定本机，Caddy 返�
 
 ## PR 容器验证与真实工作空间
 
-PR 工作流使用独立项目和合成账号，通过 `bash infra/staging/smoke_ci.sh` 构建镜像、启动 Compose、初始化 SQLite、回读合成绘本、校验 Caddy 私有 CA 和 HTTPS、核对功能与出站两个名单、检查运行时北京 Flash 配置并演练关闭。代码审查阶段使用合成占位凭证验证配置，本机隔离合成数据已通过北京默认业务空间完成两轮真实请求。需在非默认测试业务空间及专用 Key 下复跑。独立云 Staging 仍需批准的测试地址、账号与运行记录。
+PR 工作流使用独立项目和合成账号，通过 `bash infra/staging/smoke_ci.sh` 构建镜像、启动 Compose、初始化 SQLite、回读合成绘本、校验 Caddy 私有 CA 和 HTTPS、核对功能与出站两个名单、检查运行时北京 Flash 配置并演练关闭。代码审查阶段使用合成占位凭证验证配置，本机隔离合成数据已通过北京默认业务空间完成两轮真实请求。非默认「独立测试」空间授予 Flash 调用权限后已独立复跑，12 次 HTTP 200。独立云 Staging 仍需批准的测试地址、账号与运行记录。
 
 ## PR #97 Gate 1 本轮证据
 

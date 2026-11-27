@@ -80,6 +80,21 @@ class Capture(httpx.AsyncHTTPTransport):
             raise
         row.update(http_status=response.status_code, _start=started,
                    provider_request_id=response.headers.get("x-request-id") or response.headers.get("x-dashscope-request-id"))
+        if response.status_code in {401, 403}:
+            # The gateway returns on HTTP errors without reading their bodies.
+            # Keep a bounded provider diagnostic for this opted-in private capture.
+            body = bytearray()
+            try:
+                async for chunk in response.stream:
+                    body.extend(chunk[:4096 - len(body)])
+                    if len(body) >= 4096:
+                        break
+            except httpx.TransportError:
+                pass
+            finally:
+                await response.aclose()
+            row["raw_response"] = body.decode("utf-8", errors="replace")
+            return httpx.Response(response.status_code, headers=response.headers)
         response.stream = CapturedStream(response.stream, row, self.limit)
         return response
 
@@ -131,7 +146,9 @@ def capture(output, model_key):
             transport = Capture(settings.model.model_api_url, MAX_RESPONSE_BYTES)
             gateway = ModelGateway(settings.model, transport=transport)
             app.state.yaya_agent = YayaAgent(settings, gateway)
-            write({"revision": revision, "scope": "real_beijing_provider_synthetic_fixture_local_asgi"})
+            write({"revision": revision, "scope": "real_beijing_provider_synthetic_fixture_local_asgi",
+                   "workspace_api_host": urlsplit(settings.model.model_api_url).hostname})
+            authorization_failed = False
             try:
                 sid = post("/reading-sessions", {"childProfileId": profile, "storyVersionId": VERSION,
                                                    "mode": "PARENT_CHILD"})["data"]["readingSessionId"]
@@ -179,10 +196,16 @@ def capture(output, model_key):
                            "provider_attempts": calls, "backend_ms": round(1000 * (time.perf_counter() - start), 2),
                            "displayed_reply": data.get("replyText"), "receipt": data["agentReceipt"],
                            "fallback_reason": data["agentReceipt"].get("reason"), "reservation_and_settlement": amount})
+                    if any(call.get("http_status") in {401, 403} for call in calls):
+                        authorization_failed = True
+                        break
                 verified = [row for row in transport.calls if row.get("http_status") == 200 and row.get("provider_request_id")
                             and row.get("model_returned") == settings.model.model_name]
                 write({"provider_attempt_count": len(transport.calls), "verified_provider_count": len(verified),
+                       "stop_reason": "provider_authorization_denied" if authorization_failed else None,
                        "quality_review": "PENDING", "supplier_invoice": "PENDING"})
+                if authorization_failed:
+                    raise RuntimeError("Beijing returned HTTP 401/403. Check workspace and key model permissions before retrying.")
                 if len(verified) < 12:
                     raise RuntimeError("Fewer than 12 verified provider responses. Check the private evidence.")
             finally:

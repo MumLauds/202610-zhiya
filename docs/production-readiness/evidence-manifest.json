@@ -860,8 +860,8 @@
         },
         {
           "path": "infra/staging/gate1_live_probe.py",
-          "sha256": "b915a0c01be8a2057772407791a5895375cb32c24e7b8604a7d405637bc05e68",
-          "bytes": 11508
+          "sha256": "be19a7016924add9c54d57eef99db1845b846a7b45184bfff8bb233dff68ce91",
+          "bytes": 12802
         },
         {
           "path": "infra/staging/run_gate1_live.ps1",
@@ -881,7 +881,7 @@
         "local Chrome desktop, mobile emulation and voice fixtures",
         "real Beijing Flash transport, valid receipts and actual usage on synthetic-only turns"
       ],
-      "limitations": "Isolated Beijing provider workspace rerun, independent cloud Staging, real speech, physical device, independent bills, and Gates 2–3 approvals are pending.",
+      "limitations": "Independent cloud Staging, real speech, physical device, supplier invoices, observed dialogue quality gaps and Gates 2–3 approvals are pending.",
       "real_beijing_runs": [
         {
           "runtime_revision": "d1e92464d7e31684da369c32cf8453bd2bacd3a7",
@@ -902,6 +902,28 @@
           "archive_scope": "private synthetic JSONL outside repository",
           "provider_workspace_scope": "default Beijing workspace, confirmed read-only in console",
           "qualifies_for_isolated_staging_provider_gate": false
+        },
+        {
+          "runtime_revision": "e2310b89c2bdf7406b47c200b96f10d3b8f9a664",
+          "archive_head": "8da0cd7de528cd06375ab8db711d2d06f96c82d3",
+          "restricted_archive_sha256": "335914551c9a6a0ad3672edb80d0ab92712b2580ac905bca400061a44a05eb0a",
+          "attempts": 12,
+          "verified_responses": 0,
+          "full_fallbacks": 12,
+          "archive_scope": "private synthetic JSONL outside repository",
+          "provider_workspace_scope": "independent test workspace before Flash authorization; all 12 HTTP 403",
+          "qualifies_for_isolated_staging_provider_gate": false
+        },
+        {
+          "runtime_revision": "e2310b89c2bdf7406b47c200b96f10d3b8f9a664",
+          "archive_head": "8da0cd7de528cd06375ab8db711d2d06f96c82d3",
+          "restricted_archive_sha256": "9cc5806b902d5abbc9bfb9a5585ac875d6f36f7e3ff7dca4d90b79a57dcfc12c",
+          "attempts": 12,
+          "verified_responses": 12,
+          "full_fallbacks": 1,
+          "archive_scope": "private synthetic JSONL outside repository",
+          "provider_workspace_scope": "independent test workspace after Flash authorization; 12 HTTP 200; B3 format and C attribution issues",
+          "qualifies_for_isolated_staging_provider_gate": true
         }
       ],
       "verification": {
@@ -944,13 +966,13 @@
     },
     {
       "path": "docs/production-readiness/gap-analysis.md",
-      "sha256": "08a6ec1b87fbdd50131a11a9c49b607bdb14dbd33e5561b2610661fc147cb624",
-      "bytes": 8620
+      "sha256": "e6cb10398d200c6fd8fe2d4b38476616de182cd5c733e70db39b25b06944eef9",
+      "bytes": 8660
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
-      "sha256": "ee9b02a61be6c0b1b9a77e5c64a0cbafa7ec23541e988deb233098e38b35b8bf",
-      "bytes": 3704
+      "sha256": "509a6907372d2b423c8d9c9063fadab2ae5d4d7a2f66109b057019ef4a19e2b9",
+      "bytes": 3740
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
@@ -969,8 +991,8 @@
     },
     {
       "path": "docs/production-readiness/production-test-plan.md",
-      "sha256": "70f853e7fcbf86a7492fe2ab1eabf3186b6a712eb967cb527ac5e3f7fa6b6472",
-      "bytes": 6266
+      "sha256": "910cdd74444a578a70ac889170f5ba9f81774f520d1dcf489410311f55edeb3a",
+      "bytes": 6311
     },
     {
       "path": "docs/production-readiness/README.md",
@@ -984,13 +1006,13 @@
     },
     {
       "path": "docs/production-readiness/staging-plan.md",
-      "sha256": "1849af955a6c009352fe7f20244d8059ec52c9372832870d0a20dadf51c86987",
-      "bytes": 4341
+      "sha256": "c3e032e88836a4f863a5c94596259026c7f8f009aa4b4f2fcab370f03c102e01",
+      "bytes": 4379
     },
     {
       "path": "docs/production-readiness/gate1-staging-validation.md",
-      "sha256": "fe21ba0fbd5ec8a6f0c36147f43c760edb2addb84f7fa8d57c8a665d5cdcf14a",
-      "bytes": 7062
+      "sha256": "6b9c9e87aae95c8f59b05ce6812531a15b8c776edf6c33cc36cb92247fe6137a",
+      "bytes": 8550
     },
     {
       "path": "docs/production-readiness/browser-e2e-report.md",
@@ -1009,8 +1031,8 @@
     },
     {
       "path": "docs/production-readiness/cost-reconciliation.md",
-      "sha256": "15f49ce9f5d17b65215a081b0b8a8ecb91880b52cd0c81c5e6fdc89190cf0543",
-      "bytes": 1560
+      "sha256": "f94f8c57ec96b948399cf4e36bb0a22a548e30faf029eb96eff11b342a2a88e5",
+      "bytes": 1771
     },
     {
       "path": "docs/production-readiness/legacy-migration-verification.md",

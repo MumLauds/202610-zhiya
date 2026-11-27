@@ -5,9 +5,9 @@
 | 提交与运行范围 | 已核对 | 既有 PR #97 分支。回归只使用隔离 SQLite、虚构绘本和合成儿童对话 |
 | 多轮指代 | 本地定向回归通过 | 同版本、同会话、同次页面访问最多携带两条已展示的合格助手回复 |
 | 独立云 Staging | BLOCKED | 待提供获批的测试地址、访问方式和验收账号 |
-| 北京百炼 | 真实调用已取得，独立空间验收 BLOCKED | 两轮各 12 次通过默认北京业务空间完成。待使用非默认测试业务空间和专用 Key 复跑 |
+| 北京百炼 | 独立空间 API 连接及响应已验证 | 独立空间授权后 12/12 HTTP 200。B3 整轮回退和 C 想象来源误判仍待质量复核 |
 | 真机、真实语音与账单 | BLOCKED | 待独立环境、供应商凭证和账单 |
-| Gate 1、2、3 | BLOCKED | Gate 1 待上述证据。Gate 2/3 另外需要儿童数据、试运行及发布审批 |
+| Gate 1、2、3 | BLOCKED | Gate 1 待独立云端及发现问题的质量复核。Gate 2/3 另外需要儿童数据、试运行及发布审批 |
 
 ## 北京真实模型运行
 
@@ -30,9 +30,9 @@
 
 修复版 `e2310b89c2bdf7406b47c200b96f10d3b8f9a664` 完整 CI 再次通过，后端及数据库 876 通过、5 跳过、313 子测试通过，前端 467 通过、独立 Node 15 通过。隔离 Docker smoke 通过输入授权撤回、关闭回退及已有会话版本固定检查。香港发布任务在 PR 阶段跳过。[修复版 CI](https://github.com/MumLauds/202610-zhiya/actions/runs/45978040980/job/140434638636)
 
-## 两轮真实北京 Flash
+## 北京默认空间两轮基线
 
-真实调用使用合成数据、本机隔离 ASGI 后端和固定运行时提交。控制台只读核对确认两轮 Host 属于同一北京默认业务空间。保留这些真实响应作为功能观察。独立测试空间验收仍为 BLOCKED，当前满足独立空间要求的调用为 0。每轮 14 个回合，12 个获得独立供应商请求 ID、预期模型和 HTTP 200。12 个生成均以 stop 结束。每轮两次明确陪看在本地完成。下表的后端耗时只统计有真实请求的 12 个回合。P50 为中位数，P95 使用 nearest-rank。
+真实调用使用合成数据、本机隔离 ASGI 后端和固定运行时提交。控制台只读核对确认两轮 Host 属于同一北京默认业务空间。保留这些真实响应作为功能观察。独立空间取证单列。每轮 14 个回合，12 个获得独立供应商请求 ID、预期模型和 HTTP 200。12 个生成均以 stop 结束。每轮两次明确陪看在本地完成。下表的后端耗时只统计有真实请求的 12 个回合。P50 为中位数，P95 使用 nearest-rank。
 
 | 项目 | 第一轮 d1e9246 | 修复后 e2310b8 |
 | --- | --- | --- |
@@ -59,5 +59,21 @@
 1. 使用干净的 PR 工作树安装 `backend/requirements-dev.txt` 和前端锁定依赖。独立云 Staging 的网络及权限配置见 [Staging 计划](staging-plan.md)。
 2. 本地浏览器先执行 `npm --prefix frontend run build:public`。在项目根目录用已安装 Playwright Python、Chrome 和 OpenSSL 的环境执行 `python infra/staging/gate1_local_browser.py --openssl <openssl-path> --output <evidence-json>`。本地 HTTPS 使用一次性证书。仅本地合成服务使用测试证书例外。阅读 HTTP 客户端当前默认上限为 30 秒，Agent 模型调用截止为 3.5 秒。真实云上的慢响应与回退展示待测。
 3. CI 隔离 Docker 使用 `bash infra/staging/smoke_ci.sh`。该脚本使用独立 Compose 工程和测试文件。
-4. 真实北京 API 在 Windows PowerShell 执行 `run_gate1_live.ps1 -Python <python> -Evidence <checkout-outside-jsonl> -ApprovedSyntheticStaging`，先在北京业务空间管理确认 Host 对应非默认测试空间，再按提示输入 Host 和该空间的专用测试 Key。脚本校验域名格式，空间属性由控制台确认。凭证无需写入文件。密钥不得进入命令行、仓库或共享证据。原始两轮 JSONL 私有保留，指纹在证据清单。
+4. 真实北京 API 在 Windows PowerShell 执行 `run_gate1_live.ps1 -Python <python> -Evidence <checkout-outside-jsonl> -ApprovedSyntheticStaging`，先在北京业务空间管理确认 Host 对应非默认测试空间，再按提示输入 Host 和该空间的专用测试 Key。脚本校验域名格式，空间属性由控制台确认。凭证无需写入文件。密钥不得进入命令行、仓库或共享证据。原始 JSONL 私有保留，指纹在证据清单。若供应商返回 401/403，脚本在首个拒绝处停止并保留有大小上限的诊断。
 5. 冻结 v7.5 在候选 `89eb60335c9c2b344afca87bf91ea6d90361c6c7` 执行 `python -m pytest -q qa/p6/yaya_agent_v73`，复跑 58 通过、41 子测试通过。冻结版目录执行 `node --test test_browser.mjs test_coreading_browser.mjs`，启用本机 MOCK HTTP 和 jsdom 后 12 项通过。定向本地回归 45 通过。隔离 SQLite 初始化和 `python database/init_db.py --check` 均通过。
+
+## 北京独立测试空间
+
+授权前同一计划产生 12 次 HTTP 403、0 次模型响应。控制台「独立测试」空间的 qwen3.8-flash 模型权限显示未授权。授权后重跑，14 个回合中 12 个真实请求均为 HTTP 200，12 个不同的供应商请求 ID、预期模型和 stop 结束标志。两次陪看由应用在本地执行。样本使用运行时提交 e2310b8 对应应用代码及更新后的采集脚本，归档 HEAD 为 8da0cd7。新采集脚本保存本地私有 Host 归属证据；首次 401/403 即停止的行为已完成离线回归。
+
+| 指标 | 授权后独立空间 |
+| --- | --- |
+| 真实请求 / 核验响应 | 12 / 12 |
+| 正常使用模型答复 | 11 / 12 |
+| 整轮回退 | 1 / 12（QUESTION_FORMAT） |
+| 仅移除追问 | 0 |
+| API P50 / P95 | 800.66 / 2239.02 ms |
+| 后端 P50 / P95 | 883.43 / 2399.24 ms |
+| 本地陪看 | 2 次，未触发出站 |
+
+A、D 和 F 的目标表现符合样本预期。B1/B2 正常承接翅膀和月亮，B3 的草稿把问句写在正文并标为 RESPOND，严格校验按 QUESTION_FORMAT 回退。C 已收到同次页面访问的“小被子”来源线索，模型仍否认孩子此前说过，归属不合格。E 未臆造松鼠动机，但仍未主动接住可能性。翻页前 9 个出站请求均未出现第二页的纸风车。当前具备独立测试空间的 API 连接与真实响应证据，回答质量、独立云场景和账单分别追踪。
