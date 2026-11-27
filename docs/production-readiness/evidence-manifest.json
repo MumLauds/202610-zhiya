@@ -1247,6 +1247,57 @@
         "receipt_sha256": "c6d9741caf75f60a2c987eca047436cd142b3839a254202929391f305b027def",
         "android_microphone_and_playback": "BLOCKED"
       }
+    },
+    "E19": {
+      "stage": "Gate 1 browser, physical Android, and supplier billing follow-up",
+      "recorded_on": "2026-11-27",
+      "runtime_revision": "29c51c8b0c877041c478f7256314633909dc463b",
+      "browser_runs": {
+        "android": {
+          "status": "PASS",
+          "version": "156.0.4314.43",
+          "scope": "physical Android 12 USB local synthetic gateway",
+          "evidence_sha256": "ddd244a70b0826db4884a1efcbda7f5eb37810bb558917e0b417bb0d044cbb05"
+        },
+        "firefox": {
+          "status": "PASS",
+          "version": "159.0",
+          "desktop": 5,
+          "mobile_viewport": 2,
+          "voice_fixture": 2,
+          "evidence_sha256": "8d6e31aa11f3dee9ca900faa8ce4668d042f28d859cc1a3629078bf8c5713a86"
+        },
+        "webkit": {
+          "status": "PASS",
+          "version": "27.2",
+          "desktop": 5,
+          "mobile_viewport": 2,
+          "voice_fixture": 2,
+          "evidence_sha256": "634fc9fe629773b039b72b30446b9dbee80ff66a1f8fe68908d72227287cb556"
+        }
+      },
+      "iphone_safari_real_device": "DEFERRED",
+      "consent_deletion_media_regression": {
+        "tests_passed": 60,
+        "warnings": 1,
+        "scope": "local synthetic backend fixtures"
+      },
+      "supplier_daily_billing": {
+        "status": "PARTIAL",
+        "date": "2026-11-27",
+        "export_sha256": "c9a19350816da426145f1f8514eb18b8f772e5572f922952a376d70bce6f4cba",
+        "reconciled_historical_flash_input_tokens": 9057,
+        "reconciled_historical_flash_output_tokens": 452,
+        "observed_asr_seconds": 2,
+        "observed_tts_input_tokens": 10,
+        "observed_tts_output_tokens": 34,
+        "observed_test_rows_payable_cny": "0",
+        "cloud_batch": "not distinguishable in the daily export"
+      },
+      "approved_real_pilot_participants": 0,
+      "gate1": "BLOCKED",
+      "gate2": "BLOCKED",
+      "gate3": "BLOCKED"
     }
   },
   "deliverables": [
@@ -1282,8 +1333,8 @@
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
-      "sha256": "62697b920b38db5c3965bf43ca3d8654929875ce89ac5671ae0dbff2844669f5",
-      "bytes": 4372
+      "sha256": "b98e9e734a10a622b84add0e65bee36dbffb77940f331d1a77cc140caba8a22d",
+      "bytes": 5935
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
@@ -1322,18 +1373,18 @@
     },
     {
       "path": "docs/production-readiness/gate1-staging-validation.md",
-      "sha256": "6f962a5da7fc898bc8fbb7293b82801144610e68be83c32c39e9d3c02d417941",
-      "bytes": 11297
+      "sha256": "c3457c69690a213c4510370be8c87501b84595b5f35856145692f19c3bd74ca1",
+      "bytes": 12704
     },
     {
       "path": "docs/production-readiness/browser-e2e-report.md",
-      "sha256": "7e467c31e06a7908bfbb8e91c6cb77d888a105f1b7b1cbc5cf565d3272788247",
-      "bytes": 2408
+      "sha256": "b678bc91d31e60da1de4c7c91f358dff9f88e3885a0375d7b9bc57d8cc22db49",
+      "bytes": 2861
     },
     {
       "path": "docs/production-readiness/voice-integration-report.md",
-      "sha256": "83e71a7d447386f54215c2a89b4b72362075bfe693fd72810e9719ec9a128ec6",
-      "bytes": 1775
+      "sha256": "5a882f850a2795e6c65ac73520c168827ee3693fefb79eb0c3ce09075a29fd7c",
+      "bytes": 1836
     },
     {
       "path": "docs/production-readiness/session-isolation-report.md",
@@ -1357,8 +1408,8 @@
     },
     {
       "path": "docs/production-readiness/gate2-pilot-readiness.md",
-      "sha256": "454ea8c77168ea2a394cf37430620752bf274e0764aae6f69dc9847dfec631b0",
-      "bytes": 9940
+      "sha256": "3cd3fd2c2cefe02fd3a260c71800f3a29d992c6a6160f84043ac61ec04f73849",
+      "bytes": 10020
     },
     {
       "path": "docs/production-readiness/gate3-release-readiness.md",

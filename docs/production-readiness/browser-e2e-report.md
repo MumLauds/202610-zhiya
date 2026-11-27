@@ -1,6 +1,6 @@
 # 浏览器端到端验收
 
-独立云 Staging 桌面 Chrome、移动端浏览器和实机均为 **BLOCKED**。需要合成环境的 HTTPS 地址、获批账号和访问方式。
+临时云 Staging 的桌面 Chrome 和移动视口已验收。本机补验的 Firefox、WebKit 以及 Android USB 真机证据详见 [Gate 1](gate1-staging-validation.md)。iPhone/Safari 真机本轮暂缓，目标云站的设备组合待正式签核。
 
 本机浏览器用隔离的 SQLite、公开模式前端构建和回环 HTTPS 运行。Chromium 可执行真实页面交互和真实本地 HTTP 请求，模型及语音供应商使用合成响应。本地记录以相应运行结果为准。两轮浏览器验证退出码为 0，关闭连接时有 Windows Proactor 重置日志。
 
@@ -15,3 +15,7 @@
 公开仓库的标准 GitHub Actions 托管运行器已通过 Chrome 157 桌面共读和移动视口测试。桌面覆盖登录、选书、开读、多轮、翻页和回看、刷新及小结；移动视口覆盖断网重连。浏览器连接同一运行器内的合成服务。[CI 回执](https://github.com/MumLauds/202610-zhiya/actions/runs/45986156827/job/140462188944)
 
 Android 12 实体机使用 Edge 156.0.4314.43，经 USB 转发访问电脑上的隔离测试服务。键盘弹出时曾使 Android 原生「确认回答」触控边界高度为 0。移动入口启用 interactive-widget=resizes-content 后，键盘保持开启时提交成功。实测登录、选书及开读、回应/倾听/暂停/恢复、刷新、页面级网络中断和重连、翻页一次写入、回看以及结束会话均通过。实际云站到设备的链路仍待验收。
+
+## Firefox、WebKit 和 Android 补验
+
+证据绑定 `29c51c8b0c877041c478f7256314633909dc463b`。Firefox 159.0 和 WebKit 27.2 各通过 5 组桌面、2 组移动视口、2 组语音接口用例。Android 12 Edge 在同一台实体手机上完成合成站录放和会话结束。语音数据路径见[语音验收](voice-integration-report.md)。
