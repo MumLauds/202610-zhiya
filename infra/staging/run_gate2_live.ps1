@@ -3,6 +3,7 @@ param(
     [string]$Python = 'python',
     [string]$PythonDependencies,
     [string]$WorkspaceHost,
+    [string]$Candidate,
     [switch]$ApprovedSyntheticStaging
 )
 $ErrorActionPreference = 'Stop'
@@ -30,7 +31,9 @@ try {
     $env:PYTHONPATH = (@((Join-Path $root 'backend'), $PythonDependencies, $previous.PYTHONPATH) |
         Where-Object { $_ }) -join [IO.Path]::PathSeparator
     $env:PYTHONDONTWRITEBYTECODE = '1'
-    & $Python -X utf8 (Join-Path $PSScriptRoot 'gate2_live_probe.py') --approved-synthetic-staging --evidence $Evidence
+    $candidateArgs = @()
+    if ($Candidate) { $candidateArgs = @('--candidate', $Candidate) }
+    & $Python -X utf8 (Join-Path $PSScriptRoot 'gate2_live_probe.py') --approved-synthetic-staging --evidence $Evidence @candidateArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Probe stopped with status $LASTEXITCODE. Check the private evidence if the probe created it."
     }

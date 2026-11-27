@@ -244,8 +244,13 @@ def reading_context(db, row, input_text: str, arrival: int, questions: tuple[str
                     credential: str | None = None) -> Context:
     current, session_id, version = row["current_page_no"], row["id"], row["version_id"]
     # Only actual arrival events through the current visit and the carried, authorized prefix qualify.
+    # A branch event stores its source in page_no and its actual destination in the saved response.
     visit_data = db.execute(
-        """SELECT page_no FROM interaction_events WHERE session_id=? AND version_id=? AND id<=?
+        """SELECT CASE WHEN event_type='BRANCH_CHOSEN'
+                        AND json_type(response_json, '$.data.currentPage')='integer'
+                       THEN json_extract(response_json, '$.data.currentPage')
+                       ELSE page_no END
+           FROM interaction_events WHERE session_id=? AND version_id=? AND id<=?
            AND event_type IN ('STARTED','PAGE_CHANGED','BRANCH_CHOSEN') AND result_status='SUCCESS' ORDER BY id""",
         (session_id, version, arrival),
     ).fetchall()

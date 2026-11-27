@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sqlite3
 import subprocess
 import tempfile
@@ -27,7 +28,6 @@ from app.services.yaya_agent_config import MODEL, WORKSPACE, YayaSettings
 from app.speech_config import SpeechSettings
 
 EXPECTED_CALLS = sum(not case[1].startswith("local-") for _, _, _, cases in BOOKS for case in cases)
-CANDIDATE = "df6e80636273b98e8fabd087310d63194c896f8a"
 MOCK_KEY = "synthetic-gate2-preflight"
 MOCK_ENDPOINT = "https://ws-gate2-preflight.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions"
 
@@ -75,10 +75,10 @@ class PreflightCapture(Capture):
         return response
 
 
-def evaluate(output, *, preflight):
+def evaluate(output, *, candidate, preflight):
     changed_runtime = git("status", "--porcelain", "--", "backend", "database")
-    if changed_runtime or git("diff", "--name-only", CANDIDATE, "HEAD", "--", "backend", "database"):
-        raise RuntimeError(f"The test requires clean runtime files at candidate {CANDIDATE}")
+    if changed_runtime or git("diff", "--name-only", candidate, "HEAD", "--", "backend", "database"):
+        raise RuntimeError(f"The test requires clean runtime files at candidate {candidate}")
     fixture = Path(__file__).with_name("gate2_live_fixtures.py").read_bytes()
     key, endpoint = os.environ["YAYA_AGENT2_API_KEY"], os.environ["YAYA_AGENT2_API_URL"]
     if not preflight and (not WORKSPACE.fullmatch(endpoint) or key.startswith("synthetic-")
@@ -122,7 +122,7 @@ def evaluate(output, *, preflight):
             transport = transport_type(endpoint, MAX_RESPONSE_BYTES)
             gateway = ModelGateway(settings.model, transport=transport)
             app.state.yaya_agent = YayaAgent(settings, gateway)
-            write({"revision": CANDIDATE, "scope": "synthetic_offline_preflight" if preflight else
+            write({"revision": candidate, "scope": "synthetic_offline_preflight" if preflight else
                    "gate2_real_beijing_provider_local_asgi_synthetic_only", "model": MODEL,
                    "prompt_sha256": PROMPT_HASH, "fixture_sha256": sha256(fixture).hexdigest(),
                    "probe_sha256": sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -214,6 +214,16 @@ def evaluate(output, *, preflight):
                 if stop or verified != EXPECTED_CALLS or len(rows) != EXPECTED_CALLS + 6:
                     raise RuntimeError("Offline preflight did not exercise every expected model turn and local control")
                 for row in rows:
+                    for call in row["provider_attempts"]:
+                        user = call["messages"][-1]["content"]
+                        material = json.loads(user.split("\n", 1)[1].split("\n\n用户输入：\n", 1)[0])
+                        timeline = material["visitedTimeline"]
+                        visited = list(dict.fromkeys(p for p in row["read_path"] if p < row["page"]))[-3:]
+                        if (material["currentPage"] != row["page"]
+                                or list(dict.fromkeys(event["page"] for event in timeline)) != visited
+                                or any(event["quote"] not in row["page_texts"][event["page"]] for event in timeline)
+                                or any(quote not in row["page_texts"][row["page"]] for quote in material["currentQuotes"])):
+                            raise RuntimeError(f"Unexpected outbound page evidence: {row['case']}")
                     if row["category"].startswith("local-") and (
                         row["receipt"]["action"] != "LISTEN" or row["provider_attempts"] or row["followup"]
                     ):
@@ -229,7 +239,11 @@ if __name__ == "__main__":
     mode.add_argument("--preflight", action="store_true")
     mode.add_argument("--approved-synthetic-staging", action="store_true")
     parser.add_argument("--evidence", type=Path, required=True)
+    parser.add_argument("--candidate", help="Full runtime commit SHA; defaults to clean HEAD")
     args = parser.parse_args()
+    candidate = args.candidate or git("rev-parse", "HEAD")
+    if re.fullmatch(r"[0-9a-f]{40}", candidate) is None:
+        parser.error("Candidate must be a full commit SHA")
     target = args.evidence.resolve()
     if target.is_relative_to(ROOT) or target.exists():
         parser.error("Use a private new path outside the checkout")
@@ -238,4 +252,4 @@ if __name__ == "__main__":
                           YAYA_AGENT2_LEDGER_SECRET=uuid.uuid4().hex)
     elif not all(os.getenv(name) for name in ("YAYA_AGENT2_API_URL", "YAYA_AGENT2_API_KEY", "YAYA_AGENT2_LEDGER_SECRET")):
         parser.exit(3, "BLOCKED: approved dedicated staging credentials required.\n")
-    evaluate(target, preflight=args.preflight)
+    evaluate(target, candidate=candidate, preflight=args.preflight)

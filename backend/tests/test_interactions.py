@@ -2101,6 +2101,72 @@ def test_yaya2_migration_pins_existing_and_new_sessions(started_session, env, mo
         assert not yaya_db.pinned(db, new_legacy)
 
 
+def test_yaya2_join_includes_only_the_selected_branch_in_model_evidence(started_session, monkeypatch):
+    from app.db import yaya_agent as yaya_db
+    from app.services.yaya_agent import YayaAgent
+    from app.services.yaya_agent_config import MODEL, YayaSettings
+
+    client, headers, path, sid = started_session
+    yaya_db.install()
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("INSERT INTO yaya_agent_sessions VALUES (?, '2.0')", (sid,))
+        profile = db.execute("SELECT profile_id FROM reading_sessions WHERE id=?", (sid,)).fetchone()[0]
+        db.execute("UPDATE story_pages SET default_next_page_number=1 WHERE version_id=11 AND page_no=4")
+        db.execute("INSERT INTO story_pages (version_id, page_no, body_text, image_ref) VALUES (11,5,'未读远山亮了。','none')")
+        db.execute("INSERT INTO story_branches VALUES (504,11,1,2,'未选路口','APPROVED')")
+        db.executemany("UPDATE story_pages SET body_text=? WHERE version_id=11 AND page_no=?", [
+            ("小鹿收好木盒。", 1),
+            ("未选路线有紫蜻蜓。", 2),
+            ("小鹿轻轻敲了三下。", 3),
+            ("小鹿把木盒交给小獾。", 4),
+        ])
+
+    config = Settings(model_api_url="https://ws-test.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+                      model_api_key="synthetic-branch-test", model_name=MODEL)
+    settings = YayaSettings(mode="allowlist", guardians=frozenset({1}), model=config,
+                            model_input_profiles=frozenset({(1, profile)}), ledger_secret="x" * 32)
+    contexts = []
+
+    def provider(request):
+        user = json.loads(request.content)["messages"][-1]["content"]
+        context = user.split("\n", 1)[1].split("\n\n用户输入：\n", 1)[0]
+        contexts.append(json.loads(context))
+        return httpx.Response(200, json={"model": MODEL, "choices": [{"finish_reason": "stop", "message": {
+            "role": "assistant", "content": '{"reply":"我们继续一起读吧。","next_action":"RESPOND"}',
+        }}]})
+
+    gateway = ModelGateway(config, transport=httpx.MockTransport(provider))
+    monkeypatch.setitem(client.app.state._state, "yaya_agent", YayaAgent(settings, gateway))
+    base = f"/api/v1/reading-sessions/{sid}"
+    rev = 1
+
+    def post(kind, key, **fields):
+        nonlocal rev
+        result = client.post(f"{base}/{kind}", headers=headers, json={
+            "expectedRevision": rev, "clientEventId": key, **fields,
+        })
+        assert result.status_code == 201, result.text
+        rev = result.json()["data"]["revision"]
+
+    try:
+        post("events", "opening", eventType="ANSWER", pageNumber=1, inputText="小鹿在做什么？")
+        post("branches", "choose", branchId=503)
+        post("events", "join", eventType="PAGE_CHANGED", pageNumber=4)
+        post("events", "compare", eventType="ANSWER", pageNumber=4, inputText="是先敲木盒还是先把它交给小獾？")
+        post("events", "reread", eventType="PAGE_CHANGED", pageNumber=1)
+        post("events", "opening-again", eventType="ANSWER", pageNumber=1, inputText="这一页小鹿在做什么？")
+    finally:
+        asyncio.run(gateway.__aexit__(None, None, None))
+
+    opening, joined, reread = contexts
+    assert [event["page"] for event in joined["visitedTimeline"]] == [1, 3]
+    assert [event["quote"] for event in joined["visitedTimeline"]] == ["小鹿收好木盒。", "小鹿轻轻敲了三下。"]
+    assert joined["currentQuotes"] == ["小鹿把木盒交给小獾。"]
+    assert opening["currentQuotes"] == reread["currentQuotes"] == ["小鹿收好木盒。"]
+    assert opening["visitedTimeline"] == reread["visitedTimeline"] == []
+    assert all(marker not in json.dumps(contexts, ensure_ascii=False) for marker in ("紫蜻蜓", "未读远山"))
+
+
 def test_yaya2_loopback_http_session_and_replay(started_session, monkeypatch):
     import socket
     from threading import Thread
