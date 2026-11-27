@@ -5,7 +5,7 @@
 | 提交与运行范围 | 已核对 | 既有 PR #97 分支。回归只使用隔离 SQLite、虚构绘本和合成儿童对话 |
 | 多轮指代 | 本地定向回归通过 | 同版本、同会话、同次页面访问最多携带两条已展示的合格助手回复 |
 | 独立云 Staging | BLOCKED | 待提供获批的测试地址、访问方式和验收账号 |
-| 北京百炼 | 真实 API 已完成 | 两轮真实请求各 12 次，详见下表 |
+| 北京百炼 | 真实调用已取得，独立空间验收 BLOCKED | 两轮各 12 次通过默认北京业务空间完成。待使用非默认测试业务空间和专用 Key 复跑 |
 | 真机、真实语音与账单 | BLOCKED | 待独立环境、供应商凭证和账单 |
 | Gate 1、2、3 | BLOCKED | Gate 1 待上述证据。Gate 2/3 另外需要儿童数据、试运行及发布审批 |
 
@@ -32,7 +32,7 @@
 
 ## 两轮真实北京 Flash
 
-真实调用使用合成数据、独立北京业务空间、本机隔离 ASGI 后端和冻结的运行时提交。每轮 14 个回合，12 个获得独立供应商请求 ID、预期模型和 HTTP 200。12 个生成均以 stop 结束。每轮两次明确陪看在本地完成。下表的后端耗时只统计有真实请求的 12 个回合。P50 为中位数，P95 使用 nearest-rank。
+真实调用使用合成数据、本机隔离 ASGI 后端和固定运行时提交。控制台只读核对确认两轮 Host 属于同一北京默认业务空间。保留这些真实响应作为功能观察。独立测试空间验收仍为 BLOCKED，当前满足独立空间要求的调用为 0。每轮 14 个回合，12 个获得独立供应商请求 ID、预期模型和 HTTP 200。12 个生成均以 stop 结束。每轮两次明确陪看在本地完成。下表的后端耗时只统计有真实请求的 12 个回合。P50 为中位数，P95 使用 nearest-rank。
 
 | 项目 | 第一轮 d1e9246 | 修复后 e2310b8 |
 | --- | --- | --- |
@@ -59,5 +59,5 @@
 1. 使用干净的 PR 工作树安装 `backend/requirements-dev.txt` 和前端锁定依赖。独立云 Staging 的网络及权限配置见 [Staging 计划](staging-plan.md)。
 2. 本地浏览器先执行 `npm --prefix frontend run build:public`。在项目根目录用已安装 Playwright Python、Chrome 和 OpenSSL 的环境执行 `python infra/staging/gate1_local_browser.py --openssl <openssl-path> --output <evidence-json>`。本地 HTTPS 使用一次性证书。仅本地合成服务使用测试证书例外。阅读 HTTP 客户端当前默认上限为 30 秒，Agent 模型调用截止为 3.5 秒。真实云上的慢响应与回退展示待测。
 3. CI 隔离 Docker 使用 `bash infra/staging/smoke_ci.sh`。该脚本使用独立 Compose 工程和测试文件。
-4. 真实北京 API 在 Windows PowerShell 执行 `run_gate1_live.ps1 -Python <python> -Evidence <checkout-outside-jsonl> -ApprovedSyntheticStaging`，按提示输入专属 API Host 和本地隐藏密钥。凭证无需写入文件。密钥不得进入命令行、仓库或共享证据。原始两轮 JSONL 私有保留，指纹在证据清单。
+4. 真实北京 API 在 Windows PowerShell 执行 `run_gate1_live.ps1 -Python <python> -Evidence <checkout-outside-jsonl> -ApprovedSyntheticStaging`，先在北京业务空间管理确认 Host 对应非默认测试空间，再按提示输入 Host 和该空间的专用测试 Key。脚本校验域名格式，空间属性由控制台确认。凭证无需写入文件。密钥不得进入命令行、仓库或共享证据。原始两轮 JSONL 私有保留，指纹在证据清单。
 5. 冻结 v7.5 在候选 `89eb60335c9c2b344afca87bf91ea6d90361c6c7` 执行 `python -m pytest -q qa/p6/yaya_agent_v73`，复跑 58 通过、41 子测试通过。冻结版目录执行 `node --test test_browser.mjs test_coreading_browser.mjs`，启用本机 MOCK HTTP 和 jsdom 后 12 项通过。定向本地回归 45 通过。隔离 SQLite 初始化和 `python database/init_db.py --check` 均通过。
