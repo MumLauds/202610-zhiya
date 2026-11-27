@@ -31,3 +31,7 @@
 ## 候选实现与计费边界
 
 2.0 的日志以服务端 Request ID 关联 HTTP 时延、模型标识、Prompt SHA-256、供应商请求 ID、Token Usage 和分类结果。原文、对话和草稿留在请求处理范围。预算表用 HMAC 用户和会话标签，按 UTC 日预留保守上限，失败也保留预约额避免低估。供应商无实时账单字段时按预算上限执行。实际价格、租约故障、保守预约与账单偏差、告警阈值以及线上 P50/P95 仍需 Staging 验证。 [计费预约](../../backend/app/db/yaya_agent.py)
+
+## 审查后的分类口径
+
+2.0 的 API-016 技术回退将实际分类写入 AgentResult.strategyType 和 agentReceipt.reason。桌面回执和移动策略标签沿用同一分类。模型日志以服务端请求 ID 记录相同 reason 和决策，脱敏详情、供应商请求正文和原话不进入日志。REPLY_ONLY 仍可展示有效正文，其 reason 保留 QUESTION_FORMAT 供统计。

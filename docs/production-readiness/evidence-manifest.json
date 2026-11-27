@@ -739,14 +739,50 @@
         "467 frontend suite tests and the public build after prompt-visibility changes",
         "14 Node reading session and recovery tests",
         "Idempotent isolated synthetic seed and SQLite foreign key check"
-      ]
+      ],
+      "revision": "ee59c4a24f7c4c7faa4edc066169669c340df820"
+    },
+    "E11": {
+      "stage": "PR #97 review regression",
+      "sources": [
+        {
+          "path": "backend/app/services/yaya_agent.py",
+          "sha256": "a8d74b13956eccc7a4d799181f45f7f15f744e0dadda508a39c949c878e8b27f"
+        },
+        {
+          "path": "backend/app/services/yaya_book_evidence.json",
+          "sha256": "071cb6080bd3b959ffa668fb1618eda6dbc7e24c679a58c72272a06395e1c34d"
+        },
+        {
+          "path": "backend/tests/test_yaya_agent2.py",
+          "sha256": "0d98b83eea76c9b3700f61d5c0a613d982f869f16660e4ef99b513f6a6e21fec"
+        },
+        {
+          "path": "backend/tests/test_interactions.py",
+          "sha256": "cb2527993ffb388d8f2d024806e7c4b65580ce9bf2ce67ac4cad220a6aff9e98"
+        },
+        {
+          "path": "infra/staging/smoke_ci.sh",
+          "sha256": "555b7550fb06d18d29d6418377d213e556b24c9ba15937b56d8c70459bd5d086"
+        },
+        {
+          "path": "infra/staging/smoke_ci.py",
+          "sha256": "bd82d4f7505bcb1ae1ce1b6308dad6b596d26c2b489d869180b75e37a795bb92"
+        }
+      ],
+      "local_verified": [
+        "Targeted input, evidence, and interaction regression",
+        "Original v7.5 suite"
+      ],
+      "ci_entry": "https://github.com/MumLauds/202610-zhiya/pull/97/checks",
+      "limitations": "Real Beijing provider credentials and independent cloud staging approval are pending."
     }
   },
   "deliverables": [
     {
       "path": "docs/production-readiness/architecture-assessment.md",
-      "sha256": "01b0f0f968a76370902dd085f1ff09b1db9b44565131e986508f39457723318d",
-      "bytes": 5142
+      "sha256": "11a9e89c20674e7edbc3f44046a4cdc0cb71ddc1bae23b26e78093e2324e8013",
+      "bytes": 5665
     },
     {
       "path": "docs/production-readiness/current-state-inventory.md",
@@ -755,8 +791,8 @@
     },
     {
       "path": "docs/production-readiness/data-flow-and-api-contract.md",
-      "sha256": "7577fea55124762f5cebac362f6db85eaa931d0eaa25d6396d780710773f89cd",
-      "bytes": 4787
+      "sha256": "08cc4e03fc34c0c7f3f0ed1d488d0424047338ec780d19a1e0d28db635474e4a",
+      "bytes": 5845
     },
     {
       "path": "docs/production-readiness/decision-log.md",
@@ -770,8 +806,8 @@
     },
     {
       "path": "docs/production-readiness/gap-analysis.md",
-      "sha256": "7a03e98ec6ae68c2851bc1c6aedb47bed6764aa4a0ff4a70dfbd20e53e96e0a7",
-      "bytes": 6451
+      "sha256": "e5094d171e833746031d0458f6651c5589d67ec3ed78b2acfc8a298f84db860a",
+      "bytes": 6988
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
@@ -780,13 +816,13 @@
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
-      "sha256": "db83dcc47d5513658882b903d233e1cdcb21cb008b7a6f089f1360d05e2f42a1",
-      "bytes": 4704
+      "sha256": "c7749646aeb22aabcc366677b0f5ca0b5fea7b79e3832617cdee2dbbfc89e4d2",
+      "bytes": 5103
     },
     {
       "path": "docs/production-readiness/privacy-and-data-governance.md",
-      "sha256": "a9535a23f38e71f0ac400c415e923bd42e896a3c3012072b79245fa4c21d15aa",
-      "bytes": 6295
+      "sha256": "e41c942939bf4d1da0c33e76a865c559b29533b9777498bf80b338e0b745ca42",
+      "bytes": 6939
     },
     {
       "path": "docs/production-readiness/production-readiness-scorecard.json",
@@ -795,8 +831,8 @@
     },
     {
       "path": "docs/production-readiness/production-test-plan.md",
-      "sha256": "8168d20d479cd4b1a4eddd4af0d282ad85ab89a4fda6f31bd76618153063a375",
-      "bytes": 5325
+      "sha256": "0d591ab21f98a4741e462880ad6e9e1689d6a81c70cb2895d6fb9641a33da138",
+      "bytes": 5812
     },
     {
       "path": "docs/production-readiness/README.md",
@@ -810,8 +846,8 @@
     },
     {
       "path": "docs/production-readiness/staging-plan.md",
-      "sha256": "eaa6f270451c299e3b04a05548af78840595518c2d88ecc4bf1467e623fcad34",
-      "bytes": 3463
+      "sha256": "baae8843cdbbada3473d4d4e753a4a32dd1a96c7c82653289c530bb512382cbd",
+      "bytes": 3939
     }
   ]
 }

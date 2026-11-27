@@ -26,3 +26,7 @@
 ## 可审查配置
 
 Compose 项目 `zhiya-agent-stg` 默认关闭。HTTPS 绑定本机，Caddy 返回私有缓存头，应用只挂独立 SQLite 卷。初始化限定合成测试绘本。名单及北京 Flash 专用凭证待部署获批后由授权值班员配置。真实独立环境、私有网络、浏览器矩阵及回滚演练仍为 BLOCKED。 [配置和手册](../../infra/staging/README.md)
+
+## PR 容器验证与真实工作空间
+
+PR 工作流使用独立项目和合成账号，通过 `bash infra/staging/smoke_ci.sh` 构建镜像、启动 Compose、初始化 SQLite、回读合成绘本、校验 Caddy 私有 CA 和 HTTPS、核对功能与出站两个名单、检查运行时北京 Flash 配置并演练关闭。代码审查阶段使用合成占位凭证验证配置，真实北京请求和独立云 Staging 仍需批准的专用凭证、预算和运行记录。

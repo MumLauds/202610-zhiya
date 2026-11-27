@@ -33,8 +33,9 @@ def seed():
                    (FIXTURE_ID, FIXTURE_ID, MARKER, FIXTURE_ID))
         db.executemany("""INSERT INTO story_pages
             (version_id, page_no, body_text, image_ref, default_next_page_number) VALUES (?, ?, ?, '', ?)""", (
-                (FIXTURE_ID, 1, "松鼠把信轻轻放进信箱。它捡起一片叶子。", 2),
-                (FIXTURE_ID, 2, "一阵风吹来，纸风车慢慢转了起来。", None),
+                (FIXTURE_ID, 1, '松鼠把信轻轻放进信箱。小兔拿起一片黄色叶子。小熊戴着蓝色帽子。小兔想象黄色叶子是一床小被子。', 2),
+                (FIXTURE_ID, 2, '小熊把纸风车插进土里。一阵风吹来，纸风车慢慢转了起来。', 3),
+                (FIXTURE_ID, 3, '松鼠后来取出信，带回了小屋。', None),
             ))
 
 
