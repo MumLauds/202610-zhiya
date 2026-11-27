@@ -77,3 +77,7 @@
 | 本地陪看 | 2 次，未触发出站 |
 
 A、D 和 F 的目标表现符合样本预期。B1/B2 正常承接翅膀和月亮，B3 的草稿把问句写在正文并标为 RESPOND，严格校验按 QUESTION_FORMAT 回退。C 已收到同次页面访问的“小被子”来源线索，模型仍否认孩子此前说过，归属不合格。E 未臆造松鼠动机，但仍未主动接住可能性。翻页前 9 个出站请求均未出现第二页的纸风车。当前具备独立测试空间的 API 连接与真实响应证据，回答质量、独立云场景和账单分别追踪。
+
+## 免 ECS 补充验收
+
+按免 ECS 方案，将 GitHub Actions 隔离镜像回滚、托管运行器 Chrome、Android 真机 USB 和本机真实语音分别取证。真机发现的键盘遮挡已修复并在同一设备复测。各项结果见[浏览器验收](browser-e2e-report.md)、[语音验收](voice-integration-report.md)和[镜像回滚](legacy-migration-verification.md)。单一独立云站的联调仍为 BLOCKED。

@@ -936,6 +936,50 @@
         "frozen_v75_subtests_passed": 41,
         "frozen_v75_node_passed": 12
       }
+    },
+    "E14": {
+      "stage": "No-ECS validation with isolated CI and a physical Android device",
+      "browser_and_rollback_ci": "https://github.com/MumLauds/202610-zhiya/actions/runs/45986156827/job/140462188944",
+      "physical_device_revision": "d1710b440c9aae094520ffbb3214bacd123d0c16",
+      "physical_device": "Android 12, Edge 156.0.4314.43, 361x657 viewport, private local USB forwarding",
+      "runtime_verifications": [
+        "CI Chrome desktop and mobile viewport with synthetic providers",
+        "different backend and web image IDs and preserved SQLite identity and Caddy CA",
+        "Android microphone capture and media playback, keyboard-open submission and offline recovery",
+        "real Beijing speech adapter loopback with synthetic text"
+      ],
+      "restricted_local_evidence": {
+        "android_json_sha256": "f1e91cd0d62ec8b2eb01d84b07ad369efe1212f48a5f194f01fd1a94e6f05474",
+        "synthetic_wav_sha256": "bd03d17021587800f5c58bc2946529ffa98333ccb1d9ecea499bc48b16d2e232"
+      },
+      "sources": [
+        {
+          "path": "frontend/mobile.html",
+          "sha256": "26b8e66d42be500a976495800ab441a80a46305c158fb5c41e278becfd3d8715",
+          "bytes": 682
+        },
+        {
+          "path": ".github/workflows/deploy-hk.yml",
+          "sha256": "5d02a52cc01a65f624bc5163a01ac5b0200b1afc1566e4d10b3591fc0b2d19a4",
+          "bytes": 2995
+        },
+        {
+          "path": "infra/staging/smoke_ci.sh",
+          "sha256": "1f412a7dbf5b7844298fa5903806773b4942ee8432b52e852412a2935c439b6b",
+          "bytes": 7210
+        },
+        {
+          "path": "infra/staging/compose.yaml",
+          "sha256": "a72573f0dd9eafd495d9b5e6469fe50531efa25e93fa629e2a40ef0c6a367a6e",
+          "bytes": 2302
+        },
+        {
+          "path": "infra/staging/run_voice_preflight.ps1",
+          "sha256": "505a86c03ab30e748295ab202d3c2c113c0e5656d805bb9388e30acb5a1e0421",
+          "bytes": 2657
+        }
+      ],
+      "limitations": "Independent cloud deployment, real cloud-to-device speech, supplier billing and wider model quality/approval gates are pending."
     }
   },
   "deliverables": [
@@ -1011,18 +1055,18 @@
     },
     {
       "path": "docs/production-readiness/gate1-staging-validation.md",
-      "sha256": "6b9c9e87aae95c8f59b05ce6812531a15b8c776edf6c33cc36cb92247fe6137a",
-      "bytes": 8550
+      "sha256": "a2aa13452e0eb941c9660392c95d324569cd0ffe9358f85502de5d89693b6aaa",
+      "bytes": 8979
     },
     {
       "path": "docs/production-readiness/browser-e2e-report.md",
-      "sha256": "ec878964fe4cf551fc8f092239ea100a2cfd6bd759f9d8eb8ac4e208ece6ec89",
-      "bytes": 1523
+      "sha256": "7e467c31e06a7908bfbb8e91c6cb77d888a105f1b7b1cbc5cf565d3272788247",
+      "bytes": 2408
     },
     {
       "path": "docs/production-readiness/voice-integration-report.md",
-      "sha256": "f94777319ccdc20112fdb4593e002148f875b5e5d6f19c12e8f053c1388a1066",
-      "bytes": 1112
+      "sha256": "83e71a7d447386f54215c2a89b4b72362075bfe693fd72810e9719ec9a128ec6",
+      "bytes": 1775
     },
     {
       "path": "docs/production-readiness/session-isolation-report.md",
@@ -1036,8 +1080,8 @@
     },
     {
       "path": "docs/production-readiness/legacy-migration-verification.md",
-      "sha256": "2108d604b4733d359f9a453bb98e194d615c7da79a3b9deea9d5dee98d35228d",
-      "bytes": 978
+      "sha256": "b363ce5b335b2c358f33f2003883b18cfd55c67cff7bce74305ea7426bd70d7d",
+      "bytes": 1456
     },
     {
       "path": "docs/production-readiness/gate1-local-evidence.json",
