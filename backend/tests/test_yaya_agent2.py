@@ -37,10 +37,14 @@ def test_default_enrollment_needs_release_approval_and_separate_credentials(monk
     monkeypatch.setenv("YAYA_AGENT2_LEDGER_SECRET", "x" * 32)
     settings = YayaSettings.from_env()
     assert settings.model.model_name == MODEL == "qwen3.8-flash"
-    assert settings.enrolls(123) and not settings.authorizes_model_input(123)
+    assert settings.enrolls(123) and not settings.authorizes_model_input(123, 1)
     monkeypatch.setenv("YAYA_AGENT2_INPUT_ALLOWLIST", "123")
+    with pytest.raises(ValueError, match="guardian_id:child_profile_id"):
+        YayaSettings.from_env()
+    monkeypatch.setenv("YAYA_AGENT2_INPUT_ALLOWLIST", "123:1")
     settings = YayaSettings.from_env()
-    assert settings.authorizes_model_input(123) and not settings.authorizes_model_input(456)
+    assert settings.authorizes_model_input(123, 1)
+    assert not settings.authorizes_model_input(123, 2) and not settings.authorizes_model_input(456, 1)
 
 
 @pytest.mark.parametrize(("text", "state", "action", "reply"), [
@@ -92,7 +96,7 @@ def test_gateway_projection_and_daily_reservation(tmp_path, monkeypatch, fault, 
     config = Settings(model_api_url="https://ws-test.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
                       model_api_key="synthetic-key", model_name=MODEL)
     settings = YayaSettings(mode="allowlist", guardians=frozenset({1}), model=config,
-                            ledger_secret="x" * 32, model_input_guardians=frozenset({1}),
+                            ledger_secret="x" * 32, model_input_profiles=frozenset({(1, 3)}),
                             guardian_calls=1, session_calls=1)
     calls = []
 
@@ -125,7 +129,7 @@ def test_gateway_projection_and_daily_reservation(tmp_path, monkeypatch, fault, 
         async with ModelGateway(config, transport=httpx.MockTransport(provider)) as gateway:
             agent = YayaAgent(settings, gateway)
             context = Context("松鼠把信放在哪儿啦？", (), {"currentQuotes": ["松鼠把信放进信箱。"]},
-                              allow_provider=True)
+                              allow_provider=True, child_profile_id=3)
             first = await agent.turn(context, request_id="first", guardian=1, session=2, disconnected=connected)
             second = await agent.turn(context, request_id="second", guardian=1, session=2, disconnected=connected)
             return first, second
@@ -181,7 +185,7 @@ def test_evidence_is_bound_to_current_book_visited_prefix_and_session():
                 (6, 2, 11, 2, 'ANSWER', 'SUCCESS', '{"data":{"agentReceipt":{"version":"2.0","state":"PAUSE","action":"PAUSE"}}}'),
                 (7, 1, 11, 2, 'ANSWER', 'SUCCESS', '{"data":{"agentReceipt":{"version":"2.0","state":"LISTEN","action":"LISTEN"}}}');
         """)
-        row = {"id": 1, "version_id": 11, "current_page_no": 2, "carried_prefix_page_count": 0, "source_type": "LIBRARY"}
+        row = {"id": 1, "version_id": 11, "current_page_no": 2, "carried_prefix_page_count": 0, "source_type": "LIBRARY", "profile_id": 4}
         result = reading_context(db, row, "这是谁？", 5, ())
     material = json.dumps(result.material, ensure_ascii=False)
     assert "松鼠打开信箱" in material and "松鼠轻轻放好信" in material
@@ -232,11 +236,11 @@ def test_authorized_provider_receives_minimized_distinct_child_expressions(tmp_p
     db_path.touch()
     monkeypatch.setenv("ZHIYA_DB_PATH", str(db_path))
     yaya_db.install()
-    allowed, not_authorized, session = 78012345, 98912345, 89312345
+    allowed, not_authorized, session, profile = 78012345, 98912345, 89312345, 56412345
     config = Settings(model_api_url="https://ws-test.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
                       model_api_key="synthetic-provider-key", model_name=MODEL)
     settings = YayaSettings(mode="allowlist", guardians=frozenset({allowed, not_authorized}), model=config,
-                            ledger_secret="x" * 32, model_input_guardians=frozenset({allowed}))
+                            ledger_secret="x" * 32, model_input_profiles=frozenset({(allowed, profile)}))
     expressions = [
         "我觉得叶子是一床小被子。",
         "我让雨点住进帐篷。",
@@ -260,7 +264,7 @@ def test_authorized_provider_receives_minimized_distinct_child_expressions(tmp_p
         assert request.headers["Authorization"] == "Bearer synthetic-provider-key"
         assert all(secret not in request.content.decode() for secret in (
             "synthetic-provider-key", "13800138000", "虚构小米",
-            str(allowed), str(not_authorized), str(session), "儿童档案",
+            str(allowed), str(not_authorized), str(session), str(profile), "儿童档案",
         ))
         system, user = payload["messages"]
         assert (system["role"], user["role"]) == ("system", "user")
@@ -283,7 +287,7 @@ def test_authorized_provider_receives_minimized_distinct_child_expressions(tmp_p
         async with ModelGateway(config, transport=httpx.MockTransport(provider)) as gateway:
             agent = YayaAgent(settings, gateway)
             for i, expression in enumerate(expressions):
-                context = Context(expression, (), material, allow_provider=True)
+                context = Context(expression, (), material, allow_provider=True, child_profile_id=profile)
                 assert local_turn(context) is None
                 result = await agent.turn(context, request_id=f"prompt-{i}", guardian=allowed, session=session,
                                           disconnected=connected)
@@ -295,9 +299,12 @@ def test_authorized_provider_receives_minimized_distinct_child_expressions(tmp_p
                 ("账号ID是abc123，我觉得叶子是被子。", allowed, True, "SAFETY_BLOCK"),
                 ("sk-fictional-key,小熊在做什么？", allowed, True, "SAFETY_BLOCK"),
             ]):
-                result = await agent.turn(Context(text, (), material, allow_provider=visible), request_id=f"blocked-{i}",
+                result = await agent.turn(Context(text, (), material, allow_provider=visible, child_profile_id=profile), request_id=f"blocked-{i}",
                                           guardian=authority, session=session, disconnected=connected)
                 assert result.reason == reason
+            sibling = Context(expressions[0], (), material, allow_provider=True, child_profile_id=profile+1)
+            result = await agent.turn(sibling, request_id="sibling", guardian=allowed, session=session, disconnected=connected)
+            assert result.reason == "DEPENDENCY_UNAVAILABLE"
 
     asyncio.run(run())
     assert captured == expressions[:5] + ["小熊戴的帽子是什么颜色？"]

@@ -41,9 +41,12 @@ class Reader:
         except HTTPError as exc:
             raise AssertionError(f"{path} failed with HTTP {exc.code}") from None
 
-    def start(self):
-        profile = self.request("/child-profiles", {"ageBand": "AGE_3_4", "preferredMinutes": 10},
-                               expected=201)["childProfileId"]
+    def create_profile(self):
+        return self.request("/child-profiles", {"ageBand": "AGE_3_4", "preferredMinutes": 10},
+                            expected=201)["childProfileId"]
+
+    def start(self, profile=None):
+        profile = profile or self.create_profile()
         session = self.request("/reading-sessions", {"childProfileId": profile, "storyVersionId": VERSION,
                                                       "mode": "PARENT_CHILD"}, expected=201)["readingSessionId"]
         self.request(f"/reading-sessions/{session}/events", {"eventType": "STARTED", "pageNumber": 1,
@@ -65,13 +68,14 @@ def main(origin, cert, state_file, mode):
         pilot = Reader(origin, cert, PILOT, register=True)
         Reader(origin, cert, CONTROL, register=True)
         local_only = Reader(origin, cert, LOCAL_ONLY, register=True)
-        path.write_text(json.dumps({"enrolled": [pilot.account_id, local_only.account_id]}), encoding="utf-8")
+        path.write_text(json.dumps({"enrolled": [pilot.account_id, local_only.account_id],
+                                    "profile": pilot.create_profile()}), encoding="utf-8")
         return
 
     state = json.loads(path.read_text(encoding="utf-8"))
     pilot = Reader(origin, cert, PILOT)
     if mode == "allowlist":
-        session = pilot.start()
+        session = pilot.start(state["profile"])
         listen = pilot.answer(session, 1, "你先别问，让我看看它怎么转。", "listen")
         assert (listen["agentReceipt"]["version"], listen["agentReceipt"]["action"]) == ("2.0", "LISTEN")
         saved = pilot.request(f"/reading-sessions/{session}")["events"][-1]
@@ -81,6 +85,8 @@ def main(origin, cert, state_file, mode):
         local_only = Reader(origin, cert, LOCAL_ONLY)
         local = local_only.answer(local_only.start(), 1, "我让雨点住进帐篷。", "without-input-consent")
         assert local["agentReceipt"]["reason"] == "DEPENDENCY_UNAVAILABLE"
+        sibling = pilot.answer(pilot.start(), 1, "我让雨点住进帐篷。", "without-profile-consent")
+        assert sibling["agentReceipt"]["reason"] == "DEPENDENCY_UNAVAILABLE"
         state.update(session=session, revision=listen["revision"])
         path.write_text(json.dumps(state), encoding="utf-8")
     else:

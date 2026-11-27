@@ -747,7 +747,7 @@
       "sources": [
         {
           "path": "backend/app/services/yaya_agent.py",
-          "sha256": "a8d74b13956eccc7a4d799181f45f7f15f744e0dadda508a39c949c878e8b27f"
+          "sha256": "6f5e0214ea3c96416417705f69e97c3cae883ad468fb05e40fc84ababe01b1ad"
         },
         {
           "path": "backend/app/services/yaya_book_evidence.json",
@@ -755,7 +755,7 @@
         },
         {
           "path": "backend/tests/test_yaya_agent2.py",
-          "sha256": "0d98b83eea76c9b3700f61d5c0a613d982f869f16660e4ef99b513f6a6e21fec"
+          "sha256": "ecb88449cbe1fdb0c91c165e1c72adc31865188e460f1b372e4c6736c1902468"
         },
         {
           "path": "backend/tests/test_interactions.py",
@@ -763,11 +763,11 @@
         },
         {
           "path": "infra/staging/smoke_ci.sh",
-          "sha256": "555b7550fb06d18d29d6418377d213e556b24c9ba15937b56d8c70459bd5d086"
+          "sha256": "ff4e3fed1bc52f8be45a37d315ffa95b4b4a0faa3ffe90777f0054ae60d958af"
         },
         {
           "path": "infra/staging/smoke_ci.py",
-          "sha256": "bd82d4f7505bcb1ae1ce1b6308dad6b596d26c2b489d869180b75e37a795bb92"
+          "sha256": "3e7bca4c5228963182a7532d0ab4e3641dd9636a9878da2d07bcf6220ef7fd82"
         }
       ],
       "local_verified": [
@@ -791,8 +791,8 @@
     },
     {
       "path": "docs/production-readiness/data-flow-and-api-contract.md",
-      "sha256": "08cc4e03fc34c0c7f3f0ed1d488d0424047338ec780d19a1e0d28db635474e4a",
-      "bytes": 5845
+      "sha256": "fbe2213225e3b6c2e2331142607c2ad8ef61f2b567dc3e88c88a69663944162c",
+      "bytes": 5866
     },
     {
       "path": "docs/production-readiness/decision-log.md",
@@ -821,8 +821,8 @@
     },
     {
       "path": "docs/production-readiness/privacy-and-data-governance.md",
-      "sha256": "e41c942939bf4d1da0c33e76a865c559b29533b9777498bf80b338e0b745ca42",
-      "bytes": 6939
+      "sha256": "ce75cbf18a726f7fde2cff739b52767a10c15c8a5f1bebb21e5bd2bbf28aea04",
+      "bytes": 7051
     },
     {
       "path": "docs/production-readiness/production-readiness-scorecard.json",

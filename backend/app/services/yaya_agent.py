@@ -176,6 +176,7 @@ class Context:
     material: dict = field(repr=False)
     last_state: str | None = None
     allow_provider: bool = False
+    child_profile_id: int | None = field(default=None, repr=False)
 
     @cached_property
     def input_projection(self) -> InputProjection:
@@ -212,7 +213,7 @@ def reading_context(db, row, input_text: str, arrival: int, questions: tuple[str
     material["recentActions"] = [item["action"] for item in reversed(history) if item["action"] in STATES]
     material["questionBudget"] = max(0, 2 - len(questions))
     return Context(input_text, questions, material, history[0]["state"] if history else None,
-                   reviewed_library)
+                   reviewed_library, row["profile_id"])
 
 
 @dataclass(frozen=True)
@@ -362,7 +363,7 @@ class YayaAgent:
         local = local_turn(context)
         if local:
             return record(local)
-        if (not self.settings.authorizes_model_input(guardian) or not self.gateway
+        if (not self.settings.authorizes_model_input(guardian, context.child_profile_id) or not self.gateway
                 or not context.allow_provider or not context.material["currentQuotes"]):
             return record(fallback("DEPENDENCY_UNAVAILABLE"))
         text = context.input_projection.text

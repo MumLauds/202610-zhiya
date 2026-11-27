@@ -35,7 +35,7 @@ echo "PASS: image builds, container startup, HTTPS certificate and API health"
 
 export YAYA_AGENT2_MODE=allowlist
 export YAYA_AGENT2_ALLOWLIST="$(python -c 'import json,sys; print(",".join(map(str,json.load(open(sys.argv[1]))["enrolled"])))' "$scratch/state.json")"
-export YAYA_AGENT2_INPUT_ALLOWLIST="${YAYA_AGENT2_ALLOWLIST%%,*}"
+export YAYA_AGENT2_INPUT_ALLOWLIST="${YAYA_AGENT2_ALLOWLIST%%,*}:$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["profile"])' "$scratch/state.json")"
 export YAYA_AGENT2_API_URL=https://ws-synthetic-ci.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions
 export YAYA_AGENT2_API_KEY=synthetic-ci-placeholder
 export YAYA_AGENT2_LEDGER_SECRET=synthetic-ci-ledger-secret-not-a-production-credential
@@ -50,8 +50,10 @@ allowed, local_only = [int(part) for part in os.environ["YAYA_AGENT2_ALLOWLIST"]
 assert settings.model.model_name == "qwen3.8-flash"
 assert settings.model.model_api_url.startswith("https://ws-synthetic-ci.cn-beijing.maas.aliyuncs.com/")
 assert settings.model.model_api_key == "synthetic-ci-placeholder"
-assert settings.enrolls(local_only) and settings.authorizes_model_input(allowed)
-assert not settings.authorizes_model_input(local_only)
+_, profile = [int(part) for part in os.environ["YAYA_AGENT2_INPUT_ALLOWLIST"].split(":")]
+assert settings.enrolls(local_only) and settings.authorizes_model_input(allowed, profile)
+assert not settings.authorizes_model_input(local_only, profile)
+assert not settings.authorizes_model_input(allowed, profile+1)
 with closing(sqlite3.connect(os.environ["ZHIYA_DB_PATH"])) as db:
     assert db.execute("PRAGMA foreign_key_check").fetchall() == []
     assert db.execute("SELECT source_ref, status FROM story_versions").fetchall() == [("synthetic-yaya-staging", "PUBLISHED")]

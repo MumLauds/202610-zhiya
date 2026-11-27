@@ -11,6 +11,21 @@ MODEL = "qwen3.8-flash"
 WORKSPACE = re.compile(r"https://(?:ws|llm)-[a-z0-9-]+\.cn-beijing\.maas\.aliyuncs\.com/compatible-mode/v1/chat/completions")
 
 
+def authorized_input_profiles(value: str) -> frozenset[tuple[int, int]]:
+    confirmed = set()
+    for item in value.split(","):
+        if not item.strip():
+            continue
+        guardian, _, profile = item.partition(":")
+        if not guardian.strip().isdigit() or not profile.strip().isdigit():
+            raise ValueError("YAYA_AGENT2_INPUT_ALLOWLIST requires guardian_id:child_profile_id pairs")
+        pair = (int(guardian), int(profile))
+        if min(pair) < 1:
+            raise ValueError("Agent 2.0 input authorization requires positive IDs")
+        confirmed.add(pair)
+    return frozenset(confirmed)
+
+
 @dataclass(frozen=True)
 class YayaSettings:
     mode: str = "off"
@@ -22,7 +37,7 @@ class YayaSettings:
     session_calls: int = 20
     concurrency: int = 6
     retention_days: int = 2
-    model_input_guardians: frozenset[int] = field(default=frozenset(), repr=False)
+    model_input_profiles: frozenset[tuple[int, int]] = field(default=frozenset(), repr=False)
 
     def __post_init__(self):
         if self.mode not in {"off", "allowlist", "default"}:
@@ -42,8 +57,8 @@ class YayaSettings:
     def enrolls(self, guardian_id: int) -> bool:
         return self.mode == "default" or (self.mode == "allowlist" and guardian_id in self.guardians)
 
-    def authorizes_model_input(self, guardian_id: int) -> bool:
-        return self.enrolls(guardian_id) and guardian_id in self.model_input_guardians
+    def authorizes_model_input(self, guardian_id: int, child_profile_id: int | None) -> bool:
+        return self.enrolls(guardian_id) and (guardian_id, child_profile_id) in self.model_input_profiles
 
     @classmethod
     def from_env(cls):
@@ -60,8 +75,7 @@ class YayaSettings:
         return cls(
             mode=mode,
             guardians=frozenset(int(value.strip()) for value in os.getenv("YAYA_AGENT2_ALLOWLIST", "").split(",") if value.strip()),
-            model_input_guardians=frozenset(int(value) for value in os.getenv("YAYA_AGENT2_INPUT_ALLOWLIST", "").split(",")
-                                            if value.strip()),
+            model_input_profiles=authorized_input_profiles(os.getenv("YAYA_AGENT2_INPUT_ALLOWLIST", "")),
             model=Settings(model_api_url=os.getenv("YAYA_AGENT2_API_URL", ""), model_api_key=key,
                            model_name=MODEL, model_timeout_seconds=3.5, model_max_tokens=256,
                            model_send_thinking=True),
