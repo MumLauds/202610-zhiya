@@ -830,7 +830,86 @@
       ],
       "ci_entry": "https://github.com/MumLauds/202610-zhiya/pull/97/checks",
       "limitations": "Offline fixture scoring is not live provider quality or runtime factual validation. Approved Beijing synthetic credentials, real invoices, privacy audits and Gates 2–3 remain pending.",
-      "local_verified": "65 targeted backend cases passed, including budget, multilingual privacy, evidence and offline factual contrasts."
+      "local_verified": "65 targeted backend cases passed, including budget, multilingual privacy, evidence and offline factual contrasts.",
+      "revision": "fb6fd663920fd3a24d960b4b9c40804a6d0efec7"
+    },
+    "E13": {
+      "stage": "PR #97 Gate 1 synthetic staging validation",
+      "runtime_revision": "e2310b89c2bdf7406b47c200b96f10d3b8f9a664",
+      "ci_entry": "https://github.com/MumLauds/202610-zhiya/actions/runs/45978040980/job/140434638636",
+      "sources": [
+        {
+          "path": "backend/app/services/yaya_agent.py",
+          "sha256": "4663d7d6c1cbeebb9c5913575a31f32807e80e7c256c3368a392737578031e36",
+          "bytes": 27271
+        },
+        {
+          "path": "backend/tests/test_yaya_agent2.py",
+          "sha256": "502e86b65df5d44a4fc10b099202ed6d8fdc21060045cdb04e6ff6106496ea16",
+          "bytes": 19634
+        },
+        {
+          "path": "infra/staging/smoke_ci.py",
+          "sha256": "a68d222db8d7500c53e0dc649acb86cd75c3e1bd76304f4ce049e7a1f8c57ddb",
+          "bytes": 5806
+        },
+        {
+          "path": "infra/staging/smoke_ci.sh",
+          "sha256": "811ff737a98ecf2d079f25b3f67057f4e7ac200fcc1cc3276fef1e39d787fbe3",
+          "bytes": 4429
+        },
+        {
+          "path": "infra/staging/gate1_live_probe.py",
+          "sha256": "b915a0c01be8a2057772407791a5895375cb32c24e7b8604a7d405637bc05e68",
+          "bytes": 11508
+        },
+        {
+          "path": "infra/staging/run_gate1_live.ps1",
+          "sha256": "2d9a53e87d38249fbf978bb52875884ee906f19e9ea47d3951080e9634146fbd",
+          "bytes": 1906
+        },
+        {
+          "path": "infra/staging/gate1_local_browser.py",
+          "sha256": "f291b4470037f2911d543e7ff6e9ca266a9db484c75b889b8a131af16e524a4b",
+          "bytes": 16478
+        }
+      ],
+      "local_and_ci_verified": [
+        "same-page conversational continuity and boundary",
+        "isolated CI Docker build and HTTPS",
+        "authorization revocation and off mode",
+        "local Chrome desktop, mobile emulation and voice fixtures",
+        "real Beijing Flash transport, valid receipts and actual usage on synthetic-only turns"
+      ],
+      "limitations": "Isolated cloud Staging, real speech, physical device, independent bills, and Gates 2–3 approvals are pending.",
+      "real_beijing_runs": [
+        {
+          "runtime_revision": "d1e92464d7e31684da369c32cf8453bd2bacd3a7",
+          "restricted_archive_sha256": "f734cd6919596f8da66baaf14a85b99767feb65c50368c864278565b88b6a1bf",
+          "attempts": 12,
+          "verified_responses": 12,
+          "full_fallbacks": 0,
+          "archive_scope": "private synthetic JSONL outside repository"
+        },
+        {
+          "runtime_revision": "e2310b89c2bdf7406b47c200b96f10d3b8f9a664",
+          "restricted_archive_sha256": "8c52c24b87f3b7198f0a9fc218301afc2df1dfcff7ac6dea7b6d88e73411a0fd",
+          "attempts": 12,
+          "verified_responses": 12,
+          "full_fallbacks": 0,
+          "archive_scope": "private synthetic JSONL outside repository"
+        }
+      ],
+      "verification": {
+        "backend_database_passed": 876,
+        "backend_database_skipped": 5,
+        "backend_subtests_passed": 313,
+        "frontend_passed": 467,
+        "frontend_node_passed": 15,
+        "frozen_v75_python_passed": 58,
+        "frozen_v75_subtests_passed": 41,
+        "frozen_v75_node_passed": 12
+      }
     }
   },
   "deliverables": [
@@ -841,8 +920,8 @@
     },
     {
       "path": "docs/production-readiness/current-state-inventory.md",
-      "sha256": "b88e2d5f05b0d88881c3dc2e37882d87b53d0ee91ba53a7fae9cd9698c02cfd3",
-      "bytes": 5721
+      "sha256": "498fb3eabbbfd64da32969b5113d2b9f72c7a987986be4720c4022c63dde3def",
+      "bytes": 6019
     },
     {
       "path": "docs/production-readiness/data-flow-and-api-contract.md",
@@ -856,38 +935,38 @@
     },
     {
       "path": "docs/production-readiness/deployment-and-rollback.md",
-      "sha256": "931eddc00a15af675b06a4ef9de2c273cbba763a5296b8d1ecbb33ddbf9ba1c7",
-      "bytes": 9928
+      "sha256": "6d388e58d26c1b0372706e0d373f76ee2d3464295adee39a69bb6678d59af27c",
+      "bytes": 10295
     },
     {
       "path": "docs/production-readiness/gap-analysis.md",
-      "sha256": "870a036f299d265fbe12bc508f412eae30dc64e3b6c33420e45e5a3c4ac36b42",
-      "bytes": 7986
+      "sha256": "9f0236bb64a2562bf0d4bd8b1d2e5e27b64d27b2ffb5d3f49fc26891494e18e6",
+      "bytes": 8510
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
-      "sha256": "4a0301c6b2977db524178c659d4f3667b1a957b9a80476ab36555e61fcc79cb5",
-      "bytes": 3431
+      "sha256": "b33bb40cab568d95494ef52a84b45effaf1680c6dc327ad1b87b5abe2cdd18a2",
+      "bytes": 3668
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
-      "sha256": "425fe460a87144baa7e341da37f0d3c76bd42d216de12581c2b636126e30714d",
-      "bytes": 6827
+      "sha256": "1d877460cb71f2605af7e6b68eb4f7ddc8a2ddf3bc9e98499eeb2c4b7fe26db6",
+      "bytes": 7102
     },
     {
       "path": "docs/production-readiness/privacy-and-data-governance.md",
-      "sha256": "c2e540c9ec1fa73d64a433811fa9d856468c5233da809362b7ca90d226a4d3b5",
-      "bytes": 7991
+      "sha256": "4c601488ebebcc5aef0bdd6884d627626c9e044d1790aad028acb24c3c722b6c",
+      "bytes": 8731
     },
     {
       "path": "docs/production-readiness/production-readiness-scorecard.json",
-      "sha256": "4390b725179f38a6ced8b575ddad0c12e8130b50cc5e843178d34ce99f18d4b9",
-      "bytes": 5006
+      "sha256": "dd881fe6c370b797150eb7d8393f2f8395034d46bf7c6c26c69ae5debc3b5383",
+      "bytes": 5122
     },
     {
       "path": "docs/production-readiness/production-test-plan.md",
-      "sha256": "0d591ab21f98a4741e462880ad6e9e1689d6a81c70cb2895d6fb9641a33da138",
-      "bytes": 5812
+      "sha256": "2ab598ef7adb17dc0d00cc66901a7ffede4830aa12343c5f2284a552bdf63ae1",
+      "bytes": 6215
     },
     {
       "path": "docs/production-readiness/README.md",
@@ -901,8 +980,43 @@
     },
     {
       "path": "docs/production-readiness/staging-plan.md",
-      "sha256": "baae8843cdbbada3473d4d4e753a4a32dd1a96c7c82653289c530bb512382cbd",
-      "bytes": 3939
+      "sha256": "7333318ef9b4ed9544f5a96c50001ab1b31b0d5d1ff259b2b24325b4d2acd981",
+      "bytes": 4261
+    },
+    {
+      "path": "docs/production-readiness/gate1-staging-validation.md",
+      "sha256": "854f927f68f19f6a1ae712b01207d2b7788b3108315f6997a15e02532bb2072b",
+      "bytes": 6648
+    },
+    {
+      "path": "docs/production-readiness/browser-e2e-report.md",
+      "sha256": "ec878964fe4cf551fc8f092239ea100a2cfd6bd759f9d8eb8ac4e208ece6ec89",
+      "bytes": 1523
+    },
+    {
+      "path": "docs/production-readiness/voice-integration-report.md",
+      "sha256": "f94777319ccdc20112fdb4593e002148f875b5e5d6f19c12e8f053c1388a1066",
+      "bytes": 1112
+    },
+    {
+      "path": "docs/production-readiness/session-isolation-report.md",
+      "sha256": "1837821fd62e740c5fc830baf4fb556c3b402e54668bf57d0a0811dd4d99d3d7",
+      "bytes": 1414
+    },
+    {
+      "path": "docs/production-readiness/cost-reconciliation.md",
+      "sha256": "7e071082f1169e267e5f00e882eeb4cedfb3f3e5db7210862269425be7c90abb",
+      "bytes": 1425
+    },
+    {
+      "path": "docs/production-readiness/legacy-migration-verification.md",
+      "sha256": "2108d604b4733d359f9a453bb98e194d615c7da79a3b9deea9d5dee98d35228d",
+      "bytes": 978
+    },
+    {
+      "path": "docs/production-readiness/gate1-local-evidence.json",
+      "sha256": "a13788a62849b551fb666cd3d09521a65315243ab591a5a92f92d34f941cf9ac",
+      "bytes": 814
     }
   ]
 }

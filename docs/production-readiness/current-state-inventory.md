@@ -34,3 +34,7 @@
 ## 统一集成的候选实现
 
 API-011 和续读创建以同一事务保存 2.0 会话绑定。API-015、016、017 按会话归属分流。未绑定历史归属旧版。API-013 读取既有事件并为家长返回可选回执。北京 `qwen3.8-flash` 使用单独地址、密钥和预算。此前检查到的线上旧模型是 `qwen3.6-plus`。线上巡检证据为文首时点。 [服务](../../backend/app/services/yaya_agent.py) · [配置](../../backend/app/services/yaya_agent_config.py)
+
+## PR #97 Gate 1 本轮证据
+
+本轮同一页面访问内的开放式共读可利用最多两条此前已显示的合格助手回复。旧会话和儿童独立阅读继续按原有路由处理。见[会话隔离](session-isolation-report.md)和[迁移验证](legacy-migration-verification.md)。

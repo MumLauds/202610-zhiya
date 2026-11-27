@@ -29,8 +29,12 @@
 - 前端：`npm run check`，包含桌面与移动，另外使用 `npm run build:public` 检查公开制品。
 - 独立 Staging：`docker compose --env-file infra/staging/.env.example -f infra/staging/compose.yaml config --quiet` 校验模板。经审查批准后记录真实北京 Flash、浏览器和移动设备、语音播放、弱网、备份恢复及独立延时指标。
 
-本地 HTTP 使用真实 TCP 与业务应用。供应商异常分类由可控传输测试，真实百炼 Stage 标记 BLOCKED。 [测试代码](../../backend/tests/test_yaya_agent2.py)
+本地 HTTP 使用真实 TCP 与业务应用。供应商异常分类由可控传输测试，合成数据的本机到百炼真实调用已执行两轮。独立云 Staging 端到端仍标记 BLOCKED。 [测试代码](../../backend/tests/test_yaya_agent2.py)
 
 ## PR #97 审查回归
 
 `test_yaya_agent2.py` 检查三种想象、人际关系和动机的独立 user 输入、脱敏及越权出站、结构化书证、句子证据等级、回翻和分类。交互测试检查脱敏原文不落库、旧回执兼容及儿童短答约束。CI 运行完整后端、数据库和前端检查，以及 `bash infra/staging/smoke_ci.sh` 的真实容器测试。供应商 HTTP 行为的本地测试使用可控传输。真实北京百炼请求单独留证。
+
+## PR #97 Gate 1 本轮证据
+
+Gate 1 新增 14 回合真实验证计划和本地浏览器用例，覆盖陪看、恢复、上下文、语音故障和移动断网。验收时按运行环境单独记录模型、后端和浏览器计时。见[Gate 1 验收](gate1-staging-validation.md)和[浏览器验收](browser-e2e-report.md)。
