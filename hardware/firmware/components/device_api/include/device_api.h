@@ -17,7 +17,7 @@ typedef enum {
     DEVICE_CANCELED, DEVICE_LIMIT, DEVICE_HTTP_PROTOCOL, DEVICE_CONTENT_TYPE, DEVICE_JSON,
     DEVICE_HTTP_STATUS, DEVICE_UNAUTHORIZED, DEVICE_FORBIDDEN, DEVICE_NOT_FOUND,
     DEVICE_CONFLICT, DEVICE_SESSION_CONFLICT, DEVICE_IDEMPOTENCY_CONFLICT,
-    DEVICE_UNAVAILABLE, DEVICE_OUTCOME_UNKNOWN,
+    DEVICE_UNAVAILABLE, DEVICE_OUTCOME_UNKNOWN, DEVICE_REQUEST_IN_PROGRESS,
 } device_status_t;
 
 typedef enum { DEVICE_DEMO_HTTP, DEVICE_DEMO_HTTPS, DEVICE_FORMAL_HTTPS } device_mode_t;
@@ -57,9 +57,9 @@ typedef struct {
 typedef struct {
     device_status_t status, cause;
     unsigned http_status, attempts;
-    uint32_t elapsed_ms;
+    uint32_t elapsed_ms, retry_after_seconds;
     int sdk_error, tls_error, tls_flags;
-    bool retryable, sent;
+    bool retryable, sent, has_retry_after;
     size_t body_size;
     char content_type[96];
     char request_id[DEVICE_REQUEST_ID_MAX + 1];
@@ -96,6 +96,6 @@ bool device_authorize_formal(void);  /* H09/H10 adapter seam. */
 
 bool device_decode_envelope(const char *body, size_t size, bool success, device_result_t *result);
 bool device_decode_shelf(const char *body, size_t size, device_shelf_t *shelf);
-bool device_decode_detail(const char *body, size_t size, device_detail_t *detail);
+bool device_decode_detail(const char *body, size_t size, uint64_t expected_version, device_detail_t *detail);
 bool device_decode_session(const char *body, size_t size, device_session_t *session);
 const char *device_status_name(device_status_t status);

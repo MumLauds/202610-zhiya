@@ -26,6 +26,7 @@ typedef enum { SHELF, DETAIL, SESSION, CREATE, START } operation_t;
 typedef struct {
     uint32_t id;
     operation_t kind;
+    uint64_t expected_version;
     char url[501], scenario[49], body[192];
 } job_t;
 typedef struct {
@@ -61,11 +62,11 @@ static void decode_reply(const job_t *job, char *body, reply_t *reply)
     } else if (job->kind == DETAIL) {
         device_detail_t *dto = heap_caps_malloc(sizeof(*dto), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (!dto) { reply->result.status = DEVICE_RESOURCE; return; }
-        valid = device_decode_detail(body, size, dto);
+        valid = device_decode_detail(body, size, job->expected_version, dto);
         if (valid) {
             reply->first = dto->book.version_id;
             reply->second = dto->page_count;
-            reply->third = dto->pages[0].number;
+            reply->third = 1;
         }
         free(dto);
     } else if (job->kind == SESSION || job->kind == CREATE) {
@@ -148,6 +149,9 @@ static void poll_diagnostics(void)
            (unsigned)r->body_size, r->elapsed_ms, r->attempts, r->sdk_error, r->tls_error, (unsigned)r->tls_flags,
            safe_token(r->request_id, DEVICE_REQUEST_ID_MAX) ? r->request_id : "-",
            safe_token(r->error_code, 64) ? r->error_code : "-", reply.stack);
+    if (r->has_retry_after) {
+        printf("[H08] retry_after_seconds=%" PRIu32 "\n", r->retry_after_seconds);
+    }
     if (r->status == DEVICE_OK && reply.kind != START) {
         const char *labels = reply.kind == SHELF ? "books,first_version,page" :
                              reply.kind == DETAIL ? "version,pages,first_page" : "session,revision,page";
@@ -226,6 +230,7 @@ static bool submit(operation_t kind, const char *base, const char *id_arg, const
         length = snprintf(job.url, sizeof(job.url), "%s/api/v1/storybooks?page=1&pageSize=20", base);
         break;
     case DETAIL:
+        job.expected_version = id;
         length = snprintf(job.url, sizeof(job.url), "%s/api/v1/story-versions/%" PRIu64, base, id);
         break;
     case SESSION:

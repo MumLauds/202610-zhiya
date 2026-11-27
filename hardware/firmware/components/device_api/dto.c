@@ -272,7 +272,24 @@ bool device_decode_shelf(const char *body, size_t size, device_shelf_t *out)
     return valid;
 }
 
-bool device_decode_detail(const char *body, size_t size, device_detail_t *out)
+static bool page_links(const device_page_t *pages, size_t count)
+{
+    bool has_first = false;
+    for (size_t i = 0; i < count; ++i) {
+        const device_page_t *page = &pages[i];
+        has_first |= page->number == 1;
+        bool has_next = page->default_next == 0;
+        for (size_t j = 0; j < count; ++j) {
+            if (j < i && pages[j].number == page->number) { return false; }
+            if (j != i && pages[j].number == page->default_next) { has_next = true; }
+        }
+        if (!has_next) { return false; }
+    }
+    /* A branch may enter a page outside the default path from page 1. */
+    return has_first;
+}
+
+bool device_decode_detail(const char *body, size_t size, uint64_t expected_version, device_detail_t *out)
 {
     out->page_count = 0;
     cJSON *root = parse(body, size);
@@ -281,7 +298,7 @@ bool device_decode_detail(const char *body, size_t size, device_detail_t *out)
     const size_t count = (size_t)cJSON_GetArraySize(pages);
     out->summary[0] = 0;
     bool valid = cJSON_IsArray(pages) && count && count <= DEVICE_PAGES_MAX && book(data, &out->book) &&
-                 count == out->book.page_count &&
+                 expected_version == out->book.version_id && count == out->book.page_count &&
                  (!member(data, "summary") || string(data, "summary", out->summary, sizeof(out->summary), true));
     const cJSON *item;
     size_t index = 0;
@@ -293,6 +310,7 @@ bool device_decode_detail(const char *body, size_t size, device_detail_t *out)
                 string(item, "text", page->text, sizeof(page->text), false) &&
                 string(item, "imageRef", page->image_ref, sizeof(page->image_ref), true);
     }
+    valid = valid && page_links(out->pages, count);
     if (valid) { out->page_count = count; }
     cJSON_Delete(root);
     return valid;

@@ -11,7 +11,7 @@ from time import sleep
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "mock"))
-from server import DEFAULT_FIXTURES_DIR, MockRequestHandler, MockState, error_payload
+from server import DEFAULT_FIXTURES_DIR, MockRequestHandler, MockState, error_payload, request_id
 
 
 PRIVATE_V4 = tuple(ipaddress.ip_network(net) for net in ("127.0.0.0/8", "10.0.0.0/8",
@@ -73,6 +73,13 @@ class LabHandler(MockRequestHandler):
         path = urlsplit(self.path).path
         self.committed_504 = (scenario == "H08_COMMITTED_504" and method == "POST" and
                               path == "/api/v1/reading-sessions")
+        if (scenario == "H08_REQUEST_IN_PROGRESS" and method == "POST" and
+                re.fullmatch(r"/api/v1/reading-sessions/\d+/events", path)):
+            self._drain_body()
+            self.request_id = request_id()
+            self._send_json(409, error_payload("REQUEST_IN_PROGRESS", "Lab request is still pending",
+                                               True, self.request_id), {"Retry-After": "2"})
+            return
         if self.committed_504 or scenario == "H08_SLOW":
             del self.headers["X-Mock-Error"]
         if scenario == "H08_SLOW":

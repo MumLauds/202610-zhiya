@@ -16,7 +16,7 @@ typedef struct {
     size_t limit, head_size;
     size_t field_size, value_size;
     char field[48], value[256];
-    bool seen_type, seen_id, writing_value, headers_done, complete, stream_mode;
+    bool seen_type, seen_id, seen_retry_after, writing_value, headers_done, complete, stream_mode;
     device_status_t failure;
     device_stream_cb stream;
     void *stream_context;

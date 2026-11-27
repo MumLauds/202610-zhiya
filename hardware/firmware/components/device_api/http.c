@@ -96,6 +96,21 @@ static int fail(device_http_t *http, device_status_t status)
     return -1;
 }
 
+static void read_retry_after(device_result_t *result, const char *value, size_t size)
+{
+    uint32_t seconds = 0;
+    for (size_t i = 0; i < size; ++i) {
+        if (value[i] < '0' || value[i] > '9') { return; }
+        const unsigned digit = (unsigned)(value[i] - '0');
+        if (seconds > (UINT32_MAX - digit) / 10) { return; }
+        seconds = seconds * 10 + digit;
+    }
+    if (size) {
+        result->has_retry_after = true;
+        result->retry_after_seconds = seconds;
+    }
+}
+
 static int save_header(device_http_t *http)
 {
     if (!http->writing_value) {
@@ -124,6 +139,13 @@ static int save_header(device_http_t *http)
         memcpy(http->result->request_id, value, size);
         http->result->request_id[size] = 0;
         http->seen_id = true;
+    } else if (strcmp(http->field, "retry-after") == 0) {
+        if (http->seen_retry_after) {
+            http->result->has_retry_after = false;
+            return fail(http, DEVICE_HTTP_PROTOCOL);
+        }
+        http->seen_retry_after = true;
+        read_retry_after(http->result, value, size);
     }
     http->field_size = http->value_size = 0;
     http->writing_value = false;
@@ -277,13 +299,23 @@ device_status_t device_http_result(device_http_t *http)
 
 device_result_t device_result_finish(device_result_t result, device_method_t method)
 {
+    const bool confirmed = result.status == DEVICE_OK ||
+        (result.status == DEVICE_HTTP_STATUS && result.error_code[0] &&
+         result.http_status >= 400 && result.http_status < 500);
     switch (result.status == DEVICE_HTTP_STATUS ? result.http_status : 0) {
     case 401: result.status = DEVICE_UNAUTHORIZED; break;
     case 403: result.status = DEVICE_FORBIDDEN; break;
     case 404: result.status = DEVICE_NOT_FOUND; break;
     case 409:
-        result.status = strcmp(result.error_code, "SESSION_CONFLICT") == 0 ? DEVICE_SESSION_CONFLICT :
-            strcmp(result.error_code, "IDEMPOTENCY_CONFLICT") == 0 ? DEVICE_IDEMPOTENCY_CONFLICT : DEVICE_CONFLICT;
+        if (strcmp(result.error_code, "SESSION_CONFLICT") == 0) {
+            result.status = DEVICE_SESSION_CONFLICT;
+        } else if (strcmp(result.error_code, "IDEMPOTENCY_CONFLICT") == 0) {
+            result.status = DEVICE_IDEMPOTENCY_CONFLICT;
+        } else if (strcmp(result.error_code, "REQUEST_IN_PROGRESS") == 0) {
+            result.status = DEVICE_REQUEST_IN_PROGRESS;
+        } else {
+            result.status = DEVICE_CONFLICT;
+        }
         break;
     case 503: result.status = DEVICE_UNAVAILABLE; break;
     case 504: result.status = DEVICE_OUTCOME_UNKNOWN; break;
@@ -291,8 +323,7 @@ device_result_t device_result_finish(device_result_t result, device_method_t met
     }
     result.cause = result.status;
     if (method == DEVICE_POST && result.sent &&
-        (result.http_status >= 500 || strcmp(result.error_code, "REQUEST_OUTCOME_UNKNOWN") == 0 ||
-         (!result.error_code[0] && result.status != DEVICE_OK))) {
+        (!confirmed || strcmp(result.error_code, "REQUEST_OUTCOME_UNKNOWN") == 0)) {
         result.status = DEVICE_OUTCOME_UNKNOWN;
     }
     return result;
@@ -320,7 +351,7 @@ const char *device_status_name(device_status_t status)
         "OK", "INVALID", "RESOURCE", "NOT_AUTHORIZED", "OFFLINE", "CLOCK", "DNS", "CONNECT",
         "TLS", "READ", "TIMEOUT", "CANCELED", "LIMIT", "HTTP_PROTOCOL", "CONTENT_TYPE", "JSON",
         "HTTP_STATUS", "UNAUTHORIZED", "FORBIDDEN", "NOT_FOUND", "CONFLICT", "SESSION_CONFLICT",
-        "IDEMPOTENCY_CONFLICT", "UNAVAILABLE", "REQUEST_OUTCOME_UNKNOWN",
+        "IDEMPOTENCY_CONFLICT", "UNAVAILABLE", "REQUEST_OUTCOME_UNKNOWN", "REQUEST_IN_PROGRESS",
     };
     return (unsigned)status < sizeof(names) / sizeof(names[0]) ? names[status] : "UNKNOWN";
 }

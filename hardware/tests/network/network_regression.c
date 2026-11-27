@@ -92,6 +92,51 @@ static void dto_fields(void)
     puts("PASS JSON exact 53-bit numbers, UTF-8, null/unknown fields, depth, arrays, and malformed data");
 }
 
+static void detail_graph(void)
+{
+    const char page[] = "{\"pageNumber\":%d,\"defaultNextPageNumber\":%s,\"text\":\"text\",\"imageRef\":null}";
+    const char prefix[] = "{\"data\":{\"storybookId\":1,\"storyVersionId\":9007199254740991,"
+        "\"versionNumber\":2,\"title\":\"book\",\"pages\":[";
+    char pages[3][112];
+    for (unsigned scenario = 0; scenario < 5; ++scenario) {
+        snprintf(pages[0], sizeof(pages[0]), page, 9, "null");
+        snprintf(pages[1], sizeof(pages[1]), page, scenario == 2 ? 4 : 1,
+                 scenario == 3 ? "8" : scenario == 4 ? "1" : "9");
+        snprintf(pages[2], sizeof(pages[2]), page, scenario == 1 ? 9 : 11, "null");
+        const int size = snprintf(body, sizeof(body),
+            "%s%s,%s,%s],\"branches\":[{\"fromPageNumber\":1,\"nextPageNumber\":11}]},\"requestId\":\"r\"}",
+            prefix, pages[0], pages[1], pages[2]);
+        assert(size > 0);
+        assert(device_decode_detail(body, (size_t)size, DEVICE_MAX_ID, &detail) == (scenario == 0));
+        assert(detail.page_count == (scenario == 0 ? 3 : 0));
+        assert(!device_decode_detail(body, (size_t)size, 2, &detail) && detail.page_count == 0);
+    }
+    puts("PASS detail version, unique pages, page 1, and valid successors with a branch-only page");
+}
+
+static void write_outcomes(void)
+{
+    const char pending[] = "{\"error\":{\"code\":\"REQUEST_IN_PROGRESS\",\"message\":\"busy\",\"retryable\":true},"
+        "\"requestId\":\"pending-1\"}";
+    const char *const headers[] = {"Retry-After: 2\r\n", "", "Retry-After: 4294967296\r\n",
+                                   "Retry-After: 2\r\nRetry-After: 9\r\n"};
+    const device_request_t post = {.method = DEVICE_POST, .kind = DEVICE_JSON_RESPONSE};
+    for (size_t i = 0; i < sizeof(headers) / sizeof(headers[0]); ++i) {
+        const int size = snprintf(wire, sizeof(wire),
+            "HTTP/1.1 409 Conflict\r\nContent-Type: application/json\r\nContent-Length: %u\r\n%s\r\n%s",
+            (unsigned)strlen(pending), headers[i], pending);
+        const device_result_t result = parse_wire(wire, (size_t)size, true, 1, DEVICE_POST);
+        assert(result.status == (i == 3 ? DEVICE_OUTCOME_UNKNOWN : DEVICE_REQUEST_IN_PROGRESS));
+        assert(result.has_retry_after == (i == 0));
+        if (result.has_retry_after) { assert(result.retry_after_seconds == 2); }
+        assert(!device_retry_get(&result, &post, 0, 1000));
+    }
+    const char proxy[] = "HTTP/1.1 409 Conflict\r\nContent-Type: text/html\r\nContent-Length: 3\r\n\r\nbad";
+    const device_result_t result = parse_wire(proxy, sizeof(proxy) - 1, true, 100, DEVICE_POST);
+    assert(result.status == DEVICE_OUTCOME_UNKNOWN && result.cause == DEVICE_CONFLICT && result.http_status == 409);
+    puts("PASS explicit pending, bounded Retry-After, proxy ambiguity, and no automatic write replay");
+}
+
 static void policy(void)
 {
     device_url_t url;
@@ -130,6 +175,8 @@ int main(int argc, char **argv)
     if (argc == 1) {
         http_framing();
         dto_fields();
+        detail_graph();
+        write_outcomes();
         policy();
         return 0;
     }
@@ -145,7 +192,7 @@ int main(int argc, char **argv)
     if (result.status == DEVICE_OK && strcmp(argv[1], "shelf") == 0) {
         assert(device_decode_shelf(body, result.body_size, &shelf) && shelf.count == 20 && shelf.books[0].version_id == 2);
     } else if (result.status == DEVICE_OK && strcmp(argv[1], "detail") == 0) {
-        assert(device_decode_detail(body, result.body_size, &detail) && detail.page_count == 6 &&
+        assert(device_decode_detail(body, result.body_size, 2, &detail) && detail.page_count == 6 &&
                detail.book.version_id == 2 && detail.pages[0].number == 1 && !detail.pages[0].image_ref[0]);
     } else if (result.status == DEVICE_OK && (strcmp(argv[1], "session") == 0 || strcmp(argv[1], "created") == 0)) {
         device_session_t session;

@@ -46,6 +46,8 @@ def exchange(port, path, *, context=None, hostname="h08.test", payload=None, sce
 
 class NetworkTest(unittest.TestCase):
     executable: Path
+    wifi: Path
+    transport: Path
     temporary: Path
 
     def parse(self, raw, kind, expected, code):
@@ -57,6 +59,12 @@ class NetworkTest(unittest.TestCase):
 
     def test_protocol_core(self):
         subprocess.run([str(self.executable)], check=True)
+
+    def test_wifi_lifecycle_with_sdk_shim(self):
+        subprocess.run([str(self.wifi)], check=True)
+
+    def test_transport_faults_with_sdk_shim(self):
+        subprocess.run([str(self.transport)], check=True)
 
     def test_h05_http_books_and_error_envelopes(self):
         with run_server() as port:
@@ -71,6 +79,10 @@ class NetworkTest(unittest.TestCase):
                 result = self.parse(exchange(port, "/api/v1/reading-sessions/1/events", payload={},
                                              scenario=scenario), "post", scenario, 409)
                 self.assertIn(scenario, result)
+            pending = exchange(port, "/api/v1/reading-sessions/1/events", payload={},
+                               scenario="H08_REQUEST_IN_PROGRESS")
+            self.assertIn(b"Retry-After: 2\r\n", pending)
+            self.parse(pending, "post", "REQUEST_IN_PROGRESS", 409)
 
     def test_h05_write_commits_before_504_and_original_key_replays(self):
         body = {"childProfileId": 1, "storyVersionId": 2, "mode": "PARENT_CHILD", "clientRequestId": "lab-original-01"}
@@ -121,11 +133,29 @@ def main():
     with tempfile.TemporaryDirectory(prefix="zhiya-h08-test-") as temporary:
         scratch = Path(temporary)
         executable = scratch / "network_regression.exe"
-        subprocess.run([args.cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
-                        *[f"-I{p}" for p in (COMPONENT, COMPONENT / "include", http, json_source)],
-                        *[str(p) for p in (http / "http_parser.c", json_source / "cJSON.c",
-                                           COMPONENT / "http.c", COMPONENT / "dto.c", HERE / "network_regression.c")],
-                        "-lm", "-o", str(executable)], check=True)
+        shims = scratch / "sdk"
+        for header in (
+            "esp_err.h", "esp_event.h", "esp_netif.h", "esp_netif_sntp.h", "esp_random.h", "esp_timer.h",
+            "esp_wifi.h", "freertos/FreeRTOS.h", "freertos/queue.h", "freertos/task.h", "nvs_flash.h",
+            "mbedtls/platform_util.h", "esp_crt_bundle.h", "esp_tls.h", "lwip/netdb.h", "lwip/sockets.h",
+            "sdkconfig.h",
+        ):
+            file = shims / header
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text('#include "esp_host.h"\n', encoding="utf-8")
+        command = [args.cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                   *[f"-I{p}" for p in (COMPONENT, COMPONENT / "include", http, json_source, HERE, shims)]]
+        protocol_sources = [http / "http_parser.c", json_source / "cJSON.c", COMPONENT / "http.c", COMPONENT / "dto.c"]
+
+        def compile_test(name, sources):
+            output = scratch / f"{name}.exe"
+            subprocess.run([*command, *map(str, sources), str(HERE / f"{name}.c"), "-lm", "-o", str(output)],
+                           check=True)
+            return output
+
+        executable = compile_test("network_regression", protocol_sources)
+        NetworkTest.wifi = compile_test("wifi_regression", [])
+        NetworkTest.transport = compile_test("transport_regression", protocol_sources)
         NetworkTest.executable, NetworkTest.temporary = executable, scratch
         result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(NetworkTest))
         return 0 if result.wasSuccessful() else 1

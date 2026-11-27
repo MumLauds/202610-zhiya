@@ -38,7 +38,13 @@ static device_status_t check(const timing_t *timing)
                        device_wifi_online(), now_ms(), timing->deadline);
 }
 
-static void pause_briefly(void) { vTaskDelay(pdMS_TO_TICKS(10) + 1); }
+static TickType_t wait_slice(const timing_t *timing)
+{
+    const int64_t remaining = timing->deadline - now_ms();
+    if (remaining <= 0) { return 0; }
+    const TickType_t ticks = pdMS_TO_TICKS(remaining < 10 ? remaining : 10);
+    return ticks ? ticks : 1;
+}
 
 static void resolver(void *ignored)
 {
@@ -88,14 +94,16 @@ static device_status_t resolve(const device_url_t *url, const timing_t *timing, 
     device_status_t status;
     while (atomic_load(&dns_busy)) {
         if ((status = check(timing)) != DEVICE_OK) { return status; }
-        pause_briefly();
+        vTaskDelay(wait_slice(timing));
     }
     dns_query_t query = {.id = ++dns_id};
     strcpy(query.host, url->host);
     atomic_store(&dns_busy, true);
     xQueueOverwrite(dns_requests, &query);
     while ((status = check(timing)) == DEVICE_OK) {
-        if (xQueueReceive(dns_answers, out, pdMS_TO_TICKS(10) + 1) == pdPASS && out->id == query.id) {
+        if (xQueueReceive(dns_answers, out, wait_slice(timing)) == pdPASS && out->id == query.id) {
+            status = check(timing);
+            if (status != DEVICE_OK) { return status; }
             return out->error || !out->address[0] ? DEVICE_DNS : DEVICE_OK;
         }
     }
@@ -147,7 +155,7 @@ static device_status_t open_connection(esp_tls_t *tls, const device_url_t *url, 
             /* The pinned SDK can retain select's cleared descriptor set after a TCP timeout.
              * Treat this attempt as expired instead of calling it again in CONNECTING. */
             if (state == ESP_TLS_CONNECTING || now_ms() - start >= budget) { return DEVICE_TIMEOUT; }
-            pause_briefly();
+            vTaskDelay(wait_slice(timing));
         } while ((status = check(timing)) == DEVICE_OK);
         if (status != DEVICE_OK) { return status; }
     } else {
@@ -185,11 +193,12 @@ static device_status_t send_bytes(esp_tls_t *tls, const device_url_t *url, const
         /* A TLS write can put bytes on the wire before returning an error. */
         result->sent = true;
         const ssize_t n = esp_tls_conn_write(tls, data, size);
+        if ((status = check(timing)) != DEVICE_OK) { return status; }
         if (n > 0) {
             data += n;
             size -= (size_t)n;
         } else if (n < 0 && would_block(n, url->tls)) {
-            pause_briefly();
+            vTaskDelay(wait_slice(timing));
         } else {
             if (url->tls) { tls_error(tls, result); }
             else { result->sdk_error = errno; }
@@ -224,10 +233,11 @@ static device_status_t exchange(esp_tls_t *tls, const device_url_t *url, const d
     while (status == DEVICE_OK && !http->complete) {
         if ((status = check(timing)) != DEVICE_OK) { break; }
         const ssize_t n = esp_tls_conn_read(tls, block, sizeof(block));
+        if ((status = check(timing)) != DEVICE_OK) { break; }
         if (n >= 0) {
             status = device_http_feed(http, block, (size_t)n);
         } else if (would_block(n, url->tls)) {
-            pause_briefly();
+            vTaskDelay(wait_slice(timing));
         } else {
             if (url->tls) { tls_error(tls, http->result); }
             else { http->result->sdk_error = errno; }
@@ -303,7 +313,9 @@ device_result_t device_request(const device_request_t *request, char *buffer, si
             break;
         }
         const int64_t retry_at = now_ms() + DEVICE_RETRY_DELAY_MS;
-        while (now_ms() < retry_at && (result.status = check(&timing)) == DEVICE_OK) { pause_briefly(); }
+        while (now_ms() < retry_at && (result.status = check(&timing)) == DEVICE_OK) {
+            vTaskDelay(wait_slice(&timing));
+        }
         if (result.status != DEVICE_OK) { result.cause = result.status; break; }
     }
     result.elapsed_ms = (uint32_t)(now_ms() - start);

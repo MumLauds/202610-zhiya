@@ -18,16 +18,16 @@ idf.py -B $build -D "SDKCONFIG=$config" -D IDF_TARGET=esp32s3 build
 if ($LASTEXITCODE -ne 0) { throw 'H08 构建失败' }
 ```
 
-带本地 CA 的诊断构建在下方 TLS 步骤创建证书后，把 `-D "ZHIYA_H08_DEMO_CA=$lab\ca.pem"` 传给同一条构建命令。该选项只读取公开 CA 证书。当前本机构建产物目录为 `D:\zhiya-hardware-workspace\temp\h08-mwyqw6ts\diagnostics\build`，配置为同级 `sdkconfig`。
+带本地 CA 的诊断构建在下方 TLS 步骤创建证书后，把 `-D "ZHIYA_H08_DEMO_CA=$lab\ca.pem"` 传给同一条构建命令。该选项只读取公开 CA 证书。当前本机构建产物目录为 `D:\zhiya-hardware-workspace\temp\h08-pr99-r2-mwyyfhth\h08\build`，配置为同级 `sdkconfig`。
 
 2026-11-27 的 ESP-IDF v5.5.5 最终构建结果
 
 | 模式 | `idf.py build` | 应用镜像 | 产物目录 |
 | --- | ---: | ---: | --- |
-| H02 基线 | 0 | 462,976 B | `D:\zhiya-hardware-workspace\temp\h08-mwyqw6ts\h02\build` |
-| H08 本地 CA 诊断 | 0 | 1,263,584 B | `D:\zhiya-hardware-workspace\temp\h08-mwyqw6ts\diagnostics\build` |
+| H02 基线 | 0 | 462,976 B | `D:\zhiya-hardware-workspace\temp\h08-pr99-r2-mwyyfhth\h02\build` |
+| H08 本地 CA 诊断 | 0 | 1,265,008 B | `D:\zhiya-hardware-workspace\temp\h08-pr99-r2-mwyyfhth\h08\build` |
 
-两个镜像通过 esptool 校验，分区表二进制相同。H08 应用分区剩余约 70%。`idf.py size` 报告 H08 静态 DIRAM 用量 193,287 B，实际运行期堆受 Wi-Fi、TLS、LCD 与任务分配影响，待实板记录。构建中曾遇到工具链内部段错误，使用 `$env:IDF_PY_BUILD_JOBS='4'` 重跑通过。
+两个镜像通过 esptool 校验，分区表二进制相同。H08 应用分区剩余约 70%。实际堆余量受 Wi-Fi、TLS、LCD 与任务分配影响，待实板记录。Windows 工具链的构建并发可用 `$env:IDF_PY_BUILD_JOBS='4'` 设置。
 
 ## 第一步 · 烧录独立诊断
 
@@ -35,7 +35,7 @@ if ($LASTEXITCODE -ne 0) { throw 'H08 构建失败' }
 
 ```powershell
 $py = 'D:\zhiya-h01-idf-tools\python_env\idf5.5_py3.13_env\Scripts\python.exe'
-Set-Location 'D:\zhiya-hardware-workspace\temp\h08-mwyqw6ts\diagnostics\build'
+Set-Location 'D:\zhiya-hardware-workspace\temp\h08-pr99-r2-mwyyfhth\h08\build'
 [System.IO.Ports.SerialPort]::GetPortNames()
 $port = Read-Host '输入开发板新出现的 COM 口'
 & $py -m esptool --chip esp32s3 -p $port -b 460800 --before default_reset --after hard_reset write_flash '@flash_args'
@@ -92,9 +92,10 @@ create https://PC_IP:8766 2 h08-first-check
 session https://PC_IP:8766 SESSION_ID
 start https://PC_IP:8766 SESSION_ID 0 h08-start-check SESSION_CONFLICT
 start https://PC_IP:8766 SESSION_ID 0 h08-start-check IDEMPOTENCY_CONFLICT
+start https://PC_IP:8766 SESSION_ID 0 h08-start-check H08_REQUEST_IN_PROGRESS
 ```
 
-分别测试 `H08_SLOW` 等待超时，以及在请求活动时执行 `cancel`。落库后 504 实验只在内存 Mock 执行，第一条 create 应为 `REQUEST_OUTCOME_UNKNOWN` 且尝试数为 1，第二条用相同请求和键显式诊断重放。将其 DTO 输出中的 ID 代入后续命令。正式会话恢复由 H11 处理。
+分别测试 `H08_SLOW` 等待超时，以及在请求活动时执行 `cancel`。落库后 504 实验只在内存 Mock 执行，第一条 create 应为 `REQUEST_OUTCOME_UNKNOWN` 且尝试数为 1，第二条用相同请求和键显式诊断重放。将其 DTO 输出中的 ID 代入后续命令。`H08_REQUEST_IN_PROGRESS` 应收到 409 并打印 `retry_after_seconds=2`，尝试数保持 1。正式会话恢复由 H11 处理。
 
 ## 验收记录
 
@@ -104,10 +105,10 @@ start https://PC_IP:8766 SESSION_ID 0 h08-start-check IDEMPOTENCY_CONFLICT
 | HTTP Mock 书架与详情 | HTTP 200、request ID、条目和首版本，保留触摸响应 | NOT_TESTED |
 | 可信 HTTPS 与负例 | 同步时钟、成功 HTTP 200；错误 CA、主机名、过期证书和不同步时间均拒绝 | NOT_TESTED |
 | 错误码、超时、取消 | 观察状态、原始起因、耗时、尝试次数及结果未知 | NOT_TESTED |
-| 断网恢复、停止与重入 | 连续失败最多 4 次重连，`leave` 后保持停止并可再次 `join` | NOT_TESTED |
+| 断网恢复、停止与重入 | 关闭并恢复测试 AP，确认退避与重新取得 IP。连续失败最多 4 次重连。活动请求时执行 `leave`，确认停止后可再次 `join`。 | NOT_TESTED |
 | 内存和触摸 | 记录请求前后 PSRAM/internal/DMA free/min/largest、栈余量及触摸响应。建议 20 次混合请求、10 次断网恢复。 | NOT_TESTED |
 
-回退到独立 H02 基线时，退出监视器，在 `D:\zhiya-hardware-workspace\temp\h08-mwyqw6ts\h02\build` 运行相同的 esptool `write_flash '@flash_args'`，该目录的应用为 `zhiya_hardware.bin`。测试后用 Ctrl+C 停止测试端口并撤销本次临时网络放行。
+回退到独立 H02 基线时，退出监视器，在 `D:\zhiya-hardware-workspace\temp\h08-pr99-r2-mwyyfhth\h02\build` 运行相同的 esptool `write_flash '@flash_args'`，该目录的应用为 `zhiya_hardware.bin`。测试后用 Ctrl+C 停止测试端口并撤销本次临时网络放行。
 
 ## 主机回归
 
@@ -120,4 +121,4 @@ python hardware/tests/board/test_touch.py --cc $cc
 & 'D:\zhiya-h01-idf-tools\python_env\idf5.5_py3.13_env\Scripts\python.exe' hardware/tests/network/test_network.py --idf 'D:\zhiya-h01-idf-proxy' --cc $cc
 ```
 
-网络测试监听临时回环端口。主机用 Python TLS 上下文验证正确 CA/SAN、错误 CA、错误主机名和过期证书，再把 HTTP 响应交给设备同款 C 解析器。主机结果和实板 TLS、Wi-Fi 验收分别记录。
+网络测试共 7 项。回环实验用主机 TLS 上下文验证正确 CA/SAN、错误 CA、错误主机名和证书过期，再把 HTTP 响应交给设备同款 C 解析器。带 SDK 替身的主机测试直接运行固件 Wi-Fi 和传输代码，覆盖停止事件丢失、队列满、清理失败、DNS 迟到、握手失败、断网与重连、取消及绝对截止时间。ESP32 的无线、TLS 与时序验证仍由实板验收。
