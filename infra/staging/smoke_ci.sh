@@ -17,6 +17,7 @@ trap cleanup EXIT
 export STAGING_HTTPS_PORT=8443
 export YAYA_AGENT2_MODE=off YAYA_AGENT2_ALLOWLIST= YAYA_AGENT2_INPUT_ALLOWLIST=
 export YAYA_AGENT2_API_KEY= YAYA_AGENT2_API_URL= YAYA_AGENT2_LEDGER_SECRET=
+export STAGING_SPEECH_API_KEY= STAGING_ASR_API_URL= STAGING_TTS_API_URL=
 "${compose[@]}" build
 "${compose[@]}" up -d --wait --wait-timeout 120 --no-build
 ca="$scratch/staging-ca.crt"
@@ -40,13 +41,23 @@ export YAYA_AGENT2_API_URL=https://ws-synthetic-ci.cn-beijing.maas.aliyuncs.com/
 export YAYA_AGENT2_API_KEY=synthetic-ci-placeholder
 export YAYA_AGENT2_LEDGER_SECRET=synthetic-ci-ledger-secret-not-a-production-credential
 export YAYA_AGENT2_INPUT_CNY_PER_MILLION_TOKENS=1.25 YAYA_AGENT2_OUTPUT_CNY_PER_MILLION_TOKENS=3.5
+export STAGING_SPEECH_API_KEY=synthetic-ci-speech-placeholder
+export STAGING_ASR_API_URL=https://ws-synthetic-voice.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions
+export STAGING_TTS_API_URL=https://ws-synthetic-voice.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer
 "${compose[@]}" up -d --wait --wait-timeout 120 --no-build backend
 "${compose[@]}" exec -T backend python - <<'PYTHON'
 import os, sqlite3
 from contextlib import closing
 from app.services.yaya_agent_config import YayaSettings
+from app.speech_config import SpeechSettings
 
 settings = YayaSettings.from_env()
+speech = SpeechSettings.from_env()
+assert speech.asr_configured and speech.tts_configured
+assert speech.api_key == "synthetic-ci-speech-placeholder"
+assert speech.api_key != settings.model.model_api_key
+assert speech.asr_model == "qwen3-asr-flash"
+assert speech.tts_model == "qwen-audio-3.1-tts-flash"
 allowed, local_only = [int(part) for part in os.environ["YAYA_AGENT2_ALLOWLIST"].split(",")]
 assert settings.model.model_name == "qwen3.8-flash"
 assert settings.model.model_api_url.startswith("https://ws-synthetic-ci.cn-beijing.maas.aliyuncs.com/")
@@ -65,6 +76,7 @@ PYTHON
 "${smoke[@]}" allowlist
 "${compose[@]}" exec -T backend python -c 'import os,sqlite3; db=sqlite3.connect(os.environ["ZHIYA_DB_PATH"]); assert db.execute("SELECT COUNT(*) FROM yaya_agent_calls").fetchone() == (0,)'
 echo "PASS: SQLite initialization, seed replay, cohort and input authorization, Beijing Flash runtime config"
+echo "PASS: isolated ASR and TTS configuration with synthetic values; no voice provider calls"
 
 export YAYA_AGENT2_INPUT_ALLOWLIST=
 "${compose[@]}" up -d --wait --wait-timeout 120 --no-build backend

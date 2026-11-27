@@ -13,4 +13,6 @@ docker compose --env-file infra/staging/.env -f infra/staging/compose.yaml up -d
 
 使用专用空卷和合成输入。线上账号、凭证、数据卷、备份和模型配置均不得用于此环境。详见 [Staging 计划](../../docs/production-readiness/staging-plan.md) 和 [发布与回滚](../../docs/production-readiness/deployment-and-rollback.md)。
 
+语音默认关闭。真实语音验收时，在独立主机的受限环境文件注入 `STAGING_SPEECH_API_KEY`，使用获准调用 `qwen3-asr-flash` 与 `qwen-audio-3.1-tts-flash` 的独立测试 Key。Agent 文本模型继续使用 `YAYA_AGENT2_API_KEY`。在北京语音测试空间的专属 Host 下，将 `STAGING_ASR_API_URL` 设置为 `/compatible-mode/v1/chat/completions`，将 `STAGING_TTS_API_URL` 设置为 `/api/v1/services/audio/tts/SpeechSynthesizer`。两项均填写完整 HTTPS URL。使用成人朗读的虚构绘本测试句验证录音、转写、确认提交与播放。[百炼 ASR](https://help.aliyun.com/zh/model-studio/qwen-asr-api-reference) · [百炼 TTS](https://help.aliyun.com/zh/model-studio/non-realtime-tts-user-guide)
+
 在 CI 或有 Docker Compose 的本机可执行 `bash infra/staging/smoke_ci.sh`。测试使用另一个 Compose 项目和独立卷，从构建一直验证到关闭和版本隔离。其北京工作空间和密钥值是合成占位符，运行时检查无需供应商调用。

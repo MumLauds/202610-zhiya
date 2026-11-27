@@ -21,6 +21,9 @@ services:
       YAYA_AGENT2_SESSION_CALLS: ${YAYA_AGENT2_SESSION_CALLS:-10}
       YAYA_AGENT2_CONCURRENCY: ${YAYA_AGENT2_CONCURRENCY:-2}
       YAYA_AGENT2_LEDGER_RETENTION_DAYS: ${YAYA_AGENT2_LEDGER_RETENTION_DAYS:-2}
+      DASHSCOPE_API_KEY: ${STAGING_SPEECH_API_KEY:-}
+      ASR_API_URL: ${STAGING_ASR_API_URL:-}
+      TTS_API_URL: ${STAGING_TTS_API_URL:-}
     volumes:
       - staging-sqlite:/var/lib/zhiya
       - ./seed.py:/app/staging-seed.py:ro
