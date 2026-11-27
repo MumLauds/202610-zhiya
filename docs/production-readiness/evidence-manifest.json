@@ -1075,6 +1075,40 @@
         "status": "BLOCKED",
         "approved_pilot_participants": 0,
         "release_signoffs_completed": 0
+      },
+      "completed_live_run": {
+        "archive_sha256": "ae0a9624a23b5c02c33fd8fdd24b7bbf73a80430c01dc64627b5640cbe32a91c",
+        "probe_sha256": "e916add43df3db1b8bc9e50f9aad75abd0e0d30f322ae33ddc31d6ab927e3d73",
+        "scope": "gate2_real_beijing_provider_local_asgi_synthetic_only",
+        "attempts": 63,
+        "verified_responses": 63,
+        "http_200": 63,
+        "full_fallbacks": 0,
+        "reply_only": 0,
+        "local_listening_passed": 6,
+        "verified_by_book": {
+          "rain": 21,
+          "light": 21,
+          "garden": 21
+        },
+        "source_attribution_passed": 3,
+        "missing_read_pages": 9,
+        "unexpected_evidence_pages": 0,
+        "affected_timeline_answers": [
+          "light-15",
+          "garden-15"
+        ],
+        "provider_p50_ms": 845.82,
+        "provider_p95_ms": 1448.88,
+        "backend_p50_ms": 924.09,
+        "backend_p95_ms": 1527.73,
+        "prompt_tokens": 34830,
+        "completion_tokens": 2416,
+        "application_micros_reserved": 177688,
+        "application_micros_settled": 34416,
+        "application_usage_lines_reconciled": 63,
+        "independent_human_reviews_completed": 0,
+        "blind_html_sha256": "e9e1849ab8709b6df253ed1c3a3c86151e6049da73a2130e82c76a2bc1fe7abf"
       }
     }
   },
@@ -1106,8 +1140,8 @@
     },
     {
       "path": "docs/production-readiness/gap-analysis.md",
-      "sha256": "180fdc118214487bd5077af1d8a6c958ca9585c0f71ff8cb3cc312c17ddd29b9",
-      "bytes": 8868
+      "sha256": "50c3a2757a33b76bef7a0547444ea56caf89b803527ca60047c4bdcfdea0e7ee",
+      "bytes": 8917
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
@@ -1186,13 +1220,13 @@
     },
     {
       "path": "docs/production-readiness/gate2-pilot-readiness.md",
-      "sha256": "6e1f25f8fbba0ade3bc7de9e550b415007ee537bcf4aa31d87fb58b053d7f31a",
-      "bytes": 6466
+      "sha256": "ee94afdc8f83b06eb327e369a16c457ba31d5bf4c1f130d57f45b7fe467d1295",
+      "bytes": 7946
     },
     {
       "path": "docs/production-readiness/gate3-release-readiness.md",
-      "sha256": "c2d6113c8a456ea837a6b80b396f37632f6f49e4555c4c75f7719b66bbdf2873",
-      "bytes": 2619
+      "sha256": "0850b830b6a3d1ce35e1804e0878d47c52f64133a6b851d2076299c1d9a693d1",
+      "bytes": 2811
     }
   ]
 }
