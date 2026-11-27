@@ -173,24 +173,37 @@ def test_evidence_is_bound_to_current_book_visited_prefix_and_session():
             INSERT INTO story_versions VALUES (11,NULL),(12,NULL);
             CREATE TABLE story_pages (version_id INTEGER, page_no INTEGER, body_text TEXT);
             CREATE TABLE interaction_events (id INTEGER, session_id INTEGER, version_id INTEGER, page_no INTEGER,
-                                             event_type TEXT, result_status TEXT, response_json TEXT);
+                                             event_type TEXT, result_status TEXT, response_json TEXT, input_text TEXT);
             INSERT INTO story_pages VALUES (11,1,'松鼠打开信箱。'), (11,2,'松鼠轻轻放好信。'),
                                            (11,3,'纸风车开始转动。'), (12,1,'其他绘本的猫。');
             INSERT INTO interaction_events VALUES
-                (1, 1, 11, 1, 'STARTED', 'SUCCESS', '{}'),
-                (2, 2, 11, 3, 'PAGE_CHANGED', 'SUCCESS', '{}'),
-                (3, 1, 12, 1, 'PAGE_CHANGED', 'SUCCESS', '{}'),
-                (4, 1, 11, 3, 'PAGE_CHANGED', 'SUCCESS', '{}'),
-                (5, 1, 11, 2, 'PAGE_CHANGED', 'SUCCESS', '{}'),
-                (6, 2, 11, 2, 'ANSWER', 'SUCCESS', '{"data":{"agentReceipt":{"version":"2.0","state":"PAUSE","action":"PAUSE"}}}'),
-                (7, 1, 11, 2, 'ANSWER', 'SUCCESS', '{"data":{"agentReceipt":{"version":"2.0","state":"LISTEN","action":"LISTEN"}}}');
+                (1, 1, 11, 1, 'STARTED', 'SUCCESS', '{}', NULL),
+                (2, 2, 11, 3, 'PAGE_CHANGED', 'SUCCESS', '{}', NULL),
+                (3, 1, 12, 1, 'PAGE_CHANGED', 'SUCCESS', '{}', NULL),
+                (4, 1, 11, 3, 'PAGE_CHANGED', 'SUCCESS', '{}', NULL),
+                (5, 1, 11, 2, 'PAGE_CHANGED', 'SUCCESS', '{}', NULL),
+                (6, 2, 11, 2, 'ANSWER', 'SUCCESS', '{"data":{"agentReceipt":{"version":"2.0","state":"PAUSE","action":"PAUSE"}}}', NULL),
+                (7, 1, 11, 2, 'ANSWER', 'SUCCESS', '{"data":{"agentReceipt":{"version":"2.0","state":"LISTEN","action":"LISTEN"}}}', NULL);
         """)
+        db.executemany("INSERT INTO interaction_events VALUES (?, ?, ?, ?, 'ANSWER', 'SUCCESS', ?, ?)", [
+            (8, 1, 11, 2, json.dumps({"data": {"agentReceipt": {
+                "version": "2.0", "state": "CONTINUE", "action": "RESPOND", "decision": "UNCHANGED"},
+                "replyText": "叶子添上小翅膀就像一架小小飞船。"}}, ensure_ascii=False), "我想给叶子装两扇小翅膀。"),
+            (9, 1, 11, 2, json.dumps({"data": {"agentReceipt": {
+                "version": "2.0", "state": "CONTINUE", "action": "RESPOND", "decision": "UNCHANGED"},
+                "replyText": "逐字回显里的原话。"}}, ensure_ascii=False), "逐字回显里的原话。"),
+            (10,2, 11, 2, json.dumps({"data": {"agentReceipt": {
+                "version": "2.0", "state": "CONTINUE", "action": "RESPOND", "decision": "UNCHANGED"},
+                "replyText": "不属于当前会话的话。"}}, ensure_ascii=False), None),
+        ])
         row = {"id": 1, "version_id": 11, "current_page_no": 2, "carried_prefix_page_count": 0, "source_type": "LIBRARY", "profile_id": 4}
         result = reading_context(db, row, "这是谁？", 5, ())
     material = json.dumps(result.material, ensure_ascii=False)
     assert "松鼠打开信箱" in material and "松鼠轻轻放好信" in material
     assert "纸风车" not in material and "其他绘本" not in material and "PAUSE" not in material
-    assert result.last_state == "LISTEN"
+    assert result.last_state == "CONTINUE"
+    assert result.material["recentAssistantReplies"] == ["叶子添上小翅膀就像一架小小飞船。"]
+    assert not any(raw in material for raw in ("逐字回显", "不属于当前会话", "我想给叶子装两扇小翅膀。"))
     assert result.material["currentEvidenceLevel"] == "sentence" and not result.material["currentFacts"]
 
 

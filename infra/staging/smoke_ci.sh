@@ -66,6 +66,12 @@ PYTHON
 "${compose[@]}" exec -T backend python -c 'import os,sqlite3; db=sqlite3.connect(os.environ["ZHIYA_DB_PATH"]); assert db.execute("SELECT COUNT(*) FROM yaya_agent_calls").fetchone() == (0,)'
 echo "PASS: SQLite initialization, seed replay, cohort and input authorization, Beijing Flash runtime config"
 
+export YAYA_AGENT2_INPUT_ALLOWLIST=
+"${compose[@]}" up -d --wait --wait-timeout 120 --no-build backend
+"${smoke[@]}" revoked
+"${compose[@]}" exec -T backend python -c 'import os,sqlite3; db=sqlite3.connect(os.environ["ZHIYA_DB_PATH"]); assert db.execute("SELECT COUNT(*) FROM yaya_agent_calls").fetchone() == (0,)'
+echo "PASS: revoked input consent denies provider dispatch on the existing pinned session"
+
 export YAYA_AGENT2_MODE=off
 "${compose[@]}" up -d --wait --wait-timeout 120 --no-build backend
 "${smoke[@]}" off

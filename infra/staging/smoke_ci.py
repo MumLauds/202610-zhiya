@@ -81,6 +81,12 @@ def main(origin, cert, state_file, mode):
         saved = pilot.request(f"/reading-sessions/{session}")["events"][-1]
         assert saved["agentReceipt"] == listen["agentReceipt"]
         control = Reader(origin, cert, CONTROL)
+        try:
+            control.client.open(Request(f"{control.origin}/reading-sessions/{session}"), timeout=8)
+        except HTTPError as exc:
+            assert exc.code == 404
+        else:
+            raise AssertionError("another guardian read the pilot session")
         assert "agentReceipt" not in control.answer(control.start(), 1, "我看到松鼠了。", "legacy")
         local_only = Reader(origin, cert, LOCAL_ONLY)
         local = local_only.answer(local_only.start(), 1, "我让雨点住进帐篷。", "without-input-consent")
@@ -89,7 +95,12 @@ def main(origin, cert, state_file, mode):
         assert sibling["agentReceipt"]["reason"] == "DEPENDENCY_UNAVAILABLE"
         state.update(session=session, revision=listen["revision"])
         path.write_text(json.dumps(state), encoding="utf-8")
-    else:
+    elif mode == "revoked":
+        pinned = pilot.answer(state["session"], state["revision"], "它戴的帽子是什么颜色？", "revoked-input")
+        assert (pinned["agentReceipt"]["version"], pinned["agentReceipt"]["reason"]) == ("2.0", "DEPENDENCY_UNAVAILABLE")
+        state["revision"] = pinned["revision"]
+        path.write_text(json.dumps(state), encoding="utf-8")
+    elif mode == "off":
         pinned = pilot.answer(state["session"], state["revision"], "我把小船改成一座车站。", "off-pinned")
         assert (pinned["agentReceipt"]["version"], pinned["agentReceipt"]["reason"]) == ("2.0", "DEPENDENCY_UNAVAILABLE")
         assert "agentReceipt" not in pilot.answer(pilot.start(), 1, "我看到松鼠了。", "off-legacy")
