@@ -103,7 +103,9 @@ def capture(output, model_key):
         seed()
         ledger.install()
         app = create_app(Settings(), SpeechSettings(), yaya_settings=YayaSettings())
-        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        revision = subprocess.check_output(
+            ["git", "-c", f"safe.directory={ROOT.as_posix()}", "rev-parse", "HEAD"], cwd=ROOT, text=True,
+        ).strip()
         with TestClient(app, base_url="https://testserver") as client, output.open("x", encoding="utf-8") as out:
             def write(data):
                 blob = json.dumps(data, ensure_ascii=False)

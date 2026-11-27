@@ -58,6 +58,15 @@ def test_local_positive_interaction(text, state, action, reply):
     assert result.action == action and result.reply.startswith(reply) and result.followup is None
 
 
+@pytest.mark.parametrize("action", ["LISTEN", "PAUSE", "CLOSE_TOPIC"])
+def test_model_cannot_enter_reader_control_state_without_a_local_request(action):
+    reply = "飞到月亮背面去探险，真是奇妙的旅程！"
+    projected = project(ModelReply(json.dumps({"reply": reply, "next_action": action})), ())
+    assert (projected.reply, projected.action, projected.decision, projected.reason) == (
+        reply, "RESPOND", "REPLY_ONLY", None,
+    )
+
+
 def test_protocol_only_projects_complete_safe_response():
     reply = "小兔把雨伞打开了。"
     draft = {"reply": reply, "next_action": "ASK_FOLLOWUP", "followup_question": "伞是什么颜色？"}
@@ -198,6 +207,10 @@ def test_evidence_is_bound_to_current_book_visited_prefix_and_session():
         ])
         row = {"id": 1, "version_id": 11, "current_page_no": 2, "carried_prefix_page_count": 0, "source_type": "LIBRARY", "profile_id": 4}
         result = reading_context(db, row, "这是谁？", 5, ())
+        question = "那个小翅膀是我说的还是小熊说的？"
+        with_history = reading_context(db, row, question, 5, ())
+        after_return = reading_context(db, row, question, 8, ())
+        other_session = reading_context(db, {**row, "id": 2}, question, 5, ())
     material = json.dumps(result.material, ensure_ascii=False)
     assert "松鼠打开信箱" in material and "松鼠轻轻放好信" in material
     assert "纸风车" not in material and "其他绘本" not in material and "PAUSE" not in material
@@ -205,6 +218,9 @@ def test_evidence_is_bound_to_current_book_visited_prefix_and_session():
     assert result.material["recentAssistantReplies"] == ["叶子添上小翅膀就像一架小小飞船。"]
     assert not any(raw in material for raw in ("逐字回显", "不属于当前会话", "我想给叶子装两扇小翅膀。"))
     assert result.material["currentEvidenceLevel"] == "sentence" and not result.material["currentFacts"]
+    assert with_history.material["earlierChildPhrase"] == "小翅膀"
+    assert "我想给叶子装" not in json.dumps(with_history.material, ensure_ascii=False)
+    assert all("earlierChildPhrase" not in context.material for context in (result, after_return, other_session))
 
 
 def test_local_guidance_uses_current_safe_excerpt_and_fixed_child_question():

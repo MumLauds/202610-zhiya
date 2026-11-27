@@ -28,14 +28,17 @@ PROMPT = (
     "自然承接孩子的想象和观点，不急着纠正。书证中的 CHARACTER_IMAGINATION 是绘本角色的想象，"
     "孩子的表达是本轮自己的想法。两者都不可作为书中已发生的事实。"
     "最近展示的芽芽回应仅供承接对话，绘本事实以当页和已读书证为准。"
+    "earlierChildPhrase 表示孩子先前提过当前提问中的这个说法。遇到来源问题，"
+    "分别回答孩子是否提过和书里是谁的想象，两边都提过时说明两边。"
     "只根据已读原文讲事实。区分人物、动作、对象、属性归属和事件先后。"
     "sentence 是逐字原文，reviewed_structured 是带本页原文出处的人工标注。"
-    "动机只有书中明确交代才能确认，否则给孩子的猜想留出空间。"
+    "动机只有书中明确交代才能确认；猜想有可能时可以先接住，再说明书中未交代。"
     "优先承接孩子现在的意思。孩子在两个说法中确认哪一个时，用一句完整的话直接说清对象和结论。"
     "答清楚就收住，引用时必须说完。没有证据就坦率说明，不另编原因。"
     "关照隐私和安全，不要求孩子透露信息，不提供危险建议。"
     "只输出一个 JSON 对象。reply 是完整简短的中文陈述或感叹。next_action 从 "
     "RESPOND、ASK_FOLLOWUP、LISTEN、PAUSE、CLOSE_TOPIC、HANDOFF 中选。"
+    "系统已处理明确的陪看、暂停和结束请求；开放表达和连续想象用 RESPOND 或 ASK_FOLLOWUP。"
     "仅 ASK_FOLLOWUP 使用 followup_question，问一个简短的新问题，正文不夹带问题。"
 )
 PROMPT_HASH = sha256(PROMPT.encode()).hexdigest()
@@ -276,6 +279,13 @@ def reading_context(db, row, input_text: str, arrival: int, questions: tuple[str
             recent_replies.append(reply)
     if recent_replies:
         material["recentAssistantReplies"] = recent_replies[-2:]
+    # A source question can reuse words already in the current turn, without sending earlier input.
+    source_question = re.match(r"(?:这个|那个|这把|那把)?([^，。！？!?；;\s]{2,16}?)是我(?:刚才)?(?:说|想)的",
+                               projection.text or "")
+    if source_question:
+        phrase = source_question[1]
+        if any(phrase in (item["input_text"] or "") for item in history):
+            material["earlierChildPhrase"] = phrase
     material["questionBudget"] = max(0, 2 - len(questions))
     return Context(input_text, questions, material, history[0]["state"] if history else None,
                    reviewed_library, row["profile_id"], projection)
@@ -357,6 +367,9 @@ def project(upstream: ModelReply, used: tuple[str, ...], *, allow_followup: bool
         or len(used) >= 2 or key_question(followup) in {key_question(q) for q in used}
     ):
         return Outcome(reply, decision="REPLY_ONLY", reason="QUESTION_FORMAT", upstream=upstream)
+    if action in {"LISTEN", "PAUSE", "CLOSE_TOPIC"}:
+        # Explicit controls are handled before dispatch. Model text cannot pause the reader.
+        return Outcome(reply, decision="REPLY_ONLY", upstream=upstream)
     return Outcome(reply, action, followup, upstream=upstream)
 
 
