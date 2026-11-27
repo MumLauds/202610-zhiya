@@ -1,0 +1,535 @@
+{
+  "status": "DRAFT / 待团队评审 / 未实现",
+  "namespace": "draft.device-authorization",
+  "sampleData": "MOCK",
+  "baselineMain": "48844b2ee267bc539ed0580a358470beca13e449",
+  "date": "2026-11-27",
+  "designChange": "DCL-025 / D-HW-03",
+  "approval": "H00 已合并，设备授权待团队批准",
+  "examples": [
+    {
+      "id": "issue",
+      "matrix": "P01",
+      "operation": "issue",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/devices/pairing-sessions",
+        "auth": "WEB_GUARDIAN_CSRF",
+        "json": {
+          "readingSessionId": 9100091,
+          "deviceId": "MOCK[DEVICE_ID]",
+          "deviceCommitment": "MOCK[DEVICE_COMMITMENT]",
+          "clientRequestId": "mock-pair-1"
+        }
+      },
+      "response": {
+        "status": 201,
+        "json": {
+          "data": {
+            "pairingId": "MOCK[PAIRING_ID]",
+            "pairingCode": "MOCK[PAIRING_CODE]",
+            "expiresAt": "2099-01-01T00:02:00Z"
+          },
+          "requestId": "mock-request-issue"
+        },
+        "headers": {
+          "Cache-Control": "private, no-store"
+        }
+      }
+    },
+    {
+      "id": "claim",
+      "matrix": "P01",
+      "operation": "claim",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/devices/pairings/claim",
+        "auth": "PAIRING_PROOF",
+        "json": {
+          "deviceId": "MOCK[DEVICE_ID]",
+          "pairingCode": "MOCK[PAIRING_CODE]",
+          "deviceProof": "MOCK[DEVICE_PROOF]"
+        }
+      },
+      "response": {
+        "status": 201,
+        "json": {
+          "data": {
+            "deviceId": "MOCK[DEVICE_ID]",
+            "accessToken": "MOCK[ACCESS_TOKEN]",
+            "expiresAt": "2099-01-01T00:15:00Z"
+          },
+          "requestId": "mock-request-claim"
+        },
+        "headers": {
+          "Cache-Control": "private, no-store"
+        }
+      }
+    },
+    {
+      "id": "consumed",
+      "matrix": "P02",
+      "operation": "claim",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/devices/pairings/claim",
+        "auth": "PAIRING_PROOF",
+        "json": {
+          "deviceId": "MOCK[DEVICE_ID]",
+          "pairingCode": "MOCK[PAIRING_CODE]",
+          "deviceProof": "MOCK[DEVICE_PROOF]"
+        }
+      },
+      "response": {
+        "status": 404,
+        "json": {
+          "error": {
+            "code": "RESOURCE_NOT_FOUND",
+            "message": "请求的资源不存在",
+            "retryable": false
+          },
+          "requestId": "mock-request-consumed"
+        }
+      }
+    },
+    {
+      "id": "rate-limited",
+      "matrix": "P04",
+      "operation": "claim",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/devices/pairings/claim",
+        "auth": "PAIRING_PROOF",
+        "json": {
+          "deviceId": "MOCK[DEVICE_ID]",
+          "pairingCode": "MOCK[WRONG_CODE]",
+          "deviceProof": "MOCK[DEVICE_PROOF]"
+        }
+      },
+      "response": {
+        "status": 429,
+        "json": {
+          "error": {
+            "code": "RATE_LIMITED",
+            "message": "请稍后再试",
+            "retryable": true
+          },
+          "requestId": "mock-request-rate-limited"
+        },
+        "headers": {
+          "Retry-After": "60"
+        }
+      }
+    },
+    {
+      "id": "assignment",
+      "matrix": "P01",
+      "operation": "assignment",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/devices/me/assignment",
+        "auth": "DEVICE_BEARER"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "deviceId": "MOCK[DEVICE_ID]",
+            "readingSessionId": 9100091,
+            "storybookId": 9100093,
+            "storyVersionId": 9100092,
+            "versionNumber": 1,
+            "mode": "PARENT_CHILD",
+            "status": "IN_PROGRESS",
+            "expiresAt": "2099-01-01T00:15:00Z",
+            "currentPage": 1,
+            "revision": 3,
+            "page": {
+              "text": "MOCK 示例正文",
+              "imageRef": "mock-page-ref",
+              "defaultNextPageNumber": 2
+            },
+            "lastDeviceEvent": null
+          },
+          "requestId": "mock-request-assignment"
+        },
+        "headers": {
+          "Cache-Control": "private, no-store"
+        }
+      }
+    },
+    {
+      "id": "image",
+      "matrix": "M02",
+      "operation": "media",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/devices/me/media/mock-page-ref",
+        "auth": "DEVICE_BEARER"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "image/jpeg",
+          "Cache-Control": "private, no-store"
+        }
+      }
+    },
+    {
+      "id": "advance",
+      "matrix": "C02",
+      "operation": "events",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/devices/me/events",
+        "auth": "DEVICE_BEARER",
+        "json": {
+          "eventType": "PAGE_CHANGED",
+          "pageNumber": 2,
+          "expectedRevision": 3,
+          "clientEventId": "mock-page-1"
+        }
+      },
+      "response": {
+        "status": 201,
+        "json": {
+          "data": {
+            "interactionEventId": 9100094,
+            "revision": 4
+          },
+          "requestId": "mock-request-advance"
+        },
+        "headers": {
+          "Cache-Control": "private, no-store"
+        }
+      }
+    },
+    {
+      "id": "advance-replay",
+      "matrix": "C02",
+      "operation": "events",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/devices/me/events",
+        "auth": "DEVICE_BEARER",
+        "json": {
+          "eventType": "PAGE_CHANGED",
+          "pageNumber": 2,
+          "expectedRevision": 3,
+          "clientEventId": "mock-page-1"
+        }
+      },
+      "response": {
+        "status": 201,
+        "json": {
+          "data": {
+            "interactionEventId": 9100094,
+            "revision": 4
+          },
+          "requestId": "mock-request-advance-replay"
+        },
+        "headers": {
+          "Cache-Control": "private, no-store"
+        }
+      }
+    },
+    {
+      "id": "revision-conflict",
+      "matrix": "C02",
+      "operation": "events",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/devices/me/events",
+        "auth": "DEVICE_BEARER",
+        "json": {
+          "eventType": "PAGE_CHANGED",
+          "pageNumber": 2,
+          "expectedRevision": 3,
+          "clientEventId": "mock-page-2"
+        }
+      },
+      "response": {
+        "status": 409,
+        "json": {
+          "error": {
+            "code": "SESSION_CONFLICT",
+            "message": "会话状态已变化",
+            "retryable": false
+          },
+          "requestId": "mock-request-revision-conflict"
+        }
+      }
+    },
+    {
+      "id": "uncertain",
+      "matrix": "C03",
+      "operation": "events",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/devices/me/events",
+        "auth": "DEVICE_BEARER",
+        "json": {
+          "eventType": "PAGE_CHANGED",
+          "pageNumber": 2,
+          "expectedRevision": 3,
+          "clientEventId": "mock-page-1"
+        }
+      },
+      "response": {
+        "status": 504,
+        "json": {
+          "error": {
+            "code": "REQUEST_OUTCOME_UNKNOWN",
+            "message": "请先读取任务确认",
+            "retryable": false
+          },
+          "requestId": "mock-request-uncertain"
+        }
+      }
+    },
+    {
+      "id": "assignment-recovery",
+      "matrix": "C03",
+      "operation": "assignment",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/devices/me/assignment",
+        "auth": "DEVICE_BEARER"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "deviceId": "MOCK[DEVICE_ID]",
+            "readingSessionId": 9100091,
+            "storybookId": 9100093,
+            "storyVersionId": 9100092,
+            "versionNumber": 1,
+            "mode": "PARENT_CHILD",
+            "status": "IN_PROGRESS",
+            "expiresAt": "2099-01-01T00:15:00Z",
+            "currentPage": 2,
+            "revision": 4,
+            "page": {
+              "text": "MOCK 示例正文",
+              "imageRef": null,
+              "defaultNextPageNumber": null
+            },
+            "lastDeviceEvent": {
+              "clientEventId": "mock-page-1",
+              "interactionEventId": 9100094,
+              "revision": 4
+            }
+          },
+          "requestId": "mock-request-assignment-recovery"
+        },
+        "headers": {
+          "Cache-Control": "private, no-store"
+        }
+      }
+    },
+    {
+      "id": "ask",
+      "matrix": "C03",
+      "operation": "questions",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/devices/me/questions",
+        "auth": "DEVICE_BEARER",
+        "json": {
+          "pageNumber": 2,
+          "expectedRevision": 4,
+          "clientEventId": "mock-question-1",
+          "inputText": "故事里有谁？"
+        }
+      },
+      "response": {
+        "status": 201,
+        "json": {
+          "data": {
+            "interactionEventId": 9100095,
+            "revision": 5,
+            "status": "FALLBACK",
+            "outputText": "MOCK 示例回答"
+          },
+          "requestId": "mock-request-ask"
+        },
+        "headers": {
+          "Cache-Control": "private, no-store"
+        }
+      }
+    },
+    {
+      "id": "asr",
+      "matrix": "R01",
+      "operation": "asr",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/devices/me/voice/transcriptions",
+        "auth": "DEVICE_BEARER",
+        "headers": {
+          "Idempotency-Key": "mock-voice-1"
+        },
+        "multipart": {
+          "file": "MOCK[ADULT_WAV]",
+          "readingSessionId": "9100091",
+          "pageNumber": "2",
+          "revision": "5"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "text": "故事里有谁？",
+            "status": "RECOGNIZED",
+            "reliable": true
+          },
+          "requestId": "mock-request-asr"
+        },
+        "headers": {
+          "Cache-Control": "private, no-store"
+        }
+      }
+    },
+    {
+      "id": "tts",
+      "matrix": "M02",
+      "operation": "tts",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/devices/me/voice/syntheses",
+        "auth": "DEVICE_BEARER",
+        "headers": {
+          "Idempotency-Key": "mock-voice-2"
+        },
+        "json": {
+          "interactionEventId": 9100095
+        }
+      },
+      "response": {
+        "status": 201,
+        "json": {
+          "data": {
+            "audioUrl": "/api/v1/devices/me/media/mock-audio-ref",
+            "expiresAt": "2099-01-01T00:09:00Z"
+          },
+          "requestId": "mock-request-tts"
+        },
+        "headers": {
+          "Cache-Control": "private, no-store"
+        }
+      }
+    },
+    {
+      "id": "tts-text",
+      "matrix": "S03",
+      "operation": "tts",
+      "invalidRequest": true,
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/devices/me/voice/syntheses",
+        "auth": "DEVICE_BEARER",
+        "headers": {
+          "Idempotency-Key": "mock-voice-3"
+        },
+        "json": {
+          "readingSessionId": 9100091,
+          "pageNumber": 2,
+          "revision": 5,
+          "text": "MOCK 无效任意文本"
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "error": {
+            "code": "VALIDATION_ERROR",
+            "message": "请求参数不符合要求",
+            "retryable": false
+          },
+          "requestId": "mock-request-tts-text"
+        }
+      }
+    },
+    {
+      "id": "audio-expired",
+      "matrix": "M02",
+      "operation": "media",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/devices/me/media/mock-audio-ref",
+        "auth": "DEVICE_BEARER"
+      },
+      "response": {
+        "status": 404,
+        "json": {
+          "error": {
+            "code": "RESOURCE_NOT_FOUND",
+            "message": "请求的资源不存在",
+            "retryable": false
+          },
+          "requestId": "mock-request-audio-expired"
+        }
+      }
+    },
+    {
+      "id": "cookie",
+      "matrix": "I03",
+      "operation": "assignment",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/devices/me/assignment",
+        "auth": "WEB_COOKIE_ONLY"
+      },
+      "response": {
+        "status": 401,
+        "json": {
+          "error": {
+            "code": "AUTH_REQUIRED",
+            "message": "授权不可用",
+            "retryable": false
+          },
+          "requestId": "mock-request-cookie"
+        }
+      }
+    },
+    {
+      "id": "revoke",
+      "matrix": "L02",
+      "operation": "revoke",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/v1/devices/pairing-sessions/{pairing_id}",
+        "auth": "WEB_GUARDIAN_CSRF_RECENT_LOGIN",
+        "params": {
+          "pairing_id": "MOCK[PAIRING_ID]"
+        }
+      },
+      "response": {
+        "status": 204
+      }
+    },
+    {
+      "id": "revoked",
+      "matrix": "L02",
+      "operation": "assignment",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/devices/me/assignment",
+        "auth": "DEVICE_BEARER"
+      },
+      "response": {
+        "status": 401,
+        "json": {
+          "error": {
+            "code": "AUTH_REQUIRED",
+            "message": "授权不可用",
+            "retryable": false
+          },
+          "requestId": "mock-request-revoked"
+        }
+      }
+    }
+  ]
+}
