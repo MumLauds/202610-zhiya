@@ -10,7 +10,12 @@
 #include "esp_log.h"
 #include "esp_psram.h"
 #include "esp_system.h"
+#ifdef ZHIYA_H06
+#include "reader_media.h"
+#include "reader_ui.h"
+#else
 #include "h02_test_ui.h"
+#endif
 
 #define EXPECTED_FLASH_BYTES (16U * 1024U * 1024U)
 #define EXPECTED_PSRAM_BYTES (8U * 1024U * 1024U)
@@ -93,7 +98,18 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "Starting H02 display and touch");
+#ifdef ZHIYA_H06
+    const esp_err_t err = board_4_3c_init(reader_ui_create);
+    if (err == ESP_OK && board_4_3c_lock(portMAX_DELAY)) {
+        const esp_err_t media = reader_media_start();
+        board_4_3c_unlock();
+        if (media != ESP_OK) {
+            ESP_LOGW(TAG, "H06 media unavailable: %s", esp_err_to_name(media));
+        }
+    }
+#else
     const esp_err_t err = board_4_3c_init(h02_test_ui_create);
+#endif
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "H02 board initialization failed: %s. Check the bring-up guide.",
                  esp_err_to_name(err));
