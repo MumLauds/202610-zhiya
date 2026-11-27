@@ -38,3 +38,7 @@
 ## PR #97 Gate 1 本轮证据
 
 本轮只为隔离合成验收增加证据。独立百炼测试空间已取得 12 次真实响应。仍需独立云 Staging、B3/C 质量复核、真实语音、账单与正式审批证据，Gate 1、2、3 保持 BLOCKED。详见[Gate 1 验收](gate1-staging-validation.md)。
+
+## PR #97 Gate 2 准备记录
+
+Gate 1 联调暂缓。已完成合成安全回归、历史真实响应复盘和用量逐笔对账。Gate 2 仍需正式门禁证据，受控试运行尚未开放。 [风险、盲评与签字条件](gate2-pilot-readiness.md)

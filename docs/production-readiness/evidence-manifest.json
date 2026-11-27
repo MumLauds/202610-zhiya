@@ -980,6 +980,57 @@
         }
       ],
       "limitations": "Independent cloud deployment, real cloud-to-device speech, supplier billing and wider model quality/approval gates are pending."
+    },
+    "E15": {
+      "stage": "Gate 2 pre-approval review using synthetic data",
+      "status": "BLOCKED",
+      "historical_evidence": [
+        "E13",
+        "E14"
+      ],
+      "sources": [
+        {
+          "path": "backend/app/services/yaya_agent.py",
+          "sha256": "e7aabf3cc5fa6b5ae4d2ff6cce4a3758d5ca9758bd629afd75291ce0c5c690b3",
+          "bytes": 28271
+        },
+        {
+          "path": "backend/tests/test_yaya_agent2.py",
+          "sha256": "a61d8108034614ea02b8957e8f8d09a6670990d576ab3d685f1d3f302fe03e3e",
+          "bytes": 22577
+        },
+        {
+          "path": "backend/tests/test_yaya_fact_consistency.py",
+          "sha256": "d302d78a11f1f95a256e20d8751c669c91965c6f484da641d120cc5302c7f49c",
+          "bytes": 5755
+        },
+        {
+          "path": "backend/tests/test_yaya_budget.py",
+          "sha256": "8db40fe930487dac9934d2b4fc81484d02a294e759889a48f5412cfeb93f86d7",
+          "bytes": 9113
+        },
+        {
+          "path": "backend/tests/test_interactions.py",
+          "sha256": "2759af0e83841ae3fe8846cf66973dfb9508cb2b0e5e072d181635071c3fc441",
+          "bytes": 136004
+        }
+      ],
+      "verification": {
+        "offline_service_fact_and_budget_tests_passed": 77,
+        "agent2_api_tests_passed": 4,
+        "isolated_sqlite_foreign_key_check": "PASS",
+        "blind_form_chrome_autosave_navigation_and_json_export": "PASS",
+        "historical_provider_receipts": 36,
+        "historical_distinct_cases": 12,
+        "historical_synthetic_books": 1,
+        "historical_full_fallbacks": 1,
+        "historical_reply_only_format": 1,
+        "historical_app_usage_lines_reconciled": 36,
+        "candidate_real_provider_receipts": 0,
+        "independent_human_reviews_completed": 0
+      },
+      "restricted_blind_review_html_sha256": "26d937922a72b528227c909ccf9c4d00cef0ffe012bba0c9f9745549a26bb788",
+      "limitations": "Gate 1 deferred. Candidate multi-book live run, human adjudication, supplier invoice, approved staging operational controls and formal signoff remain pending."
     }
   },
   "deliverables": [
@@ -1010,13 +1061,13 @@
     },
     {
       "path": "docs/production-readiness/gap-analysis.md",
-      "sha256": "e6cb10398d200c6fd8fe2d4b38476616de182cd5c733e70db39b25b06944eef9",
-      "bytes": 8660
+      "sha256": "180fdc118214487bd5077af1d8a6c958ca9585c0f71ff8cb3cc312c17ddd29b9",
+      "bytes": 8868
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
-      "sha256": "509a6907372d2b423c8d9c9063fadab2ae5d4d7a2f66109b057019ef4a19e2b9",
-      "bytes": 3740
+      "sha256": "961a0f7bff88ed5dfd57257c0a037f135ccd49b52b67d84ed5da066f22eb68b3",
+      "bytes": 3996
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
@@ -1087,6 +1138,11 @@
       "path": "docs/production-readiness/gate1-local-evidence.json",
       "sha256": "a13788a62849b551fb666cd3d09521a65315243ab591a5a92f92d34f941cf9ac",
       "bytes": 814
+    },
+    {
+      "path": "docs/production-readiness/gate2-pilot-readiness.md",
+      "sha256": "bac2ac0b7f9cdc59147e374d972e0026e5fc0b05d8a569e0ecd244065ac90858",
+      "bytes": 5241
     }
   ]
 }
