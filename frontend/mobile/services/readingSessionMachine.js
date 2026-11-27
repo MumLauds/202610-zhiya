@@ -213,7 +213,8 @@ export class ReadingSessionMachine {
       apply: (data) => {
         this.session = { ...this.session, revision: Math.max(this.session.revision, data.revision) }
         if (this.session.mode !== 'PARENT_CHILD' || !data.interactionEventId) return
-        const answerEvent = { ...data, eventType: 'ANSWER', pageNumber: currentPage, inputText: text }
+        const inputText = data.agentReceipt?.reason === 'SAFETY_BLOCK' ? undefined : text
+        const answerEvent = { ...data, eventType: 'ANSWER', pageNumber: currentPage, inputText }
         const index = this.events.findIndex(event => event.interactionEventId >= data.interactionEventId)
         if (index < 0) this.events = [...this.events, answerEvent]
         else if (this.events[index].interactionEventId === data.interactionEventId) {

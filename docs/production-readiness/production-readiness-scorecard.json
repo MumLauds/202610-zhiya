@@ -16,7 +16,7 @@
     "4": "有获批 Pilot 或生产运行区间证据"
   },
   "formula": "sum(weight_percent * score / 4)",
-  "weighted_score_out_of_100": 42.5,
+  "weighted_score_out_of_100": 50.0,
   "score_is_release_approval": false,
   "dimensions": [
     {
@@ -28,7 +28,8 @@
       "evidence": [
         "E02",
         "E03",
-        "E06"
+        "E06",
+        "E10"
       ],
       "gaps": [
         "R01",
@@ -50,7 +51,8 @@
       "evidence": [
         "E03",
         "E04",
-        "E05"
+        "E05",
+        "E10"
       ],
       "gaps": [
         "R07"
@@ -70,7 +72,8 @@
       "evidence": [
         "E01",
         "E06",
-        "E08"
+        "E08",
+        "E10"
       ],
       "gaps": [
         "R01",
@@ -87,12 +90,13 @@
     {
       "dimension": "数据隐私与儿童安全",
       "weight_percent": 15,
-      "score": 1,
+      "score": 2,
       "status": "BLOCKED",
       "risk": "P0",
       "evidence": [
         "E01",
-        "E09"
+        "E09",
+        "E10"
       ],
       "gaps": [
         "R02",
@@ -116,7 +120,8 @@
       "evidence": [
         "E01",
         "E06",
-        "E08"
+        "E08",
+        "E10"
       ],
       "gaps": [
         "R06"
@@ -131,12 +136,13 @@
     {
       "dimension": "部署与监控",
       "weight_percent": 10,
-      "score": 1,
+      "score": 2,
       "status": "BLOCKED",
       "risk": "P1",
       "evidence": [
         "E01",
-        "E07"
+        "E07",
+        "E10"
       ],
       "gaps": [
         "R05",
@@ -156,12 +162,13 @@
     {
       "dimension": "成本管理",
       "weight_percent": 5,
-      "score": 1,
+      "score": 2,
       "status": "PARTIAL",
       "risk": "P1",
       "evidence": [
         "E03",
-        "E04"
+        "E04",
+        "E10"
       ],
       "gaps": [
         "R09"
@@ -223,5 +230,7 @@
     "R02",
     "R03",
     "R04"
-  ]
+  ],
+  "historical_weighted_score_out_of_100": 42.5,
+  "assessment_scope": "统一集成 PR 工程复评，仍待人工及独立 Staging 审批"
 }

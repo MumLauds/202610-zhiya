@@ -21,3 +21,12 @@
 - 5 秒为待签浏览器目标，计时从用户确认提交到回执可见。建议 P95 不超过 5 秒，单列真实回复和兜底分布。API P95 不能替代浏览器。建议正常测试中的回退率 ≤5%，合法写入成功/可恢复确认 ≥99%。ASR 录制时长与 TTS 首音另计。
 - Gate 2 的独立语义样本建议 ≥60 条有效回执，覆盖多作品、失配/FOLLOWUP 正反例及儿童安全。两个评审分别评分。关键事实错配、未读泄露与危险建议为零。非关键事实准确率建议 ≥95%，自然度平均建议 ≥4/5。所有阈值由产品、QA 和儿童安全负责人签字。
 - Gate 3 按已批准 Pilot 时间窗及容量再跑全矩阵。若任何 P0、越权、安全、数据隔离、计费透支或不可回滚失败出现，停止扩量并执行回滚。
+
+## 统一集成的可复跑入口
+
+- 定向后端：`python -m pytest -q -c backend/pytest.ini backend/tests/test_yaya_agent2.py backend/tests/test_interactions.py`。
+- 本地真实 HTTP：在环回地址启动 Uvicorn 的 `test_yaya2_loopback_http_session_and_replay`，使用合成账号，检查回执、原键重放及私有缓存头。
+- 前端：`npm run check`，包含桌面与移动，另外使用 `npm run build:public` 检查公开制品。
+- 独立 Staging：`docker compose --env-file infra/staging/.env.example -f infra/staging/compose.yaml config --quiet` 校验模板。经审查批准后记录真实北京 Flash、浏览器和移动设备、语音播放、弱网、备份恢复及独立延时指标。
+
+本地 HTTP 使用真实 TCP 与业务应用。供应商异常分类由可控传输测试，真实百炼 Stage 标记 BLOCKED。 [测试代码](../../backend/tests/test_yaya_agent2.py)

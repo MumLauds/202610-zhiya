@@ -7,7 +7,7 @@ import { synthesize, transcribe } from '../api/voice'
 import { describeApiError } from '../api/client'
 import { readingProfileKey, recordPlanActivity } from '../data/readingPlan'
 import { canContinueStory } from '../data/readingProgress'
-import { latestReadingQuestion } from '../data/readingQuestions'
+import { describeYayaReceipt, holdsYayaPrompt, latestReadingQuestion } from '../data/readingQuestions'
 
 const props = defineProps({
   book: { type: Object, default: null },
@@ -154,9 +154,11 @@ const guidanceQuestion = computed(() => pageEvents.value.findLast((event) => (
 const questionSkipped = computed(() => latestGuidanceEvent.value?.feedback === 'SKIPPED')
 const questionBlocked = computed(() => latestGuidanceEvent.value?.strategyType === 'SAFETY_BLOCK')
 const savedAnswer = computed(() => pageEvents.value.findLast(event => event.eventType === 'ANSWER'))
+const answerStatus = computed(() => describeYayaReceipt(savedAnswer.value?.agentReceipt))
 const showParentFollowup = computed(() => props.authenticated && !props.session?.preview && props.session?.mode !== 'CHILD_SOLO')
 const currentQuestion = computed(() => showParentFollowup.value
   ? latestReadingQuestion(pageEvents.value, guidanceQuestion.value) : guidanceQuestion.value)
+const quietAnswer = computed(() => holdsYayaPrompt(savedAnswer.value, currentQuestion.value))
 const previousAnswer = computed(() => showParentFollowup.value && !questionSkipped.value && !questionBlocked.value
   && currentQuestion.value?.interactionEventId >= savedAnswer.value?.interactionEventId)
 const answerFollowup = computed(() => {
@@ -187,7 +189,7 @@ const narrationKey = computed(() => props.authenticated && !props.loading && !pr
   && !props.session?.preview && props.session?.status === 'IN_PROGRESS'
   && currentPage.value?.pageNumber === props.session.currentPage
   ? `${props.session.readingSessionId}:${currentPage.value.pageNumber}` : '')
-const canSubmitFeedback = computed(() => mediaAllowed.value && Boolean(currentQuestion.value) && !questionSkipped.value && !questionBlocked.value)
+const canSubmitFeedback = computed(() => mediaAllowed.value && Boolean(currentQuestion.value) && !quietAnswer.value && !questionSkipped.value && !questionBlocked.value)
 const canSkipQuestion = computed(() => mediaAllowed.value && !questionSkipped.value)
 const canAnswer = computed(() => mediaAllowed.value && !questionSkipped.value && !questionBlocked.value)
 const answerDisabled = computed(() => !canAnswer.value || guidanceLoading.value || voiceOpen.value)
@@ -198,6 +200,7 @@ const narrationSelected = computed(() => isPageNarration.value && ['loading', 'p
 const parentTip = computed(() => {
   if (props.session?.preview) return currentPage.value?.answer
   if (questionBlocked.value) return '先陪孩子聊聊画面中看得见的事物，再决定是否继续。'
+  if (quietAnswer.value) return '给孩子一点时间，可以继续看这一页。'
   if (savedAnswer.value) return '孩子回答后，可以选“已理解”或“还没懂”继续聊。也可以请孩子指一指画面中支持他想法的细节。'
   if (currentQuestion.value) return `围绕第 ${currentPage.value.pageNumber} 页的小提问，给孩子一点观察和思考的时间。可以请孩子先指一指线索，再用自己的话说出来。`
   return '可以请孩子挑一个画面中最感兴趣的细节，说说自己看到了什么。'
@@ -875,9 +878,9 @@ onBeforeUnmount(() => { clearPendingAnswer(); clearPreparedAudio(); stopNarratio
           <p v-if="session.preview">{{ currentPage?.question || '看看这一页，你发现了什么？' }}</p>
           <p v-else-if="questionSkipped">这一页的提问已跳过，可以继续翻页。</p>
           <p v-else-if="questionBlocked">{{ latestGuidanceEvent.outputText || '这个问题先请家长和孩子一起聊一聊。' }}</p>
-          <p v-else-if="currentQuestion && !answerFollowup">{{ currentQuestion.outputText }}</p>
+          <p v-else-if="!quietAnswer && currentQuestion && !answerFollowup">{{ currentQuestion.outputText }}</p>
           <p v-else-if="guidanceLoading">正在根据这一页生成问题…</p>
-          <p v-else-if="!answerFollowup">看看这一页，你发现了什么？</p>
+          <p v-else-if="!quietAnswer && !answerFollowup">看看这一页，你发现了什么？</p>
           <p v-if="guidanceError" class="question-error" role="alert">{{ guidanceError }}</p>
           <p v-if="answerText" class="question-saved"><strong>{{ previousAnswer ? '上一轮回答：' : '孩子的回答：' }}</strong>{{ answerText }}</p>
           <p v-else-if="savedAnswer" class="question-saved" role="status">本页回答已保存。</p>
@@ -885,7 +888,8 @@ onBeforeUnmount(() => { clearPendingAnswer(); clearPreparedAudio(); stopNarratio
             <p v-if="answerPending" class="question-reply">芽芽正在想怎么回应…</p>
             <p v-else-if="authenticated && savedAnswer" class="question-reply"><strong>芽芽：</strong>{{ answerReply || '谢谢你分享！' }}</p>
             <p v-else-if="session.preview && previewAnswer" class="question-reply"><strong>芽芽：</strong>{{ currentPage?.answer || '我们一起看看图里发生了什么吧。' }}</p>
-            <p v-if="answerFollowup" class="question-followup"><strong>芽芽追问：</strong>{{ answerFollowup }}</p>
+            <p v-if="!answerPending && answerStatus" class="question-saved">{{ answerStatus }}</p>
+            <p v-if="!quietAnswer && answerFollowup" class="question-followup"><strong>芽芽追问：</strong>{{ answerFollowup }}</p>
           </div>
           <button v-if="guidanceError && !currentQuestion && !questionSkipped && !questionBlocked && !session.preview" class="text-button question-retry" type="button" :disabled="interactionBusy || guidanceLoading || syncRequired" @click="retryQuestion">重新生成本页问题</button>
           <div class="question-actions">
@@ -921,6 +925,7 @@ onBeforeUnmount(() => { clearPendingAnswer(); clearPreparedAudio(); stopNarratio
           </div>
           <div v-if="storyAnswer" class="question-saved" role="status">
             <p><strong>芽芽的回答：</strong>{{ storyAnswer.outputText }}</p>
+            <p v-if="describeYayaReceipt(storyAnswer.agentReceipt)" role="status">{{ describeYayaReceipt(storyAnswer.agentReceipt) }}</p>
             <button v-if="mediaAllowed && storyAnswer.revision === session.revision && storyAnswer.strategyType !== 'SAFETY_BLOCK'" class="secondary" type="button" :disabled="!canNarratePage" @click="playNarration(storyAnswer.interactionEventId)">播放故事回答</button>
           </div>
         </section>

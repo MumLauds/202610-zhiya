@@ -29,6 +29,7 @@ jobs:
           npm ci
           npm run check
       - run: |
+          docker compose --env-file infra/staging/.env.example -f infra/staging/compose.yaml config --quiet
           bash -n infra/hk/deploy.sh
           python infra/hk/test_release.py
           bash infra/hk/test_cutover.sh

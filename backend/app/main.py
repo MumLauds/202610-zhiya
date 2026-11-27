@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from time import perf_counter
 from uuid import uuid4
 
@@ -23,6 +23,7 @@ from app.api.v1.reading_sessions import router as reading_sessions_router
 from app.api.v1.guidance import router as guidance_router
 from app.adapters.model import ModelAdapter
 from app.config import Settings
+from app.db import yaya_agent as yaya_db
 from app.errors import ServiceError
 from app.model_gateway import ModelGateway
 from app.speech_config import SpeechSettings
@@ -31,14 +32,17 @@ from app.services.voice_access import VoiceAuthenticator
 from app.services.voice_auth import GuardianVoiceAuthenticator
 from app.services.voice_media import VoiceMediaStore
 from app.services.reading_reports import recover_pending_reports
+from app.services.yaya_agent import YayaAgent
+from app.services.yaya_agent_config import YayaSettings
 
 logger = logging.getLogger("zhiya.http")
 
 
 def create_app(settings: Settings | None = None, speech_settings: SpeechSettings | None = None,
-               *, voice_auth: VoiceAuthenticator | None = None) -> FastAPI:
+               *, voice_auth: VoiceAuthenticator | None = None, yaya_settings: YayaSettings | None = None) -> FastAPI:
     config = settings if settings is not None else Settings.from_env()
     speech_config = speech_settings if speech_settings is not None else SpeechSettings.from_env()
+    yaya_config = yaya_settings if yaya_settings is not None else YayaSettings.from_env()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     # HTTPX info/debug logs include provider URLs; keep this bootstrap's logs metadata-only.
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -48,11 +52,25 @@ def create_app(settings: Settings | None = None, speech_settings: SpeechSettings
     async def lifespan(app: FastAPI):
         # Single-worker first release: settle leftover PENDING reports before serving requests.
         recover_pending_reports()
-        async with ModelGateway(config) as gateway, VoiceGateway(speech_config) as voice_gateway:
+        async with ModelGateway(config) as gateway, VoiceGateway(speech_config) as voice_gateway, AsyncExitStack() as stack:
             app.state.model_settings = config
             app.state.model_gateway = gateway
             app.state.model_adapter = ModelAdapter(gateway)
             app.state.voice_gateway = voice_gateway
+            if yaya_config.mode != "off":
+                yaya_db.install()
+                yaya_gateway = await stack.enter_async_context(ModelGateway(yaya_config.model))
+                app.state.yaya_agent = YayaAgent(yaya_config, yaya_gateway)
+
+            async def expire_usage():
+                while True:
+                    await asyncio.sleep(3600)
+                    try:
+                        await asyncio.to_thread(yaya_db.expire, yaya_config)
+                    except Exception as exc:
+                        logger.warning("yaya ledger cleanup failed error=%s", type(exc).__name__)
+
+            usage_task = asyncio.create_task(expire_usage())
             async def expire_audio():
                 while True:
                     await asyncio.sleep(30)
@@ -62,11 +80,15 @@ def create_app(settings: Settings | None = None, speech_settings: SpeechSettings
                 yield
             finally:
                 expiry_task.cancel()
+                usage_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await expiry_task
+                with suppress(asyncio.CancelledError):
+                    await usage_task
                 app.state.voice_media.clear()
 
     app = FastAPI(title="知芽后端", version="0.1.0", lifespan=lifespan)
+    app.state.yaya_agent = YayaAgent(yaya_config)
     app.state.voice_auth = voice_auth if voice_auth is not None else GuardianVoiceAuthenticator()
     app.state.voice_media = VoiceMediaStore()
     app.state.speech_settings = speech_config

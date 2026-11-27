@@ -2022,3 +2022,107 @@ def test_guidance_retries_only_persistence(started_session, guidance_model, monk
     with closing(sqlite3.connect(path)) as db:
         assert db.execute("SELECT COUNT(*) FROM interaction_events WHERE request_key='save-once'").fetchone() == (1,)
     guidance_model.assert_awaited_once()
+
+
+def test_yaya2_migration_pins_existing_and_new_sessions(started_session, env, monkeypatch):
+    from app.db import yaya_agent as yaya_db
+    from app.services.yaya_agent import YayaAgent
+    from app.services.yaya_agent_config import MODEL, YayaSettings
+
+    client, headers, path, legacy = started_session
+    _, other, _ = env
+    yaya_db.install()
+    yaya_db.install()
+    config = Settings(model_api_url="https://ws-test.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+                      model_api_key="synthetic-key", model_name=MODEL)
+    monkeypatch.setitem(client.app.state._state, "yaya_agent", YayaAgent(YayaSettings(
+        mode="default", model=config, ledger_secret="x" * 32)))
+    profile = client.post("/api/v1/child-profiles", headers=headers, json={
+        "ageBand": "AGE_3_4", "preferredMinutes": 10,
+    }).json()["data"]
+    sid = client.post("/api/v1/reading-sessions", headers=headers, json={
+        "childProfileId": profile["childProfileId"], "storyVersionId": 11, "mode": "PARENT_CHILD",
+    }).json()["data"]["readingSessionId"]
+    url = f"/api/v1/reading-sessions/{sid}"
+    assert client.post(url + "/events", headers=headers, json={
+        "eventType": "STARTED", "pageNumber": 1, "expectedRevision": 0, "clientEventId": "start",
+    }).status_code == 201
+    with closing(sqlite3.connect(path)) as db:
+        assert not yaya_db.pinned(db, legacy)
+        assert yaya_db.pinned(db, sid)
+        assert not db.execute("PRAGMA foreign_key_check").fetchall()
+
+    payload = {"eventType": "ANSWER", "pageNumber": 1, "expectedRevision": 1,
+               "clientEventId": "listen", "inputText": "你先别问，让我看看它怎么转。"}
+    response = client.post(url + "/events", headers=headers, json=payload)
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["replyText"] == "好，我陪你看。"
+    assert data["agentReceipt"] == {
+        "version": "2.0", "action": "LISTEN", "state": "LISTEN", "decision": "LOCAL", "reason": None,
+    }
+    assert "followupQuestion" not in data
+    assert client.post(url + "/events", headers=headers, json=payload).json()["data"] == data
+    assert client.get(url).json()["data"]["events"][-1]["agentReceipt"] == data["agentReceipt"]
+    assert other.get(url).status_code == 404
+
+    monkeypatch.setitem(client.app.state._state, "yaya_agent", YayaAgent(YayaSettings()))
+    response = client.post(url + "/events", headers=headers, json={
+        **payload, "expectedRevision": 2, "clientEventId": "after-off", "inputText": "这是谁？",
+    })
+    assert response.status_code == 201, response.text
+    assert response.json()["data"]["agentReceipt"]["reason"] == "DEPENDENCY_UNAVAILABLE"
+    legacy_response = client.post(f"/api/v1/reading-sessions/{legacy}/events", headers=headers, json=payload)
+    assert legacy_response.status_code == 201, legacy_response.text
+    assert "agentReceipt" not in legacy_response.json()["data"]
+    new_legacy = client.post("/api/v1/reading-sessions", headers=headers, json={
+        "childProfileId": profile["childProfileId"], "storyVersionId": 21, "mode": "PARENT_CHILD",
+    }).json()["data"]["readingSessionId"]
+    with closing(sqlite3.connect(path)) as db:
+        assert not yaya_db.pinned(db, new_legacy)
+
+
+def test_yaya2_loopback_http_session_and_replay(started_session, monkeypatch):
+    import socket
+    from threading import Thread
+
+    import uvicorn
+
+    from app.db import yaya_agent as yaya_db
+    from app.services.yaya_agent import YayaAgent
+    from app.services.yaya_agent_config import YayaSettings
+
+    client, headers, path, sid = started_session
+    yaya_db.install()
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("INSERT INTO yaya_agent_sessions VALUES (?, '2.0')", (sid,))
+    monkeypatch.setitem(client.app.state._state, "yaya_agent", YayaAgent(YayaSettings()))
+    cookie = "; ".join(f"{item.name}={item.value}" for item in client.cookies.jar)
+    server = uvicorn.Server(uvicorn.Config(client.app, lifespan="off", log_level="warning", access_log=False))
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+        worker = Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
+        worker.start()
+        try:
+            ready_by = time.monotonic() + 5
+            while not server.started and worker.is_alive() and time.monotonic() < ready_by:
+                time.sleep(0.02)
+            assert server.started
+            with httpx.Client(base_url=f"http://127.0.0.1:{port}", trust_env=False,
+                              headers={**headers, "Cookie": cookie}, timeout=3) as live:
+                url = f"/api/v1/reading-sessions/{sid}"
+                assert live.get("/api/v1/health").status_code == 200
+                payload = {"eventType": "ANSWER", "pageNumber": 1, "expectedRevision": 1,
+                           "clientEventId": "loopback", "inputText": "我觉得这片叶子是一床小被子。"}
+                first = live.post(url + "/events", json=payload)
+                replay = live.post(url + "/events", json=payload)
+                assert (first.status_code, replay.status_code) == (201, 200), first.text
+                assert first.json()["data"] == replay.json()["data"]
+                readback = live.get(url)
+                assert readback.headers["cache-control"] == "private, no-store"
+                assert readback.json()["data"]["events"][-1]["replyText"] == "这个想法真有意思呀。"
+        finally:
+            server.should_exit = True
+            worker.join(timeout=5)
+        assert not worker.is_alive()

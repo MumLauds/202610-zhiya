@@ -1,0 +1,20 @@
+https://localhost {
+	tls internal
+
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			header_down Cache-Control "private, no-store"
+		}
+	}
+
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	handle {
+		root * /srv/www
+		header Cache-Control "private, no-store"
+		try_files {path} /index.html
+		file_server
+	}
+}

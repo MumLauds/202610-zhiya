@@ -1,0 +1,62 @@
+name: zhiya-agent-stg
+
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile
+    environment:
+      ZHIYA_DB_PATH: /var/lib/zhiya/staging.sqlite3
+      YAYA_AGENT2_STAGE: staging
+      YAYA_AGENT2_MODE: ${YAYA_AGENT2_MODE:-off}
+      YAYA_AGENT2_ALLOWLIST: ${YAYA_AGENT2_ALLOWLIST:-}
+      YAYA_AGENT2_API_URL: ${YAYA_AGENT2_API_URL:-}
+      YAYA_AGENT2_API_KEY: ${YAYA_AGENT2_API_KEY:-}
+      YAYA_AGENT2_LEDGER_SECRET: ${YAYA_AGENT2_LEDGER_SECRET:-}
+      YAYA_AGENT2_DAILY_MICROS: ${YAYA_AGENT2_DAILY_MICROS:-1000000}
+      YAYA_AGENT2_GUARDIAN_CALLS: ${YAYA_AGENT2_GUARDIAN_CALLS:-20}
+      YAYA_AGENT2_SESSION_CALLS: ${YAYA_AGENT2_SESSION_CALLS:-10}
+      YAYA_AGENT2_CONCURRENCY: ${YAYA_AGENT2_CONCURRENCY:-2}
+      YAYA_AGENT2_LEDGER_RETENTION_DAYS: ${YAYA_AGENT2_LEDGER_RETENTION_DAYS:-2}
+    volumes:
+      - staging-sqlite:/var/lib/zhiya
+      - ./seed.py:/app/staging-seed.py:ro
+    command:
+      - sh
+      - -ec
+      - |
+        python /app/database/init_db.py
+        python /app/staging-seed.py
+        exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --no-access-log
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    build:
+      context: ../../frontend
+      dockerfile: ../infra/hk/Web.Dockerfile
+    ports:
+      - "127.0.0.1:${STAGING_HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - staging-tls:/data
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  staging-sqlite:
+  staging-tls:

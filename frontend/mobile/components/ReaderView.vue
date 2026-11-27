@@ -8,7 +8,7 @@ import VoiceAnswerDialog from './VoiceAnswerDialog.vue'
 import { useAudioController } from '../composables/useAudioController'
 import { useReadingSession } from '../composables/useReadingSession'
 import { approvedBranchesAt } from '../../src/data/readingBranches'
-import { latestReadingQuestion } from '../../src/data/readingQuestions'
+import { describeYayaReceipt, holdsYayaPrompt, latestReadingQuestion } from '../../src/data/readingQuestions'
 
 const props = defineProps({
   book: { type: Object, required: true },
@@ -98,6 +98,8 @@ const displayedQuestion = computed(() => {
   // Blank settled feedback is not a new question. Without an older prompt, it still prevents automatic resubmission.
   return latestReadingQuestion(currentPageEvents.value, guidance) ?? settled
 })
+const answerStatus = computed(() => describeYayaReceipt(savedAnswer.value?.agentReceipt))
+const quietAnswer = computed(() => holdsYayaPrompt(savedAnswer.value, displayedQuestion.value))
 const previousAnswer = computed(() => questionReady.value
   && displayedQuestion.value?.interactionEventId >= savedAnswer.value?.interactionEventId)
 const answerFollowup = computed(() => displayedQuestion.value?.eventType === 'ANSWER' && previousAnswer.value)
@@ -378,7 +380,7 @@ async function openAnswerDialog(question = false) {
     const result = await submitFeedback('INITIAL')
     if (!result) return
   }
-  if (question || questionReady.value) {
+  if (question || questionReady.value || quietAnswer.value) {
     cancelPageAudioRequest()
     pagePlayer.value?.stop()
     stopAnswerAudio()
@@ -387,7 +389,7 @@ async function openAnswerDialog(question = false) {
 }
 
 async function handleAnswerConfirmed({ text }) {
-  if (isChildMode.value || (!asking.value && !questionReady.value)) return
+  if (isChildMode.value || (!asking.value && !questionReady.value && !quietAnswer.value)) return
   await submitAnswerText(text, asking.value)
 }
 
@@ -633,6 +635,7 @@ function exitReading() {
           :pending="pending || (isParentReading && session.state.syncRequired)"
           :demo="mode === 'demo'"
           :question-ready="questionReady"
+          :quiet="quietAnswer"
           :child-mode="isChildMode"
           :child-answer-options="childAnswerOptions"
           :can-skip="canSkip"
@@ -654,6 +657,7 @@ function exitReading() {
             <p v-if="savedReply" class="answer-confirmation guardian-answer-reply">
               <strong>芽芽：</strong>{{ savedReply }}
             </p>
+            <p v-if="answerStatus" class="answer-confirmation" role="status">{{ answerStatus }}</p>
           </div>
         </InteractionCard>
         <section v-if="mode === 'live' && !reviewing" class="interaction-card">
@@ -663,6 +667,7 @@ function exitReading() {
           </template>
           <button v-else class="button button-soft" type="button" :disabled="pending || session.state.syncRequired" @click="openAnswerDialog(true)">提出本页问题</button>
           <p v-if="storyAnswer">{{ storyAnswer.outputText }}</p>
+          <p v-if="describeYayaReceipt(storyAnswer?.agentReceipt)" role="status">{{ describeYayaReceipt(storyAnswer.agentReceipt) }}</p>
           <button v-if="storyAnswer?.interactionEventId && storyAnswer.strategyType !== 'SAFETY_BLOCK'" class="button button-ghost" type="button" :disabled="answerAudioLoading" @click="playAnswerAudio(storyAnswer)">{{ answerAudioLoading ? '回答音频准备中…' : '播放芽芽的回答' }}</button>
         </section>
 

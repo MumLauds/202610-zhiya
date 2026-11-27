@@ -30,3 +30,7 @@
 | 小结 | 基于实际已读和已保存事件，后台任务及启动恢复，有本地摘要 | 保持原用途，新增 Agent 交互怎样供小结引用待合同签字 |
 
 主分支定位 [FastAPI 装配](../../backend/app/main.py) · [阅读路由](../../backend/app/api/v1/reading_sessions.py) · [引导和提问](../../backend/app/api/v1/guidance.py) · [阅读服务](../../backend/app/services/reading_agent.py) · [小结服务](../../backend/app/services/reading_reports.py) · [数据库结构](../../database/schema.sql)。
+
+## 统一集成的候选实现
+
+API-011 和续读创建以同一事务保存 2.0 会话绑定。API-015、016、017 按会话归属分流。未绑定历史归属旧版。API-013 读取既有事件并为家长返回可选回执。北京 `qwen3.8-flash` 使用单独地址、密钥和预算。此前检查到的线上旧模型是 `qwen3.6-plus`。线上巡检证据为文首时点。 [服务](../../backend/app/services/yaya_agent.py) · [配置](../../backend/app/services/yaya_agent_config.py)

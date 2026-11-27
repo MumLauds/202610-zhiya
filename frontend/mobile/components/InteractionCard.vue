@@ -5,6 +5,7 @@ import { G10_STATUS_LABELS, STRATEGY_LABELS } from '../api/g10'
 const props = defineProps({
   result: { type: Object, default: null },
   followup: Boolean,
+  quiet: Boolean,
   revision: { type: Number, required: true },
   pending: { type: Boolean, default: false },
   demo: { type: Boolean, default: false },
@@ -32,7 +33,7 @@ const hasOutput = computed(() => Boolean(props.result?.outputText))
       <span v-if="demo" class="mode-tag">演示结果</span>
     </div>
 
-    <div v-if="result && !followup" class="agent-answer">
+    <div v-if="!quiet && result && !followup" class="agent-answer">
       <div class="answer-chips">
         <span v-if="statusLabel">{{ statusLabel }}</span>
         <span v-if="strategyLabel">{{ strategyLabel }}</span>
@@ -56,17 +57,17 @@ const hasOutput = computed(() => Boolean(props.result?.outputText))
       </button>
       <p v-else class="muted source-note">当前没有可播放的回答音频。</p>
     </div>
-    <p v-else-if="!followup" class="muted">
+    <p v-else-if="!quiet && !followup" class="muted">
       尚未获取本页共读问题。生成后会展示 G10 的实际返回结果，不使用固定互动次数或能力评价。
     </p>
 
     <slot />
-    <div v-if="result && followup" class="agent-answer">
+    <div v-if="!quiet && result && followup" class="agent-answer">
       <p class="agent-text"><strong>芽芽追问：</strong>{{ result.outputText }}</p>
     </div>
 
     <div class="interaction-actions">
-      <button v-if="!questionReady" class="button button-primary" type="button" :disabled="pending" @click="emit('generate')">
+      <button v-if="!quiet && !questionReady" class="button button-primary" type="button" :disabled="pending" @click="emit('generate')">
         {{ pending ? '生成中…' : '生成本页共读问题' }}
       </button>
       <template v-if="childMode">
@@ -76,13 +77,13 @@ const hasOutput = computed(() => Boolean(props.result?.outputText))
           :disabled="pending" @click="emit('reload-answer-options')">重新获取答题选项</button>
         <p v-else-if="!pending && !childAnswerOptions?.length" class="muted">本页暂无可提交的答题选项</p>
       </template>
-      <button v-else class="button button-soft" type="button" :disabled="pending || (Boolean(result) && !questionReady)" @click="emit('answer')">
+      <button v-else class="button button-soft" type="button" :disabled="pending || (!quiet && Boolean(result) && !questionReady)" @click="emit('answer')">
         孩子回答
       </button>
-      <button class="button button-soft" type="button" :disabled="pending || !questionReady" @click="emit('not-understood')">
+      <button v-if="!quiet" class="button button-soft" type="button" :disabled="pending || !questionReady" @click="emit('not-understood')">
         没听懂
       </button>
-      <button class="button button-soft" type="button" :disabled="pending || !questionReady" @click="emit('understood')">已听懂</button>
+      <button v-if="!quiet" class="button button-soft" type="button" :disabled="pending || !questionReady" @click="emit('understood')">已听懂</button>
       <button class="button button-ghost" type="button" :disabled="!canSkip" @click="emit('skip')">
         跳过
       </button>

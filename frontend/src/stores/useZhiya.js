@@ -1843,8 +1843,9 @@ function appendReadingInteraction(operation, result) {
       interactionEventId: result.interactionEventId,
       eventType: 'ANSWER',
       pageNumber: operation.payload.pageNumber,
-      inputText: operation.payload.inputText,
+      inputText: result.agentReceipt?.reason === 'SAFETY_BLOCK' ? undefined : operation.payload.inputText,
       replyText: result.replyText,
+      ...(result.agentReceipt ? { agentReceipt: result.agentReceipt } : {}),
       ...(result.followupQuestion ? { followupQuestion: result.followupQuestion } : {}),
     }
     session.revision = Math.max(session.revision, result.revision)

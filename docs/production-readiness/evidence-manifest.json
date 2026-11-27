@@ -710,78 +710,106 @@
         "https://terms.alicdn.com/legal-agreement/terms/common_platform_service/20230728213935489/20230728213935489.html",
         "https://help.aliyun.com/zh/model-studio/regions"
       ]
+    },
+    "E10": {
+      "stage": "repository integration and local synthetic validation",
+      "sources": [
+        {
+          "path": "backend/tests/test_yaya_agent2.py",
+          "sha256": "f0c7aa82b0658375d471a548fd25224142a1a296d2f83ba62805c87e2c8db2f4"
+        },
+        {
+          "path": "backend/tests/test_interactions.py",
+          "sha256": "e51c56d897834371edc141760e3bb98e920bec6295f0304af43c98c1010154ca"
+        },
+        {
+          "path": "frontend/src/data/readingQuestions.js",
+          "sha256": "d03232f873b5472d128a333cbd1b42754ca0d41efb701f475cdef140604a8ed4"
+        },
+        {
+          "path": "infra/staging/compose.yaml",
+          "sha256": "5885151d7f942803531b2a8e5b5efae83e767ddcba8d364104dd48c2fc0f1bec"
+        }
+      ],
+      "status": "PARTIAL",
+      "limitations": "No authorized Beijing Staging, pilot, or production release evidence.",
+      "verified": [
+        "20 targeted backend tests, including actual loopback Uvicorn HTTP session readback and replay",
+        "467 frontend suite tests, plus 14 Node reading session and recovery tests, before final prompt-visibility polish",
+        "public frontend production build"
+      ]
     }
   },
   "deliverables": [
     {
       "path": "docs/production-readiness/architecture-assessment.md",
-      "sha256": "b586a63d658dd4e0ffbebbf657fcc5fa5f0596ebfc0183c70f66edbc4b37545c",
-      "bytes": 4529
+      "sha256": "01b0f0f968a76370902dd085f1ff09b1db9b44565131e986508f39457723318d",
+      "bytes": 5142
     },
     {
       "path": "docs/production-readiness/current-state-inventory.md",
-      "sha256": "ff8e98f5b5656626ba55e4ab5a2e0bbf3c1abbd3c9487362184caa54ffee9de0",
-      "bytes": 5226
+      "sha256": "b88e2d5f05b0d88881c3dc2e37882d87b53d0ee91ba53a7fae9cd9698c02cfd3",
+      "bytes": 5721
     },
     {
       "path": "docs/production-readiness/data-flow-and-api-contract.md",
-      "sha256": "a4a9e9e83a1d9bcbbabefcda8291db52c15b6d298aa4cf87d22329631517966f",
-      "bytes": 4326
+      "sha256": "7577fea55124762f5cebac362f6db85eaa931d0eaa25d6396d780710773f89cd",
+      "bytes": 4787
     },
     {
       "path": "docs/production-readiness/decision-log.md",
-      "sha256": "0e20e3748bcb0a9353ca2a809aa52104f529a86417a17f3b5aee6acdbbbb80ab",
-      "bytes": 1582
+      "sha256": "2309fc459651fd33f6ac8ee63e0007ae3fa0a2947c04ad234f88af891127df46",
+      "bytes": 2049
     },
     {
       "path": "docs/production-readiness/deployment-and-rollback.md",
-      "sha256": "8eacc7d47cf075110622aa189346fc7d515557ff7df53a510db8be29674862b8",
-      "bytes": 6592
+      "sha256": "931eddc00a15af675b06a4ef9de2c273cbba763a5296b8d1ecbb33ddbf9ba1c7",
+      "bytes": 9928
     },
     {
       "path": "docs/production-readiness/gap-analysis.md",
-      "sha256": "5bc25e1ca23fab19e5afcb742f4d7db80c30be52eb529484b4813689e1db25f4",
-      "bytes": 4664
+      "sha256": "7a03e98ec6ae68c2851bc1c6aedb47bed6764aa4a0ff4a70dfbd20e53e96e0a7",
+      "bytes": 6451
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
-      "sha256": "2172ef7dde53dcf1f3399c6840f372edb69f955c17c670cf8d1bf4b6861d30b5",
-      "bytes": 2318
+      "sha256": "6191b0cdf0e9fc2695f6c50b25868bb0b8d9e77f58cef66916c41adc0fcc5733",
+      "bytes": 2737
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
-      "sha256": "d5a925bc75e3ef84db3feba97d1f13854c074b4da2d3a93c58c8ff8e9bc76000",
-      "bytes": 4140
+      "sha256": "db83dcc47d5513658882b903d233e1cdcb21cb008b7a6f089f1360d05e2f42a1",
+      "bytes": 4704
     },
     {
       "path": "docs/production-readiness/privacy-and-data-governance.md",
-      "sha256": "687a9537543be686157fd465f36ae283630118fb7c695b3a342e0e4e2e633f2b",
-      "bytes": 5779
+      "sha256": "a9535a23f38e71f0ac400c415e923bd42e896a3c3012072b79245fa4c21d15aa",
+      "bytes": 6295
     },
     {
       "path": "docs/production-readiness/production-readiness-scorecard.json",
-      "sha256": "657506f07d5fcbdb2bfebe8774419649043cd8c9fe18358e757ff00016e8210b",
-      "bytes": 4760
+      "sha256": "4390b725179f38a6ced8b575ddad0c12e8130b50cc5e843178d34ce99f18d4b9",
+      "bytes": 5006
     },
     {
       "path": "docs/production-readiness/production-test-plan.md",
-      "sha256": "351c6e4d4aad54cd3ba6dc34d20fa172166484de4bde37047546b01949c0274f",
-      "bytes": 4418
+      "sha256": "8168d20d479cd4b1a4eddd4af0d282ad85ab89a4fda6f31bd76618153063a375",
+      "bytes": 5325
     },
     {
       "path": "docs/production-readiness/README.md",
-      "sha256": "4dbd6c9c8754901b5b3985922186b871d8eb31b882e7161c6ce5eae796977ed5",
-      "bytes": 2894
+      "sha256": "526feaa0e165ee2caba23aaa45d7f5743aa6c313defce6935d94c8f997531e8f",
+      "bytes": 3324
     },
     {
       "path": "docs/production-readiness/seven-series-assessment.md",
-      "sha256": "dbad7a5613cc3b5cdee68b8607e19f1182895f4b9d9d6c96a76860f016be033f",
-      "bytes": 5979
+      "sha256": "81630a562627556382230d1c6170673bdadc71d1107994356c6520bd5daa7961",
+      "bytes": 6447
     },
     {
       "path": "docs/production-readiness/staging-plan.md",
-      "sha256": "73bd12127ac3fc398bf872ac8251f79b36967f44c3089fab56a68fb9bde24630",
-      "bytes": 3063
+      "sha256": "eaa6f270451c299e3b04a05548af78840595518c2d88ecc4bf1467e623fcad34",
+      "bytes": 3463
     }
   ]
 }

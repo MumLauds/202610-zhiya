@@ -42,3 +42,7 @@ flowchart LR
 | 文字与语音 | ASR 预览由用户确认后走同一回答/提问提交。仅朗读已保存且有访问权的事件。验证浏览器 MIME、拒绝麦克风、播放取消及文字备用流程 |
 
 源码 [桌面 ReaderPage](../../frontend/src/pages/ReaderPage.vue) · [移动 ReaderView](../../frontend/mobile/components/ReaderView.vue) · [移动会话机](../../frontend/mobile/services/readingSessionMachine.js) · [正式 API 契约](../design/api-contract.md)。
+
+## 候选架构与迁移边界
+
+正式阅读路由继续负责身份、归属、幂等和修订号。2.0 服务的 BookEvidenceIndex 与 StoryTimeline 从本次授权绘本的当前页和实际已读前文构建长度受控上下文。续读仅携带阅读事实，候选引导不读取来源 Session 的对话。Flash 草稿在服务内存完成校验，最终回执交现有事务。2.0 儿童模式使用受控本地引导。生产架构目标是在观察期和审批后收束到一条 2.0 共读链路。 [候选代码](../../backend/app/services/yaya_agent.py) · [退役条件](deployment-and-rollback.md)
