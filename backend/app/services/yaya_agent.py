@@ -32,6 +32,13 @@ PROMPT = (
 )
 PROMPT_HASH = sha256(PROMPT.encode()).hexdigest()
 FALLBACK = "这次没能接上，我们先一起看看这一页吧。"
+FALLBACK_MESSAGES = {
+    "API_TIMEOUT": "我这次想得有点久，我们先接着看绘本吧。",
+    "MODEL_OUTPUT_INVALID": "这一句我还没说清楚，我们先看看图吧。",
+    "QUESTION_FORMAT": "我们先看一会儿这页的图吧。",
+    "CLIENT_DISCONNECTED": "我们接着从这一页看吧。",
+    "BUDGET_LIMIT": "我们先看看画面，继续读这一页吧。",
+}
 HANDOFF = "我们先停一下，请身边可信任的大人一起帮忙。"
 STATES = {"RESPOND": "CONTINUE", "ASK_FOLLOWUP": "CONTINUE", "LISTEN": "LISTEN",
           "PAUSE": "PAUSE", "CLOSE_TOPIC": "END_TOPIC", "HANDOFF": "PAUSE"}
@@ -151,8 +158,9 @@ class Outcome:
                 "decision": self.decision, "reason": self.reason}
 
 
-def fallback(reason):
-    return Outcome(FALLBACK, "PAUSE", decision="FALLBACK", reason=reason)
+def fallback(reason: str, *, upstream: ModelReply | None = None) -> Outcome:
+    return Outcome(FALLBACK_MESSAGES.get(reason, FALLBACK), "PAUSE", decision="FALLBACK",
+                   reason=reason, upstream=upstream)
 
 
 def handoff():
@@ -196,7 +204,7 @@ def project(upstream: ModelReply, used: tuple[str, ...], *, allow_followup: bool
                 or re.search(r"(?:书上说|书里写的是|原文说)[。！？.!?]$", tail)):
             raise ValueError("unfinished reply")
     except (ValueError, RecursionError, UnicodeError):
-        return Outcome(FALLBACK, "PAUSE", decision="FALLBACK", reason="MODEL_OUTPUT_INVALID", upstream=upstream)
+        return fallback("MODEL_OUTPUT_INVALID", upstream=upstream)
 
     if unsafe(reply) or (isinstance(followup, str) and unsafe(followup)) or action == "HANDOFF":
         return Outcome(HANDOFF, "HANDOFF", decision="FALLBACK", reason="SAFETY_BLOCK", upstream=upstream)
@@ -204,7 +212,7 @@ def project(upstream: ModelReply, used: tuple[str, ...], *, allow_followup: bool
     for clause in re.findall(r"[^。！？!?；;]+[？?！!]*", attributed):
         clause = clause.strip().lstrip("，,：: ")
         if not BACKCHANNEL.fullmatch(clause) and (re.search(r"[?？]", clause) or HIDDEN_ASK.match(clause)):
-            return Outcome(FALLBACK, "PAUSE", decision="FALLBACK", reason="QUESTION_FORMAT", upstream=upstream)
+            return fallback("QUESTION_FORMAT", upstream=upstream)
     if action == "ASK_FOLLOWUP" and (
         not allow_followup or not _line(followup, 60) or not re.fullmatch(r"[^?？]+[?？]", followup.strip())
         or len(used) >= 2 or key_question(followup) in {key_question(q) for q in used}

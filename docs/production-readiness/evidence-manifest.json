@@ -716,7 +716,7 @@
       "sources": [
         {
           "path": "backend/tests/test_yaya_agent2.py",
-          "sha256": "f0c7aa82b0658375d471a548fd25224142a1a296d2f83ba62805c87e2c8db2f4"
+          "sha256": "d76c116554b7bce42b27a5d60689708a91de5c43191367e03d30af11818de125"
         },
         {
           "path": "backend/tests/test_interactions.py",
@@ -734,9 +734,11 @@
       "status": "PARTIAL",
       "limitations": "No authorized Beijing Staging, pilot, or production release evidence.",
       "verified": [
-        "20 targeted backend tests, including actual loopback Uvicorn HTTP session readback and replay",
-        "467 frontend suite tests, plus 14 Node reading session and recovery tests, before final prompt-visibility polish",
-        "public frontend production build"
+        "21 targeted backend tests, including true loopback Uvicorn HTTP session readback and replay",
+        "135 existing interaction and earlier targeted tests",
+        "467 frontend suite tests and the public build after prompt-visibility changes",
+        "14 Node reading session and recovery tests",
+        "Idempotent isolated synthetic seed and SQLite foreign key check"
       ]
     }
   },

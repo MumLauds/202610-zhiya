@@ -177,3 +177,13 @@ def test_evidence_is_bound_to_current_book_visited_prefix_and_session():
     assert "松鼠打开信箱" in material and "松鼠轻轻放好信" in material
     assert "纸风车" not in material and "其他绘本" not in material and "PAUSE" not in material
     assert result.last_state == "LISTEN"
+
+
+def test_local_guidance_uses_current_safe_excerpt_and_fixed_child_question():
+    agent = YayaAgent(YayaSettings())
+    for child_mode in (True, False):
+        result = agent.guidance("INITIAL", child_mode=child_mode, page_text="松鼠轻轻地把信放进信箱。",
+                                age_band="AGE_3_4")
+        assert result.status == "GENERATED"
+        assert "松鼠轻轻地把信放进信箱" in result.outputText
+        assert result.outputText.count("？") == 1
