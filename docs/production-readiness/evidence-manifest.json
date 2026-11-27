@@ -1307,6 +1307,25 @@
       "gate1": "BLOCKED",
       "gate2": "BLOCKED",
       "gate3": "BLOCKED"
+    },
+    "E20": {
+      "stage": "Gate 2 and 3 engineering verification",
+      "recorded_on": "2026-11-28",
+      "verified_revision": "117ef82fdb45314af8b0c7790b634fc523a66a96",
+      "local_focused_tests_passed": 83,
+      "local_release_tests_passed": 6,
+      "local_linux_only_release_tests_skipped": 1,
+      "ci": {
+        "url": "https://github.com/MumLauds/202610-zhiya/actions/runs/46034116594/job/140625094004",
+        "validate_release": "PASS",
+        "verify_hong_kong_release": "SKIP"
+      },
+      "synthetic_isolated_target": true,
+      "live_target_staging_available": false,
+      "pilot_participating_households": 0,
+      "gate1": "BLOCKED",
+      "gate2": "BLOCKED",
+      "gate3": "BLOCKED"
     }
   },
   "deliverables": [
@@ -1417,13 +1436,13 @@
     },
     {
       "path": "docs/production-readiness/gate2-pilot-readiness.md",
-      "sha256": "366110471f609a8f2bc9461106a3a5220cdd93a4a7d94d6f23c5bb9135778e17",
-      "bytes": 14081
+      "sha256": "5d2eedcbceca4dafbb836eaaccce0fe30631f32d06d3f8b6a132d9b3ec8f2b96",
+      "bytes": 14666
     },
     {
       "path": "docs/production-readiness/gate3-release-readiness.md",
-      "sha256": "8c4ca750722e18797ce20ae4a19e8e203ae8dcfe4a14bcd7634ed3d475714599",
-      "bytes": 3078
+      "sha256": "7d9a72a28fdee43698f8f29a07242a1cf8e76564c8ae2557d814b1ee0c335d56",
+      "bytes": 3994
     }
   ]
 }
