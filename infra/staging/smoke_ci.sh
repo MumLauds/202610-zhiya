@@ -85,7 +85,40 @@ export YAYA_AGENT2_INPUT_ALLOWLIST=
 echo "PASS: revoked input consent denies provider dispatch on the existing pinned session"
 
 export YAYA_AGENT2_MODE=off
-"${compose[@]}" up -d --wait --wait-timeout 120 --no-build backend
+if [[ -n ${STAGING_ROLLBACK_REVISION:-} ]]; then
+  # Use the previous qualified bridge build so existing 2.0 sessions stay pinned.
+  revision=$STAGING_ROLLBACK_REVISION
+  [[ $revision =~ ^[0-9a-f]{40}$ ]]
+  git cat-file -e "$revision^{commit}" 2>/dev/null || git fetch --quiet --no-tags --depth=1 origin "$revision"
+  source="$scratch/rollback-source"
+  mkdir "$source"
+  git archive "$revision" infra/Dockerfile infra/hk/Web.Dockerfile backend database data/seed knowledge-base_v2.5/图片 frontend |
+    tar -x -C "$source"
+  docker build --label "org.opencontainers.image.revision=$revision" -t "$project-rollback-backend" -f "$source/infra/Dockerfile" "$source"
+  docker build --label "org.opencontainers.image.revision=$revision" -t "$project-rollback-web" -f "$source/infra/hk/Web.Dockerfile" "$source/frontend"
+  cat > "$scratch/rollback.yaml" <<YAML
+services:
+  backend:
+    image: $project-rollback-backend
+  web:
+    image: $project-rollback-web
+YAML
+  image_id() { docker inspect -f '{{.Image}}' "$("${compose[@]}" ps -q "$1")"; }
+  db_identity() { "${compose[@]}" exec -T backend stat -c '%d:%i' /var/lib/zhiya/staging.sqlite3; }
+  candidate_backend=$(image_id backend)
+  candidate_web=$(image_id web)
+  db_before=$(db_identity)
+  "${compose[@]}" -f "$scratch/rollback.yaml" up -d --wait --wait-timeout 120 --no-build --pull never
+  baseline_backend=$(docker image inspect -f '{{.Id}}' "$project-rollback-backend")
+  baseline_web=$(docker image inspect -f '{{.Id}}' "$project-rollback-web")
+  [[ $(image_id backend) == "$baseline_backend" && $candidate_backend != "$baseline_backend" ]]
+  [[ $(image_id web) == "$baseline_web" && $candidate_web != "$baseline_web" ]]
+  [[ $(db_identity) == "$db_before" ]]
+  curl --silent --show-error --fail --cacert "$ca" --max-time 10 "https://localhost:$STAGING_HTTPS_PORT/mobile.html" >/dev/null
+  echo "PASS: actual backend and web image rollback to $revision; same SQLite file and trusted HTTPS"
+else
+  "${compose[@]}" up -d --wait --wait-timeout 120 --no-build backend
+fi
 "${smoke[@]}" off
 echo "PASS: off mode restores legacy for new sessions and preserves pinned 2.0 sessions"
 echo "BLOCKED: real Beijing provider calls require separate approved synthetic staging credentials"

@@ -16,3 +16,7 @@ docker compose --env-file infra/staging/.env -f infra/staging/compose.yaml up -d
 语音默认关闭。真实语音验收时，在独立主机的受限环境文件注入 `STAGING_SPEECH_API_KEY`，使用获准调用 `qwen3-asr-flash` 与 `qwen-audio-3.1-tts-flash` 的独立测试 Key。Agent 文本模型继续使用 `YAYA_AGENT2_API_KEY`。在北京语音测试空间的专属 Host 下，将 `STAGING_ASR_API_URL` 设置为 `/compatible-mode/v1/chat/completions`，将 `STAGING_TTS_API_URL` 设置为 `/api/v1/services/audio/tts/SpeechSynthesizer`。两项均填写完整 HTTPS URL。使用成人朗读的虚构绘本测试句验证录音、转写、确认提交与播放。[百炼 ASR](https://help.aliyun.com/zh/model-studio/qwen-asr-api-reference) · [百炼 TTS](https://help.aliyun.com/zh/model-studio/non-realtime-tts-user-guide)
 
 在 CI 或有 Docker Compose 的本机可执行 `bash infra/staging/smoke_ci.sh`。测试使用另一个 Compose 项目和独立卷，从构建一直验证到关闭和版本隔离。其北京工作空间和密钥值是合成占位符，运行时检查无需供应商调用。
+
+CI 用固定的迁移桥接提交 `42bd04626979d3c93f36f8619e92072ca6fe654a` 构建上一版镜像，切换前后核对两组镜像 ID、SQLite 文件身份、同一 Caddy CA 和原有会话。Chrome 共读另在同一 GitHub 托管运行器用合成供应商执行。实际云测试站、Android 设备和真实语音需要各自的运行记录。
+
+Windows 有 Python、项目依赖和 FFmpeg 时，可用 `run_voice_preflight.ps1 -Python <python> -AudioPath <private-new-wav> -ApprovedSyntheticStaging` 先验证北京真实 ASR 和 TTS。输入获批的语音空间 Host 和隐藏 Key。脚本合成固定的虚构测试句并用真实 ASR 转写，供核对识别结果。此步骤覆盖语音适配器，独立云端的麦克风、提交和播放流程另行验收。

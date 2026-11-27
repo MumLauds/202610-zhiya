@@ -35,7 +35,14 @@ jobs:
           bash infra/hk/test_cutover.sh
       - name: Build and smoke test isolated Yaya staging
         if: github.event_name == 'pull_request'
+        env:
+          STAGING_ROLLBACK_REVISION: 42bd04626979d3c93f36f8619e92072ca6fe654a
         run: bash infra/staging/smoke_ci.sh
+      - name: Run Yaya Chrome acceptance with synthetic providers
+        if: github.event_name == 'pull_request'
+        run: |
+          python -m pip install playwright==1.65.2
+          python infra/staging/gate1_local_browser.py --output "${RUNNER_TEMP}/yaya-browser.json"
 
   verify:
     name: Verify Hong Kong release
