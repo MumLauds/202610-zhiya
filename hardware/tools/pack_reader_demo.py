@@ -5,6 +5,8 @@ import json
 import re
 from pathlib import Path, PurePosixPath
 
+from page_assets_lib import PagePipelineError, jpeg_info
+
 ROOT = Path(__file__).resolve().parents[2]
 MAX_ID = 9007199254740991
 
@@ -53,6 +55,14 @@ def checked_jpeg(root, ref, manifest, directory):
     data = file.read_bytes()
     if ref["format"] != "JPEG" or len(data) != ref["fileSize"] or hashlib.sha256(data).hexdigest() != ref["sha256"]:
         raise ValueError(f"JPEG integrity failed: {path}")
+    try:
+        info = jpeg_info(file)
+    except (PagePipelineError, OSError) as exc:
+        raise ValueError(f"JPEG decode failed: {path}: {exc}") from exc
+    if (info["width"], info["height"]) != (width, height):
+        raise ValueError(f"JPEG dimensions differ from manifest: {path}")
+    if not info["baseline"] or info["progressive"] or info["components"] != 3:
+        raise ValueError(f"JPEG must be non-progressive RGB Baseline (SOF0): {path}")
     return data, width, height
 
 

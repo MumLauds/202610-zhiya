@@ -5,8 +5,9 @@ H06 运行于 Waveshare 4.3C SKU 33799，复用 ESP-IDF v5.5.5、LVGL 9.2.0 和�
 ## 数据和界面
 
 - `pack_reader_demo.py` 从 H05 书架、详情和 DEMO 会话 fixture 读取书目与文案，按 `(storybookId, storyVersionId)` 校验版本。DEMO fixture 指向书架首项《小狐狸的雨伞》，另含《青蛙的音乐会》和《晚安小熊》。三本分别为 6、6、5 页。书架两本一组。详情的简介只有来源提供时才显示。
-- H03 清单与 fixture 按书目、版本、用途及页码交叉匹配，JPEG 校验尺寸上限、字节数、SHA-256 和仓库内路径。有效输入生成只读 C 目录和压缩 JPEG 包。资源路径只在构建阶段访问。DEMO 保留课程素材许可边界，详情图和书架缩略图与阅读正文来自各自的记录。
-- 界面沿用 H04 的暖米色、森林绿、纸白和鼠尾草色，采用 800×480 原生 LVGL。图框 456×342，400×300 正文图居中，右侧正文卡宽 280。正文用 24 px 子集字体和约 36 px 行距。首尾箭头受业务状态约束，阅读可点击翻页或水平滑动，结束前确认，返回书架保留分页。绑定、设置、朗读和提问以禁用入口展示。
+- H03 清单与 fixture 按书目、版本、用途及页码交叉匹配，校验字节数、SHA-256 和仓库内路径。打包复用 H03 的 `jpeg_info`，解码并验证实际尺寸、三分量 RGB JPEG、SOF0 Baseline 和非渐进编码。有效输入生成只读 C 目录和压缩 JPEG 包。资源路径只在构建阶段访问。DEMO 保留课程素材许可边界，详情图和书架缩略图与阅读正文来自各自的记录。
+- 界面沿用 H04 的暖米色、森林绿、纸白和鼠尾草色，采用 800×480 原生 LVGL。图框 456×342，400×300 正文图居中。280 px 正文卡留出 20 px 左右内边距，24 px Noto Sans SC 以 36 px 行高完整换行，常规正文最多 8 行，短文垂直居中。超过 8 行时正文卡内以 6 行为一段，通过「上一段」「下一段」完整阅读，不滚动、不省略，不推进故事页码。
+- H04 书架原设计每页四本，H06 DEMO 每页两本，保留大封面和详情按钮，三本模式可覆盖分页。点卡片或封面进详情，内容区左右滑动或点箭头分页，返回时保留书架页码。按钮和滑动在成功翻页后共用 250 ms 冷却，手势须在 500 ms 内达到横向 ≥60 px、纵向 ≤40 px。结束小结可对同一本书开启新会话，从第 1 页再读。绑定、设置、朗读和提问以禁用入口展示。
 
 ## 状态与所有权
 
@@ -17,13 +18,19 @@ H06 运行于 Waveshare 4.3C SKU 33799，复用 ESP-IDF v5.5.5、LVGL 9.2.0 和�
 
 ## 中文字体复现
 
-字体为 Noto Sans SC 500，24 px、2 bpp，ASCII 与三本科目和界面实际使用的 Unicode 字符。复用 `firmware/main/OFL-NotoSansSC.txt`。从仓库根目录生成 `glyphs.txt` 后，用 Google Fonts 的 Noto Sans SC 500 文本子集（ASCII 32–126 与 `glyphs.txt` 合并传入 CSS API 的 `text` 参数）取得 TTF。当前 TTF SHA-256 为 `367dd6d705ec1d551f8b8fefd5cfd89b0910fcccd765fb37f36202e9d8418d7e`。字体更新后运行 reader 测试核对所有 UI 和正文所需字形。
+字体为 Noto Sans SC 500，24 px、2 bpp，ASCII 与三本绘本和界面实际使用的 Unicode 字符。复用 `firmware/main/OFL-NotoSansSC.txt`。从仓库根目录生成 `glyphs.txt` 后，用 Google Fonts 的 Noto Sans SC 500 文本子集（ASCII 32–126 与 `glyphs.txt` 合并传入 CSS API 的 `text` 参数）取得 TTF。当前 TTF SHA-256 为 `c3492f6d53c0832a6bc998a55f1b1c9ae685417457df4ae50d2c3d950945d8dd`。字体更新后运行 reader 测试核对所有 UI 和正文所需字形。
 
 ```powershell
 python hardware/tools/pack_reader_demo.py --out 'D:\zhiya-hardware-workspace\temp\h06-font'
 $glyphs = Get-Content 'D:\zhiya-hardware-workspace\temp\h06-font\glyphs.txt' -Raw -Encoding UTF8
-npx --yes lv_font_conv@1.5.3 --font NotoSansSC-500.ttf --range 0x20-0x7e --symbols $glyphs --size 24 --bpp 2 --format lvgl --lv-include lvgl.h --no-compress --no-prefilter -o hardware/firmware/main/h06_reader_font.c
+npx --yes lv_font_conv@1.5.3 --font NotoSansSC-500.ttf --range 0x20-0x7e "--symbols=$glyphs" --size 24 --bpp 2 --format lvgl --lv-include lvgl.h --no-compress --no-prefilter -o hardware/firmware/main/h06_reader_font.c
 ```
+
+## 与 H07 的后续集成
+
+用 `git merge-tree --write-tree` 比较 PR #98 审查基线 `e4f3533` 和 PR #93 的 `ab46d41`，得到 `hardware/README.md`、`firmware/main/CMakeLists.txt` 与 `firmware/main/app_main.c` 三处文本冲突。H07 还增加了 Kconfig 音频诊断开关、`sdkconfig.h07`、共享 I²C/扩展器接口和 `esp_codec_dev` 1.6.2 锁定。
+
+在独立集成分支统一三个互斥启动模式。保留默认 H02、H06 阅读和 H07 音频诊断的构建入口。共享 H01 自检及一次 BSP 初始化，按模式选择 UI 和启动对应任务。CMake 和 Kconfig 使用同一选择，处理 ESP-IDF 组件发现及锁文件生成，确认 H06 继续使用 LVGL 9.2.0，H07 使用原音频配置。保留 H07 对共享 I²C 和功放扩展器位的所有权。模式集成后分别构建 H02、H06 单本与三本、H07，并复验 LCD、触摸和 H07 录放。H06 与音频同时运行的内存与时序属于后续集成验收。
 
 ## 软件对照与后续接口
 

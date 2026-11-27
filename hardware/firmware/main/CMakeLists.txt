@@ -12,6 +12,8 @@ if(ZHIYA_H06)
                     COMMAND_ERROR_IS_FATAL ANY)
     file(STRINGS "${pack}/inputs.txt" reader_inputs ENCODING UTF-8)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${packer}" ${reader_inputs}
+        "${hardware}/tools/page_assets_lib.py"
+        "${hardware}/tools/assets_lib.py"
         "${hardware}/mock/fixtures/storybooks.json"
         "${hardware}/mock/fixtures/story-details.json"
         "${hardware}/mock/fixtures/demo-session.json"
