@@ -20,6 +20,8 @@
 
 ## 目录与构建
 
+H06 离线绘本模式通过 `-D ZHIYA_H06=ON` 开启。默认构建保留 H02 检查界面。参见 [H06 设计](docs/h06-reader-design.md) 与 [构建和实板验收](docs/h06-bringup.md)。
+
 | 路径 | 用途 |
 | --- | --- |
 | `firmware/CMakeLists.txt` | ESP-IDF 工程入口，校验目标及版本 |
