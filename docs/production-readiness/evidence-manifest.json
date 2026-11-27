@@ -1031,6 +1031,51 @@
       },
       "restricted_blind_review_html_sha256": "26d937922a72b528227c909ccf9c4d00cef0ffe012bba0c9f9745549a26bb788",
       "limitations": "Gate 1 deferred. Candidate multi-book live run, human adjudication, supplier invoice, approved staging operational controls and formal signoff remain pending."
+    },
+    "E16": {
+      "stage": "Gate 2 multi-book candidate probe and Gate 3 release preparation",
+      "runtime_revision": "df6e80636273b98e8fabd087310d63194c896f8a",
+      "prompt_sha256": "56a5acaf8c90e956c65eeeecd9806f9238b5df45eaa5bcbb79a1ca677104aef8",
+      "fixture_archive_sha256": "5621deb21ca72eb1bf3689a9d8b8c52f7342e715aec2d964ab32650db73ae3a6",
+      "model": "qwen3.8-flash",
+      "sources": [
+        {
+          "path": "infra/staging/gate2_live_fixtures.py",
+          "sha256": "5621deb21ca72eb1bf3689a9d8b8c52f7342e715aec2d964ab32650db73ae3a6",
+          "bytes": 9372
+        },
+        {
+          "path": "infra/staging/gate2_live_probe.py",
+          "sha256": "e916add43df3db1b8bc9e50f9aad75abd0e0d30f322ae33ddc31d6ab927e3d73",
+          "bytes": 14384
+        },
+        {
+          "path": "infra/staging/run_gate2_live.ps1",
+          "sha256": "ef1259ffb15ac40827b781e91d59dc5bb06d77c7e2092cdd677770cd74e1e32d",
+          "bytes": 2024
+        }
+      ],
+      "offline_preflight": {
+        "archive_sha256": "403a8a28ef16736bcebee4935fefc40acdd4b073ef08ae465a05d0e2fcd81285",
+        "books": 3,
+        "model_turns_mocked": 63,
+        "local_listening_turns": 6,
+        "unexpected_evidence_pages": 0,
+        "cases_missing_a_read_branch_page": 9,
+        "targeted_api_tests_passed": 5
+      },
+      "attempt_result": {
+        "archive_sha256": "99e66e686844cc384a97d5647b6e3071dd980f436e0ce3441107d7e75c3d3c37",
+        "http_status": 403,
+        "code": "access_denied",
+        "provider_attempts": 1,
+        "verified_real_responses": 0
+      },
+      "gate3": {
+        "status": "BLOCKED",
+        "approved_pilot_participants": 0,
+        "release_signoffs_completed": 0
+      }
     }
   },
   "deliverables": [
@@ -1066,8 +1111,8 @@
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
-      "sha256": "961a0f7bff88ed5dfd57257c0a037f135ccd49b52b67d84ed5da066f22eb68b3",
-      "bytes": 3996
+      "sha256": "db8b2df701b1dac8cce63aa9356dfc93b1d31c255bc91d3ae449186ddb144896",
+      "bytes": 4254
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
@@ -1141,8 +1186,13 @@
     },
     {
       "path": "docs/production-readiness/gate2-pilot-readiness.md",
-      "sha256": "bac2ac0b7f9cdc59147e374d972e0026e5fc0b05d8a569e0ecd244065ac90858",
-      "bytes": 5241
+      "sha256": "6e1f25f8fbba0ade3bc7de9e550b415007ee537bcf4aa31d87fb58b053d7f31a",
+      "bytes": 6466
+    },
+    {
+      "path": "docs/production-readiness/gate3-release-readiness.md",
+      "sha256": "c2d6113c8a456ea837a6b80b396f37632f6f49e4555c4c75f7719b66bbdf2873",
+      "bytes": 2619
     }
   ]
 }
