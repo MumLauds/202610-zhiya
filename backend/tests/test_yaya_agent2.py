@@ -58,6 +58,18 @@ def test_local_positive_interaction(text, state, action, reply):
     assert result.action == action and result.reply.startswith(reply) and result.followup is None
 
 
+def test_child_can_resume_by_talking_about_the_action_after_listening():
+    text = "好了，我想聊聊小海豹转盖子的样子。"
+    visible = "小海豹旋了一下铜筒盖。铜筒盖还没有松开。"
+    index = BookEvidenceIndex([(2, visible, None), (3, "小海豹打开了铜筒盖。", None)])
+    material = index.context(2, (2,), text)
+    context = Context(text, (), material, "LISTEN")
+    assert local_turn(context) is None
+    assert project_input(text).text == text
+    assert material["currentQuotes"] == ["小海豹旋了一下铜筒盖。", "铜筒盖还没有松开。"]
+    assert material["visitedTimeline"] == []
+
+
 @pytest.mark.parametrize("action", ["LISTEN", "PAUSE", "CLOSE_TOPIC"])
 def test_model_cannot_enter_reader_control_state_without_a_local_request(action):
     reply = "飞到月亮背面去探险，真是奇妙的旅程！"
