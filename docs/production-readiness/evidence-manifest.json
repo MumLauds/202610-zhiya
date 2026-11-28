@@ -1543,6 +1543,43 @@
         "local.json": "1612ad8f8e8439a5c8a6a14b0730194527113874000042fb5c3d612fea11623e"
       },
       "gate1": "BLOCKED_PENDING_OTHER_ACCEPTANCE_AND_SIGNOFF"
+    },
+    "E26": {
+      "stage": "Gate 1 synthetic candidate on the existing Hong Kong ECS and formal HTTPS origin",
+      "recorded_on": "2026-11-29",
+      "verified_revision": "7fa6464258498980260e896c1723d3466d3e0247",
+      "formal_origin": "https://zhiyahuiben.xyz",
+      "anonymous_revision": "48844b2ee267bc539ed0580a358470beca13e449",
+      "frontend_image_id": "sha256:6f9bf882cc309dbbdb9e4b7f5d7e44670176f365dae9964d08d663fc0e8ef635",
+      "candidate_ci": "https://github.com/MumLauds/202610-zhiya/actions/runs/46172991832/job/141065357931",
+      "cloud_assistant_runs": {
+        "initial_https_routing": "t-hk074hw3sa29se8",
+        "isolated_frontend_rebuild_and_attach": "t-hk074hxzhqeuneo",
+        "provider_usage_and_synthetic_consent_revocation": "t-hk074hywvdtvqps",
+        "no_new_model_call_and_ingress_rollback": "t-hk074hz7vb3zwu8"
+      },
+      "real_qwen3_8_flash_turns": 2,
+      "input_tokens": 1880,
+      "output_tokens": 54,
+      "settled_cny_micros": 1651,
+      "real_synthetic_asr_tts": "PASS",
+      "cross_guardian_session_and_media": 404,
+      "mobile_first_page_turn": {
+        "observed_http": [
+          409,
+          201
+        ],
+        "persisted_events": 1
+      },
+      "synthetic_consent_revocation_no_provider_calls": true,
+      "gate1_preview_closed_and_containers_stopped": true,
+      "receipt_sha256": {
+        "formal-api-evidence-7fa6464.json": "13b8c5cf360e9979c165b10e514dfc353b82702249928e5eece01ca795879d5d",
+        "formal-browser-desktop.json": "19dc55a4d72cd619a4ec3484d4586147d7550ed66bfdf9879574cadfb584d3b2",
+        "formal-browser-mobile.json": "05ff30898264e9133d76ca9c300228e7d80b9d2c52ff0aece192372835b76efc"
+      },
+      "gate1": "BLOCKED_PENDING_SAME_ORIGIN_ANDROID_AND_REMAINING_TARGET_MATRIX",
+      "apple_device_acceptance": "SKIP"
     }
   },
   "deliverables": [
@@ -1578,8 +1615,8 @@
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
-      "sha256": "64ee0e57fab7777e64dd9395ccf15469059dd01c835dce3411c12b6cb109bef5",
-      "bytes": 9579
+      "sha256": "89fcb3dd056db0768e28e524f897c49eacf2fad6df6ef9fae2d00bc6303fd5ba",
+      "bytes": 10455
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
@@ -1618,8 +1655,8 @@
     },
     {
       "path": "docs/production-readiness/gate1-staging-validation.md",
-      "sha256": "0b0f9d68801eb4834316265f56850523ddd753d346773c61d965c1b13d81be5c",
-      "bytes": 18456
+      "sha256": "0d2d64f633e29891bb8112c14e252cc70d280dc6f2b1e0b461e3545db473018c",
+      "bytes": 23019
     },
     {
       "path": "docs/production-readiness/browser-e2e-report.md",
