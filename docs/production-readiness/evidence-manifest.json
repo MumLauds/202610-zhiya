@@ -1371,6 +1371,27 @@
       "target_staging_validation": "BLOCKED",
       "engineering_signoff": "PENDING",
       "gate1": "BLOCKED"
+    },
+    "E22": {
+      "stage": "Gate 2 and 3 synthetic authorization, retention, budget and recovery rehearsal",
+      "recorded_on": "2026-11-28",
+      "verified_revision": "d35013524bb86b7f2a5568f722c7786000af8094",
+      "synthetic_receipt_sha256": "71a311093d168e6f06bee20924981eabe84b6d5f7e7d40edd4e35e3d65217aa4",
+      "local_regression_tests_passed": 120,
+      "local_release_tests_passed": 6,
+      "local_linux_only_release_tests_skipped": 1,
+      "android_usb_adb_retest": "BLOCKED_NO_ADB_DEVICE",
+      "ci": {
+        "url": "https://github.com/MumLauds/202610-zhiya/actions/runs/46091741485/job/140813993339",
+        "validate_release": "PASS",
+        "verify_hong_kong_release": "SKIP"
+      },
+      "alerts_delivered": 0,
+      "live_target_staging_available": false,
+      "real_family_pilot": "SKIP_BY_RELEASE_SCOPE",
+      "pilot_participating_households": 0,
+      "gate2": "BLOCKED",
+      "gate3": "BLOCKED"
     }
   },
   "deliverables": [
@@ -1406,8 +1427,8 @@
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
-      "sha256": "cb296e6de4c101cefde1ad455622b068e1e53a2f378f78479fe799f03990267d",
-      "bytes": 6063
+      "sha256": "fc8d1e2b7ac0f9e9b3cb84bd9a5969ff70ad70b7a32b6cfc6304d7bf9cd25547",
+      "bytes": 6182
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
@@ -1481,13 +1502,13 @@
     },
     {
       "path": "docs/production-readiness/gate2-pilot-readiness.md",
-      "sha256": "5d2eedcbceca4dafbb836eaaccce0fe30631f32d06d3f8b6a132d9b3ec8f2b96",
-      "bytes": 14666
+      "sha256": "9207f101904fed7f8eab6467f6a270662adf26093eb08245ab7d34fd345d1ae9",
+      "bytes": 16322
     },
     {
       "path": "docs/production-readiness/gate3-release-readiness.md",
-      "sha256": "7d9a72a28fdee43698f8f29a07242a1cf8e76564c8ae2557d814b1ee0c335d56",
-      "bytes": 3994
+      "sha256": "91f9571571c6360e0d5e70a3bdc045ac05afe0a165c3bf6634dbf323c664fd33",
+      "bytes": 4754
     }
   ]
 }
