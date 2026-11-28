@@ -1392,6 +1392,86 @@
       "pilot_participating_households": 0,
       "gate2": "BLOCKED",
       "gate3": "BLOCKED"
+    },
+    "E23": {
+      "stage": "Gate 1–3 isolated temporary Hong Kong ECS synthetic engineering recheck",
+      "recorded_on": "2026-11-28",
+      "verified_revision": "7334c40d2b6798075cd5ee7add46915657a57bc8",
+      "ci": {
+        "url": "https://github.com/MumLauds/202610-zhiya/actions/runs/46092743819/job/140817165834",
+        "validate_release": "PASS",
+        "verify_hong_kong_release": "SKIP"
+      },
+      "linux_release_tests_passed": 7,
+      "trusted_https_and_health": "PASS",
+      "ssh_tunnel_only_ingress": "PASS_EXACT_TESTED_PORTS",
+      "desktop_chrome_and_edge": "PASS",
+      "mobile_viewport": "PASS_AFTER_FIRST_FLIP_CONFLICT_RECOVERY",
+      "android_usb_adb_retest": "BLOCKED_NO_ADB_DEVICE",
+      "iphone": "SKIP_BY_RELEASE_SCOPE",
+      "own_profile_allowlist_and_revocation": "PASS_SYNTHETIC",
+      "budget_limit": {
+        "status": "PASS",
+        "budget_micros": 1,
+        "reason": "BUDGET_LIMIT",
+        "provider_ledger_rows": 0,
+        "external_alert_delivery": "NOT_TESTED"
+      },
+      "sqlite_restore": {
+        "restore": "PASS",
+        "isolated_copy": true,
+        "history_verified": true,
+        "counts": {
+          "accounts": 4,
+          "child_profiles": 4,
+          "reading_sessions": 11,
+          "interaction_events": 33,
+          "yaya_agent_sessions": 10
+        },
+        "version_bindings_verified": true,
+        "duration_ms": 29.31
+      },
+      "rollback_revision": "42bd04626979d3c93f36f8619e92072ca6fe654a",
+      "image_ids": [
+        "zhiya-agent-stg-ci-ecs7334c40-1-backend:latest sha256:45ceaf3f66e84ec72eefd5b7db6cdc2c8e10e698dea9dafc66b174369d9dd76c <no value>",
+        "zhiya-agent-stg-ci-ecs7334c40-1-web:latest sha256:c5bf5f16d0cd19123d99e1e2fafc923c2e0f044a445bb97f9acd9fc0b7ad593e <no value>",
+        "zhiya-agent-stg-ci-ecs7334c40-1-rollback-backend:latest sha256:3f3b82e7f45078463e05287af46c8fc7eef93ad744db84453556065d60cd6874 42bd04626979d3c93f36f8619e92072ca6fe654a",
+        "zhiya-agent-stg-ci-ecs7334c40-1-rollback-web:latest sha256:99b0ab9cc342984c75307ace26bae94192f60c045c6264efc8316d1d8c461fe2 42bd04626979d3c93f36f8619e92072ca6fe654a"
+      ],
+      "candidate_build_fingerprints": [
+        "7334c40d2b6798075cd5ee7add46915657a57bc8",
+        "zhiya-agent-g1-target-backend:latest sha256:29ef82dd4be89b96c63911a74e553e4c673f561584566cb479249c982c02aef4",
+        "zhiya-agent-g1-target-web:latest sha256:d46a725801d1b4719af51317b980aad05e575b83564dfd6d1628379e880c056c",
+        "a72573f0dd9eafd495d9b5e6469fe50531efa25e93fa629e2a40ef0c6a367a6e  infra/staging/compose.yaml",
+        "407d1e96d1a8b2b9576c71550958526c255e95ff87e6393fa0c0a1e13f49b0c7  infra/staging/Caddyfile",
+        "1f412a7dbf5b7844298fa5903806773b4942ee8432b52e852412a2935c439b6b  infra/staging/smoke_ci.sh",
+        "26b16a06bcf39aefe8a0480c9db8f883a0bef840f8874fca87959f5e94a7ee82  infra/hk/backup.py"
+      ],
+      "real_flash": {
+        "verified_provider_ids": 0,
+        "usage": {},
+        "fallback_count": 0,
+        "status": "BLOCKED_NO_APPROVED_KEY_ON_THIS_ECS"
+      },
+      "real_voice": "BLOCKED_NO_APPROVED_KEY_ON_THIS_ECS",
+      "real_family_pilot": "SKIP_BY_RELEASE_SCOPE",
+      "pilot_participating_households": 0,
+      "receipt_sha256": {
+        "cloud-images.txt": "964d518d12ae9e39e60a97d8c8f90f6cb54fa14c7ebedf63ef336f0a9cabf365",
+        "cloud-smoke.log": "05fc5de63e842e04d6a9a62ad4782e64c00ad6ae69dab5ec6d7d051dc603f2cf",
+        "edge-target-browser.log": "62c71d12ded5e2c8efdb04623d415d5e1a2f5bc86a12b91f35c2e102bd8bc0fa",
+        "gate1-20261128-target-browser-recovery.log": "3fafb5c5fe50b979d6274afc68044d8b29731f2f4ceff36dcc8c801f4e9eb23c",
+        "gate1-20261128-target-ingress.json": "4339a7ce44649a8ad08f079971dd07cf712d581315b763098718b0f247b6a873",
+        "target-budget-event.txt": "2fab4e37fbeec29a05c5f7bd1a625f3490aa5ffa837de0a4a968daf35d61cbdd",
+        "target-budget.json": "4160a01e5072ddc792ab6892a5dbd428fd3467def5f803a8d6da7205b5342c30",
+        "target-build-fingerprints.txt": "3267bab74ef62a5ac3a2dc40f6a0c59e3b6daef7a8f5b63c59afb161964c6a65",
+        "target-listeners.txt": "30c8cb82cc2c8bccdbb96a5b580f113de0e080e6cff5ca9dddc6605af405500d",
+        "target-release-tests.log": "a29689128a76e0545b4f001157a45650e3f77d8aa1a0189da454dda9b21f5025",
+        "target-restore.json": "e36b95c70f267238dab919903f053ee895ddc3601ca93071869d3bf062298f74"
+      },
+      "gate1": "BLOCKED",
+      "gate2": "BLOCKED",
+      "gate3": "BLOCKED"
     }
   },
   "deliverables": [
@@ -1467,8 +1547,8 @@
     },
     {
       "path": "docs/production-readiness/gate1-staging-validation.md",
-      "sha256": "39f7b3dd4182dd41d1995e74962f21856f8b3d7b579ed46fd48d7c67c5d4028d",
-      "bytes": 15038
+      "sha256": "3583883a8ebfe95e3465946553aaa34706b250007a104cb3116d72ff1a5e05c4",
+      "bytes": 16201
     },
     {
       "path": "docs/production-readiness/browser-e2e-report.md",
@@ -1502,13 +1582,13 @@
     },
     {
       "path": "docs/production-readiness/gate2-pilot-readiness.md",
-      "sha256": "9207f101904fed7f8eab6467f6a270662adf26093eb08245ab7d34fd345d1ae9",
-      "bytes": 16322
+      "sha256": "ba3943e02c4a0b5045012a7d5ba4bafb915dd63fed864592e3fd62f12b636fc3",
+      "bytes": 17226
     },
     {
       "path": "docs/production-readiness/gate3-release-readiness.md",
-      "sha256": "91f9571571c6360e0d5e70a3bdc045ac05afe0a165c3bf6634dbf323c664fd33",
-      "bytes": 4754
+      "sha256": "1a444baf315f3b4baf984b4271afa447430dd75cfe3b72e96f0119c49c8a2ad4",
+      "bytes": 5632
     }
   ]
 }
