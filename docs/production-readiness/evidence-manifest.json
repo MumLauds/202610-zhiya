@@ -1,0 +1,1702 @@
+{
+  "schema_version": 1,
+  "recorded_on": "2026-11-27",
+  "hash_algorithm": "SHA-256",
+  "hash_scope": "Git sources and delivered documents use raw Git/LF bytes. Local archives use raw file bytes. Windows checkout CRLF may differ. Only fingerprints of restricted artifacts are included.",
+  "evidence": {
+    "E01": {
+      "revision": "48844b2ee267bc539ed0580a358470beca13e449",
+      "remote": "https://github.com/MumLauds/202610-zhiya",
+      "sources": [
+        {
+          "path": "backend/app/main.py",
+          "sha256": "ccfb969f6e860fbb996aea0d0c5730b32b1fbea5d89702ba89e4a42192f47ceb",
+          "bytes": 6057,
+          "line_anchors": {
+            "async def lifespan": 48,
+            "async def request_context": 75
+          }
+        },
+        {
+          "path": "backend/app/config.py",
+          "sha256": "7e859a01820c1c33b3b94f82cc312f7e1d1289b020839943ecc18ec5a238edab",
+          "bytes": 4398,
+          "line_anchors": {
+            "DASHSCOPE_TEXT_MODEL =": 12,
+            "def from_env(": 77
+          }
+        },
+        {
+          "path": "backend/app/model_gateway.py",
+          "sha256": "1e6c586003fd11ae9e3e6020b4c6d3be609ba89947a2e7daf0602dfa02cfbebb",
+          "bytes": 8930,
+          "line_anchors": {
+            "class ModelGateway": 20,
+            "async with asyncio.timeout": 81,
+            "response.status_code == 429": 147
+          }
+        },
+        {
+          "path": "backend/app/adapters/model.py",
+          "sha256": "e1e11f6b93a3419724950cace95040ba3c743789f776a169586d7079dcc8ab50",
+          "bytes": 1753,
+          "line_anchors": {
+            "class ModelAdapter": 8,
+            "error_code=\"TIMEOUT\"": 40
+          }
+        },
+        {
+          "path": "backend/app/services/reading_agent.py",
+          "sha256": "1fcd7b582911df50522fd1271d0afe636aa090fb681315b097efea8c6f7a3fbd",
+          "bytes": 73886,
+          "line_anchors": {
+            "def answer_is_unsafe(": 135,
+            "async def generate_answer_reply(": 937,
+            "async def answer_question(": 1063
+          }
+        },
+        {
+          "path": "backend/app/agent/retrieval.py",
+          "sha256": "a80cc86b938360293d7a00b7cbcbf17647ae53f7886c04cdc7d687c39e942a29",
+          "bytes": 5695,
+          "line_anchors": {
+            "class KnowledgeRetriever": 66,
+            "def retrieve(": 96
+          }
+        },
+        {
+          "path": "backend/app/api/v1/auth.py",
+          "sha256": "55cc646d116ffd4cd930ff84c5984df479550f9194d3f3069949f56aada90f28",
+          "bytes": 15753,
+          "line_anchors": {
+            "def authorized_db(": 142
+          }
+        },
+        {
+          "path": "backend/app/api/v1/reading_sessions.py",
+          "sha256": "dcb742791a8de3338f81a092846526a2db66045f69b8ac0ad90e10cee9e4767a",
+          "bytes": 63428,
+          "line_anchors": {
+            "def get_session(": 441,
+            "def owned_session(": 625,
+            "def replay_execution(": 650,
+            "async def add_reading_event(": 766,
+            "def save_reading_event(": 781,
+            "def answer_context(": 865,
+            "def finalize_answer_reply(": 902,
+            "def finish_session(": 1015
+          }
+        },
+        {
+          "path": "backend/app/api/v1/guidance.py",
+          "sha256": "346f8eeb4b38b04d8de38472cf8b981b1e23ffd271d6f8a4d251eda8ffd4bb5d",
+          "bytes": 15166,
+          "line_anchors": {
+            "async def ask_question(": 135,
+            "def finish_guidance(": 88,
+            "async def process_question_or_guidance(": 139
+          }
+        },
+        {
+          "path": "backend/app/api/v1/voice.py",
+          "sha256": "dc433afdddbf1951fcf2de08a289026ab9ea31e65144d84da1da0babad19f178",
+          "bytes": 12419,
+          "line_anchors": {
+            "request.is_disconnected()": 61,
+            "async def ": 33
+          }
+        },
+        {
+          "path": "backend/app/api/v1/health.py",
+          "sha256": "538c6ac827ecc2cf18a4decbfbe7058e2b2b30e52ca7b36b65c988bbf07a87ce",
+          "bytes": 639,
+          "line_anchors": {
+            "def health(": 10
+          }
+        },
+        {
+          "path": "backend/app/services/reading_reports.py",
+          "sha256": "ab03376bb0821ef4e672959597cf618fb6dd65d5c7367ac17f10664225bd19af",
+          "bytes": 16407,
+          "line_anchors": {
+            "def recover_pending_reports(": 245
+          }
+        },
+        {
+          "path": "database/schema.sql",
+          "sha256": "2ed3993353d0a440009ecd50ab50affa36a15ddb273ebeb5a16ef924b67dc366",
+          "bytes": 13350,
+          "line_anchors": {
+            "CREATE TABLE IF NOT EXISTS reading_sessions": 122,
+            "CREATE TABLE IF NOT EXISTS interaction_events": 161,
+            "CREATE TABLE IF NOT EXISTS request_executions": 198,
+            "CREATE TABLE IF NOT EXISTS child_grants": 105
+          }
+        },
+        {
+          "path": "frontend/src/pages/ReaderPage.vue",
+          "sha256": "6223704adb73d3325dfeff4ef82d1ed7393d306f44a77939e4624a69d8cfd338",
+          "bytes": 54025,
+          "line_anchors": {
+            "const answerReply = ": 166,
+            "const pageGuidanceKey": 112,
+            "async function submitConfirmedAnswer": 662,
+            "new AbortController()": 410
+          }
+        },
+        {
+          "path": "frontend/mobile/components/ReaderView.vue",
+          "sha256": "021da893033ef7f0202261ee1cafe74d79e2523507010722c7c7c497a53edd1f",
+          "bytes": 31815,
+          "line_anchors": {
+            "const pending =": 129,
+            "const revision =": 133,
+            "requestGeneration": 68,
+            "async function submitAnswerText": 399
+          }
+        },
+        {
+          "path": "frontend/mobile/services/readingSessionMachine.js",
+          "sha256": "abdd399a1a65b101038530f5ba44da5a2f1566f09b31b2864fb682cc08652f83",
+          "bytes": 15324,
+          "line_anchors": {}
+        },
+        {
+          "path": "frontend/mobile/composables/useReadingSession.js",
+          "sha256": "2dbb74ead0941f985792fa0fe922c356d437183dae5cdfbbc17fc4477e6d4ee1",
+          "bytes": 3944,
+          "line_anchors": {}
+        },
+        {
+          "path": "docs/design/api-contract.md",
+          "sha256": "cff961f79a4f22254657876cd986d2f154945004d166362c3143c611e537fbfa",
+          "bytes": 37664,
+          "line_anchors": {
+            "API-015 先保存答案": 138,
+            "回答生成的总时限": 142
+          }
+        },
+        {
+          "path": "docs/testing/yaya-answer-evaluation.md",
+          "sha256": "66c0d5dc1e15302fa4bd3a4209e36f2beb4ddccb4be700d13c567aace1cf744b",
+          "bytes": 5933,
+          "line_anchors": {}
+        },
+        {
+          "path": "docs/testing/yaya-qwen-decision-pilot.md",
+          "sha256": "d1bd24778465319e12a6b2d32e56ee34858589ae3edf790e0e3dd5d6d9797842",
+          "bytes": 31709,
+          "line_anchors": {}
+        },
+        {
+          "path": "docs/testing/yaya-short-answer-review.md",
+          "sha256": "2ce702d79121953f1501c006cfb0b95eec709800d5ed9eefd7a021599b83a147",
+          "bytes": 6630,
+          "line_anchors": {}
+        },
+        {
+          "path": "docs/testing/g13/round1/README.md",
+          "sha256": "494cd33f84d5c393767b1c461177116b5d161acf672b11c3c5a604e3e62bd11b",
+          "bytes": 3713,
+          "line_anchors": {}
+        },
+        {
+          "path": "docs/testing/g13/round2/result.json",
+          "sha256": "ce9cea563bb28e804fd6e57be33633447b5615d65d86630765d70f2ebfcb915c",
+          "bytes": 3434,
+          "line_anchors": {}
+        },
+        {
+          "path": "docs/testing/g13/round5/README.md",
+          "sha256": "0fb536638914a983faa9169119e2c33e30a64cc052d61a33c39dbf9bd3be2768",
+          "bytes": 7417,
+          "line_anchors": {}
+        },
+        {
+          "path": "infra/Dockerfile",
+          "sha256": "7a3b69108d294d27be9d39a8fbe71d538c74b9f5384d907b24f85b258a086eef",
+          "bytes": 913,
+          "line_anchors": {
+            "uvicorn": 19
+          }
+        },
+        {
+          "path": "infra/compose.yaml",
+          "sha256": "2c2922a626b72f4ea8351da063dd56310c17115bba1d3ee6ef5895df042e1023",
+          "bytes": 1326,
+          "line_anchors": {
+            "sqlite-data": 27
+          }
+        },
+        {
+          "path": "infra/hk/README.md",
+          "sha256": "9bdcd95f1510c71d49dc9b3c0312130b0cd5c974fb977807f16df3cf73f25255",
+          "bytes": 14319,
+          "line_anchors": {
+            "Git 生命周期": 108,
+            "历史数据核验失败时": 155
+          }
+        },
+        {
+          "path": "infra/hk/deploy.sh",
+          "sha256": "c877a99d57ece92257daa928f48edbe9e7ac96f85a8b2556b78c9b98cc04b2bd",
+          "bytes": 8189,
+          "line_anchors": {
+            "switch_images()": 28,
+            "probe()": 33,
+            "recover()": 36
+          }
+        },
+        {
+          "path": "infra/hk/Web.Dockerfile",
+          "sha256": "74fac2d5f8260766e791030f1fddcb99da379e4629d50bca79d79b06e462ea5f",
+          "bytes": 336,
+          "line_anchors": {
+            "FROM caddy:": 8
+          }
+        },
+        {
+          "path": "infra/hk/receipt.yaml",
+          "sha256": "d1b6284af7832b13da46b3c0876022b3ff52c2c3756f468d3fc8987ef84f78e0",
+          "bytes": 88,
+          "line_anchors": {}
+        },
+        {
+          "path": "infra/hk/zhiya-deploy.timer",
+          "sha256": "b90dadea759d8638e1484ef07cacb8b33c175f7d876f57029337df64e5cda69e",
+          "bytes": 151,
+          "line_anchors": {}
+        },
+        {
+          "path": ".github/workflows/deploy-hk.yml",
+          "sha256": "c9cd9dbbde36fc8eea74e7561ac00100fac52990d09fd13ee7a5fe31d922799b",
+          "bytes": 2302,
+          "line_anchors": {
+            "Verify Hong Kong release": 37,
+            "/_deployment/current.json": 55
+          }
+        }
+      ]
+    },
+    "E02": {
+      "revision": "1eb9fb4a0e401d1e648ce95f3209f5d591415be6",
+      "source_locator": "yaya-qwen4-max-benchmark",
+      "v75_frozen_candidate": "89eb60335c9c2b344afca87bf91ea6d90361c6c7",
+      "sources": [
+        {
+          "path": "qa/p6/yaya_agent_v73/v75-run-manifest.json",
+          "sha256": "2c96f00e2a742ee089ad8c88416f70d62a468eae2decbb7cf1c7c1029efa68d5",
+          "bytes": 5590,
+          "line_anchors": {
+            "system_prompt_sha256": 6
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/coreading.py",
+          "sha256": "5b207a03c155e87e4460d93027a39bb923152df17b2c539b34bd6b42fef94385",
+          "bytes": 20822,
+          "line_anchors": {
+            "SYSTEM_V75 =": 50,
+            "def make_messages_v7(": 155,
+            "def project_v72(": 212
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/story_v7.py",
+          "sha256": "2be5c3991f85e9bf03d12ec58ae96ca3bfe791f92573430122816e57896011a9",
+          "bytes": 3959,
+          "line_anchors": {
+            "class StoryTimeline": 39,
+            "class BookEvidenceIndex": 47,
+            "def context(": 79
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/provider.py",
+          "sha256": "b3fa259cd9a17369e7b22de86bfa2e2a06bbd8e628011afa11bcaa69ff31d005",
+          "bytes": 13427,
+          "line_anchors": {
+            "PRIMARY_MODEL = \"qwen3.8-flash\"": 21,
+            "def complete(": 162
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/demo.py",
+          "sha256": "e09b9af015405decc1dc068c42e3fdda372668364dfbe90e951ea1099e65ae92",
+          "bytes": 18310,
+          "line_anchors": {
+            "class DeadlineGenerator": 229,
+            "seconds=4.1": 231
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/lab/yaya2_lab/protocol.py",
+          "sha256": "bcc7f0ae973e25b27db64de98971fd76203d40917bcc4ea87f46295442c22aa5",
+          "bytes": 7148,
+          "line_anchors": {
+            "def parse_draft(": 75
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/run_v75.py",
+          "sha256": "a6f253572f81d2ef1ee963b9fe00c3cc6f065a2b41776fc7fb892bdf16c2bc92",
+          "bytes": 200,
+          "line_anchors": {}
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/eval_v6.py",
+          "sha256": "947ec53444afa6a241d70516069fb00e065bc843730ee1f354fd029aced75ca5",
+          "bytes": 24126,
+          "line_anchors": {
+            "def reconcile(": 53
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/paired_benchmark.py",
+          "sha256": "4d571a5d43a68d93f3d72842b7def1f21518d6bc4bb0a9cedd7bd3229a18343a",
+          "bytes": 27492,
+          "line_anchors": {
+            "MAX_SYSTEM_SUFFIX": 74,
+            "def project_sample(": 327
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/paired_review.py",
+          "sha256": "b76de54bb6401d3de2ea56bb134a51597f9d6f460613b9b13b9c2aa08e0b228d",
+          "bytes": 15156,
+          "line_anchors": {
+            "def load(": 35,
+            "def blind(": 179
+          }
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/docs/yaya-agent-2.0-v7-test-report.md",
+          "sha256": "cd58efbcd866eab200b3fb7c5dcafaaead21a47b31f2bac09a8d8d44973a59a5",
+          "bytes": 1030,
+          "line_anchors": {}
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/docs/yaya-agent-2.0-v7.1-test-report.md",
+          "sha256": "0477b5951027210e391e93faa325b64c4d6a1eccb4e24e475de181cd5e9ec63a",
+          "bytes": 2449,
+          "line_anchors": {}
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/docs/yaya-agent-2.0-v7.2-test-report.md",
+          "sha256": "c1cb44861240c9d4547c2e42572debeca55500bdcf62e896713417faf148c3bd",
+          "bytes": 1822,
+          "line_anchors": {}
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/docs/yaya-agent-2.0-v7.3-test-report.md",
+          "sha256": "e56a0f3dece7c1042e254a3e964543e8d01be4b256e4044dfbae66d9a4e96f94",
+          "bytes": 1268,
+          "line_anchors": {}
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/docs/yaya-agent-2.0-v7.5-test-report.md",
+          "sha256": "9c9567d583055dd645e6b951bbef3e2daecc371c01e1ab94af8a3d45e6b13acc",
+          "bytes": 3839,
+          "line_anchors": {}
+        },
+        {
+          "path": "qa/p6/yaya_agent_v73/docs/yaya-qwen4-max-benchmark-design.md",
+          "sha256": "6715aee43a0d14dc2145328b5b5daf26f89ad99c72cd6e15c44869235b6b89b5",
+          "bytes": 5968,
+          "line_anchors": {}
+        }
+      ]
+    },
+    "E03": {
+      "kind": "SYNTHETIC_API_HISTORY",
+      "archived_runs": [
+        {
+          "version": "v7.3",
+          "kind": "LIVE_SYNTHETIC_REPORT",
+          "report": {
+            "locator": "live-manual-8580-13314/report/report.json",
+            "sha256": "80a176d573cf43de6762033ecf9150e3e974e4673428d9208fd4fabec1eac337",
+            "bytes": 83589
+          },
+          "preflight": {
+            "locator": "live-manual-8580-13314/preflight.json",
+            "sha256": "dddd3ea3f8e7c6c83bfa12ec77302db698d4c8bcb66ddec2b01d79493925f530",
+            "bytes": 410
+          },
+          "observed_live_api_calls": 14,
+          "fallbacks": 3
+        },
+        {
+          "version": "v7.4",
+          "kind": "LIVE_SYNTHETIC_REPORT",
+          "report": {
+            "locator": "live-12408-27534/report/report.json",
+            "sha256": "517bbcf79f1632589f06971460da73b748113948834419cd28610f93240210a1",
+            "bytes": 90514
+          },
+          "preflight": {
+            "locator": "live-12408-27534/preflight.json",
+            "sha256": "62153ecea5ee7cbbf5e90ffe939785f7e7e98fd08d4cb301973d8667b1a0e764",
+            "bytes": 410
+          },
+          "observed_live_api_calls": 14,
+          "fallbacks": 1
+        },
+        {
+          "version": "v7.5 first",
+          "kind": "LIVE_SYNTHETIC_REPORT",
+          "report": {
+            "locator": "live-16904-16953/report/report.json",
+            "sha256": "469ea6617bd0c02ddaf614af3334a1cf72550005759b11745f6239bc15ac99e1",
+            "bytes": 101042
+          },
+          "preflight": {
+            "locator": "live-16904-16953/preflight.json",
+            "sha256": "efad92301640574c9902afca74c5dcd90ecf79aaecbf93b6e65223287006a2c7",
+            "bytes": 410
+          },
+          "observed_live_api_calls": 14,
+          "fallbacks": 0
+        },
+        {
+          "version": "v7.5 second",
+          "kind": "LIVE_SYNTHETIC_REPORT",
+          "report": {
+            "locator": "live-r2-17695-29396/report/report.json",
+            "sha256": "ed1fe0982f22941249cc6f41acd0b32de0246f52b3b2b946c454b67f44508cf2",
+            "bytes": 100667
+          },
+          "preflight": {
+            "locator": "live-r2-17695-29396/preflight.json",
+            "sha256": "74bce3c73f84e5a71f2e5154f63b5b8ed5f490b8aeebf10476b9b84db37ca8ff",
+            "bytes": 410
+          },
+          "observed_live_api_calls": 14,
+          "fallbacks": 0
+        }
+      ],
+      "frozen_bundle": {
+        "locator": "frozen-v75-evidence.zip",
+        "sha256": "4ce5ba9acabd5ca1ba1b35a37521d46e2a774d6027266e6c05e270a5e9d6893f",
+        "bytes": 166741
+      },
+      "system_prompt_sha256": "375c513b07e877b5fcd593201f20268554cbd3b6b0ac975b2eb9c545694c6c00",
+      "limitations": [
+        "v7–v7.2 historical observations from archived reports where raw records were unavailable",
+        "CLI/HTTP receipt evidence does not provide current real browser latency"
+      ]
+    },
+    "E04": {
+      "kind": "LIVE_PAIRED_SYNTHETIC",
+      "batch_id": "031aaa96a5a842cda704d47f8860807a",
+      "files": [
+        {
+          "locator": "live-direct-full-1eb9fb4-cc4c72/batch.json",
+          "sha256": "a8fe7e5b50cf5d3b169f002040518db51959a012b69b0851b6876b6b1bce8dd3",
+          "bytes": 3752
+        },
+        {
+          "locator": "live-direct-full-1eb9fb4-cc4c72/calls.jsonl",
+          "sha256": "152200a4e20f9c8a3e66fc0ccfd8a8adbc284886bf120792968ebb74b16d797b",
+          "bytes": 212911
+        },
+        {
+          "locator": "live-direct-full-1eb9fb4-cc4c72/plan.json",
+          "sha256": "57dff2180636935c8054da12dd22af5cb1da4496c18bc2a206f923abd1b83ba9",
+          "bytes": 73154
+        },
+        {
+          "locator": "live-direct-full-1eb9fb4-cc4c72/fixture.json",
+          "sha256": "d1076b1dac14da34a5312ba8fc6640e9ccb3ffb9ebefc4e8975980aa8ebcf91e",
+          "bytes": 13351
+        },
+        {
+          "locator": "live-direct-full-1eb9fb4-cc4c72/preflight.json",
+          "sha256": "3b63230b28eb7e6c8975901c226455300defd91620aa65a955cd14f317677c29",
+          "bytes": 5939
+        },
+        {
+          "locator": "live-direct-full-1eb9fb4-cc4c72/report.json",
+          "sha256": "5e2ab7f25269f9824e008b3024f1924215e76c4faa09698d33dd699b5333c06e",
+          "bytes": 1899
+        }
+      ],
+      "flash_delivered": 14,
+      "max_delivered": 14
+    },
+    "E05": {
+      "kind": "SINGLE_AI_RATING",
+      "batch_id": "031aaa96a5a842cda704d47f8860807a",
+      "cards": 14,
+      "scoring_file": {
+        "locator": "芽芽共读配对盲评-本轮14组_AI评分.json",
+        "sha256": "d00555b7020b6a92d52f704e4eef5d25a816cb4ef483d71a199a2b25c87d6d93",
+        "bytes": 10360
+      },
+      "restricted_mapping": {
+        "locator": "live-direct-full-1eb9fb4-cc4c72/review-map-private.json",
+        "sha256": "9d63fab00f6749fc91f3e949a0ffd63e0bcc78bd003c15f200cf7366601dd64d",
+        "bytes": 1511
+      },
+      "preferences": {
+        "Flash": 6,
+        "Max": 6,
+        "tie": 2
+      }
+    },
+    "E06": {
+      "kind": "HISTORICAL_FORMAL_READING",
+      "refer_to_E01": [
+        "docs/testing/g13/round1/README.md",
+        "docs/testing/g13/round2/result.json",
+        "docs/testing/g13/round5/README.md",
+        "docs/testing/yaya-answer-evaluation.md",
+        "docs/testing/yaya-qwen-decision-pilot.md"
+      ],
+      "pull_requests": [
+        "https://github.com/MumLauds/202610-zhiya/pull/88",
+        "https://github.com/MumLauds/202610-zhiya/pull/91"
+      ]
+    },
+    "E07": {
+      "kind": "READ_ONLY_ECS_AND_PUBLIC_OBSERVATION",
+      "public_receipt": "https://zhiyahuiben.xyz/_deployment/current.json",
+      "health": "https://zhiyahuiben.xyz/api/v1/health",
+      "github_run": "https://github.com/MumLauds/202610-zhiya/actions/runs/45550056951",
+      "public_revision": "48844b2ee267bc539ed0580a358470beca13e449",
+      "run_attempt": "45550056951-1",
+      "image_ids": {
+        "backend": "sha256:8483fc88252d79e9f94319541c05a046edb4d3379fbf8f979f2e466909b11d70",
+        "web": "sha256:6a1e99af7b3beb35522501183e779f10172b5887f42676897dd82a292d087064"
+      },
+      "fingerprints_observed_on_host": {
+        "installed_deploy_sh": "9a2a133e5df33ed56c778b494a6680924a5f65e2e24d420049c24d64625abd9d",
+        "public_receipt_json": "46f6a1a3fec7360e8a376329c6703602d3100f68e58432d0c943057ac45e198a",
+        "caddyfile": "249dd2673eb179bc506502ca196a1eb291074465a3c7c86df10a1e5544162008"
+      },
+      "install_matches_repository_blob": false,
+      "host_observations": {
+        "os": "Ubuntu 22.04.5 LTS",
+        "compose": "v5.6.1",
+        "caddy_gateway": "v2.11.7",
+        "root_use_percent": 79,
+        "root_available_gib_approx": 8.2,
+        "configured_model": "qwen3.6-plus",
+        "configured_host": "dashscope.aliyuncs.com",
+        "credential_present": true,
+        "timer": "active",
+        "last_service_result": "success",
+        "local_health": "ok",
+        "public_health": "ok",
+        "public_health_cache": "DYNAMIC",
+        "local_admin_anonymous_status": 401
+      },
+      "open_checks": [
+        "independent Staging",
+        "private cache and origin network controls",
+        "backup restoration and sustained SLO",
+        "installed host deploy script differs from main and matches historical Git blob"
+      ],
+      "method": "GitHub read plus Workbench and authenticated ECS console read-only. Public GET from ECS and browser. No direct external origin connection or production model request.",
+      "installed_deploy_script_matches_historical_revision": "4297f3cf13f747117f3792e8b846584839b6b789",
+      "source_controls_observed": {
+        "gateway_ports": [
+          80,
+          443
+        ],
+        "loopback_gateway_port": 18080,
+        "security_group_ingress_ipv4_any": [
+          "80/tcp",
+          "443/tcp",
+          "22/tcp",
+          "3389/tcp",
+          "ICMP"
+        ],
+        "caddyfile_observed_filter_counts": {
+          "remote_ip": 0,
+          "client_ip": 0,
+          "trusted_proxies": 0,
+          "Cache-Control": 1
+        },
+        "direct_external_origin_tested": false
+      }
+    },
+    "E08": {
+      "kind": "LOCAL_AUTOMATION_ONLY",
+      "checks": [
+        {
+          "scope": "formal source focused backend and database",
+          "command": "python -B -m pytest -q -p no:cacheprovider -c backend/pytest.ini backend/tests/test_reading_agent.py backend/tests/test_co_reading_visit_fixture.py backend/tests/test_g09_agent.py backend/tests/test_voice_api.py database/tests --basetemp <isolated>",
+          "status": "PASS",
+          "passed": 115,
+          "subtests": 114,
+          "warnings": 1,
+          "notes": "Initial run lacked the scratch parent directory, then rolled forward with an isolated path."
+        },
+        {
+          "scope": "formal source mobile session and write recovery",
+          "command": "node --test frontend/tests/readingSessionMachine.test.js frontend/tests/mobileWriteRecovery.test.js",
+          "status": "PASS",
+          "passed": 14
+        },
+        {
+          "scope": "frozen experiment branch",
+          "command": "python -B -m unittest discover",
+          "status": "PASS",
+          "passed": 78
+        },
+        {
+          "scope": "frozen experiment browser simulation",
+          "command": "node --test test_browser.mjs test_coreading_browser.mjs",
+          "status": "PASS",
+          "passed": 11,
+          "skipped": 1,
+          "notes": "Optional jsdom path skipped. No real browser latency inferred."
+        },
+        {
+          "scope": "formal frontend full suite on copied pinned frontend",
+          "command": "node node_modules/vitest/vitest.mjs run --maxWorkers=2",
+          "status": "FAIL",
+          "passed": 466,
+          "failed": 1,
+          "notes": "ShelfSameFilterRefresh.test.js, one case reached the original 5000ms deadline."
+        },
+        {
+          "scope": "formal frontend isolated retry",
+          "command": "node node_modules/vitest/vitest.mjs run src/ShelfSameFilterRefresh.test.js --maxWorkers=1",
+          "status": "PASS",
+          "passed": 7,
+          "notes": "Same file, original timeout. Does not replace the full-run record."
+        },
+        {
+          "scope": "formal frontend public bundle",
+          "command": "node node_modules/vite/bin/vite.js build --mode public",
+          "status": "PASS"
+        },
+        {
+          "scope": "formal frontend full single-worker retry",
+          "command": "node node_modules/vitest/vitest.mjs run --maxWorkers=1",
+          "status": "PASS",
+          "passed": 467
+        },
+        {
+          "scope": "formal backend and database full suite in Windows worktree",
+          "command": "python -B -m pytest -q -p no:cacheprovider -c backend/pytest.ini backend/tests database/tests --basetemp <isolated>",
+          "status": "FAIL",
+          "passed": 812,
+          "failed": 1,
+          "subtests": 313,
+          "warnings": 1,
+          "notes": "test_qwen_semantic_benchmark.py fixture SHA-256 differs only due to CRLF checkout conversion. Full suite result retained."
+        },
+        {
+          "scope": "formal semantic module in isolated copy using raw Git fixture bytes",
+          "command": "python -B -m pytest -q -p no:cacheprovider -c backend/pytest.ini backend/tests/test_qwen_semantic_benchmark.py --basetemp <isolated>",
+          "status": "PASS",
+          "passed": 5,
+          "notes": "Verified both working bytes after CRLF normalization exactly equal their original Git blobs and their pinned test hashes."
+        }
+      ]
+    },
+    "E09": {
+      "kind": "PUBLIC_PRIMARY_REFERENCES",
+      "sources": [
+        "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_f374e8245320413181742e6d1baf4366.html",
+        "https://app.www.gov.cn/govdata/gov/202310/24/508651/article.html",
+        "https://www.moj.gov.cn/pub/sfbgw/flfggz/flfggzbmgz/202101/t20210105_146377.html",
+        "https://www.cac.gov.cn/2025-03/14/c_1743654684782215.htm",
+        "https://help.aliyun.com/zh/model-studio/privacy-notice",
+        "https://help.aliyun.com/zh/model-studio/bailian-service-notes",
+        "https://terms.alicdn.com/legal-agreement/terms/common_platform_service/20230728213935489/20230728213935489.html",
+        "https://help.aliyun.com/zh/model-studio/regions"
+      ]
+    },
+    "E10": {
+      "stage": "repository integration and local synthetic validation",
+      "sources": [
+        {
+          "path": "backend/tests/test_yaya_agent2.py",
+          "sha256": "d76c116554b7bce42b27a5d60689708a91de5c43191367e03d30af11818de125"
+        },
+        {
+          "path": "backend/tests/test_interactions.py",
+          "sha256": "e51c56d897834371edc141760e3bb98e920bec6295f0304af43c98c1010154ca"
+        },
+        {
+          "path": "frontend/src/data/readingQuestions.js",
+          "sha256": "d03232f873b5472d128a333cbd1b42754ca0d41efb701f475cdef140604a8ed4"
+        },
+        {
+          "path": "infra/staging/compose.yaml",
+          "sha256": "5885151d7f942803531b2a8e5b5efae83e767ddcba8d364104dd48c2fc0f1bec"
+        }
+      ],
+      "status": "PARTIAL",
+      "limitations": "No authorized Beijing Staging, pilot, or production release evidence.",
+      "verified": [
+        "21 targeted backend tests, including true loopback Uvicorn HTTP session readback and replay",
+        "135 existing interaction and earlier targeted tests",
+        "467 frontend suite tests and the public build after prompt-visibility changes",
+        "14 Node reading session and recovery tests",
+        "Idempotent isolated synthetic seed and SQLite foreign key check"
+      ],
+      "revision": "ee59c4a24f7c4c7faa4edc066169669c340df820"
+    },
+    "E11": {
+      "stage": "PR #97 review regression",
+      "sources": [
+        {
+          "path": "backend/app/services/yaya_agent.py",
+          "sha256": "6f5e0214ea3c96416417705f69e97c3cae883ad468fb05e40fc84ababe01b1ad"
+        },
+        {
+          "path": "backend/app/services/yaya_book_evidence.json",
+          "sha256": "071cb6080bd3b959ffa668fb1618eda6dbc7e24c679a58c72272a06395e1c34d"
+        },
+        {
+          "path": "backend/tests/test_yaya_agent2.py",
+          "sha256": "ecb88449cbe1fdb0c91c165e1c72adc31865188e460f1b372e4c6736c1902468"
+        },
+        {
+          "path": "backend/tests/test_interactions.py",
+          "sha256": "cb2527993ffb388d8f2d024806e7c4b65580ce9bf2ce67ac4cad220a6aff9e98"
+        },
+        {
+          "path": "infra/staging/smoke_ci.sh",
+          "sha256": "ff4e3fed1bc52f8be45a37d315ffa95b4b4a0faa3ffe90777f0054ae60d958af"
+        },
+        {
+          "path": "infra/staging/smoke_ci.py",
+          "sha256": "3e7bca4c5228963182a7532d0ab4e3641dd9636a9878da2d07bcf6220ef7fd82"
+        }
+      ],
+      "local_verified": [
+        "Targeted input, evidence, and interaction regression",
+        "Original v7.5 suite"
+      ],
+      "ci_entry": "https://github.com/MumLauds/202610-zhiya/pull/97/checks",
+      "limitations": "Real Beijing provider credentials and independent cloud staging approval are pending.",
+      "revision": "e680b87de11072962ff30ccfae20397c2b1e7639"
+    },
+    "E12": {
+      "stage": "PR #97 final-review accounting, privacy, and offline factual evaluation",
+      "rate_source": "https://help.aliyun.com/zh/model-studio/qwen3-8-flash",
+      "sources": [
+        {
+          "path": "backend/app/db/yaya_agent.py",
+          "sha256": "29c24fd9d11862907a46843e3782a87a058bdd0406734b57d727e619692a49b9"
+        },
+        {
+          "path": "backend/app/model_gateway.py",
+          "sha256": "c8509a505e34b32544355725724bf09d34dc98d0ded8f8cdcdd01a178c892882"
+        },
+        {
+          "path": "backend/app/services/yaya_agent.py",
+          "sha256": "df9716d16db038cc7efa40f66a8691bd9bcde709b4121898947e1c88450ada05"
+        },
+        {
+          "path": "backend/app/services/yaya_agent_config.py",
+          "sha256": "02760feeae86946c8e447b3f6359f7b183d15ef70f94f94b474952f479a09905"
+        },
+        {
+          "path": "backend/app/services/yaya_book_evidence.json",
+          "sha256": "a6a39d876950a7e13d4c09b75cf892c4a88fd12b2a2bd7baba8a53ac252ccb90"
+        },
+        {
+          "path": "backend/tests/test_yaya_budget.py",
+          "sha256": "8db40fe930487dac9934d2b4fc81484d02a294e759889a48f5412cfeb93f86d7"
+        },
+        {
+          "path": "backend/tests/test_yaya_fact_consistency.py",
+          "sha256": "d302d78a11f1f95a256e20d8751c669c91965c6f484da641d120cc5302c7f49c"
+        },
+        {
+          "path": "backend/tests/test_yaya_agent2.py",
+          "sha256": "fe860e39b94c501b358f862488fb37bf766cedf2a7e2d6d249ca4578f5fa8684"
+        },
+        {
+          "path": "backend/tests/test_interactions.py",
+          "sha256": "2759af0e83841ae3fe8846cf66973dfb9508cb2b0e5e072d181635071c3fc441"
+        },
+        {
+          "path": "infra/staging/smoke_ci.sh",
+          "sha256": "c94b9f5ed2be3a6f20465fbd8212964543c9635420707a3211a6ee54a2dbc1f7"
+        }
+      ],
+      "verification_scope": [
+        "atomic weighted token reservation and usage settlement",
+        "synthetic multilingual API, provider-request, persistence, and log privacy cases",
+        "offline synthetic positive and negative factual contrasts and evidence grades"
+      ],
+      "ci_entry": "https://github.com/MumLauds/202610-zhiya/pull/97/checks",
+      "limitations": "Offline fixture scoring is not live provider quality or runtime factual validation. Approved Beijing synthetic credentials, real invoices, privacy audits and Gates 2–3 remain pending.",
+      "local_verified": "65 targeted backend cases passed, including budget, multilingual privacy, evidence and offline factual contrasts.",
+      "revision": "fb6fd663920fd3a24d960b4b9c40804a6d0efec7"
+    },
+    "E13": {
+      "stage": "PR #97 Gate 1 synthetic staging validation",
+      "runtime_revision": "e2310b89c2bdf7406b47c200b96f10d3b8f9a664",
+      "ci_entry": "https://github.com/MumLauds/202610-zhiya/actions/runs/45978040980/job/140434638636",
+      "sources": [
+        {
+          "path": "backend/app/services/yaya_agent.py",
+          "sha256": "4663d7d6c1cbeebb9c5913575a31f32807e80e7c256c3368a392737578031e36",
+          "bytes": 27271
+        },
+        {
+          "path": "backend/tests/test_yaya_agent2.py",
+          "sha256": "502e86b65df5d44a4fc10b099202ed6d8fdc21060045cdb04e6ff6106496ea16",
+          "bytes": 19634
+        },
+        {
+          "path": "infra/staging/smoke_ci.py",
+          "sha256": "a68d222db8d7500c53e0dc649acb86cd75c3e1bd76304f4ce049e7a1f8c57ddb",
+          "bytes": 5806
+        },
+        {
+          "path": "infra/staging/smoke_ci.sh",
+          "sha256": "811ff737a98ecf2d079f25b3f67057f4e7ac200fcc1cc3276fef1e39d787fbe3",
+          "bytes": 4429
+        },
+        {
+          "path": "infra/staging/gate1_live_probe.py",
+          "sha256": "be19a7016924add9c54d57eef99db1845b846a7b45184bfff8bb233dff68ce91",
+          "bytes": 12802
+        },
+        {
+          "path": "infra/staging/run_gate1_live.ps1",
+          "sha256": "2d9a53e87d38249fbf978bb52875884ee906f19e9ea47d3951080e9634146fbd",
+          "bytes": 1906
+        },
+        {
+          "path": "infra/staging/gate1_local_browser.py",
+          "sha256": "f291b4470037f2911d543e7ff6e9ca266a9db484c75b889b8a131af16e524a4b",
+          "bytes": 16478
+        }
+      ],
+      "local_and_ci_verified": [
+        "same-page conversational continuity and boundary",
+        "isolated CI Docker build and HTTPS",
+        "authorization revocation and off mode",
+        "local Chrome desktop, mobile emulation and voice fixtures",
+        "real Beijing Flash transport, valid receipts and actual usage on synthetic-only turns"
+      ],
+      "limitations": "Independent cloud Staging, real speech, physical device, supplier invoices, observed dialogue quality gaps and Gates 2–3 approvals are pending.",
+      "real_beijing_runs": [
+        {
+          "runtime_revision": "d1e92464d7e31684da369c32cf8453bd2bacd3a7",
+          "restricted_archive_sha256": "f734cd6919596f8da66baaf14a85b99767feb65c50368c864278565b88b6a1bf",
+          "attempts": 12,
+          "verified_responses": 12,
+          "full_fallbacks": 0,
+          "archive_scope": "private synthetic JSONL outside repository",
+          "provider_workspace_scope": "default Beijing workspace, confirmed read-only in console",
+          "qualifies_for_isolated_staging_provider_gate": false
+        },
+        {
+          "runtime_revision": "e2310b89c2bdf7406b47c200b96f10d3b8f9a664",
+          "restricted_archive_sha256": "8c52c24b87f3b7198f0a9fc218301afc2df1dfcff7ac6dea7b6d88e73411a0fd",
+          "attempts": 12,
+          "verified_responses": 12,
+          "full_fallbacks": 0,
+          "archive_scope": "private synthetic JSONL outside repository",
+          "provider_workspace_scope": "default Beijing workspace, confirmed read-only in console",
+          "qualifies_for_isolated_staging_provider_gate": false
+        },
+        {
+          "runtime_revision": "e2310b89c2bdf7406b47c200b96f10d3b8f9a664",
+          "archive_head": "8da0cd7de528cd06375ab8db711d2d06f96c82d3",
+          "restricted_archive_sha256": "335914551c9a6a0ad3672edb80d0ab92712b2580ac905bca400061a44a05eb0a",
+          "attempts": 12,
+          "verified_responses": 0,
+          "full_fallbacks": 12,
+          "archive_scope": "private synthetic JSONL outside repository",
+          "provider_workspace_scope": "independent test workspace before Flash authorization; all 12 HTTP 403",
+          "qualifies_for_isolated_staging_provider_gate": false
+        },
+        {
+          "runtime_revision": "e2310b89c2bdf7406b47c200b96f10d3b8f9a664",
+          "archive_head": "8da0cd7de528cd06375ab8db711d2d06f96c82d3",
+          "restricted_archive_sha256": "9cc5806b902d5abbc9bfb9a5585ac875d6f36f7e3ff7dca4d90b79a57dcfc12c",
+          "attempts": 12,
+          "verified_responses": 12,
+          "full_fallbacks": 1,
+          "archive_scope": "private synthetic JSONL outside repository",
+          "provider_workspace_scope": "independent test workspace after Flash authorization; 12 HTTP 200; B3 format and C attribution issues",
+          "qualifies_for_isolated_staging_provider_gate": true
+        }
+      ],
+      "verification": {
+        "backend_database_passed": 876,
+        "backend_database_skipped": 5,
+        "backend_subtests_passed": 313,
+        "frontend_passed": 467,
+        "frontend_node_passed": 15,
+        "frozen_v75_python_passed": 58,
+        "frozen_v75_subtests_passed": 41,
+        "frozen_v75_node_passed": 12
+      }
+    },
+    "E14": {
+      "stage": "No-ECS validation with isolated CI and a physical Android device",
+      "browser_and_rollback_ci": "https://github.com/MumLauds/202610-zhiya/actions/runs/45986156827/job/140462188944",
+      "physical_device_revision": "d1710b440c9aae094520ffbb3214bacd123d0c16",
+      "physical_device": "Android 12, Edge 156.0.4314.43, 361x657 viewport, private local USB forwarding",
+      "runtime_verifications": [
+        "CI Chrome desktop and mobile viewport with synthetic providers",
+        "different backend and web image IDs and preserved SQLite identity and Caddy CA",
+        "Android microphone capture and media playback, keyboard-open submission and offline recovery",
+        "real Beijing speech adapter loopback with synthetic text"
+      ],
+      "restricted_local_evidence": {
+        "android_json_sha256": "f1e91cd0d62ec8b2eb01d84b07ad369efe1212f48a5f194f01fd1a94e6f05474",
+        "synthetic_wav_sha256": "bd03d17021587800f5c58bc2946529ffa98333ccb1d9ecea499bc48b16d2e232"
+      },
+      "sources": [
+        {
+          "path": "frontend/mobile.html",
+          "sha256": "26b8e66d42be500a976495800ab441a80a46305c158fb5c41e278becfd3d8715",
+          "bytes": 682
+        },
+        {
+          "path": ".github/workflows/deploy-hk.yml",
+          "sha256": "5d02a52cc01a65f624bc5163a01ac5b0200b1afc1566e4d10b3591fc0b2d19a4",
+          "bytes": 2995
+        },
+        {
+          "path": "infra/staging/smoke_ci.sh",
+          "sha256": "1f412a7dbf5b7844298fa5903806773b4942ee8432b52e852412a2935c439b6b",
+          "bytes": 7210
+        },
+        {
+          "path": "infra/staging/compose.yaml",
+          "sha256": "a72573f0dd9eafd495d9b5e6469fe50531efa25e93fa629e2a40ef0c6a367a6e",
+          "bytes": 2302
+        },
+        {
+          "path": "infra/staging/run_voice_preflight.ps1",
+          "sha256": "505a86c03ab30e748295ab202d3c2c113c0e5656d805bb9388e30acb5a1e0421",
+          "bytes": 2657
+        }
+      ],
+      "limitations": "Independent cloud deployment, real cloud-to-device speech, supplier billing and wider model quality/approval gates are pending."
+    },
+    "E15": {
+      "stage": "Gate 2 pre-approval review using synthetic data",
+      "status": "BLOCKED",
+      "historical_evidence": [
+        "E13",
+        "E14"
+      ],
+      "sources": [
+        {
+          "path": "backend/app/services/yaya_agent.py",
+          "sha256": "e7aabf3cc5fa6b5ae4d2ff6cce4a3758d5ca9758bd629afd75291ce0c5c690b3",
+          "bytes": 28271
+        },
+        {
+          "path": "backend/tests/test_yaya_agent2.py",
+          "sha256": "a61d8108034614ea02b8957e8f8d09a6670990d576ab3d685f1d3f302fe03e3e",
+          "bytes": 22577
+        },
+        {
+          "path": "backend/tests/test_yaya_fact_consistency.py",
+          "sha256": "d302d78a11f1f95a256e20d8751c669c91965c6f484da641d120cc5302c7f49c",
+          "bytes": 5755
+        },
+        {
+          "path": "backend/tests/test_yaya_budget.py",
+          "sha256": "8db40fe930487dac9934d2b4fc81484d02a294e759889a48f5412cfeb93f86d7",
+          "bytes": 9113
+        },
+        {
+          "path": "backend/tests/test_interactions.py",
+          "sha256": "2759af0e83841ae3fe8846cf66973dfb9508cb2b0e5e072d181635071c3fc441",
+          "bytes": 136004
+        }
+      ],
+      "verification": {
+        "offline_service_fact_and_budget_tests_passed": 77,
+        "agent2_api_tests_passed": 4,
+        "isolated_sqlite_foreign_key_check": "PASS",
+        "blind_form_chrome_autosave_navigation_and_json_export": "PASS",
+        "historical_provider_receipts": 36,
+        "historical_distinct_cases": 12,
+        "historical_synthetic_books": 1,
+        "historical_full_fallbacks": 1,
+        "historical_reply_only_format": 1,
+        "historical_app_usage_lines_reconciled": 36,
+        "candidate_real_provider_receipts": 0,
+        "independent_human_reviews_completed": 0
+      },
+      "restricted_blind_review_html_sha256": "26d937922a72b528227c909ccf9c4d00cef0ffe012bba0c9f9745549a26bb788",
+      "limitations": "Gate 1 deferred. Candidate multi-book live run, human adjudication, supplier invoice, approved staging operational controls and formal signoff remain pending."
+    },
+    "E16": {
+      "stage": "Gate 2 multi-book candidate probe and Gate 3 release preparation",
+      "runtime_revision": "df6e80636273b98e8fabd087310d63194c896f8a",
+      "prompt_sha256": "56a5acaf8c90e956c65eeeecd9806f9238b5df45eaa5bcbb79a1ca677104aef8",
+      "fixture_archive_sha256": "5621deb21ca72eb1bf3689a9d8b8c52f7342e715aec2d964ab32650db73ae3a6",
+      "model": "qwen3.8-flash",
+      "sources": [
+        {
+          "path": "infra/staging/gate2_live_fixtures.py",
+          "sha256": "5621deb21ca72eb1bf3689a9d8b8c52f7342e715aec2d964ab32650db73ae3a6",
+          "bytes": 9372
+        },
+        {
+          "path": "infra/staging/gate2_live_probe.py",
+          "sha256": "e916add43df3db1b8bc9e50f9aad75abd0e0d30f322ae33ddc31d6ab927e3d73",
+          "bytes": 14384
+        },
+        {
+          "path": "infra/staging/run_gate2_live.ps1",
+          "sha256": "ef1259ffb15ac40827b781e91d59dc5bb06d77c7e2092cdd677770cd74e1e32d",
+          "bytes": 2024
+        }
+      ],
+      "offline_preflight": {
+        "archive_sha256": "403a8a28ef16736bcebee4935fefc40acdd4b073ef08ae465a05d0e2fcd81285",
+        "books": 3,
+        "model_turns_mocked": 63,
+        "local_listening_turns": 6,
+        "unexpected_evidence_pages": 0,
+        "cases_missing_a_read_branch_page": 9,
+        "targeted_api_tests_passed": 5
+      },
+      "attempt_result": {
+        "archive_sha256": "99e66e686844cc384a97d5647b6e3071dd980f436e0ce3441107d7e75c3d3c37",
+        "http_status": 403,
+        "code": "access_denied",
+        "provider_attempts": 1,
+        "verified_real_responses": 0
+      },
+      "gate3": {
+        "status": "BLOCKED",
+        "approved_pilot_participants": 0,
+        "release_signoffs_completed": 0
+      },
+      "completed_live_run": {
+        "archive_sha256": "ae0a9624a23b5c02c33fd8fdd24b7bbf73a80430c01dc64627b5640cbe32a91c",
+        "probe_sha256": "e916add43df3db1b8bc9e50f9aad75abd0e0d30f322ae33ddc31d6ab927e3d73",
+        "scope": "gate2_real_beijing_provider_local_asgi_synthetic_only",
+        "attempts": 63,
+        "verified_responses": 63,
+        "http_200": 63,
+        "full_fallbacks": 0,
+        "reply_only": 0,
+        "local_listening_passed": 6,
+        "verified_by_book": {
+          "rain": 21,
+          "light": 21,
+          "garden": 21
+        },
+        "source_attribution_passed": 3,
+        "missing_read_pages": 9,
+        "unexpected_evidence_pages": 0,
+        "affected_timeline_answers": [
+          "light-15",
+          "garden-15"
+        ],
+        "provider_p50_ms": 845.82,
+        "provider_p95_ms": 1448.88,
+        "backend_p50_ms": 924.09,
+        "backend_p95_ms": 1527.73,
+        "prompt_tokens": 34830,
+        "completion_tokens": 2416,
+        "application_micros_reserved": 177688,
+        "application_micros_settled": 34416,
+        "application_usage_lines_reconciled": 63,
+        "independent_human_reviews_completed": 0,
+        "blind_html_sha256": "e9e1849ab8709b6df253ed1c3a3c86151e6049da73a2130e82c76a2bc1fe7abf"
+      }
+    },
+    "E17": {
+      "stage": "Gate 2 branch-arrival fix and matched multi-book live rerun",
+      "baseline_revision": "df6e80636273b98e8fabd087310d63194c896f8a",
+      "runtime_revision": "106a66a99b9bdb63fb2240576362c48b242597a7",
+      "provider_model": "qwen3.8-flash",
+      "fixture_sha256": "5621deb21ca72eb1bf3689a9d8b8c52f7342e715aec2d964ab32650db73ae3a6",
+      "prompt_sha256": "56a5acaf8c90e956c65eeeecd9806f9238b5df45eaa5bcbb79a1ca677104aef8",
+      "probe_sha256": "2f345f1af1412e01e11bee158632e56ebf8bee60db844ac382f4f3895d403202",
+      "archive_sha256": "5a9a76175720b4c4edcb43d5a5e7f61d5a8e68276bc72d11cfb5ef3d76d1de7a",
+      "baseline_archive_sha256": "ae0a9624a23b5c02c33fd8fdd24b7bbf73a80430c01dc64627b5640cbe32a91c",
+      "offline_archive_sha256": "d7a55234e7dbd07559aa9d9dca9f83c96750d7ce5a0ec05c5dc83ed251f0bd8c",
+      "matched_fixtures": true,
+      "verification": {
+        "targeted_api_tests_passed": 6,
+        "other_targeted_tests_passed": 77,
+        "offline_mocked_provider_turns": 63,
+        "verified_provider_responses": 63,
+        "full_fallbacks": 0,
+        "reply_only_nonlocal_actions": 2,
+        "format_errors": 0,
+        "local_listening_turns": 6,
+        "missing_branch_page_before": 9,
+        "missing_branch_page_after": 0,
+        "unexpected_outbound_pages": 0,
+        "unmatched_outbound_quotes": 0,
+        "checked_future_output_cases": 3,
+        "checked_unselected_branch_output_cases": 6,
+        "checked_backtrack_output_cases": 6,
+        "output_leaks_in_target_cases": 0,
+        "timeline_cases_correct": [
+          "light-15",
+          "garden-15"
+        ],
+        "usage_lines_reconciled": 63,
+        "prompt_tokens": 35328,
+        "completion_tokens": 2422,
+        "settled_application_micros": 34832
+      },
+      "blind_review": {
+        "status": "PREPARED_NOT_PUBLISHED",
+        "anonymous_response_examples": 69,
+        "provider_turns": 63,
+        "local_listening_turns": 6,
+        "independent_human_reviews_completed": 0,
+        "html_sha256": "c12bb6f78d484c94c79d77162d37a3d96aafbcb5fb1309b54467035d11147120",
+        "wjx_import_package_sha256": "501b2b566e562d2093535d1683098eb03a08a6d74becf05f47e276b369dc55d4"
+      },
+      "gate2": "BLOCKED",
+      "gate3": "BLOCKED",
+      "sources": [
+        {
+          "path": "backend/app/services/yaya_agent.py",
+          "sha256": "8427b7b392df007c0f30e6d9b6166113eb6c59e6c93c5f6366fc9712d75b0ad0",
+          "bytes": 28614
+        },
+        {
+          "path": "backend/tests/test_interactions.py",
+          "sha256": "206ad7a83a0758e39f29a518b559a986018e5abfcf368002377635eb3f02d63a",
+          "bytes": 139824
+        },
+        {
+          "path": "infra/staging/gate2_live_probe.py",
+          "sha256": "2f345f1af1412e01e11bee158632e56ebf8bee60db844ac382f4f3895d403202",
+          "bytes": 15552
+        },
+        {
+          "path": "infra/staging/run_gate2_live.ps1",
+          "sha256": "03c0e057b1f7839b173d938a88f3584a6d17d9c78cd3acc420d9ca637aecf022",
+          "bytes": 2158
+        }
+      ]
+    },
+    "E18": {
+      "stage": "Gate 1 isolated cloud staging and Gate 3 rollback preparation",
+      "recorded_on": "2026-11-27",
+      "runtime_revision": "63bfe2cd12eec17c10c3e0988440397804c52b6a",
+      "runtime_environment": "temporary Hong Kong ECS, verified Caddy HTTPS over SSH, synthetic only",
+      "ci_run_id": 46003378841,
+      "provider_model": "qwen3.8-flash",
+      "staging_smoke": {
+        "status": "PASS",
+        "archive_sha256": "fcec78aa59ee376132676b0459854a3d6abb63a10b9be7a66c7b5efcd75e590d",
+        "checks": [
+          "candidate_build_and_start",
+          "verified_https",
+          "synthetic_sqlite",
+          "cohort_boundary",
+          "cross_guardian_rejection",
+          "input_consent_revoke",
+          "production_model_untouched"
+        ]
+      },
+      "browsers": {
+        "desktop_chrome": "PASS",
+        "desktop_chrome_version": "158.0.8127.38",
+        "mobile_viewport": "PASS",
+        "android_real_device": "BLOCKED"
+      },
+      "model_live": {
+        "archive_sha256": "5a6598754d282c94dc7a0babba504010babbf70c7957c5990b88751e306b06fc",
+        "verified_provider_responses": 12,
+        "local_listening_turns": 2,
+        "full_fallbacks": 0,
+        "format_errors": 0,
+        "application_micros_settled": 8767,
+        "prior_denied_http_status": 403,
+        "prior_denied_app_attempts": 2,
+        "prior_denied_conservative_micros_reserved": 6750,
+        "prior_denied_archives_sha256": [
+          "7bd23a2841a121d540a773ff4a0086de5d93a86cdbfd4440bc5fcfbd65ea1ab5",
+          "6e814ed6949f5f85ef93df8b6672c350dc0cab9d753100e2e6a09b1424161af6"
+        ]
+      },
+      "rollback": {
+        "status": "PASS",
+        "bridge_revision": "42bd04626979d3c93f36f8619e92072ca6fe654a",
+        "candidate_backend_image_id": "sha256:6e2d01bfc79018ed1952b36bd56e19340ac8af8e301577bf25c9aba0cd230028",
+        "candidate_web_image_id": "sha256:54ab65a00c5d45444ff1068b90eb3cf7747015bfab90519f11fc41c8042aa193",
+        "bridge_backend_image_id": "sha256:fc2c32367587694e26fe4d08a1c5e8eba4528fa016a6696115e91e2f3691089d",
+        "bridge_web_image_id": "sha256:6838d6b944bd1bbc6796330ed955b836e4f9b9d5337d29e150fba62199aa8aa7",
+        "sqlite_and_caddy_ca_preserved": true,
+        "pinned_sessions_preserved": true,
+        "new_sessions_revert_to_legacy": true
+      },
+      "restore": {
+        "status": "PASS",
+        "separate_staging_restore_file": true,
+        "restored_sessions": 6,
+        "sqlite_snapshot_sha256": "636f44902f670f8f91677ba21c599b060afeed9b48afe0d61002c13e29f61558",
+        "receipt_sha256": "fe7aa46cde5cd597a12e639095bacab1a925a56a8d2309f12c37984ab4db683f"
+      },
+      "gate1": "BLOCKED",
+      "gate2": "BLOCKED",
+      "gate3": "BLOCKED",
+      "limitations": "Cloud Android microphone and on-device playback, vendor invoice, independent human review, and formal approvals remain pending.",
+      "voice": {
+        "asr": "PASS",
+        "confirmed_answer_submission": "PASS",
+        "tts": "PASS",
+        "cross_account_media_isolation": "PASS",
+        "input": "approved_synthetic_wav",
+        "tts_audio_bytes": 130604,
+        "receipt_sha256": "c6d9741caf75f60a2c987eca047436cd142b3839a254202929391f305b027def",
+        "android_microphone_and_playback": "BLOCKED"
+      }
+    },
+    "E19": {
+      "stage": "Gate 1 browser, physical Android, and supplier billing follow-up",
+      "recorded_on": "2026-11-27",
+      "runtime_revision": "29c51c8b0c877041c478f7256314633909dc463b",
+      "browser_runs": {
+        "android": {
+          "status": "PASS",
+          "version": "156.0.4314.43",
+          "scope": "physical Android 12 USB local synthetic gateway",
+          "evidence_sha256": "ddd244a70b0826db4884a1efcbda7f5eb37810bb558917e0b417bb0d044cbb05"
+        },
+        "firefox": {
+          "status": "PASS",
+          "version": "159.0",
+          "desktop": 5,
+          "mobile_viewport": 2,
+          "voice_fixture": 2,
+          "evidence_sha256": "8d6e31aa11f3dee9ca900faa8ce4668d042f28d859cc1a3629078bf8c5713a86"
+        },
+        "webkit": {
+          "status": "PASS",
+          "version": "27.2",
+          "desktop": 5,
+          "mobile_viewport": 2,
+          "voice_fixture": 2,
+          "evidence_sha256": "634fc9fe629773b039b72b30446b9dbee80ff66a1f8fe68908d72227287cb556"
+        }
+      },
+      "iphone_safari_real_device": "DEFERRED",
+      "consent_deletion_media_regression": {
+        "tests_passed": 60,
+        "warnings": 1,
+        "scope": "local synthetic backend fixtures"
+      },
+      "supplier_daily_billing": {
+        "status": "PARTIAL",
+        "date": "2026-11-27",
+        "export_sha256": "c9a19350816da426145f1f8514eb18b8f772e5572f922952a376d70bce6f4cba",
+        "reconciled_historical_flash_input_tokens": 9057,
+        "reconciled_historical_flash_output_tokens": 452,
+        "observed_asr_seconds": 2,
+        "observed_tts_input_tokens": 10,
+        "observed_tts_output_tokens": 34,
+        "observed_test_rows_payable_cny": "0",
+        "cloud_batch": "not distinguishable in the daily export"
+      },
+      "approved_real_pilot_participants": 0,
+      "gate1": "BLOCKED",
+      "gate2": "BLOCKED",
+      "gate3": "BLOCKED"
+    },
+    "E20": {
+      "stage": "Gate 2 and 3 engineering verification",
+      "recorded_on": "2026-11-28",
+      "verified_revision": "117ef82fdb45314af8b0c7790b634fc523a66a96",
+      "local_focused_tests_passed": 83,
+      "local_release_tests_passed": 6,
+      "local_linux_only_release_tests_skipped": 1,
+      "ci": {
+        "url": "https://github.com/MumLauds/202610-zhiya/actions/runs/46034116594/job/140625094004",
+        "validate_release": "PASS",
+        "verify_hong_kong_release": "SKIP"
+      },
+      "synthetic_isolated_target": true,
+      "live_target_staging_available": false,
+      "pilot_participating_households": 0,
+      "gate1": "BLOCKED",
+      "gate2": "BLOCKED",
+      "gate3": "BLOCKED"
+    },
+    "E21": {
+      "stage": "Gate 1 supplementary loopback browser acceptance and evidence review",
+      "recorded_on": "2026-11-28",
+      "candidate_revision": "4dfb0e3c401721e205f6e4dbcdda874cb40ffe53",
+      "historical_cloud_revision": "63bfe2cd12eec17c10c3e0988440397804c52b6a",
+      "changes_since_historical_cloud": "production_readiness_documentation_only",
+      "ci": {
+        "url": "https://github.com/MumLauds/202610-zhiya/actions/runs/46039204446/job/140642301385",
+        "validate_release": "PASS",
+        "verify_hong_kong_release": "SKIP"
+      },
+      "public_index_sha256": "f685ba085d86bfb55c5f07332f9af9d5625310f635a0f6e062abb8398ef9e8e0",
+      "local_browsers": {
+        "chrome": {
+          "status": "PASS",
+          "version": "158.0.8127.38",
+          "desktop_groups": 5,
+          "mobile_viewport_groups": 2,
+          "synthetic_voice_groups": 2,
+          "sha256": "8575916bd89bdd6b766921ee6196877589d706fbec5d7e513bb412e8c99535ae"
+        },
+        "firefox": {
+          "status": "PASS",
+          "version": "159.0",
+          "desktop_groups": 5,
+          "mobile_viewport_groups": 2,
+          "synthetic_voice_groups": 2,
+          "sha256": "c19619c71735880414170236093cd5acd5ca1e00f4c3c18146116cfafbda2da8"
+        },
+        "webkit": {
+          "status": "PASS",
+          "version": "27.2",
+          "desktop_groups": 5,
+          "mobile_viewport_groups": 2,
+          "synthetic_voice_groups": 2,
+          "sha256": "568b46661b493102cd4317b422ce2ff9bb1cac3f298b243ebcd380bee0592818"
+        }
+      },
+      "interaction_tests_passed": 5,
+      "real_provider_calls_this_round": 0,
+      "prior_physical_android_evidence_verified_sha256": "ddd244a70b0826db4884a1efcbda7f5eb37810bb558917e0b417bb0d044cbb05",
+      "target_staging_validation": "BLOCKED",
+      "engineering_signoff": "PENDING",
+      "gate1": "BLOCKED"
+    },
+    "E22": {
+      "stage": "Gate 2 and 3 synthetic authorization, retention, budget and recovery rehearsal",
+      "recorded_on": "2026-11-28",
+      "verified_revision": "d35013524bb86b7f2a5568f722c7786000af8094",
+      "synthetic_receipt_sha256": "71a311093d168e6f06bee20924981eabe84b6d5f7e7d40edd4e35e3d65217aa4",
+      "local_regression_tests_passed": 120,
+      "local_release_tests_passed": 6,
+      "local_linux_only_release_tests_skipped": 1,
+      "android_usb_adb_retest": "BLOCKED_NO_ADB_DEVICE",
+      "ci": {
+        "url": "https://github.com/MumLauds/202610-zhiya/actions/runs/46091741485/job/140813993339",
+        "validate_release": "PASS",
+        "verify_hong_kong_release": "SKIP"
+      },
+      "alerts_delivered": 0,
+      "live_target_staging_available": false,
+      "real_family_pilot": "SKIP_BY_RELEASE_SCOPE",
+      "pilot_participating_households": 0,
+      "gate2": "BLOCKED",
+      "gate3": "BLOCKED"
+    },
+    "E23": {
+      "stage": "Gate 1–3 isolated temporary Hong Kong ECS synthetic engineering recheck",
+      "recorded_on": "2026-11-28",
+      "verified_revision": "7334c40d2b6798075cd5ee7add46915657a57bc8",
+      "ci": {
+        "url": "https://github.com/MumLauds/202610-zhiya/actions/runs/46092743819/job/140817165834",
+        "validate_release": "PASS",
+        "verify_hong_kong_release": "SKIP"
+      },
+      "linux_release_tests_passed": 7,
+      "trusted_https_and_health": "PASS",
+      "ssh_tunnel_only_ingress": "PASS_EXACT_TESTED_PORTS",
+      "desktop_chrome_and_edge": "PASS",
+      "mobile_viewport": "PASS_AFTER_FIRST_FLIP_CONFLICT_RECOVERY",
+      "android_usb_adb_retest": "BLOCKED_NO_ADB_DEVICE",
+      "iphone": "SKIP_BY_RELEASE_SCOPE",
+      "own_profile_allowlist_and_revocation": "PASS_SYNTHETIC",
+      "budget_limit": {
+        "status": "PASS",
+        "budget_micros": 1,
+        "reason": "BUDGET_LIMIT",
+        "provider_ledger_rows": 0,
+        "external_alert_delivery": "NOT_TESTED"
+      },
+      "sqlite_restore": {
+        "restore": "PASS",
+        "isolated_copy": true,
+        "history_verified": true,
+        "counts": {
+          "accounts": 4,
+          "child_profiles": 4,
+          "reading_sessions": 11,
+          "interaction_events": 33,
+          "yaya_agent_sessions": 10
+        },
+        "version_bindings_verified": true,
+        "duration_ms": 29.31
+      },
+      "rollback_revision": "42bd04626979d3c93f36f8619e92072ca6fe654a",
+      "image_ids": [
+        "zhiya-agent-stg-ci-ecs7334c40-1-backend:latest sha256:45ceaf3f66e84ec72eefd5b7db6cdc2c8e10e698dea9dafc66b174369d9dd76c <no value>",
+        "zhiya-agent-stg-ci-ecs7334c40-1-web:latest sha256:c5bf5f16d0cd19123d99e1e2fafc923c2e0f044a445bb97f9acd9fc0b7ad593e <no value>",
+        "zhiya-agent-stg-ci-ecs7334c40-1-rollback-backend:latest sha256:3f3b82e7f45078463e05287af46c8fc7eef93ad744db84453556065d60cd6874 42bd04626979d3c93f36f8619e92072ca6fe654a",
+        "zhiya-agent-stg-ci-ecs7334c40-1-rollback-web:latest sha256:99b0ab9cc342984c75307ace26bae94192f60c045c6264efc8316d1d8c461fe2 42bd04626979d3c93f36f8619e92072ca6fe654a"
+      ],
+      "candidate_build_fingerprints": [
+        "7334c40d2b6798075cd5ee7add46915657a57bc8",
+        "zhiya-agent-g1-target-backend:latest sha256:29ef82dd4be89b96c63911a74e553e4c673f561584566cb479249c982c02aef4",
+        "zhiya-agent-g1-target-web:latest sha256:d46a725801d1b4719af51317b980aad05e575b83564dfd6d1628379e880c056c",
+        "a72573f0dd9eafd495d9b5e6469fe50531efa25e93fa629e2a40ef0c6a367a6e  infra/staging/compose.yaml",
+        "407d1e96d1a8b2b9576c71550958526c255e95ff87e6393fa0c0a1e13f49b0c7  infra/staging/Caddyfile",
+        "1f412a7dbf5b7844298fa5903806773b4942ee8432b52e852412a2935c439b6b  infra/staging/smoke_ci.sh",
+        "26b16a06bcf39aefe8a0480c9db8f883a0bef840f8874fca87959f5e94a7ee82  infra/hk/backup.py"
+      ],
+      "real_flash": {
+        "verified_provider_ids": 0,
+        "usage": {},
+        "fallback_count": 0,
+        "status": "BLOCKED_NO_APPROVED_KEY_ON_THIS_ECS"
+      },
+      "real_voice": "BLOCKED_NO_APPROVED_KEY_ON_THIS_ECS",
+      "real_family_pilot": "SKIP_BY_RELEASE_SCOPE",
+      "pilot_participating_households": 0,
+      "receipt_sha256": {
+        "cloud-images.txt": "964d518d12ae9e39e60a97d8c8f90f6cb54fa14c7ebedf63ef336f0a9cabf365",
+        "cloud-smoke.log": "05fc5de63e842e04d6a9a62ad4782e64c00ad6ae69dab5ec6d7d051dc603f2cf",
+        "edge-target-browser.log": "62c71d12ded5e2c8efdb04623d415d5e1a2f5bc86a12b91f35c2e102bd8bc0fa",
+        "gate1-20261128-target-browser-recovery.log": "3fafb5c5fe50b979d6274afc68044d8b29731f2f4ceff36dcc8c801f4e9eb23c",
+        "gate1-20261128-target-ingress.json": "4339a7ce44649a8ad08f079971dd07cf712d581315b763098718b0f247b6a873",
+        "target-budget-event.txt": "2fab4e37fbeec29a05c5f7bd1a625f3490aa5ffa837de0a4a968daf35d61cbdd",
+        "target-budget.json": "4160a01e5072ddc792ab6892a5dbd428fd3467def5f803a8d6da7205b5342c30",
+        "target-build-fingerprints.txt": "3267bab74ef62a5ac3a2dc40f6a0c59e3b6daef7a8f5b63c59afb161964c6a65",
+        "target-listeners.txt": "30c8cb82cc2c8bccdbb96a5b580f113de0e080e6cff5ca9dddc6605af405500d",
+        "target-release-tests.log": "a29689128a76e0545b4f001157a45650e3f77d8aa1a0189da454dda9b21f5025",
+        "target-restore.json": "e36b95c70f267238dab919903f053ee895ddc3601ca93071869d3bf062298f74"
+      },
+      "gate1": "BLOCKED",
+      "gate2": "BLOCKED",
+      "gate3": "BLOCKED"
+    },
+    "E24": {
+      "stage": "Gate 1 actual Beijing Flash and speech recheck on isolated temporary Hong Kong ECS",
+      "recorded_on": "2026-11-28",
+      "verified_revision": "7334c40d2b6798075cd5ee7add46915657a57bc8",
+      "synthetic_turns": 14,
+      "local_listening_turns": 2,
+      "full_fallbacks": 0,
+      "flash_usage": {
+        "verified_flash_provider_ids": 12,
+        "input_tokens": 9426,
+        "output_tokens": 455
+      },
+      "application_ledger": {
+        "verified_settled_calls": 12,
+        "reserved_micros_sum": 43078,
+        "settled_micros_sum": 8775
+      },
+      "voice": "BLOCKED_VOICE_KEY_REJECTED",
+      "receipt_sha256": {
+        "passing-flash/target-live-ledger.json": "ce80cdca3ebb748c209e486e3250f084aad37c22e6bd9350881fd875ef53e443",
+        "passing-flash/target-live-receipt.json": "d3d173e5102e837d383486f6ec83eee4c0523e95c5b0579f7fed1e5d52244616",
+        "passing-flash/target-live-summary.log": "353049e62047db09407e44a33fac72ae382a2dc30025fd7fbcdcfde4d92a086f",
+        "passing-flash/target-live-usage.json": "a29b390b7001242533c1a84ac2ca307edd7c9bdb2ad959e07ceb15b9a3bc7fda",
+        "first-provider-attempt/target-credential-classification.json": "8c2babbd33424b0da7ecbff25eede257b12982fd133ca9114a0d816dbffce4d1",
+        "first-provider-attempt/target-live-flash-auth.json": "9e0fc3d828b7e4ee0fa30ad981f686b9c038b2e385d76a06510960ef43da66ef",
+        "first-provider-attempt/target-live-receipt.json": "b6367806ef8b254538bab7d85a39f88d4dc12ebb6b41e51c8755bf271e7075e4",
+        "first-provider-attempt/target-live-summary.log": "e9eb3bc284ecddfdd4bf9a96fb2a5e552791575b9770b149faa8624e3459e0c0",
+        "first-provider-attempt/target-live-tts-auth.json": "4ed584467bbbc893a212654804dda8755da943d59394e9506aceb9d7fb025b9f",
+        "first-provider-attempt/target-live-usage.json": "7f1b0ee6ee0d2f6b544495a34cf9f5180ea8b47f444e5f550f08137fd0f9ad37",
+        "speech-auth-failure/target-voice-auth-status.json": "4651dbed273168e233380f2b58566988512abf4b487e4a9693208ca747792328",
+        "speech-auth-failure/target-voice-provider-log.txt": "3d7ea31e7fe6b3497f4c3b2371838b7eb585f9a56a250e426f16e1bb33e8f5ae",
+        "speech-auth-failure/target-voice-receipt.json": "1d890b04038a19d2c6b255144a51ec976112979e19cc7452f5a3d3875c1e8978"
+      },
+      "gate1": "BLOCKED"
+    },
+    "E25": {
+      "stage": "Gate 1 real Beijing ASR and TTS on isolated ECS after Windows SSH input fix",
+      "recorded_on": "2026-11-28",
+      "verified_revision": "7334c40d2b6798075cd5ee7add46915657a57bc8",
+      "voice_workspace_scope": "Beijing default workspace approved by the user for the synthetic run",
+      "root_cause": "Windows SSH argument quoting caused a carriage-return filter to remove the literal letter r",
+      "credential_matches_at_container": true,
+      "provider_status_by_origin": {
+        "windows": {
+          "asr": 200,
+          "tts": 200
+        },
+        "ecs": {
+          "asr": 200,
+          "tts": 200
+        }
+      },
+      "application_voice": {
+        "asr": "PASS",
+        "sample_keywords_verified": true,
+        "tts": "PASS",
+        "cross_guardian_media_404": true,
+        "audio_bytes": 522284,
+        "audio_sha256": "cdac38b5c93513b0924583475061c7833cc6a49e17dd78c7147687692a61c97c"
+      },
+      "temporary_credentials_removed": true,
+      "staging_containers_stopped": true,
+      "receipt_sha256": {
+        "application.json": "941e014d359c646782d18d06e37fc4479c3379bee9670f472fec71799c862ce0",
+        "credential-stages.json": "29763ae6208cd1a5fe4e177ac5b69fc56ef7a57a42f8e991a4e8239d218ba104",
+        "ecs.json": "329b36f20a98d81ef5804f71f5f1512ca6e847fc7f19dfb7abdbdc5fa53a8f8d",
+        "legacy-container.json": "1b465aa9c7546502f79475700cd3321754924f5ea6bf23597cb92b8249a55644",
+        "local.json": "1612ad8f8e8439a5c8a6a14b0730194527113874000042fb5c3d612fea11623e"
+      },
+      "gate1": "BLOCKED_PENDING_OTHER_ACCEPTANCE_AND_SIGNOFF"
+    },
+    "E26": {
+      "stage": "Gate 1 synthetic candidate on the existing Hong Kong ECS and formal HTTPS origin",
+      "recorded_on": "2026-11-29",
+      "verified_revision": "7fa6464258498980260e896c1723d3466d3e0247",
+      "formal_origin": "https://zhiyahuiben.xyz",
+      "anonymous_revision": "48844b2ee267bc539ed0580a358470beca13e449",
+      "frontend_image_id": "sha256:6f9bf882cc309dbbdb9e4b7f5d7e44670176f365dae9964d08d663fc0e8ef635",
+      "candidate_ci": "https://github.com/MumLauds/202610-zhiya/actions/runs/46172991832/job/141065357931",
+      "cloud_assistant_runs": {
+        "initial_https_routing": "t-hk074hw3sa29se8",
+        "isolated_frontend_rebuild_and_attach": "t-hk074hxzhqeuneo",
+        "provider_usage_and_synthetic_consent_revocation": "t-hk074hywvdtvqps",
+        "no_new_model_call_and_ingress_rollback": "t-hk074hz7vb3zwu8"
+      },
+      "real_qwen3_8_flash_turns": 2,
+      "input_tokens": 1880,
+      "output_tokens": 54,
+      "settled_cny_micros": 1651,
+      "real_synthetic_asr_tts": "PASS",
+      "cross_guardian_session_and_media": 404,
+      "mobile_first_page_turn": {
+        "observed_http": [
+          409,
+          201
+        ],
+        "persisted_events": 1
+      },
+      "synthetic_consent_revocation_no_provider_calls": true,
+      "gate1_preview_closed_and_containers_stopped": true,
+      "receipt_sha256": {
+        "formal-api-evidence-7fa6464.json": "13b8c5cf360e9979c165b10e514dfc353b82702249928e5eece01ca795879d5d",
+        "formal-browser-desktop.json": "19dc55a4d72cd619a4ec3484d4586147d7550ed66bfdf9879574cadfb584d3b2",
+        "formal-browser-mobile.json": "05ff30898264e9133d76ca9c300228e7d80b9d2c52ff0aece192372835b76efc"
+      },
+      "gate1": "BLOCKED_PENDING_SAME_ORIGIN_ANDROID_AND_REMAINING_TARGET_MATRIX",
+      "apple_device_acceptance": "SKIP"
+    }
+  },
+  "deliverables": [
+    {
+      "path": "docs/production-readiness/architecture-assessment.md",
+      "sha256": "11a9e89c20674e7edbc3f44046a4cdc0cb71ddc1bae23b26e78093e2324e8013",
+      "bytes": 5665
+    },
+    {
+      "path": "docs/production-readiness/current-state-inventory.md",
+      "sha256": "498fb3eabbbfd64da32969b5113d2b9f72c7a987986be4720c4022c63dde3def",
+      "bytes": 6019
+    },
+    {
+      "path": "docs/production-readiness/data-flow-and-api-contract.md",
+      "sha256": "fbe2213225e3b6c2e2331142607c2ad8ef61f2b567dc3e88c88a69663944162c",
+      "bytes": 5866
+    },
+    {
+      "path": "docs/production-readiness/decision-log.md",
+      "sha256": "2309fc459651fd33f6ac8ee63e0007ae3fa0a2947c04ad234f88af891127df46",
+      "bytes": 2049
+    },
+    {
+      "path": "docs/production-readiness/deployment-and-rollback.md",
+      "sha256": "6d388e58d26c1b0372706e0d373f76ee2d3464295adee39a69bb6678d59af27c",
+      "bytes": 10295
+    },
+    {
+      "path": "docs/production-readiness/gap-analysis.md",
+      "sha256": "78e906c4406b92841ce65534a0eb38341cfd8313fd07da87dc7b6e79603058fb",
+      "bytes": 9065
+    },
+    {
+      "path": "docs/production-readiness/go-live-checklist.md",
+      "sha256": "89fcb3dd056db0768e28e524f897c49eacf2fad6df6ef9fae2d00bc6303fd5ba",
+      "bytes": 10455
+    },
+    {
+      "path": "docs/production-readiness/observability-and-cost.md",
+      "sha256": "1d877460cb71f2605af7e6b68eb4f7ddc8a2ddf3bc9e98499eeb2c4b7fe26db6",
+      "bytes": 7102
+    },
+    {
+      "path": "docs/production-readiness/privacy-and-data-governance.md",
+      "sha256": "4c601488ebebcc5aef0bdd6884d627626c9e044d1790aad028acb24c3c722b6c",
+      "bytes": 8731
+    },
+    {
+      "path": "docs/production-readiness/production-readiness-scorecard.json",
+      "sha256": "dd881fe6c370b797150eb7d8393f2f8395034d46bf7c6c26c69ae5debc3b5383",
+      "bytes": 5122
+    },
+    {
+      "path": "docs/production-readiness/production-test-plan.md",
+      "sha256": "910cdd74444a578a70ac889170f5ba9f81774f520d1dcf489410311f55edeb3a",
+      "bytes": 6311
+    },
+    {
+      "path": "docs/production-readiness/README.md",
+      "sha256": "526feaa0e165ee2caba23aaa45d7f5743aa6c313defce6935d94c8f997531e8f",
+      "bytes": 3324
+    },
+    {
+      "path": "docs/production-readiness/seven-series-assessment.md",
+      "sha256": "81630a562627556382230d1c6170673bdadc71d1107994356c6520bd5daa7961",
+      "bytes": 6447
+    },
+    {
+      "path": "docs/production-readiness/staging-plan.md",
+      "sha256": "c3e032e88836a4f863a5c94596259026c7f8f009aa4b4f2fcab370f03c102e01",
+      "bytes": 4379
+    },
+    {
+      "path": "docs/production-readiness/gate1-staging-validation.md",
+      "sha256": "0d2d64f633e29891bb8112c14e252cc70d280dc6f2b1e0b461e3545db473018c",
+      "bytes": 23019
+    },
+    {
+      "path": "docs/production-readiness/browser-e2e-report.md",
+      "sha256": "b678bc91d31e60da1de4c7c91f358dff9f88e3885a0375d7b9bc57d8cc22db49",
+      "bytes": 2861
+    },
+    {
+      "path": "docs/production-readiness/voice-integration-report.md",
+      "sha256": "c7fe762705cbfd1dcfb0d5a677cafbf96c1d9c2d86052c0597d4716610e9ee3c",
+      "bytes": 2355
+    },
+    {
+      "path": "docs/production-readiness/session-isolation-report.md",
+      "sha256": "1837821fd62e740c5fc830baf4fb556c3b402e54668bf57d0a0811dd4d99d3d7",
+      "bytes": 1414
+    },
+    {
+      "path": "docs/production-readiness/cost-reconciliation.md",
+      "sha256": "f94f8c57ec96b948399cf4e36bb0a22a548e30faf029eb96eff11b342a2a88e5",
+      "bytes": 1771
+    },
+    {
+      "path": "docs/production-readiness/legacy-migration-verification.md",
+      "sha256": "b363ce5b335b2c358f33f2003883b18cfd55c67cff7bce74305ea7426bd70d7d",
+      "bytes": 1456
+    },
+    {
+      "path": "docs/production-readiness/gate1-local-evidence.json",
+      "sha256": "a13788a62849b551fb666cd3d09521a65315243ab591a5a92f92d34f941cf9ac",
+      "bytes": 814
+    },
+    {
+      "path": "docs/production-readiness/gate2-pilot-readiness.md",
+      "sha256": "ba3943e02c4a0b5045012a7d5ba4bafb915dd63fed864592e3fd62f12b636fc3",
+      "bytes": 17226
+    },
+    {
+      "path": "docs/production-readiness/gate3-release-readiness.md",
+      "sha256": "c684cbd5a363c9229944c544afcf7e3095180b18e4a3e693adbdaacd66907ca7",
+      "bytes": 5706
+    }
+  ]
+}

@@ -326,9 +326,7 @@ describe('parent transcript review', () => {
     expect(getUserMedia).toHaveBeenCalledTimes(entry === 'denied' ? 1 : 0)
     expect(transcribe).not.toHaveBeenCalled()
     expect(submitAnswer).not.toHaveBeenCalled()
-    expect(synthesize.mock.calls.map(([source]) => source)).toEqual([
-      { readingSessionId: 55, pageNumber: 1, revision: 1, preload: true },
-    ])
+    expect(synthesize).not.toHaveBeenCalled()
     await wrapper.get('.reader-answer').trigger('submit')
     await flushPromises()
     expect(submitAnswer).toHaveBeenCalledExactlyOnceWith('小兔回家了。')
@@ -439,21 +437,6 @@ describe('parent child-mode handoff', () => {
 })
 
 describe('narration lifecycle', () => {
-  it('pauses the actual player and reuses its prepared source on the same page', async () => {
-    render()
-    await button('朗读').trigger('click')
-    await flushPromises()
-    expect(audios).toHaveLength(1)
-    await button('暂停朗读').trigger('click')
-    expect(audios[0].pause).toHaveBeenCalledTimes(1)
-    expect(audios[0].removeAttribute).not.toHaveBeenCalled()
-    await button('朗读').trigger('click')
-    await flushPromises()
-    expect(synthesize).toHaveBeenCalledOnce()
-    expect(audios[0].play).toHaveBeenCalledTimes(2)
-    expect(speechSynthesis.cancel).toHaveBeenCalled()
-  })
-
   it('preserves active narration when a same-page question advances the revision', async () => {
     render()
     await button('朗读').trigger('click')
@@ -471,15 +454,50 @@ describe('narration lifecycle', () => {
     render({ events: [], requestGuidance })
     await flushPromises()
     expect(requestGuidance).toHaveBeenCalledWith('INITIAL')
-    expect(synthesize.mock.calls[0][0]).toEqual({ readingSessionId: 55, pageNumber: 1, revision: 1, preload: true })
-    expect(audios[0].play).not.toHaveBeenCalled()
+    expect(synthesize).not.toHaveBeenCalled()
     await button('朗读').trigger('click')
     await flushPromises()
+    expect(synthesize.mock.calls[0][0]).toEqual({ readingSessionId: 55, pageNumber: 1, revision: 1, preload: true })
     expect(audios[0].play).toHaveBeenCalledOnce()
     await wrapper.setProps({ session: { ...initialSession, revision: 2 }, events: [questionEvent] })
     pending.resolve(true)
     await flushPromises()
     expect(synthesize).toHaveBeenCalledOnce()
+  })
+
+  it('loads narration on demand, reuses it on the same page, and preloads only within that session', async () => {
+    render()
+    await flushPromises()
+    expect(synthesize).not.toHaveBeenCalled()
+    const secondPage = { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3], revision: 2 }
+    await wrapper.setProps({ session: secondPage })
+    expect(synthesize).not.toHaveBeenCalled()
+
+    await button('朗读').trigger('click')
+    await flushPromises()
+    expect(synthesize).toHaveBeenCalledExactlyOnceWith(
+      { readingSessionId: 55, pageNumber: 3, revision: 2, preload: true }, expect.any(AbortSignal),
+    )
+    expect(audios).toHaveLength(1)
+    const currentAudio = audios[0]
+    expect(currentAudio.play).toHaveBeenCalledOnce()
+    await button('暂停朗读').trigger('click')
+    expect(currentAudio.pause).toHaveBeenCalledOnce()
+    expect(currentAudio.removeAttribute).not.toHaveBeenCalled()
+    await button('朗读').trigger('click')
+    await flushPromises()
+    expect(synthesize).toHaveBeenCalledOnce()
+    expect(currentAudio.play).toHaveBeenCalledTimes(2)
+    expect(speechSynthesis.cancel).toHaveBeenCalled()
+
+    await wrapper.setProps({ session: { ...secondPage, currentPage: 7, visitedPageNumbers: [1, 3, 7], revision: 3 } })
+    await flushPromises()
+    expect(synthesize.mock.calls.map(([source]) => source.pageNumber)).toEqual([3, 7])
+    expect(audios[1].play).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ session: { ...initialSession, readingSessionId: 56 } })
+    await flushPromises()
+    expect(synthesize).toHaveBeenCalledTimes(2)
   })
 
   it('keeps preparing the page but never plays after cancelling the loading state', async () => {
@@ -1103,6 +1121,24 @@ describe('guided reading interactions', () => {
     expect(editor.element.value).toBe('这是孩子的回答。')
     expect(wrapper.props('submitAnswer')).not.toHaveBeenCalled()
     expect(wrapper.props('askQuestion')).not.toHaveBeenCalled()
+  })
+
+  it('plays the saved Agent reply and detaches the avatar from audio after playback', async () => {
+    const answer = { eventType: 'ANSWER', pageNumber: 1, interactionEventId: 44, revision: 2,
+      replyText: '一起听一听雨声。', agentReceipt: { version: '2.0', action: 'RESPOND' } }
+    render({ session: { ...initialSession, revision: 2 }, events: [questionEvent, answer] })
+    await flushPromises()
+    synthesize.mockResolvedValueOnce({ audioUrl: '/api/v1/media/reply' })
+    await button('播放芽芽的回应').trigger('click')
+    await flushPromises()
+    expect(synthesize).toHaveBeenCalledWith({ interactionEventId: 44, readReply: true }, expect.any(AbortSignal))
+    const avatar = wrapper.getComponent({ name: 'YayaAvatar' })
+    expect(avatar.props('media')).toBe(audios.at(-1))
+    audios.at(-1).onended()
+    await flushPromises()
+    expect(avatar.props('media')).toBeNull()
+    await wrapper.setProps({ session: { ...initialSession, revision: 3 } })
+    expect(button('播放芽芽的回应')).toBeUndefined()
   })
 
   it('submits a guardian-confirmed question separately and plays only its saved event', async () => {

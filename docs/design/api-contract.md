@@ -141,6 +141,13 @@ API-016 接收家长已确认的本页问题 `inputText`（1～200 字符）。�
 
 API-015 在同一写事务内重新计算允许的选项。儿童的 `ANSWER.inputText` 去除两端空白后须精确匹配其中一项，超出范围返回 `422 VALIDATION_ERROR`。家长在亲子共读时可提交 1～200 字符的文本。成功时随事件和新修订号返回 `data.replyText`，有追问时另返回 `data.followupQuestion`。为兼容旧客户端，`data.replyText` 保留追问后缀；使用独立字段显示追问的客户端可去除同一后缀。模型在事务外运行，回答生成的总时限为 5 秒。执行记录从占位起保留 25 秒的处理窗口。处理期间同键返回 `409 REQUEST_IN_PROGRESS`。新追问落库时，会话修订号随追问一起推进，最终回答回执返回该新修订号，旧快照提交理解反馈会收到 `409 SESSION_CONFLICT`。没有新追问时不额外推进修订号。模型失败、页面修订已推进或执行超时后，最终回应沿用已保存的规则文本。完成后同键重放返回相同回应和可选追问。同一会话、同一绘本版本、同一页每次到达最多保存两条不同的芽芽主动追问；翻页或经分支回到同一页时，本次到达的追问重新计数。模型返回追问编号 0 或降级为规则回应时不保存主动追问。同键重放不增加计数。跳转剧情分支使用 API-018。
 
+
+### 芽芽 2.0 会话迁移期间的可选回执
+
+服务端在 API-011 创建会话及续读新建会话时固定 Agent 版本。读取既有会话、请求重放和模式设置更新均延用会话初始归属。家长的 API-015 作答、API-016 提问和 API-013 对应历史事件可带 `agentReceipt`。该对象包含 `version`（`"2.0"`）、`action`、`state`、`decision`、`reason`（无分类时为 null）。儿童和旧版历史可省略字段。脱敏或拦截时回执可含 `inputRedacted: true`，原始输入不落库。内容安全拦截保留安全文案。供应商草稿、请求键和费用数据均属服务端数据。
+
+`action` 可为 `RESPOND`、`ASK_FOLLOWUP`、`LISTEN`、`PAUSE`、`CLOSE_TOPIC` 或 `HANDOFF`。状态取 `CONTINUE`、`LISTEN`、`PAUSE` 或 `END_TOPIC`。`decision=REPLY_ONLY` 表示正文有效且追问已移除。`decision=FALLBACK` 表示使用安全回退。2.0 的 API-016 以相同的 `strategyType` 与 `agentReceipt.reason` 表示 `API_TIMEOUT`、`API_CONNECTION_ERROR`、`API_HTTP_ERROR`、`MODEL_OUTPUT_INVALID`、`QUESTION_FORMAT`、`BUDGET_LIMIT`（全站日预算）、`GUARDIAN_CALL_LIMIT`（账号日次数）、`SESSION_CALL_LIMIT`（会话日次数）、`AGENT_BUSY`（并发）、`CONTEXT_LIMIT`（输入上下文上限）、`CLIENT_DISCONNECTED`、`DEPENDENCY_UNAVAILABLE` 或 `SAFETY_BLOCK`。旧回执保留原枚举。2.0 的 API-017 提供本地题目和原契约的固定儿童选项，访问限制、修订号、播放和幂等行为沿用现有规则。详见 [发布与回滚](../production-readiness/deployment-and-rollback.md)。
+
 ## 本期有限续写范围
 
 用户确认本期纳入有限续写；范围限亲子模式、固定源快照、审核新版本和原子切换，整本及各阅读路径仍为4～6页。
@@ -202,7 +209,8 @@ API-030创建806/v1(APPROVED)，API-031以806为来源修订得到807/v2(APPROVE
 - 候选 `GET /api/v1/voice/options`，接口编号待团队分配，仅已认证家长。服务端使用当前模型的 `get_speech_options(model)`，按既有 `data` / `requestId` 包装返回；不调用付费服务。`data.voices` 为 `{voiceId, displayName, description, category, languages, dialects, scenarios}` 数组，`data.speechRates` 为支持的语速枚举数组，`data.defaultSpeechRate` 为 `NORMAL`。旧模型不再提供可选项；未配置合成时业务层应返回不可用状态，不能把静态目录当作服务可用证明。
 - API-006 候选新增 `speechPreferences` 对象，例如 `{"speechPreferences":{"voiceId":"wenhuaiqing_v3.1","speechRate":"SLOW"}}`；API-004 返回同结构。只允许本人家长修改，沿用安全 Cookie、写入防跨站请求与归属校验；他人档案按既有不可见规则返回 404，儿童授权不能写设置。省略整个对象表示不改；提供时两个字段均必填，null、未知字段、未知/跨模型声线和无效语速返回 422，整次修改不部分落库。
 - `speechRate` 为 `SLOW` / `NORMAL` / `FAST`，含义是模型合成语速；`voiceId` 是受支持声线的供应商原值，按第三方命名例外保留。前端中文标签由界面映射，不向家长展示底层枚举。
-- API-023 沿用已授权事件或页面。页面朗读可设 `preload: true`，仅限已确认的本次当前页，当页的提问或作答写入不使已准备的音频失效。已保存的 `ASK` 回答也可在本次访问当前页期间播放。翻页、退出授权或绘本撤回后仍重新校验。录音继续要求当前修订号。
+- API-023 的事件源可附加布尔字段 `readReply: true`，用于朗读当前修订中已保存的芽芽 2.0 亲子共读回应（仅 `ANSWER` 的 `RESPOND`、`ASK_FOLLOWUP`）。朗读内容取自服务端 `replyText`，包括已保存的追问。缺省时继续使用事件原有的 `outputText`；页面源不能携带该字段。
+- API-023 沿用已授权事件或页面。页面朗读可设 `preload: true`，仅限已确认的本次当前页，当页的提问或作答写入不使已准备的音频失效。桌面和移动读页从本次会话首次主动播放页面朗读起预加载后续页。已保存的 `ASK` 回答也可在本次访问当前页期间播放。翻页、退出授权或绘本撤回后仍重新校验。录音继续要求当前修订号。
 - 档案持久化候选为 `child_profiles.voice_id`、`child_profiles.speech_rate`，与上述字段一一映射；约束、默认值和存量迁移由业务后端随数据库设计评审实现。本轮无建列或迁移。新模型默认温怀清 / NORMAL；已有不支持的偏好须明确迁移或提示重选，不能悄悄替换声线。
 
 DCL-014（2026-11-11）目录元数据草案：category 取 MULTILINGUAL_DIALECT（多语种与方言）、CHINESE（精品中文）、ENGLISH（精品英文）、OTHER_SYSTEM（其他系统声线）、OTHER_LANGUAGE（其他语言），旧模型兼容项为 LEGACY。languages、dialects、scenarios 均是显示用中文字符串数组，不是供应商请求参数或适龄认证；空数组表示官方未明确，不代表支持所有语言。displayName 不保证唯一（不同语言可同名），选择、保存和列表键必须使用精确 voiceId，保留其大小写。新增信息只用于目录展示，档案仍只保存 voiceId / speechRate，不增加数据库列。

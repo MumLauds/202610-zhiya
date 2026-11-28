@@ -49,7 +49,12 @@ class AgentResult(BaseModel):
     # 对应 API-016/017 的 data 部分
     status: Literal["GENERATED", "FALLBACK", "BLOCKED"]
     outputText: str
-    strategyType: Literal["CONTEXT_QUESTION", "CONCRETE_RECALL", "SKIP", "TIMEOUT_FALLBACK", "NO_KNOWLEDGE_FALLBACK", "SAFETY_BLOCK"]
+    strategyType: Literal[
+        "CONTEXT_QUESTION", "CONCRETE_RECALL", "SKIP", "TIMEOUT_FALLBACK", "NO_KNOWLEDGE_FALLBACK", "SAFETY_BLOCK",
+        "API_TIMEOUT", "API_CONNECTION_ERROR", "API_HTTP_ERROR", "MODEL_OUTPUT_INVALID", "QUESTION_FORMAT",
+        "BUDGET_LIMIT", "GUARDIAN_CALL_LIMIT", "SESSION_CALL_LIMIT", "AGENT_BUSY", "CONTEXT_LIMIT",
+        "CLIENT_DISCONNECTED", "DEPENDENCY_UNAVAILABLE",
+    ]
     sources: List[AgentSource] = []
     
     # 以下字段由业务后端在保存数据库时补充，Agent 内部不直接生成

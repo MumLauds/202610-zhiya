@@ -133,7 +133,7 @@ async def synthesize(request: Request):
         raise invalid() from None
     snapshot = read_voice_source(principal, session_id=fields.reading_session_id,
                                  page_number=fields.page_number, revision=fields.revision,
-                                 event_id=fields.interaction_event_id, visit_scoped=fields.preload)
+                                 event_id=fields.interaction_event_id, visit_scoped=fields.preload, read_reply=fields.read_reply)
     config = request.app.state.speech_settings
     if not config.tts_configured:
         raise ServiceError("TTS_NOT_CONFIGURED", "语音合成尚未配置", 503)

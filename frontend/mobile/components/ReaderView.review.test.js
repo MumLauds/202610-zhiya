@@ -269,7 +269,7 @@ describe('ReaderView session recovery and interaction', () => {
     expect(wrapper.get('.page-scene').text()).toBe('第一页')
   })
 
-  it('plays the requested page when the first tap arrives before audio preparation completes', async () => {
+  it('waits for a narration tap, plays the requested page when ready, and preloads silently after that', async () => {
     const play = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('Audio', class extends EventTarget {
       play = play
@@ -278,30 +278,43 @@ describe('ReaderView session recovery and interaction', () => {
       load() {}
     })
     let resolveAudio
-    const synthesizePage = vi.fn(() => new Promise(resolve => { resolveAudio = resolve }))
-    await openReader({ snapshot: questionedPageOne, events: [savedQuestion(1, 2)], voiceApi: { synthesizePage } })
+    const synthesizePage = vi.fn()
+      .mockImplementationOnce(() => new Promise(resolve => { resolveAudio = resolve }))
+      .mockResolvedValue({ data: { audioUrl: '/page-three.mp3' } })
+    await openReader({
+      snapshot: questionedPageOne, events: [savedQuestion(1, 2)], voiceApi: { synthesizePage },
+      sessionApi: { addEvent: vi.fn().mockResolvedValueOnce({ data: { revision: 3 } })
+        .mockResolvedValueOnce({ data: { revision: 5 } }) },
+    })
+    expect(synthesizePage).not.toHaveBeenCalled()
+    await clickButton('下一页 →')
+    expect(wrapper.get('.page-scene').text()).toBe('第二页')
+    expect(synthesizePage).not.toHaveBeenCalled()
 
     await wrapper.get('button.reading-text').trigger('click')
     expect(synthesizePage).toHaveBeenCalledOnce()
     expect(play).not.toHaveBeenCalled()
-    resolveAudio({ data: { audioUrl: '/page-one.mp3' } })
+    resolveAudio({ data: { audioUrl: '/page-two.mp3' } })
     await flushPromises()
     expect(play).toHaveBeenCalledOnce()
-    expect(play.mock.contexts[0].src).toBe('/page-one.mp3')
+    expect(play.mock.contexts[0].src).toBe('/page-two.mp3')
+
+    await clickButton('下一页 →')
+    expect(wrapper.get('.page-scene').text()).toBe('第三页')
+    expect(synthesizePage.mock.calls.map(([source]) => source.pageNumber)).toEqual([2, 3])
+    expect(play).toHaveBeenCalledOnce()
   })
 
   it('keeps reviewing visited pages local and hides interaction controls until the current page', async () => {
     const synthesizePage = vi.fn().mockRejectedValue(new ApiError('朗读暂不可用', { status: 503 }))
     const api = await openReader({ snapshot: questionedPageTwo, events: [savedQuestion(2, 3)], voiceApi: { synthesizePage } })
-    expect(synthesizePage).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-      readingSessionId: 42, pageNumber: 2, revision: 3,
-    }))
+    expect(synthesizePage).not.toHaveBeenCalled()
     await clickButton('上一页')
     expect(wrapper.get('.page-scene').text()).toBe('第一页')
     expect(wrapper.text()).toContain('正在回看已读页')
     expect(wrapper.find('.interaction-card').exists()).toBe(false)
     expect(wrapper.find('.page-audio-request').exists()).toBe(false)
-    expect(synthesizePage).toHaveBeenCalledTimes(1)
+    expect(synthesizePage).not.toHaveBeenCalled()
 
     await clickButton('下一页 →')
     expect(wrapper.get('.page-scene').text()).toBe('第二页')

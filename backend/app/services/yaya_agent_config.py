@@ -1,0 +1,115 @@
+"""Server-side migration policy and a dedicated Beijing model configuration."""
+
+import os
+import re
+from dataclasses import dataclass, field
+from decimal import Decimal
+
+from app.config import Settings
+
+AGENT_VERSION = "2.0"
+MODEL = "qwen3.8-flash"
+TOKENS_PER_MILLION = 1_000_000
+# Beijing public, uncached real-time tariff. Deployments can set an approved replacement.
+INPUT_RATE = "0.8"
+OUTPUT_RATE = "2.7"
+MAX_INPUT_TOKENS = 8192
+MAX_OUTPUT_TOKENS = 256
+WORKSPACE = re.compile(r"https://(?:ws|llm)-[a-z0-9-]+\.cn-beijing\.maas\.aliyuncs\.com/compatible-mode/v1/chat/completions")
+
+
+def rate_micros(value: str) -> int:
+    if not re.fullmatch(r"[0-9]{1,4}(?:\.[0-9]{1,6})?", value.strip()):
+        raise ValueError("Invalid Agent 2.0 token price in CNY per million tokens")
+    micros = int(Decimal(value) * TOKENS_PER_MILLION)
+    if not 0 < micros <= 1_000 * TOKENS_PER_MILLION:
+        raise ValueError("Agent 2.0 token prices must be positive and bounded")
+    return micros
+
+
+def authorized_input_profiles(value: str) -> frozenset[tuple[int, int]]:
+    confirmed = set()
+    for item in value.split(","):
+        if not item.strip():
+            continue
+        guardian, _, profile = item.partition(":")
+        if not guardian.strip().isdigit() or not profile.strip().isdigit():
+            raise ValueError("YAYA_AGENT2_INPUT_ALLOWLIST requires guardian_id:child_profile_id pairs")
+        pair = (int(guardian), int(profile))
+        if min(pair) < 1:
+            raise ValueError("Agent 2.0 input authorization requires positive IDs")
+        confirmed.add(pair)
+    return frozenset(confirmed)
+
+
+@dataclass(frozen=True)
+class YayaSettings:
+    mode: str = "off"
+    guardians: frozenset[int] = frozenset()
+    model: Settings | None = field(default=None, repr=False)
+    ledger_secret: str = field(default="", repr=False)
+    daily_micros: int = 10_000_000
+    guardian_calls: int = 40
+    session_calls: int = 20
+    concurrency: int = 6
+    retention_days: int = 2
+    model_input_profiles: frozenset[tuple[int, int]] = field(default=frozenset(), repr=False)
+    input_micros_per_million: int = rate_micros(INPUT_RATE)
+    output_micros_per_million: int = rate_micros(OUTPUT_RATE)
+
+    def __post_init__(self):
+        if self.mode not in {"off", "allowlist", "default"}:
+            raise ValueError("Invalid YAYA_AGENT2_MODE")
+        if self.mode == "allowlist" and not self.guardians:
+            raise ValueError("YAYA_AGENT2_ALLOWLIST is required for allowlist mode")
+        if self.mode != "off" and (self.model is None or not self.model.model_configured
+                                   or len(self.ledger_secret.encode()) < 32):
+            raise ValueError("Agent 2.0 needs its own model and a ledger secret")
+        if self.model and (self.model.model_name != MODEL or not WORKSPACE.fullmatch(self.model.model_api_url)):
+            raise ValueError("Agent 2.0 requires the Beijing workspace and the fixed Flash model")
+        if any(type(rate) is not int or not 0 < rate <= 1_000 * TOKENS_PER_MILLION
+               for rate in (self.input_micros_per_million, self.output_micros_per_million)):
+            raise ValueError("Invalid Agent 2.0 token price")
+        if (not 1 <= self.daily_micros <= 1_000_000_000
+                or not 1 <= self.session_calls <= self.guardian_calls <= 1000
+                or not 1 <= self.concurrency <= 64 or not 2 <= self.retention_days <= 7):
+            raise ValueError("Invalid Agent 2.0 budget or retention")
+
+    def cost_micros(self, input_tokens: int, output_tokens: int) -> int:
+        bill = input_tokens * self.input_micros_per_million + output_tokens * self.output_micros_per_million
+        return (bill + TOKENS_PER_MILLION - 1) // TOKENS_PER_MILLION
+
+    def enrolls(self, guardian_id: int) -> bool:
+        return self.mode == "default" or (self.mode == "allowlist" and guardian_id in self.guardians)
+
+    def authorizes_model_input(self, guardian_id: int, child_profile_id: int | None) -> bool:
+        return self.enrolls(guardian_id) and (guardian_id, child_profile_id) in self.model_input_profiles
+
+    @classmethod
+    def from_env(cls):
+        mode = os.getenv("YAYA_AGENT2_MODE", "off")
+        if mode == "off":
+            return cls()
+        if mode == "default" and os.getenv("YAYA_AGENT2_RELEASE_APPROVED") != "true":
+            raise ValueError("Agent 2.0 default enrollment requires an approved release")
+        if os.getenv("YAYA_AGENT2_STAGE") == "staging" and mode != "allowlist":
+            raise ValueError("Staging requires allowlist mode")
+        key = os.getenv("YAYA_AGENT2_API_KEY", "")
+        if key and key in (os.getenv("MODEL_API_KEY"), os.getenv("DASHSCOPE_API_KEY")):
+            raise ValueError("Agent 2.0 requires a dedicated credential")
+        return cls(
+            mode=mode,
+            guardians=frozenset(int(value.strip()) for value in os.getenv("YAYA_AGENT2_ALLOWLIST", "").split(",") if value.strip()),
+            model_input_profiles=authorized_input_profiles(os.getenv("YAYA_AGENT2_INPUT_ALLOWLIST", "")),
+            model=Settings(model_api_url=os.getenv("YAYA_AGENT2_API_URL", ""), model_api_key=key,
+                           model_name=MODEL, model_timeout_seconds=3.5, model_max_tokens=MAX_OUTPUT_TOKENS,
+                           model_send_thinking=True),
+            ledger_secret=os.getenv("YAYA_AGENT2_LEDGER_SECRET", ""),
+            input_micros_per_million=rate_micros(os.getenv("YAYA_AGENT2_INPUT_CNY_PER_MILLION_TOKENS", INPUT_RATE)),
+            output_micros_per_million=rate_micros(os.getenv("YAYA_AGENT2_OUTPUT_CNY_PER_MILLION_TOKENS", OUTPUT_RATE)),
+            daily_micros=int(os.getenv("YAYA_AGENT2_DAILY_MICROS", "10000000")),
+            guardian_calls=int(os.getenv("YAYA_AGENT2_GUARDIAN_CALLS", "40")),
+            session_calls=int(os.getenv("YAYA_AGENT2_SESSION_CALLS", "20")),
+            concurrency=int(os.getenv("YAYA_AGENT2_CONCURRENCY", "6")),
+            retention_days=int(os.getenv("YAYA_AGENT2_LEDGER_RETENTION_DAYS", "2")),
+        )

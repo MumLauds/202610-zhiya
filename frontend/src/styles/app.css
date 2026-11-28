@@ -1371,10 +1371,10 @@
     .reader-card-icon--book { color: #fffaf0; background: linear-gradient(145deg, #b2c685, #63905e); }
     .reader-card-icon--question { color: #fff; background: linear-gradient(145deg, #f8d17f, #eea349); }
     .reader-card-icon--bulb { color: #ad6c22; background: radial-gradient(circle at 48% 42%, #ffe4a1 38%, transparent 65%); }
-    .narration-card { position: relative; }
+    .narration-card { position: relative; padding-top: clamp(24px, 2.8vw, 42px); }
     .narration-card h2 { color: var(--leaf-deep); }
-    .reader-mascot { position: absolute; inset: -65px 0 auto auto; width: min(49%, 245px); height: 128px; pointer-events: none; }
-    .reader-mascot img { position: absolute; bottom: 3px; right: 24%; width: auto; height: 100%; max-width: 78%; object-fit: contain; object-position: bottom; }
+    .reader-mascot { position: absolute; inset: -56px 0 auto auto; width: min(49%, 245px); height: 151px; pointer-events: none; }
+    .reader-mascot .yaya-avatar { position: absolute; bottom: 3px; right: 11%; height: 100%; width: 145px; max-width: 86%; pointer-events: auto; }
     .reader-foliage {
       display: block;
       height: 56px;

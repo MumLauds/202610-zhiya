@@ -134,10 +134,21 @@ export class ReadingSessionMachine {
 
   async changePage(pageNumber, { signal, clientEventId = this.keyFactory('page') } = {}) {
     if (!this.session) throw new Error('尚无阅读会话')
+    const before = this.session
     return this._runMutation({
       canSupersedeInitial: true,
       clientEventId,
       signal,
+      retryAfterInitial: (question, recovered) => {
+        const latest = recovered.events.at(-1)
+        if (!question?.interactionEventId || latest?.interactionEventId !== question.interactionEventId
+          || latest.eventType !== 'QUESTION' || latest.pageNumber !== before.currentPage
+          || recovered.session.currentPage !== before.currentPage || recovered.session.status !== 'IN_PROGRESS'
+          || recovered.session.readingSessionId !== before.readingSessionId
+          || recovered.session.revision !== before.revision + 1 || question.revision !== recovered.session.revision) return false
+        clientEventId = this.keyFactory('page')
+        return true
+      },
       request: () => this.api.addEvent(this.session.readingSessionId, {
         eventType: 'PAGE_CHANGED',
         pageNumber,
@@ -213,7 +224,9 @@ export class ReadingSessionMachine {
       apply: (data) => {
         this.session = { ...this.session, revision: Math.max(this.session.revision, data.revision) }
         if (this.session.mode !== 'PARENT_CHILD' || !data.interactionEventId) return
-        const answerEvent = { ...data, eventType: 'ANSWER', pageNumber: currentPage, inputText: text }
+        const inputText = data.agentReceipt?.inputRedacted || data.agentReceipt?.reason === 'SAFETY_BLOCK'
+          ? undefined : text
+        const answerEvent = { ...data, eventType: 'ANSWER', pageNumber: currentPage, inputText }
         const index = this.events.findIndex(event => event.interactionEventId >= data.interactionEventId)
         if (index < 0) this.events = [...this.events, answerEvent]
         else if (this.events[index].interactionEventId === data.interactionEventId) {
@@ -342,15 +355,24 @@ export class ReadingSessionMachine {
           if (!recoverable && !initial) throw error
           this.syncRequired = true
           this.unconfirmed = pendingReceipt(operation, this.session.revision, error)
+          let initialQuestion
           if (initial && !this.unconfirmed) {
-            // A rejected skip leaves INITIAL free to commit, even after its connection closes.
+            // INITIAL can still commit after a competing foreground write is rejected.
             try {
-              await initial.initialReply
+              initialQuestion = (await initial.initialReply).data
             } catch (initialError) {
               this.unconfirmed = pendingReceipt(initial, this.session.revision, initialError)
             }
           }
           const recovered = await this.restore(this.session.readingSessionId, { signal })
+          if (!signal?.aborted && error.code === 'SESSION_CONFLICT' && this.activeMutation === operation
+              && operation.retryAfterInitial?.(initialQuestion, recovered)) {
+            // Rebase once with a fresh idempotency key after proving which write won.
+            operation.supersededInitial = null
+            this.pending = true
+            this._emit()
+            continue
+          }
           if (recoverable) {
             throw new RecoverableSessionError(
               isSavedAnswerDependencyError(operation, error)

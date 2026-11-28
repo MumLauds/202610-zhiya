@@ -17,10 +17,11 @@ class SynthesisRequest(BaseModel):
     page_number: StrictInt | None = Field(default=None, alias="pageNumber", ge=1, le=MAX_ID)
     revision: StrictInt | None = Field(default=None, ge=0, le=MAX_ID)
     preload: StrictBool = False
+    read_reply: StrictBool = Field(default=False, alias="readReply")
 
     @model_validator(mode="after")
     def exactly_one_source(self):
-        if self.model_fields_set == {"interaction_event_id"} and self.interaction_event_id is not None:
+        if self.model_fields_set - {"read_reply"} == {"interaction_event_id"} and self.interaction_event_id is not None:
             return self
         if self.model_fields_set - {"preload"} == {"reading_session_id", "page_number", "revision"} and all(
                 value is not None for value in (self.reading_session_id, self.page_number, self.revision)):

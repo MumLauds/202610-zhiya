@@ -1,0 +1,243 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-11-27",
+  "status": "PENDING_HUMAN_APPROVAL",
+  "production_source_revision": "48844b2ee267bc539ed0580a358470beca13e449",
+  "experiment_revision": "1eb9fb4",
+  "target_model": {
+    "id": "qwen3.8-flash",
+    "region": "cn-beijing"
+  },
+  "scale": {
+    "0": "缺证据",
+    "1": "有方案或局部工程",
+    "2": "已有实现与可定位的合成或自动化证据",
+    "3": "新链路独立 Staging 实测通过",
+    "4": "有获批 Pilot 或生产运行区间证据"
+  },
+  "formula": "sum(weight_percent * score / 4)",
+  "weighted_score_out_of_100": 50.0,
+  "score_is_release_approval": false,
+  "dimensions": [
+    {
+      "dimension": "Agent 功能完整性",
+      "weight_percent": 20,
+      "score": 2,
+      "status": "PARTIAL",
+      "risk": "P0",
+      "evidence": [
+        "E02",
+        "E03",
+        "E06",
+        "E10",
+        "E13"
+      ],
+      "gaps": [
+        "R01",
+        "R02"
+      ],
+      "completion_condition": "正式服务接口、已读版本隔离和可恢复回执在 Staging 验收",
+      "suggested_owners": [
+        "G07",
+        "G08",
+        "G09"
+      ]
+    },
+    {
+      "dimension": "模型质量",
+      "weight_percent": 20,
+      "score": 2,
+      "status": "PARTIAL",
+      "risk": "P1",
+      "evidence": [
+        "E03",
+        "E04",
+        "E05",
+        "E10",
+        "E13"
+      ],
+      "gaps": [
+        "R07"
+      ],
+      "completion_condition": "独立样本上双人核验通过，关键事实和安全样本零失败",
+      "suggested_owners": [
+        "G09",
+        "内容 QA"
+      ]
+    },
+    {
+      "dimension": "API 与后端稳定性",
+      "weight_percent": 20,
+      "score": 2,
+      "status": "PARTIAL",
+      "risk": "P0",
+      "evidence": [
+        "E01",
+        "E06",
+        "E08",
+        "E10",
+        "E13"
+      ],
+      "gaps": [
+        "R01",
+        "R02",
+        "R05"
+      ],
+      "completion_condition": "幂等与断开、授权及上游失败分类在正式新链路通过",
+      "suggested_owners": [
+        "G07",
+        "G08",
+        "G13"
+      ]
+    },
+    {
+      "dimension": "数据隐私与儿童安全",
+      "weight_percent": 15,
+      "score": 2,
+      "status": "BLOCKED",
+      "risk": "P0",
+      "evidence": [
+        "E01",
+        "E09",
+        "E10",
+        "E13"
+      ],
+      "gaps": [
+        "R02",
+        "R03",
+        "R04"
+      ],
+      "completion_condition": "监护同意、拒绝/撤回/删除、供应商处理与安全盘查经签批",
+      "suggested_owners": [
+        "数据负责人",
+        "儿童安全",
+        "产品",
+        "G08"
+      ]
+    },
+    {
+      "dimension": "前端体验",
+      "weight_percent": 10,
+      "score": 2,
+      "status": "PARTIAL",
+      "risk": "P1",
+      "evidence": [
+        "E01",
+        "E06",
+        "E08",
+        "E10",
+        "E13"
+      ],
+      "gaps": [
+        "R06"
+      ],
+      "completion_condition": "桌面移动真实浏览器、语音、刷新及对话动作经验收",
+      "suggested_owners": [
+        "G11",
+        "G12",
+        "G13"
+      ]
+    },
+    {
+      "dimension": "部署与监控",
+      "weight_percent": 10,
+      "score": 2,
+      "status": "BLOCKED",
+      "risk": "P1",
+      "evidence": [
+        "E01",
+        "E07",
+        "E10",
+        "E13"
+      ],
+      "gaps": [
+        "R05",
+        "R08",
+        "R10",
+        "R11",
+        "R12",
+        "R13"
+      ],
+      "completion_condition": "独立环境、真实 HTTPS、监测告警和实际回滚有审查回执",
+      "suggested_owners": [
+        "G15",
+        "运维",
+        "QA"
+      ]
+    },
+    {
+      "dimension": "成本管理",
+      "weight_percent": 5,
+      "score": 2,
+      "status": "PARTIAL",
+      "risk": "P1",
+      "evidence": [
+        "E03",
+        "E04",
+        "E10",
+        "E13"
+      ],
+      "gaps": [
+        "R09"
+      ],
+      "completion_condition": "用量、预算、限额和实际账单闭环，超预算可读可恢复",
+      "suggested_owners": [
+        "G08",
+        "运维",
+        "预算负责人"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "id": 0,
+      "name": "实验版本稳定",
+      "status": "ENGINEERING_MET_APPROVAL_PENDING",
+      "open_risks": []
+    },
+    {
+      "id": 1,
+      "name": "Staging Ready",
+      "status": "BLOCKED",
+      "open_risks": [
+        "R01",
+        "R02",
+        "R05",
+        "R06",
+        "R08"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Controlled Pilot Ready",
+      "status": "BLOCKED",
+      "requires_gate": 1,
+      "open_risks": [
+        "R03",
+        "R04",
+        "R07",
+        "R09",
+        "R10",
+        "R12",
+        "R13"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Production Ready",
+      "status": "BLOCKED",
+      "requires_gate": 2,
+      "open_risks": [
+        "R11"
+      ]
+    }
+  ],
+  "hard_blocks": [
+    "R01",
+    "R02",
+    "R03",
+    "R04"
+  ],
+  "historical_weighted_score_out_of_100": 42.5,
+  "assessment_scope": "PR #97 Gate 1 本地和 CI 工程复评，待独立云 Staging 及人工审批"
+}

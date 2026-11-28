@@ -1,5 +1,6 @@
 """API-016/017: claim an event, generate outside the write transaction, then commit its result."""
 
+import asyncio
 import json
 import logging
 import sqlite3
@@ -19,6 +20,8 @@ from app.api.v1.reading_sessions import (
     owned_session, parent_visit_questions, parent_visit_turns, record_session_event, replay_session_event, request_digest,
 )
 from app.schemas.agent import AgentResult
+from app.db import yaya_agent as yaya_db
+from app.services import yaya_agent as yaya
 from app.services.reading_agent import (
     ANSWER_PAGE_LOOKAHEAD, CHILD_QUESTIONS, GUIDANCE_EARLIER_PAGE_CHARS, answer_question, run_agent,
 )
@@ -57,7 +60,7 @@ def matches_page(session, payload: PageRequest) -> bool:
             and session["revision"] == payload.expectedRevision)
 
 
-def save_event(db, request, session, payload, digest, result: AgentResult, now):
+def save_event(db, request, session, payload, digest, result: AgentResult, now, receipt=None):
     revision = session["revision"] + 1
     ask = isinstance(payload, QuestionRequest)
     feedback = None if ask or payload.feedback == "INITIAL" else payload.feedback
@@ -69,12 +72,15 @@ def save_event(db, request, session, payload, digest, result: AgentResult, now):
             feedback, input_text, output_text, strategy_type, result_status, revision_after, created_at)
            VALUES (?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (session["id"], session["version_id"], payload.clientEventId, digest, payload.pageNumber,
-         event_type, feedback, payload.inputText if ask and result.status != "BLOCKED" else None,
+         event_type, feedback, payload.inputText if ask and result.status != "BLOCKED"
+         and not (receipt or {}).get("inputRedacted") else None,
          result.outputText, result.strategyType, status, revision, now),
     )
     event_id = cursor.lastrowid
     response = {"data": {**result.model_dump(), "interactionEventId": event_id, "revision": revision},
                 "requestId": request.state.request_id}
+    if receipt is not None:
+        response["data"]["agentReceipt"] = receipt
     if not ask and session["mode"] == "CHILD_SOLO" and result.status != "BLOCKED" and result.outputText:
         response["data"]["answerOptions"] = list(CHILD_SHORT_ANSWERS)
     db.execute("UPDATE interaction_events SET response_json = ? WHERE id = ?",
@@ -85,7 +91,7 @@ def save_event(db, request, session, payload, digest, result: AgentResult, now):
     return response
 
 
-def finish_guidance(request, session_id, payload, digest, token, result: AgentResult | None):
+def finish_guidance(request, session_id, payload, digest, token, result: AgentResult | None, receipt=None):
     with authorized_db(request, write=True) as (db, principal, failure):
         session = None if failure else owned_session(db, session_id, principal)
         if not failure:
@@ -120,7 +126,7 @@ def finish_guidance(request, session_id, payload, digest, token, result: AgentRe
         if failure:
             return failure
 
-        response = save_event(db, request, session, payload, digest, result, now)
+        response = save_event(db, request, session, payload, digest, result, now, receipt)
         db.execute("UPDATE request_executions SET response_body = ? WHERE id = ?",
                    (json.dumps(response, ensure_ascii=False), execution["id"]))
         return JSONResponse(status_code=201, content=response)
@@ -143,6 +149,8 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
     key = payload.clientEventId
     model = getattr(request.app.state, "model_adapter", None)
     page_image = None
+    new_context = None
+    receipt = None
     try:
         with authorized_db(request, write=True) as (db, principal, failure):
             if failure:
@@ -159,6 +167,7 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
             if not matches_page(session, payload):
                 return fail_session_event(db, request, owner, session_id, key, digest, 409,
                                           "SESSION_CONFLICT", "当前状态或页面不允许此操作")
+            new_agent = yaya_db.pinned(db, session_id)
             previous_question = confirmed_answer = ""
             parent_guidance = not ask and principal.role == "GUARDIAN" and session["mode"] == "PARENT_CHILD"
             arrival_id = current_page_arrival_id(db, session) if parent_guidance else 0
@@ -199,7 +208,18 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
             if context is None:
                 return fail_session_event(db, request, owner, session_id, key, digest, 404,
                                           "RESOURCE_NOT_FOUND", "当前页不可用")
-            if (principal.role == "GUARDIAN" and session["mode"] == "PARENT_CHILD"
+            if new_agent and not ask:
+                result = request.app.state.yaya_agent.guidance(
+                    payload.feedback, child_mode=session["mode"] == "CHILD_SOLO",
+                    page_text=context["body_text"], age_band=context["age_band"], used=seen_questions)
+                response = save_event(db, request, session, payload, digest, result, now)
+                record_session_event(db, owner, session_id, key, digest, now, 201, response)
+                return JSONResponse(status_code=201, content=response)
+            if new_agent:
+                visit = current_page_arrival_id(db, session)
+                new_context = request.app.state.yaya_agent.reading_context(db, session, payload.inputText, visit, ())
+                new_guardian = principal.role == "GUARDIAN"
+            if (not new_agent and principal.role == "GUARDIAN" and session["mode"] == "PARENT_CHILD"
                     and getattr(model, "supports_page_images", False) is True
                     and context["image_ref"] not in (None, "", "none", "/assets/placeholder.png")):
                 version = db.execute("SELECT * FROM story_versions WHERE id = ?", (session["version_id"],)).fetchone()
@@ -232,24 +252,29 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
         return error(request, 503, "DEPENDENCY_UNAVAILABLE", "服务暂不可用", retryable=True)
 
     try:
-        context_args = dict(age_band=context["age_band"], topics=json.loads(context["topics_json"]),
-                            page_text=context["body_text"])
-        if page_image is not None:
-            try:
-                data, media_type = await run_in_threadpool(delivery_image, *page_image, "thumbnail")
-            except (OSError, ValueError):
-                pass
+        if new_context is not None:
+            if new_guardian and session["mode"] == "PARENT_CHILD":
+                outcome = await request.app.state.yaya_agent.turn(
+                    new_context, request_id=request.state.request_id, guardian=owner, session=session_id,
+                    disconnected=request.is_disconnected, allow_followup=False)
             else:
-                if len(data) <= MAX_MODEL_IMAGE_BYTES and media_type in ("image/png", "image/jpeg", "image/webp"):
-                    context_args["page_image_url"] = f"data:{media_type};base64,{b64encode(data).decode('ascii')}"
-        if ask:
-            result = await answer_question(model, input_text=payload.inputText, **context_args)
+                quotes = new_context.material["currentQuotes"]
+                outcome = yaya.local_turn(new_context) or (
+                    yaya.Outcome(quotes[0], decision="LOCAL") if quotes else yaya.fallback("DEPENDENCY_UNAVAILABLE"))
+            if new_guardian:
+                receipt = outcome.public(input_redacted=new_context.input_projection.redacted)
+            result = yaya.question_result(outcome)
         else:
-            result = await run_agent(model, feedback=payload.feedback,
-                                     previous_question=previous_question, child_mode=session["mode"] == "CHILD_SOLO",
-                                     confirmed_answer=confirmed_answer, earlier_pages=earlier_pages,
-                                     seen_questions=seen_questions, recent_turns=recent_turns,
-                                     **context_args)
+            result = await legacy_guidance(model, ask, payload, context, page_image, session, previous_question,
+                                           confirmed_answer, earlier_pages, seen_questions, recent_turns)
+    except asyncio.CancelledError:
+        if new_context is not None:
+            outcome = yaya.fallback("CLIENT_DISCONNECTED")
+            await asyncio.shield(run_in_threadpool(finish_guidance, request, session_id, payload, digest, token,
+                                                   yaya.question_result(outcome),
+                                                   outcome.public(input_redacted=new_context.input_projection.redacted)
+                                                   if new_guardian else None))
+        raise
     except Exception as exc:
         # Keep private prompts and provider messages out of logs; record a definite failure for this key.
         logger.warning("guidance generation failed request_id=%s error=%s", request.state.request_id, type(exc).__name__)
@@ -258,7 +283,28 @@ async def process_question_or_guidance(payload: GuidanceRequest | QuestionReques
     # Retry only the short save transaction. The already obtained model result stays in memory.
     for _ in range(2):
         try:
-            return finish_guidance(request, session_id, payload, digest, token, result)
+            return await run_in_threadpool(finish_guidance, request, session_id, payload, digest, token, result, receipt)
         except sqlite3.Error:
             continue
     return error(request, 503, "DEPENDENCY_UNAVAILABLE", "暂时无法保存引导结果，请先查询会话", retryable=True)
+
+
+async def legacy_guidance(model, ask, payload, context, page_image, session, previous_question,
+                          confirmed_answer, earlier_pages, seen_questions, recent_turns):
+    context_args = dict(age_band=context["age_band"], topics=json.loads(context["topics_json"]),
+                        page_text=context["body_text"])
+    if page_image is not None:
+        try:
+            data, media_type = await run_in_threadpool(delivery_image, *page_image, "thumbnail")
+        except (OSError, ValueError):
+            pass
+        else:
+            if len(data) <= MAX_MODEL_IMAGE_BYTES and media_type in ("image/png", "image/jpeg", "image/webp"):
+                context_args["page_image_url"] = f"data:{media_type};base64,{b64encode(data).decode('ascii')}"
+    if ask:
+        return await answer_question(model, input_text=payload.inputText, **context_args)
+    return await run_agent(model, feedback=payload.feedback,
+                                 previous_question=previous_question, child_mode=session["mode"] == "CHILD_SOLO",
+                                 confirmed_answer=confirmed_answer, earlier_pages=earlier_pages,
+                                 seen_questions=seen_questions, recent_turns=recent_turns,
+                                 **context_args)

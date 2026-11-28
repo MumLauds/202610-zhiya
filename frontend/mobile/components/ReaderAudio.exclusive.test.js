@@ -124,17 +124,14 @@ function stubRecorder() {
   return { permission, getUserMedia, start }
 }
 
-async function preparePage(synthesizeInteraction = vi.fn().mockResolvedValue({ data: { audioUrl: '/answer.mp3' } })) {
+function openReaderWithPageAudio(synthesizeInteraction = vi.fn().mockResolvedValue({ data: { audioUrl: '/answer.mp3' } })) {
   const synthesizePage = vi.fn().mockResolvedValue({ data: { audioUrl: '/page.mp3' } })
-  await openReader({ synthesizePage, synthesizeInteraction })
-  expect(synthesizePage).toHaveBeenCalledExactlyOnceWith({
-    readingSessionId: 42, pageNumber: 1, revision: 2, signal: expect.any(AbortSignal),
-  })
-  expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/page.mp3')
+  return openReader({ synthesizePage, synthesizeInteraction })
 }
 
 async function playPage() {
-  await wrapper.get('[aria-label="播放朗读"]').trigger('click')
+  if (getButton('播放本页朗读')) await clickButton('播放本页朗读')
+  else await wrapper.get('[aria-label="播放朗读"]').trigger('click')
   await flushPromises()
 }
 
@@ -145,7 +142,7 @@ function playingSources(media) {
 describe('Reader audio playback and recording exclusion', () => {
   it('plays only the selected source when switching in either direction', async () => {
     const { media, play } = stubAudio()
-    await preparePage()
+    await openReaderWithPageAudio()
     expect(playingSources(media)).toEqual([])
     expect(play).not.toHaveBeenCalled()
 
@@ -160,7 +157,7 @@ describe('Reader audio playback and recording exclusion', () => {
   it.each(['page', 'answer'])('stops %s audio before microphone permission resolves', async (source) => {
     const { media } = stubAudio()
     const { permission, getUserMedia, start } = stubRecorder()
-    await preparePage()
+    await openReaderWithPageAudio()
     if (source === 'page') await playPage()
     else await clickButton('播放回答音频')
     expect(playingSources(media)).toEqual([`/${source}.mp3`])
@@ -183,7 +180,7 @@ describe('Reader audio playback and recording exclusion', () => {
     const { permission, getUserMedia, start } = stubRecorder()
     const synthesis = deferred()
     const synthesizeInteraction = vi.fn().mockReturnValue(synthesis.promise)
-    await preparePage(synthesizeInteraction)
+    await openReaderWithPageAudio(synthesizeInteraction)
     await clickButton('播放回答音频')
     expect(synthesizeInteraction).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       interactionEventId: question.interactionEventId,
@@ -259,13 +256,16 @@ describe('child reading authorization deadline', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('儿童阅读授权已到期')
   })
 
-  it('checks the deadline when tapping preloaded narration before the timer fires', async () => {
+  it('checks the deadline when replaying prepared narration before the timer fires', async () => {
     const { media, play } = stubAudio()
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
     const deadline = Date.now() + 5000
     const synthesizePage = vi.fn().mockResolvedValue({ data: { audioUrl: '/page.mp3' } })
     await openReader({ synthesizePage }, { mode: 'CHILD_SOLO', expiresAt: new Date(deadline).toISOString() })
+    await playPage()
+    await wrapper.get('[aria-label="暂停朗读"]').trigger('click')
     expect(media[0].src).toBe('/page.mp3')
+    play.mockClear()
 
     vi.setSystemTime(deadline + 1)
     await wrapper.get('.audio-play').trigger('click')
@@ -280,6 +280,7 @@ describe('Reader voice request lock recovery', () => {
     const synthesis = deferred()
     const synthesizePage = vi.fn().mockReturnValue(synthesis.promise)
     await openReader({ synthesizePage })
+    await clickButton('播放本页朗读')
     expect(synthesizePage).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       readingSessionId: 42,
       pageNumber: 1,
@@ -297,7 +298,7 @@ describe('Reader voice request lock recovery', () => {
     await flushPromises()
     expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('')
     await wrapper.get('[role="dialog"] [aria-label="关闭"]').trigger('click')
-    expect(getButton('准备本页朗读音频')).toBeDefined()
+    expect(getButton('播放本页朗读')).toBeDefined()
     expect(synthesizePage).toHaveBeenCalledOnce()
   })
 

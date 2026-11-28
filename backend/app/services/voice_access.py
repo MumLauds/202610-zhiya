@@ -38,6 +38,7 @@ class VoiceSnapshot:
     text: str
     event_id: int | None = None
     session_created_at: int | None = None
+    read_reply: bool = False
 
 
 def _deny():
@@ -46,14 +47,17 @@ def _deny():
 
 def read_voice_source(principal: VoicePrincipal, *, session_id: int | None = None,
                       page_number: int | None = None, revision: int | None = None,
-                      event_id: int | None = None, visit_scoped: bool = False) -> VoiceSnapshot:
+                      event_id: int | None = None, visit_scoped: bool = False, read_reply: bool = False) -> VoiceSnapshot:
     try:
         with closing(sqlite3.connect(f"{database_path().as_uri()}?mode=ro", uri=True, timeout=1)) as db:
             db.row_factory = sqlite3.Row
             db.execute("BEGIN")
             event = None
             if event_id is not None:
-                event = db.execute("SELECT * FROM interaction_events WHERE id=?", (event_id,)).fetchone()
+                event = db.execute("""SELECT *, json_extract(response_json, '$.data.replyText') AS reply,
+                    json_extract(response_json, '$.data.agentReceipt.action') AS action,
+                    json_extract(response_json, '$.data.agentReceipt.version') AS agent_version
+                    FROM interaction_events WHERE id=?""", (event_id,)).fetchone()
                 if event is None:
                     raise _deny()
                 session_id = event["session_id"]
@@ -88,8 +92,13 @@ def read_voice_source(principal: VoicePrincipal, *, session_id: int | None = Non
                 raise ServiceError("SESSION_CONFLICT", "阅读会话已结束或尚未开始", 409)
             if event is not None:
                 page_number, revision = event["page_no"], event["revision_after"]
+                if read_reply and (row["mode"] != "PARENT_CHILD" or principal.child_grant_id is not None
+                                   or event["event_type"] != "ANSWER" or event["agent_version"] != "2.0"
+                                   or event["action"] not in ("RESPOND", "ASK_FOLLOWUP")):
+                    raise _deny()
+                text = event["reply"] if read_reply else event["output_text"]
                 if (event["version_id"] != row["version_id"] or event["event_type"] not in ("ASK", "QUESTION", "ANSWER", "FEEDBACK")
-                        or event["result_status"] not in ("SUCCESS", "FALLBACK") or not event["output_text"]):
+                        or event["result_status"] not in ("SUCCESS", "FALLBACK") or not isinstance(text, str) or not text.strip()):
                     raise _deny()
                 visit_scoped = event["event_type"] == "ASK"
             if visit_scoped:
@@ -108,8 +117,8 @@ def read_voice_source(principal: VoicePrincipal, *, session_id: int | None = Non
                 raise _deny()
             return VoiceSnapshot(session_id, row["version_id"], page_number,
                                  visit_revision if visit_scoped else revision,
-                                 event["output_text"] if event is not None else page["body_text"], event_id,
-                                 row["created_at"] if visit_scoped else None)
+                                 text if event is not None else page["body_text"], event_id,
+                                 row["created_at"] if visit_scoped else None, read_reply)
     except sqlite3.Error:
         raise ServiceError("DEPENDENCY_UNAVAILABLE", "业务数据暂不可用", 503) from None
 
@@ -117,6 +126,7 @@ def read_voice_source(principal: VoicePrincipal, *, session_id: int | None = Non
 def recheck_source(principal: VoicePrincipal, snapshot: VoiceSnapshot) -> None:
     current = read_voice_source(principal, session_id=snapshot.session_id,
                                page_number=snapshot.page_number, revision=snapshot.revision,
-                               event_id=snapshot.event_id, visit_scoped=snapshot.session_created_at is not None)
+                               event_id=snapshot.event_id, visit_scoped=snapshot.session_created_at is not None,
+                               read_reply=snapshot.read_reply)
     if current != snapshot:
         raise ServiceError("SESSION_CONFLICT", "朗读内容已变化，请刷新后重试", 409)

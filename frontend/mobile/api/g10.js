@@ -1,3 +1,5 @@
+import { yayaFallbackLabels } from '../../src/data/readingQuestions.js'
+
 export const G10_STATUS_LABELS = {
   GENERATED: '已生成',
   FALLBACK: '安全回退',
@@ -5,12 +7,12 @@ export const G10_STATUS_LABELS = {
 }
 
 export const STRATEGY_LABELS = {
+  ...yayaFallbackLabels,
   CONTEXT_QUESTION: '情境提问',
   CONCRETE_RECALL: '具体回顾',
   SKIP: '已跳过',
   TIMEOUT_FALLBACK: '超时回退',
   NO_KNOWLEDGE_FALLBACK: '无知识依据回退',
-  SAFETY_BLOCK: '安全阻断',
 }
 
 export function normalizeAgentResult(data) {

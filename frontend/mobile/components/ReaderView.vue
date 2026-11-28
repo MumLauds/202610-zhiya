@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import InteractionCard from './InteractionCard.vue'
+import YayaAvatar from '../../src/components/YayaAvatar.vue'
 import PageAudioPlayer from './PageAudioPlayer.vue'
 import ReadingText from './ReadingText.vue'
 import ReadingSummary from './ReadingSummary.vue'
@@ -8,7 +9,7 @@ import VoiceAnswerDialog from './VoiceAnswerDialog.vue'
 import { useAudioController } from '../composables/useAudioController'
 import { useReadingSession } from '../composables/useReadingSession'
 import { approvedBranchesAt } from '../../src/data/readingBranches'
-import { latestReadingQuestion } from '../../src/data/readingQuestions'
+import { canPlayYayaReply, describeYayaReceipt, holdsYayaPrompt, latestReadingQuestion } from '../../src/data/readingQuestions'
 
 const props = defineProps({
   book: { type: Object, required: true },
@@ -39,6 +40,7 @@ const questionReady = computed(() => {
     !['SKIP', 'SAFETY_BLOCK'].includes(result.strategyType) && result.feedback !== 'SKIPPED'
 })
 const showAnswerDialog = ref(false)
+const recording = ref(false)
 const asking = ref(false)
 const lastAnswerText = ref('')
 const answerDraft = ref('')
@@ -54,6 +56,7 @@ const childAuthorizationExpired = ref(false)
 let autoQuestionPage = ''
 let lastOptionsVisit = ''
 let answerAudioEventId = null
+let cachedReply = false
 const answerAudio = useAudioController((url) => {
   if (answerAudioUrl.value === url) {
     answerAudioUrl.value = ''
@@ -63,6 +66,7 @@ const answerAudio = useAudioController((url) => {
 let pageAudioExpiryTimer
 let pageAudioRequest = null
 let playWhenPrepared = false
+let pageNarrationSession = null
 let answerAudioExpiresAt = NaN
 let answerAudioRequest = null
 let requestGeneration = 0
@@ -98,6 +102,8 @@ const displayedQuestion = computed(() => {
   // Blank settled feedback is not a new question. Without an older prompt, it still prevents automatic resubmission.
   return latestReadingQuestion(currentPageEvents.value, guidance) ?? settled
 })
+const answerStatus = computed(() => describeYayaReceipt(savedAnswer.value?.agentReceipt))
+const quietAnswer = computed(() => holdsYayaPrompt(savedAnswer.value, displayedQuestion.value))
 const previousAnswer = computed(() => questionReady.value
   && displayedQuestion.value?.interactionEventId >= savedAnswer.value?.interactionEventId)
 const answerFollowup = computed(() => displayedQuestion.value?.eventType === 'ANSWER' && previousAnswer.value)
@@ -159,8 +165,8 @@ const activePageKey = computed(() => props.mode === 'live' && !childAuthorizatio
 const textCanPlay = computed(() => !navigationPending.value && !showAnswerDialog.value
   && (activePageKey.value || (props.mode === 'demo' && pageAudioSrc.value)))
 watch(activePageKey, (key) => {
-  if (key && !pageAudioSrc.value) void loadPageAudio(true)
-  else if (!key) resetAudio()
+  if (!key) resetAudio()
+  else if (!pageAudioSrc.value && pageNarrationSession === sessionId.value) void loadPageAudio(true)
 }, { immediate: true, flush: 'post' })
 watch([activePageKey, pending, displayedQuestion], ([key, busy, question]) => {
   if (!key || busy || question || autoQuestionPage === key) return
@@ -378,7 +384,7 @@ async function openAnswerDialog(question = false) {
     const result = await submitFeedback('INITIAL')
     if (!result) return
   }
-  if (question || questionReady.value) {
+  if (question || questionReady.value || quietAnswer.value) {
     cancelPageAudioRequest()
     pagePlayer.value?.stop()
     stopAnswerAudio()
@@ -387,7 +393,7 @@ async function openAnswerDialog(question = false) {
 }
 
 async function handleAnswerConfirmed({ text }) {
-  if (isChildMode.value || (!asking.value && !questionReady.value)) return
+  if (isChildMode.value || (!asking.value && !questionReady.value && !quietAnswer.value)) return
   await submitAnswerText(text, asking.value)
 }
 
@@ -474,6 +480,7 @@ function playPageText() {
     void pagePlayer.value?.toggle()
     return
   }
+  pageNarrationSession = sessionId.value
   playWhenPrepared = true
   void loadPageAudio()
 }
@@ -485,16 +492,18 @@ function discardPageAudio(url) {
   answerAudioNotice.value = '本页音频已不可用，可重新准备朗读。'
 }
 
-async function playAnswerAudio(result = interactionResult.value) {
-  if (checkChildAuthorization() || showAnswerDialog.value || !result?.outputText || result.strategyType === 'SAFETY_BLOCK') return
+async function playAnswerAudio(result = interactionResult.value, readReply = false) {
+  if (checkChildAuthorization() || showAnswerDialog.value || !(readReply ? result?.replyText : result?.outputText) || result.strategyType === 'SAFETY_BLOCK') return
   answerAudioNotice.value = ''
   if (props.mode === 'demo') {
     answerAudioNotice.value = '演示模式没有回答音频；实机模式将在 G10 返回 interactionEventId 后请求 API-023。'
     return
   }
   const eventId = result.interactionEventId
-  const matches = () => result.eventType === 'ASK'
-    ? storyAnswer.value?.interactionEventId === eventId : result.revision === revision.value
+  const matches = () => {
+    if (readReply) return canPlayYayaReply(result, revision.value, session.state.events.at(-1)?.interactionEventId)
+    return result.eventType === 'ASK' ? storyAnswer.value?.interactionEventId === eventId : result.revision === revision.value
+  }
   if (!eventId || answerAudioLoading.value || !matches()) {
     answerAudioNotice.value = '当前结果没有可用的 interactionEventId，无法请求回答音频。'
     return
@@ -506,12 +515,13 @@ async function playAnswerAudio(result = interactionResult.value) {
   answerAudioRequest = controller
   answerAudioLoading.value = true
   try {
-    if (!answerAudioUrl.value || eventId !== answerAudioEventId || Date.now() >= answerAudioExpiresAt) {
-      const response = await props.voiceApi.synthesizeInteraction({ interactionEventId: eventId, signal: controller.signal })
+    if (!answerAudioUrl.value || eventId !== answerAudioEventId || cachedReply !== readReply || Date.now() >= answerAudioExpiresAt) {
+      const response = await props.voiceApi.synthesizeInteraction({ interactionEventId: eventId, ...(readReply ? { readReply } : {}), signal: controller.signal })
       if (controller.signal.aborted || generation !== pageRequestGeneration || page !== currentPageNumber.value
         || !matches() || checkChildAuthorization()) return
       answerAudioUrl.value = response.data.audioUrl
       answerAudioEventId = eventId
+      cachedReply = readReply
       answerAudioExpiresAt = Date.parse(response.data.expiresAt)
     }
     if (!await answerAudio.play({ url: answerAudioUrl.value, source: 'answer' }) && !controller.signal.aborted) {
@@ -589,6 +599,7 @@ function exitReading() {
             <span class="page-scene">{{ currentPage.scene || `第 ${currentPageIndex + 1} 幕` }}</span>
           </div>
           <div class="page-reading">
+            <YayaAvatar class="mobile-yaya" :media="answerAudio.playingElement.value || pagePlayer?.playingElement" :thinking="pending" :listening="recording" />
             <div v-if="currentPage.tokens.some((token) => token.pinyin)" class="page-heading">
               <p class="eyebrow">逐字拼音 · {{ showPinyin ? '已显示' : '已隐藏' }}</p>
               <button class="text-button" type="button" @click="showPinyin = !showPinyin">
@@ -606,10 +617,10 @@ function exitReading() {
               v-if="mode === 'live' && !reviewing && !pageAudioSrc"
               class="button button-ghost button-small page-audio-request"
               type="button"
-              :disabled="pageAudioLoading || showAnswerDialog"
-              @click="loadPageAudio()"
+              :disabled="pageAudioLoading || !textCanPlay"
+              @click="playPageText"
             >
-              {{ pageAudioLoading ? '音频准备中…' : '准备本页朗读音频' }}
+              {{ pageAudioLoading ? '音频准备中…' : '播放本页朗读' }}
             </button>
             <PageAudioPlayer
               ref="pagePlayer"
@@ -633,6 +644,7 @@ function exitReading() {
           :pending="pending || (isParentReading && session.state.syncRequired)"
           :demo="mode === 'demo'"
           :question-ready="questionReady"
+          :quiet="quietAnswer"
           :child-mode="isChildMode"
           :child-answer-options="childAnswerOptions"
           :can-skip="canSkip"
@@ -654,6 +666,8 @@ function exitReading() {
             <p v-if="savedReply" class="answer-confirmation guardian-answer-reply">
               <strong>芽芽：</strong>{{ savedReply }}
             </p>
+            <button v-if="canPlayYayaReply(savedAnswer, revision, session.state.events.at(-1)?.interactionEventId)" type="button" class="button button-ghost" :disabled="pending || answerAudioLoading" @click="playAnswerAudio(savedAnswer, true)">播放芽芽的回应</button>
+            <p v-if="answerStatus" class="answer-confirmation" role="status">{{ answerStatus }}</p>
           </div>
         </InteractionCard>
         <section v-if="mode === 'live' && !reviewing" class="interaction-card">
@@ -663,6 +677,7 @@ function exitReading() {
           </template>
           <button v-else class="button button-soft" type="button" :disabled="pending || session.state.syncRequired" @click="openAnswerDialog(true)">提出本页问题</button>
           <p v-if="storyAnswer">{{ storyAnswer.outputText }}</p>
+          <p v-if="describeYayaReceipt(storyAnswer?.agentReceipt)" role="status">{{ describeYayaReceipt(storyAnswer.agentReceipt) }}</p>
           <button v-if="storyAnswer?.interactionEventId && storyAnswer.strategyType !== 'SAFETY_BLOCK'" class="button button-ghost" type="button" :disabled="answerAudioLoading" @click="playAnswerAudio(storyAnswer)">{{ answerAudioLoading ? '回答音频准备中…' : '播放芽芽的回答' }}</button>
         </section>
 
@@ -720,10 +735,15 @@ function exitReading() {
       :submit-error="errorMessage"
       :asking="asking"
       @close="showAnswerDialog = false; answerDraft = ''"
+      @recording="recording = $event"
       @confirmed="handleAnswerConfirmed"
     />
   </div>
 </template>
+
+<style scoped>
+.mobile-yaya { float: right; width: 82px; height: 96px; }
+</style>
 
 
 

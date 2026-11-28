@@ -1,5 +1,6 @@
 """Guardian and child reading sessions, events, branches, completions, and continuation switching."""
 
+import asyncio
 import json
 import hashlib
 import secrets
@@ -12,6 +13,8 @@ from fastapi import APIRouter, BackgroundTasks, Path, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from starlette.concurrency import run_in_threadpool
+from app.db import yaya_agent as yaya_db
+from app.services import yaya_agent as yaya
 
 from app.api.v1.auth import (
     Principal,
@@ -328,6 +331,7 @@ def _switch_continuation_session(db, request: Request, owner: int, payload: Sess
          src["id"], resume_page, len(prefix), now, now),
     )
     new_session_id = cursor.lastrowid
+    yaya_db.pin_new_session(db, request.app.state.yaya_agent.settings, new_session_id, owner)
     new_row = db.execute(
         "SELECT *, NULL AS grant_expires_at FROM reading_sessions WHERE id = ?", (new_session_id,)
     ).fetchone()
@@ -381,6 +385,7 @@ def create_session(payload: SessionCreate, request: Request):
             )
             row = db.execute("SELECT *, NULL AS grant_expires_at FROM reading_sessions WHERE id = ?",
                              (cursor.lastrowid,)).fetchone()
+            yaya_db.pin_new_session(db, request.app.state.yaya_agent.settings, cursor.lastrowid, owner)
             response = {"data": session_object(row), "requestId": request.state.request_id}
             if key:
                 record_execution(db, owner, "SESSION_CREATE", owner, None, key, digest, now, 201, response)
@@ -418,8 +423,9 @@ def list_sessions(request: Request, page: int = Query(default=1, ge=1, le=MAX_ID
 
 def session_event_object(event: sqlite3.Row, *, include_answer: bool) -> dict:
     data = {"interactionEventId": event["id"], "eventType": event["event_type"], "pageNumber": event["page_no"]}
-    if include_answer and event["event_type"] == "ANSWER" and event["input_text"] is not None:
-        data["inputText"] = event["input_text"]
+    if include_answer and event["event_type"] == "ANSWER":
+        if event["input_text"] is not None:
+            data["inputText"] = event["input_text"]
         if event["saved_id"] == event["id"]:
             if event["reply_text"]:
                 data["replyText"] = event["reply_text"]
@@ -434,6 +440,8 @@ def session_event_object(event: sqlite3.Row, *, include_answer: bool) -> dict:
         data.update(outputText=event["output_text"], strategyType=event["strategy_type"], revision=event["revision_after"])
         if event["feedback"] is not None:
             data["feedback"] = event["feedback"]
+    if include_answer and event["saved_id"] == event["id"] and event["agent_receipt"]:
+        data["agentReceipt"] = json.loads(event["agent_receipt"])
     return data
 
 
@@ -459,6 +467,7 @@ def get_session(request: Request, response: Response, session_id: int = Path(ge=
             event_query = """SELECT id, event_type, page_no, feedback, input_text, output_text, strategy_type, revision_after,
                                     json_extract(response_json, '$.data.replyText') AS reply_text,
                                     json_extract(response_json, '$.data.followupQuestion') AS followup_question,
+                                    json_extract(response_json, '$.data.agentReceipt') AS agent_receipt,
                                     json_extract(response_json, '$.data.interactionEventId') AS saved_id
                              FROM interaction_events WHERE session_id = ?"""
             event_params = [session_id]
@@ -625,7 +634,7 @@ def request_digest(path: str, body: dict) -> str:
 def owned_session(db, session_id: int, principal: Principal):
     if principal.role == "CHILD":
         return db.execute(
-            """SELECT s.*, g.expires_at AS grant_expires_at FROM reading_sessions s
+            """SELECT s.*, g.expires_at AS grant_expires_at, b.source_type FROM reading_sessions s
             JOIN child_grants g ON g.id = s.grant_id
             JOIN child_profiles p ON p.id = s.profile_id
             JOIN story_versions v ON v.id = s.version_id
@@ -703,6 +712,7 @@ def replay_execution(db, request: Request, scope_type: str, scope_id: int, clien
             body["data"]["report"] = None
         body["data"].pop("replyText", None)
         body["data"].pop("followupQuestion", None)
+        body["data"].pop("agentReceipt", None)
     elif status == "SUCCEEDED" and scope_type == "SESSION_EVENT" and principal is not None and principal.role == "GUARDIAN":
         data = body.get("data", {})
         reply_text = data.get("replyText")
@@ -769,7 +779,18 @@ async def add_reading_event(payload: ReadingEvent, request: Request, session_id:
     if isinstance(saved, JSONResponse):
         return saved
     response, token, context = saved
-    reply = await generate_answer_reply(model, **context)
+    if isinstance(context, yaya.Context):
+        try:
+            reply = await request.app.state.yaya_agent.turn(
+                context, request_id=request.state.request_id, guardian=request.state.yaya_guardian,
+                session=session_id, disconnected=request.is_disconnected,
+            )
+        except asyncio.CancelledError:
+            await asyncio.shield(run_in_threadpool(finalize_answer_reply, request, session_id, payload, response,
+                                                   token, yaya.fallback("CLIENT_DISCONNECTED")))
+            raise
+    else:
+        reply = await generate_answer_reply(model, **context)
     for _ in range(2):
         try:
             return await run_in_threadpool(finalize_answer_reply, request, session_id, payload, response, token, reply)
@@ -828,7 +849,12 @@ def save_reading_event(request: Request, session_id: int, payload: ReadingEvent,
                                           digest, 409, "SESSION_CONFLICT", "当前状态或页面不允许此操作")
             context = None
             if payload.eventType == "ANSWER" and principal.role == "GUARDIAN" and row["mode"] == "PARENT_CHILD":
-                context = answer_context(db, row, payload.inputText)
+                if yaya_db.pinned(db, session_id):
+                    arrival = current_page_arrival_id(db, row)
+                    context = request.app.state.yaya_agent.reading_context(db, row, payload.inputText, arrival, parent_visit_questions(db, row, arrival))
+                    request.state.yaya_guardian = principal.guardian_id
+                else:
+                    context = answer_context(db, row, payload.inputText)
             revision = row["revision"] + 1
             db.execute("""UPDATE reading_sessions SET status = 'IN_PROGRESS', current_page_no = ?,
                        started_at = COALESCE(started_at, ?), revision = ?, visited_pages_json = ? WHERE id = ?""",
@@ -838,9 +864,15 @@ def save_reading_event(request: Request, session_id: int, payload: ReadingEvent,
                  feedback, input_text, result_status, revision_after, created_at)
                 VALUES (?, ?, ?, ?, '{}', ?, ?, ?, ?, 'SUCCESS', ?, ?)""",
                 (session_id, row["version_id"], payload.clientEventId, digest, payload.pageNumber,
-                 payload.eventType, payload.feedback, payload.inputText, revision, now))
+                 payload.eventType, payload.feedback,
+                 None if isinstance(context, yaya.Context) and context.input_projection.redacted else payload.inputText,
+                 revision, now))
             response = {"data": {"interactionEventId": cursor.lastrowid, "revision": revision}, "requestId": request.state.request_id}
-            if context is not None:
+            if isinstance(context, yaya.Context):
+                provisional = yaya.local_turn(context) or yaya.fallback("DEPENDENCY_UNAVAILABLE")
+                response["data"].update(replyText=provisional.reply, agentReceipt=provisional.public(
+                    input_redacted=context.input_projection.redacted))
+            elif context is not None:
                 latest = context["recent_turns"][-1] if context["recent_turns"] else None
                 question_answered = bool(latest and latest.question == context["question"])
                 response["data"]["replyText"] = reply_to_child_answer(
@@ -920,8 +952,15 @@ def finalize_answer_reply(request: Request, session_id: int, payload: ReadingEve
         if (reply is not None and now < execution["deadline_at"] and session["status"] == "IN_PROGRESS"
                 and session["mode"] == "PARENT_CHILD" and session["current_page_no"] == payload.pageNumber
                 and session["revision"] == response["data"]["revision"]):
-            reply_text, followup = reply
+            if isinstance(reply, yaya.Outcome):
+                followup = reply.followup
+                reply_text = reply.reply + (f"\n{followup}" if followup else "")
+            else:
+                reply_text, followup = reply
             finalized = {**response, "data": {**response["data"], "replyText": reply_text}}
+            if isinstance(reply, yaya.Outcome):
+                finalized["data"]["agentReceipt"] = reply.public(
+                    input_redacted=response["data"]["agentReceipt"].get("inputRedacted", False))
             if followup:
                 # A fresh question invalidates feedback based on the provisional answer snapshot.
                 revision = session["revision"] + 1
