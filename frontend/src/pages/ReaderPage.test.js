@@ -437,21 +437,6 @@ describe('parent child-mode handoff', () => {
 })
 
 describe('narration lifecycle', () => {
-  it('pauses the actual player and reuses its prepared source on the same page', async () => {
-    render()
-    await button('朗读').trigger('click')
-    await flushPromises()
-    expect(audios).toHaveLength(1)
-    await button('暂停朗读').trigger('click')
-    expect(audios[0].pause).toHaveBeenCalledTimes(1)
-    expect(audios[0].removeAttribute).not.toHaveBeenCalled()
-    await button('朗读').trigger('click')
-    await flushPromises()
-    expect(synthesize).toHaveBeenCalledOnce()
-    expect(audios[0].play).toHaveBeenCalledTimes(2)
-    expect(speechSynthesis.cancel).toHaveBeenCalled()
-  })
-
   it('preserves active narration when a same-page question advances the revision', async () => {
     render()
     await button('朗读').trigger('click')
@@ -480,7 +465,7 @@ describe('narration lifecycle', () => {
     expect(synthesize).toHaveBeenCalledOnce()
   })
 
-  it('only preloads later pages after the reader plays narration in that session', async () => {
+  it('loads narration on demand, reuses it on the same page, and preloads only within that session', async () => {
     render()
     await flushPromises()
     expect(synthesize).not.toHaveBeenCalled()
@@ -493,6 +478,18 @@ describe('narration lifecycle', () => {
     expect(synthesize).toHaveBeenCalledExactlyOnceWith(
       { readingSessionId: 55, pageNumber: 3, revision: 2, preload: true }, expect.any(AbortSignal),
     )
+    expect(audios).toHaveLength(1)
+    const currentAudio = audios[0]
+    expect(currentAudio.play).toHaveBeenCalledOnce()
+    await button('暂停朗读').trigger('click')
+    expect(currentAudio.pause).toHaveBeenCalledOnce()
+    expect(currentAudio.removeAttribute).not.toHaveBeenCalled()
+    await button('朗读').trigger('click')
+    await flushPromises()
+    expect(synthesize).toHaveBeenCalledOnce()
+    expect(currentAudio.play).toHaveBeenCalledTimes(2)
+    expect(speechSynthesis.cancel).toHaveBeenCalled()
+
     await wrapper.setProps({ session: { ...secondPage, currentPage: 7, visitedPageNumbers: [1, 3, 7], revision: 3 } })
     await flushPromises()
     expect(synthesize.mock.calls.map(([source]) => source.pageNumber)).toEqual([3, 7])

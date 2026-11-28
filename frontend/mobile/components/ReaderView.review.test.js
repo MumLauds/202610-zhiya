@@ -269,7 +269,7 @@ describe('ReaderView session recovery and interaction', () => {
     expect(wrapper.get('.page-scene').text()).toBe('第一页')
   })
 
-  it('plays the requested page when the first tap arrives before audio preparation completes', async () => {
+  it('waits for a narration tap, plays the requested page when ready, and preloads silently after that', async () => {
     const play = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('Audio', class extends EventTarget {
       play = play
@@ -278,27 +278,9 @@ describe('ReaderView session recovery and interaction', () => {
       load() {}
     })
     let resolveAudio
-    const synthesizePage = vi.fn(() => new Promise(resolve => { resolveAudio = resolve }))
-    await openReader({ snapshot: questionedPageOne, events: [savedQuestion(1, 2)], voiceApi: { synthesizePage } })
-
-    await wrapper.get('button.reading-text').trigger('click')
-    expect(synthesizePage).toHaveBeenCalledOnce()
-    expect(play).not.toHaveBeenCalled()
-    resolveAudio({ data: { audioUrl: '/page-one.mp3' } })
-    await flushPromises()
-    expect(play).toHaveBeenCalledOnce()
-    expect(play.mock.contexts[0].src).toBe('/page-one.mp3')
-  })
-
-  it('only preloads after a narration request and does not autoplay on later pages', async () => {
-    const play = vi.fn().mockResolvedValue(undefined)
-    vi.stubGlobal('Audio', class extends EventTarget {
-      play = play
-      pause() {}
-      removeAttribute() {}
-      load() {}
-    })
-    const synthesizePage = vi.fn(async ({ pageNumber }) => ({ data: { audioUrl: `/page-${pageNumber}.mp3` } }))
+    const synthesizePage = vi.fn()
+      .mockImplementationOnce(() => new Promise(resolve => { resolveAudio = resolve }))
+      .mockResolvedValue({ data: { audioUrl: '/page-three.mp3' } })
     await openReader({
       snapshot: questionedPageOne, events: [savedQuestion(1, 2)], voiceApi: { synthesizePage },
       sessionApi: { addEvent: vi.fn().mockResolvedValueOnce({ data: { revision: 3 } })
@@ -309,8 +291,14 @@ describe('ReaderView session recovery and interaction', () => {
     expect(wrapper.get('.page-scene').text()).toBe('第二页')
     expect(synthesizePage).not.toHaveBeenCalled()
 
-    await clickButton('播放本页朗读')
+    await wrapper.get('button.reading-text').trigger('click')
+    expect(synthesizePage).toHaveBeenCalledOnce()
+    expect(play).not.toHaveBeenCalled()
+    resolveAudio({ data: { audioUrl: '/page-two.mp3' } })
+    await flushPromises()
     expect(play).toHaveBeenCalledOnce()
+    expect(play.mock.contexts[0].src).toBe('/page-two.mp3')
+
     await clickButton('下一页 →')
     expect(wrapper.get('.page-scene').text()).toBe('第三页')
     expect(synthesizePage.mock.calls.map(([source]) => source.pageNumber)).toEqual([2, 3])

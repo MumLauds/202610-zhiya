@@ -160,7 +160,7 @@ def test_risky_child_input_stops_before_model_dispatch(text):
     ("truncated", "MODEL_OUTPUT_INVALID"),
     ("wrong_model", "MODEL_OUTPUT_INVALID"),
 ])
-def test_gateway_projection_and_daily_reservation(tmp_path, monkeypatch, fault, reason):
+def test_gateway_projection_keeps_one_reservation(tmp_path, monkeypatch, fault, reason):
     db_path = tmp_path / "usage.sqlite3"
     db_path.touch()
     monkeypatch.setenv("ZHIYA_DB_PATH", str(db_path))
@@ -203,18 +203,22 @@ def test_gateway_projection_and_daily_reservation(tmp_path, monkeypatch, fault, 
             context = Context("松鼠把信放在哪儿啦？", (), {"currentQuotes": ["松鼠把信放进信箱。"]},
                               allow_provider=True, child_profile_id=3)
             first = await agent.turn(context, request_id="first", guardian=1, session=2, disconnected=connected)
-            second = await agent.turn(context, request_id="second", guardian=1, session=2, disconnected=connected)
-            return first, second
+            if fault == "timeout":
+                denied = await agent.turn(context, request_id="second", guardian=1, session=2, disconnected=connected)
+                assert denied.reason == "GUARDIAN_CALL_LIMIT"
+            return first
 
-    first, second = asyncio.run(run())
+    first = asyncio.run(run())
     assert first.reason == reason
-    assert second.reason == "GUARDIAN_CALL_LIMIT" and len(calls) == 1
+    assert len(calls) == 1
     if reason is None:
         assert first.reply == "松鼠把信放进信箱。"
         assert (first.upstream.prompt_tokens, first.upstream.completion_tokens) == (56, 13)
     with closing(sqlite3.connect(db_path)) as db:
-        tag, held = db.execute("SELECT guardian_tag, lease_until FROM yaya_agent_calls").fetchone()
-        assert len(tag) == 64 and held == 0
+        reservations = db.execute("SELECT call_id, guardian_tag, lease_until FROM yaya_agent_calls").fetchall()
+        assert len(reservations) == 1
+        call_id, tag, held = reservations[0]
+        assert call_id == "first" and len(tag) == 64 and held == 0
 
 
 def test_disconnect_cancels_inflight_generation():
