@@ -1578,8 +1578,8 @@
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
-      "sha256": "6c92334778610fd4c9573aed6480051b942fcc34b8a6b3a13afbbd1e0148c01f",
-      "bytes": 9648
+      "sha256": "64ee0e57fab7777e64dd9395ccf15469059dd01c835dce3411c12b6cb109bef5",
+      "bytes": 9579
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
@@ -1618,8 +1618,8 @@
     },
     {
       "path": "docs/production-readiness/gate1-staging-validation.md",
-      "sha256": "e0d0e9a38e5c679ed7f2ed0f14c671bf3310fcb23883daecdeb5c464bfdab390",
-      "bytes": 18367
+      "sha256": "0b0f9d68801eb4834316265f56850523ddd753d346773c61d965c1b13d81be5c",
+      "bytes": 18456
     },
     {
       "path": "docs/production-readiness/browser-e2e-report.md",
@@ -1658,8 +1658,8 @@
     },
     {
       "path": "docs/production-readiness/gate3-release-readiness.md",
-      "sha256": "1a444baf315f3b4baf984b4271afa447430dd75cfe3b72e96f0119c49c8a2ad4",
-      "bytes": 5632
+      "sha256": "c684cbd5a363c9229944c544afcf7e3095180b18e4a3e693adbdaacd66907ca7",
+      "bytes": 5706
     }
   ]
 }
