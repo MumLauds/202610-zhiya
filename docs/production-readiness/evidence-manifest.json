@@ -1578,8 +1578,8 @@
     },
     {
       "path": "docs/production-readiness/go-live-checklist.md",
-      "sha256": "fc8d1e2b7ac0f9e9b3cb84bd9a5969ff70ad70b7a32b6cfc6304d7bf9cd25547",
-      "bytes": 6182
+      "sha256": "6c92334778610fd4c9573aed6480051b942fcc34b8a6b3a13afbbd1e0148c01f",
+      "bytes": 9648
     },
     {
       "path": "docs/production-readiness/observability-and-cost.md",
