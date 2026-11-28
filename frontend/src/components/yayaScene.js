@@ -67,7 +67,11 @@ export async function createYaya(host, state, sampleVoice, onLost) {
     const phase = dt < .075 ? dt / .075 : Math.min(1, (.235 - dt) / .13)
     const eyelid = still.matches || phase < 0 ? 0 : phase * phase * (3 - 2 * phase)
     if (dt > .235) nextBlink = time + 2.7 + Math.random() * 2.1
-    for (const eye of eyes) eye.morphTargetInfluences[eye.morphTargetDictionary.Blink] = eyelid
+    for (const eye of eyes) {
+      eye.morphTargetInfluences[eye.morphTargetDictionary.Blink] = eyelid
+      const follow = eye.morphTargetDictionary.LidFollow
+      if (follow !== undefined) eye.morphTargetInfluences[follow] = 4 * eyelid * (1 - eyelid)
+    }
     const mouth = sampleVoice()
     const active = state.media || state.speaking
     jaw = active ? jaw + (mouth.open - jaw) * (1 - Math.exp(-step * 21)) : 0
