@@ -109,6 +109,49 @@ test('a page turn supersedes a slow INITIAL and discards its late result', async
   assert.equal(machine.events.some(event => event.interactionEventId === 901), false)
 })
 
+for (const questionId of [901, 902]) {
+  test(`a page turn retries only when its own INITIAL won the revision (${questionId})`, async () => {
+    let reply
+    const attempts = []
+    const api = fakeApi({
+      submitGuidance: () => new Promise(resolve => { reply = resolve }),
+      async addEvent(_, payload) {
+        attempts.push(payload)
+        if (attempts.length === 1) {
+          reply({ data: { interactionEventId: 901, revision: 2 } })
+          throw new ApiError('会话状态已变化', { status: 409, code: 'SESSION_CONFLICT' })
+        }
+        return { data: { interactionEventId: 903, revision: 3 } }
+      },
+      async get() {
+        return { data: {
+          session: session({ status: 'IN_PROGRESS', revision: 2, visitedPageNumbers: [1] }),
+          events: [{ interactionEventId: questionId, eventType: 'QUESTION', pageNumber: 1, revision: 2 }],
+        } }
+      },
+    })
+    let key = 0
+    const machine = new ReadingSessionMachine({
+      api,
+      initialSnapshot: { session: session({ status: 'IN_PROGRESS', revision: 1, visitedPageNumbers: [1] }) },
+      keyFactory: prefix => `${prefix}-${++key}`,
+    })
+    const question = machine.guidance('INITIAL')
+    if (questionId === 901) {
+      await machine.changePage(2)
+      assert.deepEqual(attempts.map(({ expectedRevision, clientEventId }) =>
+        [expectedRevision, clientEventId]), [[1, 'page-2'], [2, 'page-3']])
+      assert.equal(machine.session.currentPage, 2)
+      assert.deepEqual(machine.events.map(event => event.interactionEventId), [901, 903])
+    } else {
+      await assert.rejects(machine.changePage(2), { code: 'SESSION_CONFLICT' })
+      assert.equal(attempts.length, 1)
+      assert.equal(machine.session.currentPage, 1)
+    }
+    await question
+  })
+}
+
 test('a story branch supersedes slow INITIAL without adopting its late result', async () => {
   let reply
   const api = fakeApi({
