@@ -282,6 +282,7 @@ def launch(certificate_tool):
                     guardian = post(client, "/auth/sessions", ACCOUNT)["accountId"]
                     profile = post(client, "/child-profiles", {"nickname": "合成小芽", "ageBand": "AGE_3_4",
                                                                 "preferredMinutes": 10})["childProfileId"]
+                    ledger.grant_input_consent(guardian, profile, int(time.time() * 1000) + 3_600_000)
                     settings = YayaSettings(mode="allowlist", guardians=frozenset({guardian}), model=model,
                         model_input_profiles=frozenset({(guardian, profile)}), ledger_secret="isolated-" * 5)
                     app.state.yaya_agent = YayaAgent(settings, gateway)

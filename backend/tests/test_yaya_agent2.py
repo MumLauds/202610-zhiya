@@ -241,6 +241,37 @@ def test_disconnect_cancels_inflight_generation():
     asyncio.run(run())
 
 
+def test_yaya_input_consent_belongs_to_a_live_profile(tmp_path, monkeypatch):
+    from app.db.connection import connect
+
+    path = tmp_path / "consent.sqlite3"
+    path.touch()
+    monkeypatch.setenv("ZHIYA_DB_PATH", str(path))
+    with closing(connect()) as db, db:
+        db.executescript("""
+            CREATE TABLE child_profiles (id INTEGER PRIMARY KEY, guardian_id INTEGER NOT NULL);
+            INSERT INTO child_profiles VALUES (3, 1);
+        """)
+    yaya_db.install()
+    expiry = 4_102_444_800_000
+    with pytest.raises(ValueError, match="owned profile"):
+        yaya_db.grant_input_consent(2, 3, expiry)
+    yaya_db.grant_input_consent(1, 3, expiry)
+    with closing(connect()) as db, db:
+        assert yaya_db.input_consent_active(db, 3)
+        db.execute("UPDATE yaya_agent_input_consents SET expires_at=1 WHERE profile_id=3")
+        assert not yaya_db.input_consent_active(db, 3)
+    yaya_db.grant_input_consent(1, 3, expiry)
+    yaya_db.revoke_input_consent(1, 3)
+    with closing(connect()) as db:
+        assert not yaya_db.input_consent_active(db, 3)
+    yaya_db.grant_input_consent(1, 3, expiry)
+    with closing(connect()) as db, db:
+        db.execute("DELETE FROM child_profiles WHERE id=3")
+        db.execute("INSERT INTO child_profiles VALUES (3, 1)")
+        assert not yaya_db.input_consent_active(db, 3)
+
+
 def test_evidence_is_bound_to_current_book_visited_prefix_and_session():
     with closing(sqlite3.connect(":memory:")) as db:
         db.row_factory = sqlite3.Row

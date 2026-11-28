@@ -2121,6 +2121,7 @@ def test_yaya2_join_includes_only_the_selected_branch_in_model_evidence(started_
             ("小鹿把木盒交给小獾。", 4),
         ])
 
+    yaya_db.grant_input_consent(1, profile, 4_102_444_800_000)
     config = Settings(model_api_url="https://ws-test.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
                       model_api_key="synthetic-branch-test", model_name=MODEL)
     settings = YayaSettings(mode="allowlist", guardians=frozenset({1}), model=config,
@@ -2284,6 +2285,7 @@ def test_yaya2_multilingual_privacy_is_applied_before_provider_persistence_and_l
         ("unmarked-staging-synthetic-key，书里松鼠做了什么？", None, ("unmarked-staging-synthetic-key",)),
         ("My name is Example Fable; 我想伤害自己，书里松鼠做了什么？", None, ("Example Fable",)),
     ]
+    yaya_db.grant_input_consent(1, profile, 4_102_444_800_000)
     model_config = Settings(model_api_url="https://ws-test.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
                             model_api_key="unmarked-staging-synthetic-key", model_name=MODEL)
     settings = YayaSettings(mode="allowlist", guardians=frozenset({1}), model=model_config,

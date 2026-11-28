@@ -46,8 +46,9 @@ export STAGING_ASR_API_URL=https://ws-synthetic-voice.cn-beijing.maas.aliyuncs.c
 export STAGING_TTS_API_URL=https://ws-synthetic-voice.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer
 "${compose[@]}" up -d --wait --wait-timeout 120 --no-build backend
 "${compose[@]}" exec -T backend python - <<'PYTHON'
-import os, sqlite3
+import os, sqlite3, time
 from contextlib import closing
+from app.db import yaya_agent as ledger
 from app.services.yaya_agent_config import YayaSettings
 from app.speech_config import SpeechSettings
 
@@ -67,7 +68,9 @@ _, profile = [int(part) for part in os.environ["YAYA_AGENT2_INPUT_ALLOWLIST"].sp
 assert settings.enrolls(local_only) and settings.authorizes_model_input(allowed, profile)
 assert not settings.authorizes_model_input(local_only, profile)
 assert not settings.authorizes_model_input(allowed, profile+1)
+ledger.grant_input_consent(allowed, profile, int(time.time() * 1000) + 3_600_000)
 with closing(sqlite3.connect(os.environ["ZHIYA_DB_PATH"])) as db:
+    assert ledger.input_consent_active(db, profile)
     assert db.execute("PRAGMA foreign_key_check").fetchall() == []
     assert {"priced", "settled_micros"} <= {row[1] for row in db.execute("PRAGMA table_info(yaya_agent_calls)")}
     assert db.execute("SELECT source_ref, status FROM story_versions").fetchall() == [("synthetic-yaya-staging", "PUBLISHED")]

@@ -140,6 +140,7 @@ def capture(output, model_key):
             post("/auth/registrations", account)
             guardian = post("/auth/sessions", account)["data"]["accountId"]
             profile = post("/child-profiles", {"ageBand": "AGE_3_4", "preferredMinutes": 10})["data"]["childProfileId"]
+            ledger.grant_input_consent(guardian, profile, int(time.time() * 1000) + 3_600_000)
             os.environ.update(YAYA_AGENT2_MODE="allowlist", YAYA_AGENT2_ALLOWLIST=str(guardian),
                               YAYA_AGENT2_INPUT_ALLOWLIST=f"{guardian}:{profile}")
             settings = YayaSettings.from_env()

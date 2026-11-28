@@ -193,6 +193,25 @@ def test_utc_budget_resets_and_late_usage_stays_on_original_day(usage_db, monkey
         )
 
 
+def test_budget_warning_reaches_log_receiver_once_per_utc_day(usage_db, monkeypatch, caplog):
+    settings = YayaSettings(daily_micros=100)
+    now = [datetime(2026, 11, 27, 10, tzinfo=timezone.utc).timestamp()]
+    monkeypatch.setattr(ledger, "time", SimpleNamespace(time=lambda: now[0]))
+    assert ledger.reserve(settings, "below", 1, 1, 79)
+    ledger.settle("below", 79)
+    assert not caplog.records
+    assert ledger.reserve(settings, "threshold", 1, 1, 1)
+    ledger.settle("threshold", None)
+    assert ledger.reserve(settings, "cap", 1, 1, 20)
+    assert not ledger.reserve(settings, "blocked", 2, 2, 1)
+    now[0] += 86400
+    assert ledger.reserve(settings, "new-day", 2, 2, 80)
+    assert [record.message for record in caplog.records] == [
+        "yaya outcome=BUDGET_NEAR_LIMIT day=2026-11-27 committed_micros=80 daily_micros=100",
+        "yaya outcome=BUDGET_NEAR_LIMIT day=2026-11-28 committed_micros=80 daily_micros=100",
+    ]
+
+
 def test_old_ledger_migration_preserves_unsettled_reservations(tmp_path, monkeypatch):
     path = tmp_path / "old.sqlite3"
     monkeypatch.setenv("ZHIYA_DB_PATH", str(path))

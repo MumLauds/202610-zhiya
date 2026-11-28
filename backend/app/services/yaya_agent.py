@@ -7,7 +7,7 @@ import re
 import sqlite3
 import unicodedata
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from hashlib import sha256
 from pathlib import Path
@@ -31,6 +31,8 @@ PROMPT = (
     "earlierChildPhrase 是已确认的记录：孩子在本次访页确实提过该说法。"
     "来源问题的两边可以同时成立。先承认孩子提过，再根据书证说明书里是谁的想象。"
     "只根据已读原文讲事实。区分人物、动作、对象、属性归属和事件先后。"
+    "承接孩子的想象时保留谁做了什么、动作指向谁，不互换。可以接住想法而省略不确定的细节。"
+    "孩子问这条路线时，用全部给出的已读范围回答；说翻回这页时，按当前页和给出的书证回答。"
     "sentence 是逐字原文，reviewed_structured 是带本页原文出处的人工标注。"
     "动机只有书中明确交代才能确认；猜想有可能时可以先接住，再说明书中未交代。"
     "优先承接孩子现在的意思。两个书中事实确实互斥时，用一句完整的话说清对象和结论。"
@@ -433,7 +435,10 @@ class YayaAgent:
 
     def reading_context(self, db, row, input_text, arrival, questions):
         credential = self.settings.model.model_api_key if self.settings.model else None
-        return reading_context(db, row, input_text, arrival, questions, credential=credential)
+        context = reading_context(db, row, input_text, arrival, questions, credential=credential)
+        if context.allow_provider and self.settings.mode != "off":
+            return replace(context, allow_provider=ledger.input_consent_active(db, row["profile_id"]))
+        return context
 
     def guidance(self, feedback: str, *, child_mode: bool, page_text: str, age_band: str, used=()) -> AgentResult:
         excerpt = next((sentence.rstrip("。！？.!?") for sentence in clean_sentences(page_text)
