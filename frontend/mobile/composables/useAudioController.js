@@ -120,6 +120,7 @@ export function useAudioController(onMediaError) {
 
   return {
     playing: computed(() => playing.value),
+    playingElement: computed(() => playing.value ? audio : null),
     currentTime: computed(() => currentTime.value),
     duration: computed(() => duration.value),
     progress: computed(() => progress.value),

@@ -7,6 +7,14 @@ export function latestReadingQuestion(events, guidance) {
     : guidance
 }
 
+export function canPlayYayaReply(answer, revision, latestEventId) {
+  if (!answer?.replyText) return false
+  // Restored ANSWER events carry their event ID. Fresh writes also carry their revision.
+  const current = answer.revision == null ? answer.interactionEventId === latestEventId : answer.revision === revision
+  return current && answer.agentReceipt?.version === '2.0'
+    && ['RESPOND', 'ASK_FOLLOWUP'].includes(answer.agentReceipt.action)
+}
+
 export function holdsYayaPrompt(answer, question) {
   return answer?.agentReceipt?.version === '2.0'
     && ['LISTEN', 'PAUSE', 'END_TOPIC'].includes(answer.agentReceipt.state)

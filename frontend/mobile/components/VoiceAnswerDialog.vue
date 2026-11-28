@@ -14,7 +14,7 @@ const props = defineProps({
   submitError: { type: String, default: '' },
   asking: { type: Boolean, default: false },
 })
-const emit = defineEmits(['close', 'confirmed'])
+const emit = defineEmits(['close', 'confirmed', 'recording'])
 
 const recorder = useVoiceRecorder()
 const transcript = ref(props.initialText)
@@ -25,6 +25,7 @@ let timer = null
 let requestController = null
 
 watch(recorder.state, (state) => {
+  emit('recording', state === 'recording')
   clearInterval(timer)
   timer = null
   if (state === 'recording') {
@@ -34,6 +35,7 @@ watch(recorder.state, (state) => {
 })
 
 onBeforeUnmount(() => {
+  emit('recording', false)
   clearInterval(timer)
   requestController?.abort()
 })

@@ -28,10 +28,10 @@ export class VoiceApi {
     })
   }
 
-  synthesizeInteraction({ interactionEventId, signal }) {
+  synthesizeInteraction({ interactionEventId, readReply, signal }) {
     return this.request('/api/v1/voice/syntheses', {
       method: 'POST',
-      body: { interactionEventId },
+      body: { interactionEventId, readReply: readReply || undefined },
       signal,
       timeoutMs: 30000,
     })

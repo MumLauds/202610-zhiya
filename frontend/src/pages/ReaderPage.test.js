@@ -1105,6 +1105,24 @@ describe('guided reading interactions', () => {
     expect(wrapper.props('askQuestion')).not.toHaveBeenCalled()
   })
 
+  it('plays the saved Agent reply and detaches the avatar from audio after playback', async () => {
+    const answer = { eventType: 'ANSWER', pageNumber: 1, interactionEventId: 44, revision: 2,
+      replyText: '一起听一听雨声。', agentReceipt: { version: '2.0', action: 'RESPOND' } }
+    render({ session: { ...initialSession, revision: 2 }, events: [questionEvent, answer] })
+    await flushPromises()
+    synthesize.mockResolvedValueOnce({ audioUrl: '/api/v1/media/reply' })
+    await button('播放芽芽的回应').trigger('click')
+    await flushPromises()
+    expect(synthesize).toHaveBeenCalledWith({ interactionEventId: 44, readReply: true }, expect.any(AbortSignal))
+    const avatar = wrapper.getComponent({ name: 'YayaAvatar' })
+    expect(avatar.props('media')).toBe(audios.at(-1))
+    audios.at(-1).onended()
+    await flushPromises()
+    expect(avatar.props('media')).toBeNull()
+    await wrapper.setProps({ session: { ...initialSession, revision: 3 } })
+    expect(button('播放芽芽的回应')).toBeUndefined()
+  })
+
   it('submits a guardian-confirmed question separately and plays only its saved event', async () => {
     const askQuestion = vi.fn().mockResolvedValue(true)
     const submitAnswer = vi.fn()

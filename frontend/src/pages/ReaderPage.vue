@@ -3,11 +3,12 @@ import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { vModalFocus } from '../components/modalFocus'
 import { approvedBranchesAt } from '../data/readingBranches'
 import FlipBook from '../components/FlipBook.vue'
+import YayaAvatar from '../components/YayaAvatar.vue'
 import { synthesize, transcribe } from '../api/voice'
 import { describeApiError } from '../api/client'
 import { readingProfileKey, recordPlanActivity } from '../data/readingPlan'
 import { canContinueStory } from '../data/readingProgress'
-import { describeYayaReceipt, holdsYayaPrompt, latestReadingQuestion } from '../data/readingQuestions'
+import { canPlayYayaReply, describeYayaReceipt, holdsYayaPrompt, latestReadingQuestion } from '../data/readingQuestions'
 
 const props = defineProps({
   book: { type: Object, default: null },
@@ -40,6 +41,8 @@ const pageIndex = ref(0)
 const turnBusy = ref(false)
 const edgeTurnBusy = ref(false)
 const audioStatus = ref('idle')
+const avatarMedia = shallowRef(null)
+const previewSpeaking = ref(false)
 const isPageNarration = ref(false)
 const audioMessage = ref('')
 const childModeOpen = ref(false)
@@ -70,6 +73,7 @@ let submitRecording = false
 let voiceGeneration = 0
 let recognitionRequest = null
 let audio = null
+let audioSource = ''
 let audioGeneration = 0
 let speechRequest = null
 let preparedPageAudio = null
@@ -373,7 +377,10 @@ async function finishReading() {
 }
 
 function stopNarration() {
+  avatarMedia.value = null
+  previewSpeaking.value = false
   isPageNarration.value = false
+  audioSource = ''
   audioGeneration += 1
   speechRequest?.abort()
   speechRequest = null
@@ -431,16 +438,18 @@ watch(narrationKey, (key) => {
   if (key) void preparePageAudio(key).catch(() => {})
 }, { immediate: true, flush: 'post' })
 
-async function playNarration(interactionEventId = null) {
+async function playNarration(interactionEventId = null, readReply = false) {
   if (!canNarratePage.value) return
+  const source = readReply ? 'reply-' + (interactionEventId ?? 'preview') : interactionEventId ?? 'page'
   if (['playing', 'loading'].includes(audioStatus.value)) {
-    const switchSource = interactionEventId === null && !isPageNarration.value
+    const switchSource = source !== audioSource
     stopNarration()
     if (!switchSource) return
   }
   if (!currentPage.value || !mediaAllowed.value) return
   stopNarration()
-  isPageNarration.value = interactionEventId === null
+  audioSource = source
+  isPageNarration.value = source === 'page'
   const generation = audioGeneration
   const pageNumber = currentPage.value.pageNumber
   if (!props.session.preview) {
@@ -450,7 +459,7 @@ async function playNarration(interactionEventId = null) {
       let node
       if (interactionEventId) {
         speechRequest = new AbortController()
-        const data = await synthesize({ interactionEventId }, speechRequest.signal)
+        const data = await synthesize(readReply ? { interactionEventId, readReply } : { interactionEventId }, speechRequest.signal)
         if (generation !== audioGeneration) return
         node = new Audio(data.audioUrl)
       } else {
@@ -462,6 +471,7 @@ async function playNarration(interactionEventId = null) {
       audio.onerror = () => { clearPreparedAudio(); stopNarration(); audioMessage.value = '播放失败，文字仍可阅读' }
       await audio.play()
       if (generation !== audioGeneration) return
+      avatarMedia.value = node
       audioStatus.value = 'playing'
       audioMessage.value = interactionEventId ? '正在播放故事回答' : `正在朗读第 ${pageNumber} 页`
     } catch (error) {
@@ -475,11 +485,12 @@ async function playNarration(interactionEventId = null) {
   }
   if ('speechSynthesis' in window) {
     speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(currentPage.value.text)
+    const utterance = new SpeechSynthesisUtterance(readReply ? currentPage.value.answer : currentPage.value.text)
+    utterance.onstart = () => { if (generation === audioGeneration) previewSpeaking.value = true }
     utterance.lang = 'zh-CN'
     utterance.rate = .92
-    utterance.onend = () => { if (generation === audioGeneration) { audioStatus.value = 'idle'; audioMessage.value = '朗读完成' } }
-    utterance.onerror = () => { if (generation === audioGeneration) { audioStatus.value = 'error'; audioMessage.value = '浏览器朗读失败，文字仍可阅读' } }
+    utterance.onend = () => { if (generation === audioGeneration) { previewSpeaking.value = false; audioStatus.value = 'idle'; audioMessage.value = '朗读完成' } }
+    utterance.onerror = () => { if (generation === audioGeneration) { previewSpeaking.value = false; audioStatus.value = 'error'; audioMessage.value = '浏览器朗读失败，文字仍可阅读' } }
     audioStatus.value = 'playing'
     audioMessage.value = '正在使用浏览器朗读'
     speechSynthesis.speak(utterance)
@@ -857,7 +868,9 @@ onBeforeUnmount(() => { clearPendingAnswer(); clearPreparedAudio(); stopNarratio
 
       <aside class="reader-side">
         <section class="side-card narration-card">
-          <div v-if="session.status !== 'FINISHED'" class="reader-mascot" aria-hidden="true"><span class="reader-foliage"></span><img width="326" height="380" src="/assets/mascot/yaya-reader.webp" alt=""></div>
+          <div v-if="session.status !== 'FINISHED'" class="reader-mascot"><span class="reader-foliage" aria-hidden="true"></span>
+            <YayaAvatar :media="avatarMedia" :speaking="previewSpeaking" :listening="voiceState === 'recording'" :thinking="!!pendingAnswerView || guidanceLoading" />
+          </div>
           <h2><span class="reader-card-icon reader-card-icon--book" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 5c-3-2-6-2-10-1v15c4-1 7-1 10 1 3-2 6-2 10-1V4c-4-1-7-1-10 1Zm0 0v15"/></svg></span> 阅读模式</h2>
           <div class="reader-mode-options" role="group" aria-label="阅读模式">
             <button type="button" :aria-pressed="!narrationSelected" @click="stopNarration">
@@ -892,6 +905,7 @@ onBeforeUnmount(() => { clearPendingAnswer(); clearPreparedAudio(); stopNarratio
             <p v-if="!quietAnswer && answerFollowup" class="question-followup"><strong>芽芽追问：</strong>{{ answerFollowup }}</p>
           </div>
           <button v-if="guidanceError && !currentQuestion && !questionSkipped && !questionBlocked && !session.preview" class="text-button question-retry" type="button" :disabled="interactionBusy || guidanceLoading || syncRequired" @click="retryQuestion">重新生成本页问题</button>
+          <button v-if="(session.preview && previewAnswer) || (authenticated && canPlayYayaReply(savedAnswer, session.revision, events.at(-1)?.interactionEventId))" class="text-button" type="button" :disabled="!canNarratePage || answerPending" @click="playNarration(savedAnswer?.interactionEventId, true)">播放芽芽的回应</button>
           <div class="question-actions">
             <button class="secondary feedback-understood" type="button" :disabled="!canSubmitFeedback || guidanceLoading || recordingBusy" @click="submitUnderstanding('UNDERSTOOD')"><span aria-hidden="true">✓</span> 已理解</button>
             <button class="secondary feedback-unclear" type="button" :disabled="!canSubmitFeedback || guidanceLoading || recordingBusy" @click="submitUnderstanding('NOT_UNDERSTOOD')"><span aria-hidden="true">?</span> 还没懂</button>

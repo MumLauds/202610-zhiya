@@ -15,10 +15,10 @@ export async function transcribe(blob, { readingSessionId, pageNumber, revision 
   return result.data
 }
 
-export async function synthesize({ readingSessionId, pageNumber, revision, preload, interactionEventId }, signal) {
+export async function synthesize({ readingSessionId, pageNumber, revision, preload, interactionEventId, readReply }, signal) {
   const result = await apiRequest('/voice/syntheses', {
     method: 'POST',
-    body: interactionEventId ? { interactionEventId } : { readingSessionId, pageNumber, revision, preload },
+    body: interactionEventId ? { interactionEventId, readReply: readReply || undefined } : { readingSessionId, pageNumber, revision, preload },
     signal,
   })
   return result.data

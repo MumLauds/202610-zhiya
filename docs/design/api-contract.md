@@ -209,6 +209,7 @@ API-030创建806/v1(APPROVED)，API-031以806为来源修订得到807/v2(APPROVE
 - 候选 `GET /api/v1/voice/options`，接口编号待团队分配，仅已认证家长。服务端使用当前模型的 `get_speech_options(model)`，按既有 `data` / `requestId` 包装返回；不调用付费服务。`data.voices` 为 `{voiceId, displayName, description, category, languages, dialects, scenarios}` 数组，`data.speechRates` 为支持的语速枚举数组，`data.defaultSpeechRate` 为 `NORMAL`。旧模型不再提供可选项；未配置合成时业务层应返回不可用状态，不能把静态目录当作服务可用证明。
 - API-006 候选新增 `speechPreferences` 对象，例如 `{"speechPreferences":{"voiceId":"wenhuaiqing_v3.1","speechRate":"SLOW"}}`；API-004 返回同结构。只允许本人家长修改，沿用安全 Cookie、写入防跨站请求与归属校验；他人档案按既有不可见规则返回 404，儿童授权不能写设置。省略整个对象表示不改；提供时两个字段均必填，null、未知字段、未知/跨模型声线和无效语速返回 422，整次修改不部分落库。
 - `speechRate` 为 `SLOW` / `NORMAL` / `FAST`，含义是模型合成语速；`voiceId` 是受支持声线的供应商原值，按第三方命名例外保留。前端中文标签由界面映射，不向家长展示底层枚举。
+- API-023 的事件源可附加布尔字段 `readReply: true`，用于朗读当前修订中已保存的芽芽 2.0 亲子共读回应（仅 `ANSWER` 的 `RESPOND`、`ASK_FOLLOWUP`）。朗读内容取自服务端 `replyText`，包括已保存的追问。缺省时继续使用事件原有的 `outputText`；页面源不能携带该字段。
 - API-023 沿用已授权事件或页面。页面朗读可设 `preload: true`，仅限已确认的本次当前页，当页的提问或作答写入不使已准备的音频失效。已保存的 `ASK` 回答也可在本次访问当前页期间播放。翻页、退出授权或绘本撤回后仍重新校验。录音继续要求当前修订号。
 - 档案持久化候选为 `child_profiles.voice_id`、`child_profiles.speech_rate`，与上述字段一一映射；约束、默认值和存量迁移由业务后端随数据库设计评审实现。本轮无建列或迁移。新模型默认温怀清 / NORMAL；已有不支持的偏好须明确迁移或提示重选，不能悄悄替换声线。
 

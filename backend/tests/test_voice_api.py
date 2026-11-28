@@ -459,3 +459,24 @@ def test_disconnect_cancels_inflight_operation():
             await operation_until_disconnect(request,work())
         assert cleaned.is_set()
     asyncio.run(scenario())
+
+
+def test_saved_yaya_reply_is_distinct_from_followup_and_rechecked(setup):
+    client, app, auth, path = setup
+    change(path, """UPDATE interaction_events SET event_type='ANSWER', output_text='下一步呢？',
+              response_json='{"data":{"replyText":"我们一起看看。","agentReceipt":{"action":"RESPOND","version":"2.0"}}}' WHERE id=100""")
+    source = {"interactionEventId": 100, "readReply": True}
+    response = client.post("/api/v1/voice/syntheses", json=source)
+    assert response.status_code == 201
+    app.state.voice_gateway.synthesize.assert_awaited_once_with(
+        text="我们一起看看。", voice_id="wenhuaiqing_v3.1", speech_rate="NORMAL")
+    url = response.json()["data"]["audioUrl"]
+    assert client.post("/api/v1/voice/syntheses", json={"interactionEventId": 100}).json()["data"]["audioUrl"] != url
+    assert client.get(url).status_code == 200
+    auth.principal = VoicePrincipal(2)
+    assert client.get(url).status_code == 404
+    auth.principal = VoicePrincipal(1)
+    change(path, """UPDATE interaction_events SET response_json=json_set(response_json,'$.data.agentReceipt.action','HANDOFF') WHERE id=100""")
+    assert client.get(url).status_code == 404
+    assert client.post("/api/v1/voice/syntheses", json=source).status_code == 404
+    assert client.post("/api/v1/voice/syntheses", json={**PAGE, "readReply": True}).status_code == 422
