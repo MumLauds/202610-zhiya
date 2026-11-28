@@ -356,8 +356,24 @@ def _line(value, limit):
             and not any(unicodedata.category(ch) in {"Cc", "Cs", "Zl", "Zp"} for ch in value))
 
 
+def preserve_imagined_action(child_text: str, reply: str) -> str:
+    # Repair only a literal reversed clause in an explicit child proposal.
+    idea = re.fullmatch(
+        r"我(?:想)?让([^，。！？、；：\s]{2,24}?)(拖着|牵着|拉着|带着)([^，。！？、；：\s]{2,32})[。！]?",
+        child_text.strip(),
+    )
+    if not idea:
+        return reply
+    actor, action, target = idea.groups()
+    target_name = re.sub(r"^一[串群个只块条堆]", "", target)
+    if len(target_name) < 2 or actor in target_name or target_name in actor:
+        return reply
+    reverse = rf"(?<!\w)(?:{re.escape(target)}|{re.escape(target_name)}){action}{re.escape(actor)}(?=$|[，。！？、；：])"
+    return re.sub(reverse, lambda _: actor + action + target, reply)
+
+
 def project(upstream: ModelReply, used: tuple[str, ...], *, allow_followup: bool = True,
-            child_mentioned_phrase: bool = False) -> Outcome:
+            child_mentioned_phrase: bool = False, child_text: str = "") -> Outcome:
     try:
         if len(upstream.text.encode()) > 4096:
             raise ValueError("draft budget")
@@ -367,6 +383,9 @@ def project(upstream: ModelReply, used: tuple[str, ...], *, allow_followup: bool
         reply, action, followup = draft["reply"], draft["next_action"], draft.get("followup_question")
         if not _line(reply, 100) or type(action) is not str or action not in STATES or (followup is not None and action != "ASK_FOLLOWUP"):
             raise ValueError("invalid draft fields")
+        reply = preserve_imagined_action(child_text, reply)
+        if not _line(reply, 100):
+            raise ValueError("reply exceeds budget")
         tail = reply.rstrip().rstrip('”’」』"')
         if (not tail.endswith(tuple("。！？.!?")) or tail[:-1].endswith((".", "…"))
                 or not any(ch.isalnum() for ch in tail[:-1])
@@ -514,7 +533,7 @@ class YayaAgent:
                 outcome = fallback("CLIENT_DISCONNECTED", upstream=usage)
             else:
                 outcome = project(reply, context.previous_questions, allow_followup=allow_followup,
-                                  child_mentioned_phrase=bool(context.material.get("earlierChildPhrase")))
+                                  child_mentioned_phrase=bool(context.material.get("earlierChildPhrase")), child_text=text)
         except ServiceError as exc:
             outcome = fallback(ERROR_CODES.get(exc.code, "DEPENDENCY_UNAVAILABLE"), upstream=usage)
         except asyncio.CancelledError:

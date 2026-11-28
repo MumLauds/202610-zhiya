@@ -95,6 +95,16 @@ def test_offline_synthetic_fact_consistency_detects_each_negative(contrast):
     assert score(contrast, candidate("我们一起继续看绘本吧。")) == "UNSCORED"
 
 
+def test_exact_reversal_is_repaired_without_replacing_the_generated_continuation():
+    idea = "我想让彩虹尾巴拖着一串会唱歌的石头。"
+    reply = "哇，会唱歌的石头拖着彩虹尾巴，听起来就像一场热闹的音乐会呢！"
+    draft = ModelReply(json.dumps({"reply": reply, "next_action": "RESPOND"}, ensure_ascii=False))
+    repaired = project(draft, (), child_text=idea)
+    assert repaired.decision == "UNCHANGED"
+    assert repaired.reply == "哇，彩虹尾巴拖着一串会唱歌的石头，听起来就像一场热闹的音乐会呢！"
+    assert project(draft, (), child_text="石头在做什么？").reply == reply
+
+
 def test_cross_page_reviewed_evidence_and_sentence_evidence_remain_distinct(monkeypatch):
     book = BOOK_ANNOTATIONS[SOURCE]
     for row in book.values():
