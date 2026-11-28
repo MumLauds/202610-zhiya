@@ -1507,6 +1507,42 @@
         "speech-auth-failure/target-voice-receipt.json": "1d890b04038a19d2c6b255144a51ec976112979e19cc7452f5a3d3875c1e8978"
       },
       "gate1": "BLOCKED"
+    },
+    "E25": {
+      "stage": "Gate 1 real Beijing ASR and TTS on isolated ECS after Windows SSH input fix",
+      "recorded_on": "2026-11-28",
+      "verified_revision": "7334c40d2b6798075cd5ee7add46915657a57bc8",
+      "voice_workspace_scope": "Beijing default workspace approved by the user for the synthetic run",
+      "root_cause": "Windows SSH argument quoting caused a carriage-return filter to remove the literal letter r",
+      "credential_matches_at_container": true,
+      "provider_status_by_origin": {
+        "windows": {
+          "asr": 200,
+          "tts": 200
+        },
+        "ecs": {
+          "asr": 200,
+          "tts": 200
+        }
+      },
+      "application_voice": {
+        "asr": "PASS",
+        "sample_keywords_verified": true,
+        "tts": "PASS",
+        "cross_guardian_media_404": true,
+        "audio_bytes": 522284,
+        "audio_sha256": "cdac38b5c93513b0924583475061c7833cc6a49e17dd78c7147687692a61c97c"
+      },
+      "temporary_credentials_removed": true,
+      "staging_containers_stopped": true,
+      "receipt_sha256": {
+        "application.json": "941e014d359c646782d18d06e37fc4479c3379bee9670f472fec71799c862ce0",
+        "credential-stages.json": "29763ae6208cd1a5fe4e177ac5b69fc56ef7a57a42f8e991a4e8239d218ba104",
+        "ecs.json": "329b36f20a98d81ef5804f71f5f1512ca6e847fc7f19dfb7abdbdc5fa53a8f8d",
+        "legacy-container.json": "1b465aa9c7546502f79475700cd3321754924f5ea6bf23597cb92b8249a55644",
+        "local.json": "1612ad8f8e8439a5c8a6a14b0730194527113874000042fb5c3d612fea11623e"
+      },
+      "gate1": "BLOCKED_PENDING_OTHER_ACCEPTANCE_AND_SIGNOFF"
     }
   },
   "deliverables": [
@@ -1582,8 +1618,8 @@
     },
     {
       "path": "docs/production-readiness/gate1-staging-validation.md",
-      "sha256": "543a7a507776f458bb5f59e044b8e08924ce3b8301c43c49a46b2ea201b996f5",
-      "bytes": 17412
+      "sha256": "e0d0e9a38e5c679ed7f2ed0f14c671bf3310fcb23883daecdeb5c464bfdab390",
+      "bytes": 18367
     },
     {
       "path": "docs/production-readiness/browser-e2e-report.md",
@@ -1592,8 +1628,8 @@
     },
     {
       "path": "docs/production-readiness/voice-integration-report.md",
-      "sha256": "5a882f850a2795e6c65ac73520c168827ee3693fefb79eb0c3ce09075a29fd7c",
-      "bytes": 1836
+      "sha256": "c7fe762705cbfd1dcfb0d5a677cafbf96c1d9c2d86052c0597d4716610e9ee3c",
+      "bytes": 2355
     },
     {
       "path": "docs/production-readiness/session-isolation-report.md",
