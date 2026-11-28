@@ -24,9 +24,9 @@ export async function createYaya(host, state, sampleVoice, onLost) {
   }
   catch (error) { renderer.dispose(); throw error }
   const scene = new Scene()
-  scene.add(asset.scene, new HemisphereLight(0xfffaf1, 0xeadfcd, 1.85))
-  const light = new DirectionalLight(0xfff5e4, 1.05)
-  light.position.set(-2, 4, 4)
+  scene.add(asset.scene, new HemisphereLight(0xf4fff9, 0xf6f1e5, 2.38))
+  const light = new DirectionalLight(0xfffaf0, 1.05)
+  light.position.set(-2, 3, 5)
   scene.add(light)
   const camera = new OrthographicCamera(-.5, .5, .525, -.525, .1, 8)
   camera.position.set(.13, .56, 2.5)
