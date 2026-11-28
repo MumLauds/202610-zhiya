@@ -51,9 +51,11 @@ def purge_expired(db, settings: YayaSettings, today: date):
     db.execute("DELETE FROM yaya_agent_calls WHERE day < ?", ((today - timedelta(days=settings.retention_days - 1)).isoformat(),))
 
 
-def reserve(settings: YayaSettings, call_id: str, guardian_id: int, session_id: int, ceiling_micros: int) -> bool:
+def reserve_or_reason(settings: YayaSettings, call_id: str, guardian_id: int, session_id: int,
+                      ceiling_micros: int) -> str | None:
+    """Return a refusal reason, or None after atomically recording a reservation."""
     if ceiling_micros <= 0:
-        return False
+        return "BUDGET_LIMIT"
     guardian = hmac.digest(settings.ledger_secret.encode(), f"guardian:{guardian_id}".encode(), "sha256").hex()
     session = hmac.digest(settings.ledger_secret.encode(), f"session:{session_id}".encode(), "sha256").hex()
     with closing(connect(timeout=0.2)) as db, db:
@@ -74,13 +76,24 @@ def reserve(settings: YayaSettings, call_id: str, guardian_id: int, session_id: 
             (session, int(now * 1000)),
         ).fetchone()
         # Old ledger estimates used a different unit. Hold that UTC day without repricing them.
-        if (usage[3] or usage[0] + ceiling_micros > settings.daily_micros or usage[1] >= settings.guardian_calls
-                or usage[2] >= settings.session_calls or active >= settings.concurrency or session_active):
-            return False
+        if usage[3]:
+            return "DEPENDENCY_UNAVAILABLE"
+        if usage[0] + ceiling_micros > settings.daily_micros:
+            return "BUDGET_LIMIT"
+        if usage[1] >= settings.guardian_calls:
+            return "GUARDIAN_CALL_LIMIT"
+        if usage[2] >= settings.session_calls:
+            return "SESSION_CALL_LIMIT"
+        if active >= settings.concurrency or session_active:
+            return "AGENT_BUSY"
         db.execute("""INSERT INTO yaya_agent_calls (call_id, day, guardian_tag, session_tag, ceiling_micros, lease_until, priced)
                       VALUES (?, ?, ?, ?, ?, ?, 1)""",
                    (call_id, today.isoformat(), guardian, session, ceiling_micros, int(now * 1000) + 5500))
-        return True
+        return None
+
+
+def reserve(settings: YayaSettings, call_id: str, guardian_id: int, session_id: int, ceiling_micros: int) -> bool:
+    return reserve_or_reason(settings, call_id, guardian_id, session_id, ceiling_micros) is None
 
 
 def settle(call_id: str, actual_micros: int | None):

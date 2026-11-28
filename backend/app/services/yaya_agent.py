@@ -50,6 +50,7 @@ FALLBACK_MESSAGES = {
     "QUESTION_FORMAT": "我们先看一会儿这页的图吧。",
     "CLIENT_DISCONNECTED": "我们接着从这一页看吧。",
     "BUDGET_LIMIT": "我们先看看画面，继续读这一页吧。",
+    "AGENT_BUSY": "我这会儿有点忙，咱们先接着看图吧。",
 }
 HANDOFF = "我们先停一下，请身边可信任的大人一起帮忙。"
 STATES = {"RESPOND": "CONTINUE", "ASK_FOLLOWUP": "CONTINUE", "LISTEN": "LISTEN",
@@ -477,15 +478,15 @@ class YayaAgent:
         # Estimate a conservative token bound from the rendered text plus chat framing.
         input_bound = len(PROMPT.encode("utf-8")) + len(format_user_content(text, outbound).encode("utf-8")) + 256
         if input_bound > MAX_INPUT_TOKENS:
-            return record(fallback("BUDGET_LIMIT"))
+            return record(fallback("CONTEXT_LIMIT"))
         output_bound = min(self.settings.model.model_max_tokens, MAX_OUTPUT_TOKENS)
         ceiling = self.settings.cost_micros(input_bound, output_bound)
         try:
-            reserved = await run_in_threadpool(ledger.reserve, self.settings, request_id, guardian, session, ceiling)
+            denial = await run_in_threadpool(ledger.reserve_or_reason, self.settings, request_id, guardian, session, ceiling)
         except sqlite3.Error:
             return record(fallback("DEPENDENCY_UNAVAILABLE"))
-        if not reserved:
-            return record(fallback("BUDGET_LIMIT"))
+        if denial:
+            return record(fallback(denial))
 
         usage = None
 

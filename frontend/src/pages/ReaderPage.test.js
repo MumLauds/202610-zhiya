@@ -326,9 +326,7 @@ describe('parent transcript review', () => {
     expect(getUserMedia).toHaveBeenCalledTimes(entry === 'denied' ? 1 : 0)
     expect(transcribe).not.toHaveBeenCalled()
     expect(submitAnswer).not.toHaveBeenCalled()
-    expect(synthesize.mock.calls.map(([source]) => source)).toEqual([
-      { readingSessionId: 55, pageNumber: 1, revision: 1, preload: true },
-    ])
+    expect(synthesize).not.toHaveBeenCalled()
     await wrapper.get('.reader-answer').trigger('submit')
     await flushPromises()
     expect(submitAnswer).toHaveBeenCalledExactlyOnceWith('小兔回家了。')
@@ -471,15 +469,38 @@ describe('narration lifecycle', () => {
     render({ events: [], requestGuidance })
     await flushPromises()
     expect(requestGuidance).toHaveBeenCalledWith('INITIAL')
-    expect(synthesize.mock.calls[0][0]).toEqual({ readingSessionId: 55, pageNumber: 1, revision: 1, preload: true })
-    expect(audios[0].play).not.toHaveBeenCalled()
+    expect(synthesize).not.toHaveBeenCalled()
     await button('朗读').trigger('click')
     await flushPromises()
+    expect(synthesize.mock.calls[0][0]).toEqual({ readingSessionId: 55, pageNumber: 1, revision: 1, preload: true })
     expect(audios[0].play).toHaveBeenCalledOnce()
     await wrapper.setProps({ session: { ...initialSession, revision: 2 }, events: [questionEvent] })
     pending.resolve(true)
     await flushPromises()
     expect(synthesize).toHaveBeenCalledOnce()
+  })
+
+  it('only preloads later pages after the reader plays narration in that session', async () => {
+    render()
+    await flushPromises()
+    expect(synthesize).not.toHaveBeenCalled()
+    const secondPage = { ...initialSession, currentPage: 3, visitedPageNumbers: [1, 3], revision: 2 }
+    await wrapper.setProps({ session: secondPage })
+    expect(synthesize).not.toHaveBeenCalled()
+
+    await button('朗读').trigger('click')
+    await flushPromises()
+    expect(synthesize).toHaveBeenCalledExactlyOnceWith(
+      { readingSessionId: 55, pageNumber: 3, revision: 2, preload: true }, expect.any(AbortSignal),
+    )
+    await wrapper.setProps({ session: { ...secondPage, currentPage: 7, visitedPageNumbers: [1, 3, 7], revision: 3 } })
+    await flushPromises()
+    expect(synthesize.mock.calls.map(([source]) => source.pageNumber)).toEqual([3, 7])
+    expect(audios[1].play).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ session: { ...initialSession, readingSessionId: 56 } })
+    await flushPromises()
+    expect(synthesize).toHaveBeenCalledTimes(2)
   })
 
   it('keeps preparing the page but never plays after cancelling the loading state', async () => {

@@ -66,6 +66,7 @@ const answerAudio = useAudioController((url) => {
 let pageAudioExpiryTimer
 let pageAudioRequest = null
 let playWhenPrepared = false
+let pageNarrationSession = null
 let answerAudioExpiresAt = NaN
 let answerAudioRequest = null
 let requestGeneration = 0
@@ -164,8 +165,8 @@ const activePageKey = computed(() => props.mode === 'live' && !childAuthorizatio
 const textCanPlay = computed(() => !navigationPending.value && !showAnswerDialog.value
   && (activePageKey.value || (props.mode === 'demo' && pageAudioSrc.value)))
 watch(activePageKey, (key) => {
-  if (key && !pageAudioSrc.value) void loadPageAudio(true)
-  else if (!key) resetAudio()
+  if (!key) resetAudio()
+  else if (!pageAudioSrc.value && pageNarrationSession === sessionId.value) void loadPageAudio(true)
 }, { immediate: true, flush: 'post' })
 watch([activePageKey, pending, displayedQuestion], ([key, busy, question]) => {
   if (!key || busy || question || autoQuestionPage === key) return
@@ -479,6 +480,7 @@ function playPageText() {
     void pagePlayer.value?.toggle()
     return
   }
+  pageNarrationSession = sessionId.value
   playWhenPrepared = true
   void loadPageAudio()
 }
@@ -615,10 +617,10 @@ function exitReading() {
               v-if="mode === 'live' && !reviewing && !pageAudioSrc"
               class="button button-ghost button-small page-audio-request"
               type="button"
-              :disabled="pageAudioLoading || showAnswerDialog"
-              @click="loadPageAudio()"
+              :disabled="pageAudioLoading || !textCanPlay"
+              @click="playPageText"
             >
-              {{ pageAudioLoading ? '音频准备中…' : '准备本页朗读音频' }}
+              {{ pageAudioLoading ? '音频准备中…' : '播放本页朗读' }}
             </button>
             <PageAudioPlayer
               ref="pagePlayer"

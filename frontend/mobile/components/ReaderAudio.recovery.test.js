@@ -106,6 +106,7 @@ describe('Reader audio recovery', () => {
     const submitGuidance = vi.fn().mockImplementation(() => new Promise((resolve) => { resolveGuidance = resolve }))
     const synthesizePage = vi.fn().mockResolvedValue({ data: { audioUrl: '/page.mp3' } })
     await openReader({ snapshot: inProgress, events: [], voiceApi: { synthesizePage }, submitGuidance })
+    await clickButton('播放本页朗读')
 
     expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/page.mp3')
     expect(submitGuidance).toHaveBeenCalledExactlyOnceWith(42, expect.objectContaining({
@@ -127,14 +128,19 @@ describe('Reader audio recovery', () => {
     const synthesizePage = vi.fn().mockImplementationOnce(() => new Promise((resolve) => {
       resolveAudio = resolve
     }))
-    await openReader({ snapshot: inProgress, events: [], voiceApi: { synthesizePage } })
+    let resolveGuidance
+    const submitGuidance = vi.fn().mockImplementation(() => new Promise(resolve => { resolveGuidance = resolve }))
+    await openReader({ snapshot: inProgress, events: [], voiceApi: { synthesizePage }, submitGuidance })
+    await clickButton('播放本页朗读')
+    resolveGuidance({ data: question })
+    await flushPromises()
     expect(wrapper.get('.revision-tag').text()).toBe('rev 2')
 
     resolveAudio({ data: { audioUrl: '/late.mp3' } })
     await flushPromises()
 
     expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/late.mp3')
-    expect(media[0].paused).toBe(true)
+    expect(media[0].paused).toBe(false)
     expect(synthesizePage).toHaveBeenCalledTimes(1)
   })
 
@@ -147,12 +153,13 @@ describe('Reader audio recovery', () => {
       .mockResolvedValueOnce({ data: { audioUrl: '/fresh.mp3', expiresAt: '2026-11-20T00:00:04Z' } })
     await openReader({ voiceApi: { synthesizePage } })
 
+    await clickButton('播放本页朗读')
     expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('/expired.mp3')
     await vi.advanceTimersByTimeAsync(2000)
     expect(wrapper.getComponent(PageAudioPlayer).props('src')).toBe('')
     expect(synthesizePage).toHaveBeenCalledTimes(1)
 
-    await clickButton('准备本页朗读音频')
+    await clickButton('播放本页朗读')
     expect(synthesizePage).toHaveBeenNthCalledWith(2, {
       readingSessionId: 42, pageNumber: 1, revision: 2, signal: expect.any(AbortSignal),
     })
@@ -165,13 +172,12 @@ describe('Reader audio recovery', () => {
       .mockResolvedValueOnce({ data: { audioUrl: '/expired.mp3' } })
       .mockResolvedValueOnce({ data: { audioUrl: '/fresh.mp3' } })
     await openReader({ voiceApi: { synthesizePage } })
-    await wrapper.get('[aria-label="播放朗读"]').trigger('click')
-    await flushPromises()
+    await clickButton('播放本页朗读')
     media[0].dispatchEvent(new Event('error'))
     await flushPromises()
 
     expect(synthesizePage).toHaveBeenCalledTimes(1)
-    await clickButton('准备本页朗读音频')
+    await clickButton('播放本页朗读')
     expect(synthesizePage).toHaveBeenNthCalledWith(2, {
       readingSessionId: 42, pageNumber: 1, revision: 2, signal: expect.any(AbortSignal),
     })

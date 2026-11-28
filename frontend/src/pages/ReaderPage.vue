@@ -76,6 +76,7 @@ let audio = null
 let audioSource = ''
 let audioGeneration = 0
 let speechRequest = null
+let pageNarrationSession = null
 let preparedPageAudio = null
 
 const readingKey = computed(() => props.authenticated && !props.session?.preview
@@ -435,7 +436,7 @@ function preparePageAudio(key) {
 
 watch(narrationKey, (key) => {
   clearPreparedAudio()
-  if (key) void preparePageAudio(key).catch(() => {})
+  if (key && pageNarrationSession === props.session.readingSessionId) void preparePageAudio(key).catch(() => {})
 }, { immediate: true, flush: 'post' })
 
 async function playNarration(interactionEventId = null, readReply = false) {
@@ -463,6 +464,7 @@ async function playNarration(interactionEventId = null, readReply = false) {
         if (generation !== audioGeneration) return
         node = new Audio(data.audioUrl)
       } else {
+        pageNarrationSession = props.session.readingSessionId
         node = await preparePageAudio(narrationKey.value)
       }
       if (!node || generation !== audioGeneration) return

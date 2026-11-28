@@ -13,7 +13,7 @@ import pytest
 from app.config import Settings
 from app.db import yaya_agent as ledger
 from app.model_gateway import ModelGateway
-from app.services.yaya_agent import Context, YayaAgent
+from app.services.yaya_agent import Context, YayaAgent, question_result
 from app.services.yaya_agent_config import MODEL, YayaSettings, rate_micros
 
 
@@ -102,12 +102,32 @@ def test_provider_reserves_then_settles_from_usage(usage_db, fault, expected_rea
         ]
 
 
-@pytest.mark.parametrize("overlong", [False, True])
-def test_no_call_or_booking_when_outside_budget(usage_db, overlong):
+@pytest.mark.parametrize(("reason", "prior_call"), [
+    ("BUDGET_LIMIT", None),
+    ("CONTEXT_LIMIT", None),
+    ("SESSION_CALL_LIMIT", "session"),
+    ("GUARDIAN_CALL_LIMIT", "guardian"),
+    ("AGENT_BUSY", "session-in-flight"),
+    ("AGENT_BUSY", "other-in-flight"),
+])
+def test_denied_reservations_keep_their_reason_and_do_not_dispatch(usage_db, reason, prior_call):
     model = Settings(model_api_url="https://ws-test.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
                      model_api_key="synthetic-key", model_name=MODEL)
-    settings = YayaSettings(mode="allowlist", guardians=frozenset({1}), model=model, ledger_secret="x" * 32,
-                            model_input_profiles=frozenset({(1, 3)}), daily_micros=1_000_000 if overlong else 1)
+    settings = YayaSettings(
+        mode="allowlist", guardians=frozenset({1}), model=model, ledger_secret="x" * 32,
+        model_input_profiles=frozenset({(1, 3)}), daily_micros=1 if reason == "BUDGET_LIMIT" else 1_000_000,
+        guardian_calls=1 if prior_call == "guardian" else 40,
+        session_calls=1 if prior_call in {"session", "guardian"} else 20,
+        concurrency=1 if prior_call == "other-in-flight" else 6,
+    )
+    if prior_call:
+        guardian, session = {
+            "session": (1, 2), "guardian": (1, 3),
+            "session-in-flight": (1, 2), "other-in-flight": (2, 3),
+        }[prior_call]
+        assert ledger.reserve(settings, "prior", guardian, session, 1)
+        if prior_call in {"session", "guardian"}:
+            ledger.settle("prior", 1)
 
     async def connected():
         return False
@@ -116,15 +136,16 @@ def test_no_call_or_booking_when_outside_budget(usage_db, overlong):
         async with ModelGateway(model, transport=httpx.MockTransport(
             lambda _: pytest.fail("provider dispatched without an approved reservation")
         )) as gateway:
-            material = {"currentQuotes": ["字" * 9000 if overlong else "小熊戴着蓝色帽子。"]}
+            material = {"currentQuotes": ["字" * 9000 if reason == "CONTEXT_LIMIT" else "小熊戴着蓝色帽子。"]}
             return await YayaAgent(settings, gateway).turn(
                 Context("帽子是什么颜色？", (), material, allow_provider=True, child_profile_id=3),
                 request_id="denied", guardian=1, session=2, disconnected=connected,
             )
 
-    assert asyncio.run(run()).reason == "BUDGET_LIMIT"
+    outcome = asyncio.run(run())
+    assert outcome.public()["reason"] == question_result(outcome).strategyType == reason
     with closing(sqlite3.connect(usage_db)) as db:
-        assert db.execute("SELECT COUNT(*) FROM yaya_agent_calls").fetchone() == (0,)
+        assert db.execute("SELECT call_id FROM yaya_agent_calls").fetchall() == ([("prior",)] if prior_call else [])
 
 
 @pytest.mark.parametrize(("daily", "concurrency"), [(100, 6), (1000, 1)])

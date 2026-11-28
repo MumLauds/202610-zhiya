@@ -208,7 +208,7 @@ def test_gateway_projection_and_daily_reservation(tmp_path, monkeypatch, fault, 
 
     first, second = asyncio.run(run())
     assert first.reason == reason
-    assert second.reason == "BUDGET_LIMIT" and len(calls) == 1
+    assert second.reason == "GUARDIAN_CALL_LIMIT" and len(calls) == 1
     if reason is None:
         assert first.reply == "松鼠把信放进信箱。"
         assert (first.upstream.prompt_tokens, first.upstream.completion_tokens) == (56, 13)
