@@ -1472,6 +1472,41 @@
       "gate1": "BLOCKED",
       "gate2": "BLOCKED",
       "gate3": "BLOCKED"
+    },
+    "E24": {
+      "stage": "Gate 1 actual Beijing Flash and speech recheck on isolated temporary Hong Kong ECS",
+      "recorded_on": "2026-11-28",
+      "verified_revision": "7334c40d2b6798075cd5ee7add46915657a57bc8",
+      "synthetic_turns": 14,
+      "local_listening_turns": 2,
+      "full_fallbacks": 0,
+      "flash_usage": {
+        "verified_flash_provider_ids": 12,
+        "input_tokens": 9426,
+        "output_tokens": 455
+      },
+      "application_ledger": {
+        "verified_settled_calls": 12,
+        "reserved_micros_sum": 43078,
+        "settled_micros_sum": 8775
+      },
+      "voice": "BLOCKED_VOICE_KEY_REJECTED",
+      "receipt_sha256": {
+        "passing-flash/target-live-ledger.json": "ce80cdca3ebb748c209e486e3250f084aad37c22e6bd9350881fd875ef53e443",
+        "passing-flash/target-live-receipt.json": "d3d173e5102e837d383486f6ec83eee4c0523e95c5b0579f7fed1e5d52244616",
+        "passing-flash/target-live-summary.log": "353049e62047db09407e44a33fac72ae382a2dc30025fd7fbcdcfde4d92a086f",
+        "passing-flash/target-live-usage.json": "a29b390b7001242533c1a84ac2ca307edd7c9bdb2ad959e07ceb15b9a3bc7fda",
+        "first-provider-attempt/target-credential-classification.json": "8c2babbd33424b0da7ecbff25eede257b12982fd133ca9114a0d816dbffce4d1",
+        "first-provider-attempt/target-live-flash-auth.json": "9e0fc3d828b7e4ee0fa30ad981f686b9c038b2e385d76a06510960ef43da66ef",
+        "first-provider-attempt/target-live-receipt.json": "b6367806ef8b254538bab7d85a39f88d4dc12ebb6b41e51c8755bf271e7075e4",
+        "first-provider-attempt/target-live-summary.log": "e9eb3bc284ecddfdd4bf9a96fb2a5e552791575b9770b149faa8624e3459e0c0",
+        "first-provider-attempt/target-live-tts-auth.json": "4ed584467bbbc893a212654804dda8755da943d59394e9506aceb9d7fb025b9f",
+        "first-provider-attempt/target-live-usage.json": "7f1b0ee6ee0d2f6b544495a34cf9f5180ea8b47f444e5f550f08137fd0f9ad37",
+        "speech-auth-failure/target-voice-auth-status.json": "4651dbed273168e233380f2b58566988512abf4b487e4a9693208ca747792328",
+        "speech-auth-failure/target-voice-provider-log.txt": "3d7ea31e7fe6b3497f4c3b2371838b7eb585f9a56a250e426f16e1bb33e8f5ae",
+        "speech-auth-failure/target-voice-receipt.json": "1d890b04038a19d2c6b255144a51ec976112979e19cc7452f5a3d3875c1e8978"
+      },
+      "gate1": "BLOCKED"
     }
   },
   "deliverables": [
@@ -1547,8 +1582,8 @@
     },
     {
       "path": "docs/production-readiness/gate1-staging-validation.md",
-      "sha256": "3583883a8ebfe95e3465946553aaa34706b250007a104cb3116d72ff1a5e05c4",
-      "bytes": 16201
+      "sha256": "543a7a507776f458bb5f59e044b8e08924ce3b8301c43c49a46b2ea201b996f5",
+      "bytes": 17412
     },
     {
       "path": "docs/production-readiness/browser-e2e-report.md",
