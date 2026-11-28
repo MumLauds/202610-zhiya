@@ -1326,6 +1326,51 @@
       "gate1": "BLOCKED",
       "gate2": "BLOCKED",
       "gate3": "BLOCKED"
+    },
+    "E21": {
+      "stage": "Gate 1 supplementary loopback browser acceptance and evidence review",
+      "recorded_on": "2026-11-28",
+      "candidate_revision": "4dfb0e3c401721e205f6e4dbcdda874cb40ffe53",
+      "historical_cloud_revision": "63bfe2cd12eec17c10c3e0988440397804c52b6a",
+      "changes_since_historical_cloud": "production_readiness_documentation_only",
+      "ci": {
+        "url": "https://github.com/MumLauds/202610-zhiya/actions/runs/46039204446/job/140642301385",
+        "validate_release": "PASS",
+        "verify_hong_kong_release": "SKIP"
+      },
+      "public_index_sha256": "f685ba085d86bfb55c5f07332f9af9d5625310f635a0f6e062abb8398ef9e8e0",
+      "local_browsers": {
+        "chrome": {
+          "status": "PASS",
+          "version": "158.0.8127.38",
+          "desktop_groups": 5,
+          "mobile_viewport_groups": 2,
+          "synthetic_voice_groups": 2,
+          "sha256": "8575916bd89bdd6b766921ee6196877589d706fbec5d7e513bb412e8c99535ae"
+        },
+        "firefox": {
+          "status": "PASS",
+          "version": "159.0",
+          "desktop_groups": 5,
+          "mobile_viewport_groups": 2,
+          "synthetic_voice_groups": 2,
+          "sha256": "c19619c71735880414170236093cd5acd5ca1e00f4c3c18146116cfafbda2da8"
+        },
+        "webkit": {
+          "status": "PASS",
+          "version": "27.2",
+          "desktop_groups": 5,
+          "mobile_viewport_groups": 2,
+          "synthetic_voice_groups": 2,
+          "sha256": "568b46661b493102cd4317b422ce2ff9bb1cac3f298b243ebcd380bee0592818"
+        }
+      },
+      "interaction_tests_passed": 5,
+      "real_provider_calls_this_round": 0,
+      "prior_physical_android_evidence_verified_sha256": "ddd244a70b0826db4884a1efcbda7f5eb37810bb558917e0b417bb0d044cbb05",
+      "target_staging_validation": "BLOCKED",
+      "engineering_signoff": "PENDING",
+      "gate1": "BLOCKED"
     }
   },
   "deliverables": [
@@ -1401,8 +1446,8 @@
     },
     {
       "path": "docs/production-readiness/gate1-staging-validation.md",
-      "sha256": "c85a75e38a50887ab6d3f370f0fcade71126a4641ccefbe6b172c56c1ff2ca4d",
-      "bytes": 13006
+      "sha256": "39f7b3dd4182dd41d1995e74962f21856f8b3d7b579ed46fd48d7c67c5d4028d",
+      "bytes": 15038
     },
     {
       "path": "docs/production-readiness/browser-e2e-report.md",
