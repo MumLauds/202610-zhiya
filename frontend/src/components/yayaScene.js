@@ -6,8 +6,22 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
 export async function createYaya(host, state, sampleVoice, onLost) {
   const renderer = new WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'low-power' })
-  let asset
-  try { asset = await new GLTFLoader().loadAsync('/assets/mascot/yaya-reading.glb') }
+  let asset, face, eyeMaterials
+  try {
+    asset = await new GLTFLoader().loadAsync('/assets/mascot/yaya-reading.glb')
+    asset.scene.traverse(node => {
+      if (node.morphTargetDictionary?.MouthOpen !== undefined) face = node
+    })
+    const { meshes, primitives } = asset.parser.associations.get(face)
+    const primitive = asset.parser.json.meshes[meshes].primitives[primitives]
+    const { mappings } = primitive.extensions.KHR_materials_variants
+    const variants = asset.parser.json.extensions.KHR_materials_variants.variants
+    eyeMaterials = [face.material, ...await Promise.all([25, 50, 75, 100].map(closure => {
+      const variant = variants.findIndex(item => item.name === `Eyes_${closure}`)
+      const mapping = mappings.find(item => item.variants.includes(variant))
+      return asset.parser.getDependency('material', mapping.material)
+    }))]
+  }
   catch (error) { renderer.dispose(); throw error }
   const scene = new Scene()
   scene.add(asset.scene, new HemisphereLight(0xfffaf1, 0xeadfcd, 1.85))
@@ -31,11 +45,6 @@ export async function createYaya(host, state, sampleVoice, onLost) {
   const observer = new ResizeObserver(resize)
   observer.observe(host)
   resize()
-  const eyes = [], mouths = []
-  asset.scene.traverse(node => {
-    if (node.morphTargetDictionary?.Blink !== undefined) eyes.push(node)
-    if (node.morphTargetDictionary?.MouthOpen !== undefined) mouths.push(node)
-  })
   const head = asset.scene.getObjectByName('Head')
   const mixer = new AnimationMixer(asset.scene)
   const hello = mixer.clipAction(asset.animations.find(clip => clip.name === 'Wave'))
@@ -67,19 +76,13 @@ export async function createYaya(host, state, sampleVoice, onLost) {
     const phase = dt < .075 ? dt / .075 : Math.min(1, (.235 - dt) / .13)
     const eyelid = still.matches || phase < 0 ? 0 : phase * phase * (3 - 2 * phase)
     if (dt > .235) nextBlink = time + 2.7 + Math.random() * 2.1
-    for (const eye of eyes) {
-      eye.morphTargetInfluences[eye.morphTargetDictionary.Blink] = eyelid
-      const follow = eye.morphTargetDictionary.LidFollow
-      if (follow !== undefined) eye.morphTargetInfluences[follow] = 4 * eyelid * (1 - eyelid)
-    }
+    face.material = eyeMaterials[Math.round(eyelid * (eyeMaterials.length - 1))]
     const mouth = sampleVoice()
     const active = state.media || state.speaking
     jaw = active ? jaw + (mouth.open - jaw) * (1 - Math.exp(-step * 21)) : 0
     rounding = active ? rounding + (mouth.round - rounding) * (1 - Math.exp(-step * 15)) : 0
-    for (const face of mouths) {
-      face.morphTargetInfluences[face.morphTargetDictionary.MouthOpen] = jaw
-      face.morphTargetInfluences[face.morphTargetDictionary.MouthRound] = rounding
-    }
+    face.morphTargetInfluences[face.morphTargetDictionary.MouthOpen] = jaw
+    face.morphTargetInfluences[face.morphTargetDictionary.MouthRound] = rounding
     renderer.render(scene, camera)
   }
   function lost() { renderer.setAnimationLoop(null); renderer.domElement.hidden = true; onLost() }
@@ -99,10 +102,14 @@ export async function createYaya(host, state, sampleVoice, onLost) {
         if (!node.isMesh) return
         node.geometry.dispose()
         node.skeleton?.dispose()
-        node.material.map?.source.data?.close?.()
-        node.material.map?.dispose()
-        node.material.dispose()
       })
+      for (const material of eyeMaterials) {
+        for (const texture of new Set([material.map, material.emissiveMap])) {
+          texture?.source.data?.close?.()
+          texture?.dispose()
+        }
+        material.dispose()
+      }
       renderer.domElement.remove()
       renderer.dispose()
     },
